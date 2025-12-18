@@ -1,15 +1,15 @@
 export type Order = {
   method: OrderMethods;
   params: OrderParams;
-  req_id: Number;
+  req_id: number;
 };
 
 type OrderParams = {
   order_type: OrderType;
   side: OrderSide;
-  order_qty: Number;
-  symbol: String;
-  limit_price: Number;
+  order_qty: number;
+  symbol: string;
+  limit_price: number;
   limit_price_type: OrderPriceType;
   triggers: OrderTriggers[];
   conditional: OrderConditional;
@@ -32,17 +32,17 @@ type OrderType = [
 
 type OrderTriggers = {
   reference: OrderTriggerReference;
-  index: Number;
-  last: Number;
+  index: number;
+  last: number;
   price_type: OrderPriceType;
 };
 type OrderTriggerReference = ["index", "last"];
 
 type OrderConditional = {
   order_type: CondtionalOrderType;
-  limit_price: Number;
+  limit_price: number;
   limit_price_type: OrderPriceType;
-  trigger_price: Number;
+  trigger_price: number;
   trigger_price_type: OrderPriceType;
 };
 type OrderPriceType = ["static", "pct", "quote"];
