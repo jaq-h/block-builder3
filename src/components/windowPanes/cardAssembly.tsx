@@ -1,7 +1,23 @@
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useId } from "react";
 import styled from "styled-components";
 import Block from "../blocks/block";
 import vite from "../../assets/vite.svg";
+import type {
+  BlockData,
+  ProviderBlockData,
+  GridData,
+  CellPosition,
+} from "../../utils/cardAssemblyUtils";
+import {
+  isCellValidForPlacement,
+  getAlignment,
+  isCellDisabled,
+  findCellAtPosition,
+  findBlockInGrid,
+  clearGrid,
+  reverseColumns,
+  isProviderBlockHighlighted as checkProviderBlockHighlighted,
+} from "../../utils/cardAssemblyUtils";
 
 const Container = styled.div`
   max-width: 380px;
@@ -77,7 +93,7 @@ const ProviderHeaderText = styled.span`
   color: #ccc;
 `;
 
-interface RowProps extends React.HTMLAttributes<HTMLDivElement> {
+interface RowProps {
   $isOver: boolean;
   $isValidTarget: boolean;
   $isDisabled: boolean;
@@ -97,7 +113,7 @@ const breathingAnimation = `
   }
 `;
 
-const Row = styled.div<RowProps>`
+const Row = styled.div.attrs<RowProps>(() => ({}))<RowProps>`
   ${breathingAnimation}
   flex: 1;
   border: ${({ $isOver }) => ($isOver ? "3px" : "1px")} solid
@@ -190,27 +206,6 @@ const ProviderRow = styled.div`
   overflow: auto;
 `;
 
-interface BlockData {
-  id: string;
-  icon?: string;
-  abrv: string;
-  allowedRows: number[];
-}
-
-// Provider blocks (static, never removed)
-interface ProviderBlockData {
-  type: string;
-  abrv: string;
-  icon?: string;
-  allowedRows: number[];
-}
-
-// Grid structure: [column][row] = blocks
-type GridData = BlockData[][][];
-
-// First placement must be in middle row (row 1) of either column
-const FIRST_PLACEMENT_ROW = 1;
-
 // Column header labels
 const COLUMN_HEADERS = ["Entry", "Exit"];
 
@@ -243,8 +238,9 @@ const Assembly: React.FC = () => {
     },
   ];
 
-  // Counter for generating unique IDs
-  const blockIdCounter = useRef(0);
+  // Generate unique base ID for this component instance
+  const baseId = useId();
+  const blockCounter = useRef(0);
 
   // 2 columns x 3 rows grid (columns 0 and 1)
   const [grid, setGrid] = useState<GridData>([
@@ -269,14 +265,10 @@ const Assembly: React.FC = () => {
   const [hoveredProviderId, setHoveredProviderId] = useState<string | null>(
     null,
   );
-  const [hoverCell, setHoverCell] = useState<{
-    col: number;
-    row: number;
-  } | null>(null);
-  const [hoveredGridCell, setHoveredGridCell] = useState<{
-    col: number;
-    row: number;
-  } | null>(null);
+  const [hoverCell, setHoverCell] = useState<CellPosition | null>(null);
+  const [hoveredGridCell, setHoveredGridCell] = useState<CellPosition | null>(
+    null,
+  );
 
   const handleGridCellMouseEnter = (colIndex: number, rowIndex: number) => {
     if (!isDragging) {
@@ -289,95 +281,6 @@ const Assembly: React.FC = () => {
   };
 
   // Check if a provider block should be highlighted based on hovered grid cell
-  const isProviderBlockHighlighted = (block: ProviderBlockData): boolean => {
-    if (isDragging || !hoveredGridCell) return false;
-
-    // Check if the block can be placed in the hovered cell
-    const canPlaceInRow = block.allowedRows.includes(hoveredGridCell.row);
-    const cellIsValid = isCellValidForPlacement(
-      hoveredGridCell.col,
-      hoveredGridCell.row,
-      block.allowedRows,
-    );
-
-    return canPlaceInRow && cellIsValid;
-  };
-
-  // Check if any block has been placed in the grid
-  const hasFirstBlockBeenPlaced = useMemo(() => {
-    return grid.some((column) => column.some((row) => row.length > 0));
-  }, [grid]);
-
-  // Get all cells that have blocks
-  const getOccupiedCells = useMemo(() => {
-    const occupied: { col: number; row: number }[] = [];
-    grid.forEach((column, colIndex) => {
-      column.forEach((row, rowIndex) => {
-        if (row.length > 0) {
-          occupied.push({ col: colIndex, row: rowIndex });
-        }
-      });
-    });
-    return occupied;
-  }, [grid]);
-
-  // Get diagonal cells from all occupied cells
-  const getDiagonalCells = useMemo(() => {
-    const diagonals = new Set<string>();
-
-    getOccupiedCells.forEach(({ col, row }) => {
-      // Four diagonal directions
-      const diagonalOffsets = [
-        { col: -1, row: -1 }, // top-left
-        { col: -1, row: 1 }, // bottom-left
-        { col: 1, row: -1 }, // top-right
-        { col: 1, row: 1 }, // bottom-right
-      ];
-
-      diagonalOffsets.forEach((offset) => {
-        const newCol = col + offset.col;
-        const newRow = row + offset.row;
-
-        // Check bounds (2 columns, 3 rows)
-        if (newCol >= 0 && newCol < 2 && newRow >= 0 && newRow < 3) {
-          diagonals.add(`${newCol}-${newRow}`);
-        }
-      });
-    });
-
-    // Remove cells that are already occupied
-    getOccupiedCells.forEach(({ col, row }) => {
-      diagonals.delete(`${col}-${row}`);
-    });
-
-    return diagonals;
-  }, [getOccupiedCells]);
-
-  // Refs for each cell in the grid (not including provider)
-  const cellRefs = useRef<(HTMLDivElement | null)[][]>([
-    [null, null, null],
-    [null, null, null],
-  ]);
-
-  // Check if a cell is a valid target considering placement rules
-  const isCellValidForPlacement = (
-    colIndex: number,
-    rowIndex: number,
-    allowedRows: number[],
-  ): boolean => {
-    // First, check if the row is in the block's allowed rows
-    if (!allowedRows.includes(rowIndex)) {
-      return false;
-    }
-
-    // If no block has been placed yet, only allow middle row of either column
-    if (!hasFirstBlockBeenPlaced) {
-      return rowIndex === FIRST_PLACEMENT_ROW;
-    }
-
-    // After first placement, only allow diagonal cells
-    return getDiagonalCells.has(`${colIndex}-${rowIndex}`);
-  };
 
   // Get allowed rows for the currently active block (dragging or hovering)
   const getActiveAllowedRows = (): number[] => {
@@ -409,21 +312,12 @@ const Assembly: React.FC = () => {
 
   // Clear all blocks from the grid
   const handleClearAll = () => {
-    setGrid([
-      [[], [], []],
-      [[], [], []],
-    ]);
+    setGrid(clearGrid(2, 3));
   };
 
   // Reverse entry and exit blocks (swap columns)
   const handleReverseBlocks = () => {
-    setGrid((prev) => {
-      const newGrid: GridData = [
-        [...prev[1].map((row) => [...row])],
-        [...prev[0].map((row) => [...row])],
-      ];
-      return newGrid;
-    });
+    setGrid(reverseColumns);
   };
 
   const handleDragStart = (id: string) => {
@@ -447,27 +341,10 @@ const Assembly: React.FC = () => {
 
   const handleProviderDragEnd = (type: string, x: number, y: number) => {
     // Find which cell the block was dropped on
-    let targetCol: number | null = null;
-    let targetRow: number | null = null;
+    const cellPosition = findCellAtPosition(x, y);
 
-    cellRefs.current.forEach((column, colIndex) => {
-      column.forEach((ref, rowIndex) => {
-        if (ref) {
-          const rect = ref.getBoundingClientRect();
-          if (
-            x >= rect.left &&
-            x <= rect.right &&
-            y >= rect.top &&
-            y <= rect.bottom
-          ) {
-            targetCol = colIndex;
-            targetRow = rowIndex;
-          }
-        }
-      });
-    });
-
-    if (targetCol !== null && targetRow !== null) {
+    if (cellPosition) {
+      const { col: targetCol, row: targetRow } = cellPosition;
       // Create a new block instance from the provider
       const providerBlock = providerBlocks.find((b) => b.type === type);
       if (providerBlock) {
@@ -477,6 +354,7 @@ const Assembly: React.FC = () => {
             targetCol,
             targetRow,
             providerBlock.allowedRows,
+            grid,
           )
         ) {
           setDraggingFromProvider(null);
@@ -484,9 +362,9 @@ const Assembly: React.FC = () => {
           return;
         }
 
-        blockIdCounter.current += 1;
+        blockCounter.current += 1;
         const newBlock: BlockData = {
-          id: `${type}-${blockIdCounter.current}`,
+          id: `${baseId}-${type}-${blockCounter.current}`,
           icon: providerBlock.icon,
           abrv: providerBlock.abrv,
           allowedRows: providerBlock.allowedRows,
@@ -506,46 +384,30 @@ const Assembly: React.FC = () => {
 
   const handleDragEnd = (id: string, x: number, y: number) => {
     // Find which cell the block was dropped on
-    let targetCol: number | null = null;
-    let targetRow: number | null = null;
+    const cellPosition = findCellAtPosition(x, y);
 
-    cellRefs.current.forEach((column, colIndex) => {
-      column.forEach((ref, rowIndex) => {
-        if (ref) {
-          const rect = ref.getBoundingClientRect();
-          if (
-            x >= rect.left &&
-            x <= rect.right &&
-            y >= rect.top &&
-            y <= rect.bottom
-          ) {
-            targetCol = colIndex;
-            targetRow = rowIndex;
-          }
-        }
-      });
-    });
     // Find source cell and block
-    let sourceCol: number | null = null;
-    let sourceRow: number | null = null;
-    let blockData: BlockData | null = null;
+    const blockInfo = findBlockInGrid(grid, id);
 
-    for (let colIndex = 0; colIndex < grid.length; colIndex++) {
-      for (let rowIndex = 0; rowIndex < grid[colIndex].length; rowIndex++) {
-        const block = grid[colIndex][rowIndex].find((b) => b.id === id);
-        if (block) {
-          sourceCol = colIndex;
-          sourceRow = rowIndex;
-          blockData = block;
-        }
-      }
+    if (!blockInfo) {
+      setDraggingId(null);
+      setHoverCell(null);
+      return;
     }
 
-    if (targetCol !== null && targetRow !== null) {
+    const { col: sourceCol, row: sourceRow, block: blockData } = blockInfo;
+
+    if (cellPosition) {
+      const { col: targetCol, row: targetRow } = cellPosition;
+
       // Check if target cell is valid for this block
       if (
-        blockData &&
-        !isCellValidForPlacement(targetCol, targetRow, blockData.allowedRows)
+        !isCellValidForPlacement(
+          targetCol,
+          targetRow,
+          blockData.allowedRows,
+          grid,
+        )
       ) {
         setDraggingId(null);
         setHoverCell(null);
@@ -553,34 +415,27 @@ const Assembly: React.FC = () => {
       }
 
       // Move block to new cell
-      if (
-        sourceCol !== null &&
-        sourceRow !== null &&
-        blockData &&
-        (targetCol !== sourceCol || targetRow !== sourceRow)
-      ) {
+      if (targetCol !== sourceCol || targetRow !== sourceRow) {
         setGrid((prev) => {
           const newGrid = prev.map((col) => col.map((row) => [...row]));
           // Remove from source
-          newGrid[sourceCol!][sourceRow!] = newGrid[sourceCol!][
-            sourceRow!
-          ].filter((b) => b.id !== id);
+          newGrid[sourceCol][sourceRow] = newGrid[sourceCol][sourceRow].filter(
+            (b) => b.id !== id,
+          );
           // Add to target
-          newGrid[targetCol!][targetRow!].push(blockData!);
+          newGrid[targetCol][targetRow].push(blockData);
           return newGrid;
         });
       }
     } else {
       // Dropped outside - remove the block
-      if (sourceCol !== null && sourceRow !== null) {
-        setGrid((prev) => {
-          const newGrid = prev.map((col) => col.map((row) => [...row]));
-          newGrid[sourceCol!][sourceRow!] = newGrid[sourceCol!][
-            sourceRow!
-          ].filter((b) => b.id !== id);
-          return newGrid;
-        });
-      }
+      setGrid((prev) => {
+        const newGrid = prev.map((col) => col.map((row) => [...row]));
+        newGrid[sourceCol][sourceRow] = newGrid[sourceCol][sourceRow].filter(
+          (b) => b.id !== id,
+        );
+        return newGrid;
+      });
     }
 
     setDraggingId(null);
@@ -590,59 +445,30 @@ const Assembly: React.FC = () => {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!draggingId && !draggingFromProvider) return;
 
-    let hoveredCol: number | null = null;
-    let hoveredRow: number | null = null;
+    const target = e.target as HTMLElement;
+    const rowElement = target.closest("[data-col][data-row]") as HTMLElement;
 
-    cellRefs.current.forEach((column, colIndex) => {
-      column.forEach((ref, rowIndex) => {
-        if (ref) {
-          const rect = ref.getBoundingClientRect();
-          if (
-            e.clientX >= rect.left &&
-            e.clientX <= rect.right &&
-            e.clientY >= rect.top &&
-            e.clientY <= rect.bottom
-          ) {
-            hoveredCol = colIndex;
-            hoveredRow = rowIndex;
-          }
-        }
-      });
-    });
+    if (rowElement) {
+      const col = parseInt(rowElement.getAttribute("data-col") || "-1", 10);
+      const row = parseInt(rowElement.getAttribute("data-row") || "-1", 10);
 
-    if (hoveredCol !== null && hoveredRow !== null) {
-      setHoverCell({ col: hoveredCol, row: hoveredRow });
-    } else {
-      setHoverCell(null);
+      if (col !== -1 && row !== -1) {
+        setHoverCell({ col, row });
+        return;
+      }
     }
+
+    setHoverCell(null);
   };
 
   const isDragging = draggingId !== null || draggingFromProvider !== null;
   const activeAllowedRows = getActiveAllowedRows();
   const showValidTargets = isDragging || hoveredProviderId !== null;
 
-  // Get alignment based on column index
-  const getAlignment = (colIndex: number): "left" | "right" => {
-    return colIndex === 0 ? "right" : "left";
-  };
-
   // Check if a row is a valid target for highlighting
   const isValidTarget = (colIndex: number, rowIndex: number): boolean => {
     if (!showValidTargets) return false;
-    return isCellValidForPlacement(colIndex, rowIndex, activeAllowedRows);
-  };
-
-  // Check if a cell should be disabled (darkened)
-  const isCellDisabled = (colIndex: number, rowIndex: number): boolean => {
-    if (!hasFirstBlockBeenPlaced) {
-      // Before first placement, disable all cells except middle row
-      return rowIndex !== FIRST_PLACEMENT_ROW;
-    }
-    // After first placement, disable cells that are not diagonal to any occupied cell
-    // and are not already occupied
-    const isOccupied = grid[colIndex][rowIndex].length > 0;
-    const isDiagonal = getDiagonalCells.has(`${colIndex}-${rowIndex}`);
-    return !isOccupied && !isDiagonal;
+    return isCellValidForPlacement(colIndex, rowIndex, activeAllowedRows, grid);
   };
 
   return (
@@ -663,7 +489,12 @@ const Assembly: React.FC = () => {
                 id={block.type}
                 icon={block.icon}
                 abrv={block.abrv}
-                isHighlighted={isProviderBlockHighlighted(block)}
+                isHighlighted={checkProviderBlockHighlighted(
+                  block,
+                  hoveredGridCell,
+                  isDragging,
+                  grid,
+                )}
                 onDragStart={() => handleProviderDragStart(block.type)}
                 onDragEnd={(_id, x, y) =>
                   handleProviderDragEnd(block.type, x, y)
@@ -697,7 +528,8 @@ const Assembly: React.FC = () => {
                 {column.map((row, rowIndex) => (
                   <Row
                     key={rowIndex}
-                    ref={(el) => (cellRefs.current[colIndex][rowIndex] = el)}
+                    data-col={colIndex}
+                    data-row={rowIndex}
                     $isOver={
                       hoverCell?.col === colIndex &&
                       hoverCell?.row === rowIndex &&
@@ -705,7 +537,7 @@ const Assembly: React.FC = () => {
                       isValidTarget(colIndex, rowIndex)
                     }
                     $isValidTarget={isValidTarget(colIndex, rowIndex)}
-                    $isDisabled={isCellDisabled(colIndex, rowIndex)}
+                    $isDisabled={isCellDisabled(colIndex, rowIndex, grid)}
                     $align={getAlignment(colIndex)}
                     onMouseEnter={() =>
                       handleGridCellMouseEnter(colIndex, rowIndex)
