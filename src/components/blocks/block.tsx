@@ -46,8 +46,8 @@ interface BlockProps {
 
 const Block: React.FC<BlockProps> = ({
   id,
-<<<<<<< Updated upstream
-  icon,
+  abrv,
+  isHighlighted = false,
   onClick,
   onDragStart,
   onDragEnd,

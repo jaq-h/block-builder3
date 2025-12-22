@@ -77,6 +77,7 @@ const ProviderHeaderText = styled.span`
   color: #ccc;
 `;
 
+interface RowProps extends React.HTMLAttributes<HTMLDivElement> {
   $isOver: boolean;
   $isValidTarget: boolean;
   $isDisabled: boolean;
@@ -214,10 +215,8 @@ const FIRST_PLACEMENT_ROW = 1;
 const COLUMN_HEADERS = ["Entry", "Exit"];
 
 const Assembly: React.FC = () => {
-<<<<<<< HEAD
-<<<<<<< Updated upstream
   // 2 columns x 3 rows grid
-=======
+
   // Static provider blocks (column 0)
   const providerBlocks: ProviderBlockData[] = [
     { type: "limit", abrv: "Lmt", allowedRows: [0, 1] },
@@ -250,7 +249,6 @@ const Assembly: React.FC = () => {
   const blockIdCounter = useRef(0);
 
   // 2 columns x 3 rows grid (columns 0 and 1)
->>>>>>> f5d5fb439418d684be1a2044940747ea65f1e1d9
   const [grid, setGrid] = useState<GridData>([
     // Column 0 - LEFT column, blocks align RIGHT
     [
@@ -529,36 +527,28 @@ const Assembly: React.FC = () => {
         }
       });
     });
-
-<<<<<<< HEAD
-<<<<<<< Updated upstream
     if (targetCol !== null && targetRow !== null) {
       // Find source cell and block
       let sourceCol: number | null = null;
       let sourceRow: number | null = null;
       let blockData: BlockData | null = null;
-=======
-    // Find source cell and block
-    let sourceCol: number | null = null;
-    let sourceRow: number | null = null;
-    let blockData: BlockData | null = null;
->>>>>>> f5d5fb439418d684be1a2044940747ea65f1e1d9
 
-    grid.forEach((column, colIndex) => {
-      column.forEach((row, rowIndex) => {
-        const block = row.find((b) => b.id === id);
+    for (let colIndex = 0; colIndex < grid.length; colIndex++) {
+      for (let rowIndex = 0; rowIndex < grid[colIndex].length; rowIndex++) {
+        const block = grid[colIndex][rowIndex].find((b) => b.id === id);
         if (block) {
           sourceCol = colIndex;
           sourceRow = rowIndex;
           blockData = block;
+          break;
         }
-      });
-    });
+      }
+      if (blockData) break;
+    }
 
-    if (targetCol !== null && targetRow !== null) {
+    if (targetCol !== null && targetRow !== null && blockData !== null) {
       // Check if target cell is valid for this block
       if (
-        blockData &&
         !isCellValidForPlacement(targetCol, targetRow, blockData.allowedRows)
       ) {
         setDraggingId(null);
@@ -572,6 +562,7 @@ const Assembly: React.FC = () => {
         sourceRow !== null &&
         (targetCol !== sourceCol || targetRow !== sourceRow)
       ) {
+        const movedBlock = blockData;
         setGrid((prev) => {
           const newGrid = prev.map((col) => col.map((row) => [...row]));
           // Remove from source
@@ -579,12 +570,16 @@ const Assembly: React.FC = () => {
             sourceRow!
           ].filter((b) => b.id !== id);
           // Add to target
+          newGrid[targetCol!][targetRow!].push(movedBlock);
           return newGrid;
         });
       }
-<<<<<<< HEAD
->>>>>>> Stashed changes
-=======
+    } else if (blockData === null) {
+      // Block not found, do nothing
+          return newGrid;
+        });
+      }
+
     } else {
       // Dropped outside - remove the block
       if (sourceCol !== null && sourceRow !== null) {
@@ -596,9 +591,7 @@ const Assembly: React.FC = () => {
           return newGrid;
         });
       }
->>>>>>> f5d5fb439418d684be1a2044940747ea65f1e1d9
     }
-
     setDraggingId(null);
     setHoverCell(null);
   };
@@ -662,21 +655,7 @@ const Assembly: React.FC = () => {
   };
 
   return (
-    <Container onMouseMove={handleMouseMove}>
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-      <ColumnsWrapper>
-        {grid.map((column, colIndex) => (
-          <Column key={colIndex} $index={colIndex}>
-            {column.map((row, rowIndex) => (
-              <Row
-                key={rowIndex}
-                ref={(el) => (cellRefs.current[colIndex][rowIndex] = el)}
-                $isOver={
-                  hoverCell?.col === colIndex &&
-                  hoverCell?.row === rowIndex &&
-                  draggingId !== null
-=======
+    <Container onMouseMove={handleMouseMove}>        
       <Header>
         <HeaderText>Card Assembly</HeaderText>
       </Header>
@@ -695,9 +674,8 @@ const Assembly: React.FC = () => {
                 abrv={block.abrv}
                 isHighlighted={isProviderBlockHighlighted(block)}
                 onDragStart={() => handleProviderDragStart(block.type)}
-                onDragEnd={(id, x, y) =>
+                onDragEnd={(_id, x, y) =>
                   handleProviderDragEnd(block.type, x, y)
->>>>>>> f5d5fb439418d684be1a2044940747ea65f1e1d9
                 }
                 onMouseEnter={() => handleProviderMouseEnter(block.type)}
                 onMouseLeave={handleProviderMouseLeave}
