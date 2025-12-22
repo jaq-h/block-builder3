@@ -215,8 +215,6 @@ const FIRST_PLACEMENT_ROW = 1;
 const COLUMN_HEADERS = ["Entry", "Exit"];
 
 const Assembly: React.FC = () => {
-  // 2 columns x 3 rows grid
-
   // Static provider blocks (column 0)
   const providerBlocks: ProviderBlockData[] = [
     { type: "limit", abrv: "Lmt", allowedRows: [0, 1] },
@@ -527,11 +525,10 @@ const Assembly: React.FC = () => {
         }
       });
     });
-    if (targetCol !== null && targetRow !== null) {
-      // Find source cell and block
-      let sourceCol: number | null = null;
-      let sourceRow: number | null = null;
-      let blockData: BlockData | null = null;
+    // Find source cell and block
+    let sourceCol: number | null = null;
+    let sourceRow: number | null = null;
+    let blockData: BlockData | null = null;
 
     for (let colIndex = 0; colIndex < grid.length; colIndex++) {
       for (let rowIndex = 0; rowIndex < grid[colIndex].length; rowIndex++) {
@@ -540,15 +537,14 @@ const Assembly: React.FC = () => {
           sourceCol = colIndex;
           sourceRow = rowIndex;
           blockData = block;
-          break;
         }
       }
-      if (blockData) break;
     }
 
-    if (targetCol !== null && targetRow !== null && blockData !== null) {
+    if (targetCol !== null && targetRow !== null) {
       // Check if target cell is valid for this block
       if (
+        blockData &&
         !isCellValidForPlacement(targetCol, targetRow, blockData.allowedRows)
       ) {
         setDraggingId(null);
@@ -560,9 +556,9 @@ const Assembly: React.FC = () => {
       if (
         sourceCol !== null &&
         sourceRow !== null &&
+        blockData &&
         (targetCol !== sourceCol || targetRow !== sourceRow)
       ) {
-        const movedBlock = blockData;
         setGrid((prev) => {
           const newGrid = prev.map((col) => col.map((row) => [...row]));
           // Remove from source
@@ -570,16 +566,10 @@ const Assembly: React.FC = () => {
             sourceRow!
           ].filter((b) => b.id !== id);
           // Add to target
-          newGrid[targetCol!][targetRow!].push(movedBlock);
+          newGrid[targetCol!][targetRow!].push(blockData!);
           return newGrid;
         });
       }
-    } else if (blockData === null) {
-      // Block not found, do nothing
-          return newGrid;
-        });
-      }
-
     } else {
       // Dropped outside - remove the block
       if (sourceCol !== null && sourceRow !== null) {
@@ -592,6 +582,7 @@ const Assembly: React.FC = () => {
         });
       }
     }
+
     setDraggingId(null);
     setHoverCell(null);
   };
@@ -655,7 +646,7 @@ const Assembly: React.FC = () => {
   };
 
   return (
-    <Container onMouseMove={handleMouseMove}>        
+    <Container onMouseMove={handleMouseMove}>
       <Header>
         <HeaderText>Card Assembly</HeaderText>
       </Header>
