@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React from "react";
 import styled from "styled-components";
+import { useDraggable } from "../../hooks/useDraggable";
 
 const breathingAnimation = `
   @keyframes blockBreathing {
@@ -25,14 +26,16 @@ const Button = styled.button<ButtonProps>`
   width: 40px;
   height: 40px;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   padding: 3px;
-  border: ${({ $isHighlighted }) =>
-    $isHighlighted ? "2px solid #fff" : "none"};
-  border-radius: 4px;
+  border: 2px solid
+    ${({ $isHighlighted }) =>
+      $isHighlighted ? "rgba(255, 255, 255, 0.5)" : "transparent"};
+  border-radius: 6px;
   background-color: ${({ $isPlaceholder }) =>
-    $isPlaceholder ? "rgba(146, 59, 163, 0.4)" : "#923ba3"};
+    $isPlaceholder ? "rgba(133, 91, 251, 0.3)" : "#855bfb"};
   cursor: ${({ $isDragging, $isPlaceholder }) =>
     $isPlaceholder ? "default" : $isDragging ? "grabbing" : "grab"};
   user-select: none;
@@ -41,15 +44,15 @@ const Button = styled.button<ButtonProps>`
   pointer-events: ${({ $isDragging, $isPlaceholder }) =>
     $isDragging || $isPlaceholder ? "none" : "auto"};
   opacity: ${({ $isPlaceholder }) => ($isPlaceholder ? 0.5 : 1)};
-  color: #fff;
+  color: var(--text-color-icon-logo);
   animation: ${({ $isHighlighted }) =>
     $isHighlighted ? "blockBreathing 1.5s ease-in-out infinite" : "none"};
-
   &:hover {
     background-color: ${({ $isPlaceholder }) =>
-      $isPlaceholder ? "rgba(146, 59, 163, 0.4)" : "#d0d0d0"};
+      $isPlaceholder
+        ? "rgba(133, 91, 251, 0.3)"
+        : "var(--outline-color-secondary)"};
   }
-
   svg {
     width: 20px;
     height: 20px;
@@ -60,97 +63,76 @@ const BlockWrapper = styled.div`
   position: relative;
 `;
 
+const IconImage = styled.img`
+  width: 24px;
+  height: 24px;
+  filter: brightness(0) invert(1);
+  pointer-events: none;
+`;
+
 interface BlockProps {
   id: string;
   icon?: string;
   abrv: string;
+  axis?: 1 | 2;
+  yPosition?: number;
+  axes?: ("trigger" | "limit")[];
+  hidePercentage?: boolean;
   isHighlighted?: boolean;
   onClick?: () => void;
   onDragStart?: (id: string) => void;
   onDragEnd?: (id: string, x: number, y: number) => void;
+  onVerticalDrag?: (id: string, mouseY: number) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }
 
 const Block: React.FC<BlockProps> = ({
   id,
+  icon,
   abrv,
+  axis,
+  axes = [],
   isHighlighted = false,
   onClick,
   onDragStart,
   onDragEnd,
+  onVerticalDrag,
   onMouseEnter,
   onMouseLeave,
 }) => {
-  const [isDragging, setIsDragging] = useState(false);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const isVerticallyDraggable = axis !== undefined && axes.length > 0;
+  const blockCursor = isVerticallyDraggable ? "ns-resize" : "grab";
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-    setPosition({
-      x: e.clientX,
-      y: e.clientY,
+  const { isDragging, isVerticalOnly, position, handleMouseDown } =
+    useDraggable({
+      id,
+      isVerticallyDraggable,
+      onDragStart,
+      onDragEnd,
+      onVerticalDrag,
     });
-    onDragStart?.(id);
-  };
-
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isDragging) return;
-      setPosition({
-        x: e.clientX,
-        y: e.clientY,
-      });
-    },
-    [isDragging],
-  );
-
-  const handleMouseUp = useCallback(
-    (e: MouseEvent) => {
-      if (isDragging) {
-        setIsDragging(false);
-        onDragEnd?.(id, e.clientX, e.clientY);
-      }
-    },
-    [isDragging, id, onDragEnd],
-  );
-
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDragging, handleMouseMove, handleMouseUp]);
 
   return (
     <BlockWrapper onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
-      {/* Static placeholder that stays in place while dragging */}
-      {isDragging && (
+      {isDragging && !isVerticalOnly && (
         <Button $isDragging={false} $isPlaceholder={true}>
-          <span>{`${abrv}`}</span>
+          {icon ? <IconImage src={icon} alt={abrv} /> : <span>{abrv}</span>}
         </Button>
       )}
-      {/* The actual draggable block (or clone for provider) */}
       <Button
-        $isDragging={isDragging}
+        $isDragging={isDragging && !isVerticalOnly}
         $isHighlighted={isHighlighted && !isDragging}
         onMouseDown={handleMouseDown}
         onClick={!isDragging ? onClick : undefined}
-        style={
-          isDragging
-            ? {
-                left: position.x - 17,
-                top: position.y - 17,
-              }
-            : {}
-        }
+        style={{
+          ...(isDragging && !isVerticalOnly
+            ? { left: position.x - 17, top: position.y - 17 }
+            : {}),
+          cursor: isDragging && isVerticalOnly ? "grabbing" : blockCursor,
+        }}
       >
-        <span>{`${abrv}`}</span>
+        {icon ? <IconImage src={icon} alt={abrv} /> : <span>{abrv}</span>}
       </Button>
     </BlockWrapper>
   );

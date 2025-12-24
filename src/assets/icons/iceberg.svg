@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Water line -->
+  <line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="2,2" opacity="0.5"/>
+  <!-- Visible tip above water -->
+  <polygon points="12,3 8,12 16,12" fill="currentColor" opacity="0.7"/>
+  <!-- Hidden mass below water -->
+  <polygon points="8,12 4,20 20,20 16,12" fill="currentColor" opacity="0.3"/>
+</svg>

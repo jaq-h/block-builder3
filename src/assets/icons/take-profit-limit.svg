@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Horizontal limit line at top -->
+  <line x1="6" y1="3" x2="18" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <!-- Upward arrow -->
+  <path d="M12 8V5M9 6.5l3-2 3 2"/>
+  <!-- Target circles positioned lower -->
+  <circle cx="12" cy="15" r="7"/>
+  <circle cx="12" cy="15" r="3.5"/>
+  <circle cx="12" cy="15" r="1" fill="currentColor"/>
+</svg>
