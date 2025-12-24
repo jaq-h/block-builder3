@@ -85,6 +85,13 @@ const BlockWrapper = styled.div`
   position: relative;
 `;
 
+const IconImage = styled.img`
+  width: 24px;
+  height: 24px;
+  filter: brightness(0) invert(1);
+  pointer-events: none;
+`;
+
 interface BlockProps {
   id: string;
   icon?: string;
@@ -104,6 +111,7 @@ interface BlockProps {
 
 const Block: React.FC<BlockProps> = ({
   id,
+  icon,
   abrv,
   axis,
   yPosition = 50,
@@ -136,7 +144,7 @@ const Block: React.FC<BlockProps> = ({
     <BlockWrapper onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
       {isDragging && !isVerticalOnly && (
         <Button $isDragging={false} $isPlaceholder={true}>
-          <span>{abrv}</span>
+          {icon ? <IconImage src={icon} alt={abrv} /> : <span>{abrv}</span>}
         </Button>
       )}
       <Button
@@ -151,7 +159,7 @@ const Block: React.FC<BlockProps> = ({
           cursor: isDragging && isVerticalOnly ? "grabbing" : blockCursor,
         }}
       >
-        <span>{abrv}</span>
+        {icon ? <IconImage src={icon} alt={abrv} /> : <span>{abrv}</span>}
         {showPercentage && (
           <div style={{ fontSize: "8px", marginTop: "2px" }}>
             {Math.round(yPosition)}%

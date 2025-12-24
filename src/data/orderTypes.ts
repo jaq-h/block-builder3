@@ -21,6 +21,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "limit",
     abrv: "Lmt",
+    icon: "/src/assets/icons/limit.svg",
     allowedRows: [0, 1],
     axes: ["limit"],
     defaults: {
@@ -30,6 +31,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "market",
     abrv: "Mkt",
+    icon: "/src/assets/icons/market.svg",
     allowedRows: [1],
     axes: [], // No axes - executes at market price
     // No defaults - market orders don't have price levels
@@ -37,6 +39,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "iceberg",
     abrv: "Ice",
+    icon: "/src/assets/icons/iceberg.svg",
     allowedRows: [1],
     axes: ["limit"],
     defaults: {
@@ -46,6 +49,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "stop-loss",
     abrv: "SL",
+    icon: "/src/assets/icons/stop-loss.svg",
     allowedRows: [1, 2],
     axes: ["trigger"],
     defaults: {
@@ -55,6 +59,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "stop-loss-limit",
     abrv: "SL-Lmt",
+    icon: "/src/assets/icons/stop-loss-limit.svg",
     allowedRows: [1, 2],
     axes: ["trigger", "limit"],
     defaults: {
@@ -65,6 +70,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "take-profit",
     abrv: "TP",
+    icon: "/src/assets/icons/take-profit.svg",
     allowedRows: [0, 1],
     axes: ["trigger"],
     defaults: {
@@ -74,6 +80,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "take-profit-limit",
     abrv: "TP-Lmt",
+    icon: "/src/assets/icons/take-profit-limit.svg",
     allowedRows: [0, 1],
     axes: ["trigger", "limit"],
     defaults: {
@@ -84,6 +91,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "trailing-stop",
     abrv: "TS",
+    icon: "/src/assets/icons/trailing-stop.svg",
     allowedRows: [1, 2],
     axes: ["trigger"],
     defaults: {
@@ -93,6 +101,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "trailing-stop-limit",
     abrv: "TS-Lmt",
+    icon: "/src/assets/icons/trailing-stop-limit.svg",
     allowedRows: [1, 2],
     axes: ["trigger", "limit"],
     defaults: {
