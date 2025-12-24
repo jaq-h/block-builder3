@@ -1,4 +1,13 @@
 // Order type definitions with default values for the card assembly grid
+import limitIcon from "../assets/icons/limit.svg";
+import marketIcon from "../assets/icons/market.svg";
+import icebergIcon from "../assets/icons/iceberg.svg";
+import stopLossIcon from "../assets/icons/stop-loss.svg";
+import stopLossLimitIcon from "../assets/icons/stop-loss-limit.svg";
+import takeProfitIcon from "../assets/icons/take-profit.svg";
+import takeProfitLimitIcon from "../assets/icons/take-profit-limit.svg";
+import trailingStopIcon from "../assets/icons/trailing-stop.svg";
+import trailingStopLimitIcon from "../assets/icons/trailing-stop-limit.svg";
 
 export type AxisType = "trigger" | "limit";
 
@@ -23,7 +32,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "limit",
     abrv: "Lmt",
     label: "Limit",
-    icon: "/src/assets/icons/limit.svg",
+    icon: limitIcon,
     allowedRows: [0, 1],
     axes: ["limit"],
     defaults: {
@@ -34,7 +43,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "market",
     abrv: "Mkt",
     label: "Market",
-    icon: "/src/assets/icons/market.svg",
+    icon: marketIcon,
     allowedRows: [1],
     axes: [], // No axes - executes at market price
     // No defaults - market orders don't have price levels
@@ -43,7 +52,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "iceberg",
     abrv: "Ice",
     label: "Iceberg",
-    icon: "/src/assets/icons/iceberg.svg",
+    icon: icebergIcon,
     allowedRows: [1],
     axes: ["limit"],
     defaults: {
@@ -54,7 +63,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "stop-loss",
     abrv: "SL",
     label: "Stop Loss",
-    icon: "/src/assets/icons/stop-loss.svg",
+    icon: stopLossIcon,
     allowedRows: [1, 2],
     axes: ["trigger"],
     defaults: {
@@ -65,7 +74,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "stop-loss-limit",
     abrv: "SL-Lmt",
     label: "Stop Loss Limit",
-    icon: "/src/assets/icons/stop-loss-limit.svg",
+    icon: stopLossLimitIcon,
     allowedRows: [1, 2],
     axes: ["trigger", "limit"],
     defaults: {
@@ -77,7 +86,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "take-profit",
     abrv: "TP",
     label: "Take Profit",
-    icon: "/src/assets/icons/take-profit.svg",
+    icon: takeProfitIcon,
     allowedRows: [0, 1],
     axes: ["trigger"],
     defaults: {
@@ -88,7 +97,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "take-profit-limit",
     abrv: "TP-Lmt",
     label: "Take Profit Limit",
-    icon: "/src/assets/icons/take-profit-limit.svg",
+    icon: takeProfitLimitIcon,
     allowedRows: [0, 1],
     axes: ["trigger", "limit"],
     defaults: {
@@ -100,7 +109,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "trailing-stop",
     abrv: "TS",
     label: "Trailing Stop",
-    icon: "/src/assets/icons/trailing-stop.svg",
+    icon: trailingStopIcon,
     allowedRows: [1, 2],
     axes: ["trigger"],
     defaults: {
@@ -111,7 +120,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "trailing-stop-limit",
     abrv: "TS-Lmt",
     label: "Trailing Stop Limit",
-    icon: "/src/assets/icons/trailing-stop-limit.svg",
+    icon: trailingStopLimitIcon,
     allowedRows: [1, 2],
     axes: ["trigger", "limit"],
     defaults: {

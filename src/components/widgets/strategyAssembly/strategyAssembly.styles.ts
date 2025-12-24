@@ -157,18 +157,21 @@ export const UtilityButton = styled.button`
     background-color 0.2s,
     border-color 0.2s;
 
+  svg {
+    stroke: rgba(255, 255, 255, 0.8);
+    opacity: 0.8;
+  }
+
   &:hover {
     background-color: rgba(133, 91, 251, 0.15);
     border-color: var(--accent-color-purple);
     color: var(--text-color-icon-logo);
-  }
-`;
 
-export const UtilityIcon = styled.img`
-  width: 16px;
-  height: 16px;
-  filter: brightness(0) invert(1);
-  opacity: 0.8;
+    svg {
+      stroke: var(--text-color-icon-logo);
+      opacity: 1;
+    }
+  }
 `;
 
 // =============================================================================
