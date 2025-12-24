@@ -1,8 +1,8 @@
 import React from "react";
 import styled from "styled-components";
-import Block from "../blocks/block";
-import type { BlockData } from "../../utils/cardAssemblyUtils";
-import { getCellDisplayMode } from "../../utils/blockFactory";
+import Block from "../../blocks/block";
+import type { BlockData } from "../../../utils/cardAssemblyUtils";
+import { getCellDisplayMode } from "../../../utils/blockFactory";
 
 // Styled Components
 interface CellContainerProps {

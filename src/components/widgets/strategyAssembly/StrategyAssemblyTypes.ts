@@ -1,6 +1,6 @@
 import type React from "react";
-import type { GridData, CellPosition } from "../../utils/cardAssemblyUtils";
-import type { OrderTypeDefinition } from "../../data/orderTypes";
+import type { GridData, CellPosition } from "../../../utils/cardAssemblyUtils";
+import type { OrderTypeDefinition } from "../../../data/orderTypes";
 
 // Order config entry type
 export interface OrderConfigEntry {
@@ -14,7 +14,7 @@ export interface OrderConfigEntry {
 export type OrderConfig = Record<string, OrderConfigEntry>;
 
 // Context state interface
-export interface CardAssemblyState {
+export interface StrategyAssemblyState {
   // Business state (exposed to parent via callback)
   grid: GridData;
   orderConfig: OrderConfig;
@@ -33,7 +33,7 @@ export interface CardAssemblyState {
 }
 
 // Context actions interface
-export interface CardAssemblyActions {
+export interface StrategyAssemblyActions {
   setGrid: React.Dispatch<React.SetStateAction<GridData>>;
   setOrderConfig: React.Dispatch<React.SetStateAction<OrderConfig>>;
   setDraggingId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -45,10 +45,11 @@ export interface CardAssemblyActions {
   reverseBlocks: () => void;
 }
 
-export type CardAssemblyContextType = CardAssemblyState & CardAssemblyActions;
+export type StrategyAssemblyContextType = StrategyAssemblyState &
+  StrategyAssemblyActions;
 
 // Props for the provider
-export interface CardAssemblyProviderProps {
+export interface StrategyAssemblyProviderProps {
   children: React.ReactNode;
   onConfigChange?: (config: OrderConfig) => void;
   initialConfig?: OrderConfig;

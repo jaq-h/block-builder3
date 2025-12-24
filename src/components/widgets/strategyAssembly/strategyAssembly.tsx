@@ -6,15 +6,15 @@ import {
   isCellDisabled,
   findBlockInGrid,
   findCellAndPositionData,
-} from "../../utils/cardAssemblyUtils";
-import { COLUMN_HEADERS, ROW_LABELS } from "../../data/orderTypes";
+} from "../../../utils/cardAssemblyUtils";
+import { COLUMN_HEADERS, ROW_LABELS } from "../../../data/orderTypes";
 import {
   createBlocksFromOrderType,
   buildOrderConfigEntry,
-} from "../../utils/blockFactory";
-import { CardAssemblyProvider } from "./CardAssemblyContext";
-import { useCardAssembly } from "./useCardAssembly";
-import type { OrderConfig } from "./CardAssemblyTypes";
+} from "../../../utils/blockFactory";
+import { StrategyAssemblyProvider } from "./StrategyAssemblyContext";
+import { useStrategyAssembly } from "./useStrategyAssembly";
+import type { OrderConfig } from "./StrategyAssemblyTypes";
 import ProviderColumn from "./ProviderColumn";
 import GridCell from "./GridCell";
 
@@ -110,28 +110,28 @@ const DebugPanel = styled.div`
 `;
 
 // Props for the main component
-interface CardAssemblyProps {
+interface StrategyAssemblyProps {
   onConfigChange?: (config: OrderConfig) => void;
   initialConfig?: OrderConfig;
 }
 
 // Main export - wraps with provider
-const CardAssembly: React.FC<CardAssemblyProps> = ({
+const StrategyAssembly: React.FC<StrategyAssemblyProps> = ({
   onConfigChange,
   initialConfig,
 }) => {
   return (
-    <CardAssemblyProvider
+    <StrategyAssemblyProvider
       onConfigChange={onConfigChange}
       initialConfig={initialConfig}
     >
-      <CardAssemblyInner />
-    </CardAssemblyProvider>
+      <StrategyAssemblyInner />
+    </StrategyAssemblyProvider>
   );
 };
 
 // Inner component that consumes the context
-const CardAssemblyInner: React.FC = () => {
+const StrategyAssemblyInner: React.FC = () => {
   const {
     grid,
     orderConfig,
@@ -152,7 +152,7 @@ const CardAssemblyInner: React.FC = () => {
     setHoveredGridCell,
     clearAll,
     reverseBlocks,
-  } = useCardAssembly();
+  } = useStrategyAssembly();
 
   // Computed values
   const isDragging = draggingId !== null || draggingFromProvider !== null;
@@ -537,4 +537,4 @@ const CardAssemblyInner: React.FC = () => {
   );
 };
 
-export default CardAssembly;
+export default StrategyAssembly;

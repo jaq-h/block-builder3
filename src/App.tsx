@@ -1,6 +1,6 @@
 import { useState } from "react";
-import CardAssembly from "./components/windowPanes/cardAssembly";
-import type { OrderConfig } from "./components/windowPanes/CardAssemblyTypes";
+import StrategyAssembly from "./components/widgets/strategyAssembly/strategyAssembly";
+import type { OrderConfig } from "./components/widgets/strategyAssembly/StrategyAssemblyTypes";
 
 function App() {
   // App manages the order config at its level
@@ -20,7 +20,7 @@ function App() {
   return (
     <div>
       {/* Widget is self-contained, just emits config changes */}
-      <CardAssembly onConfigChange={handleConfigChange} />
+      <StrategyAssembly onConfigChange={handleConfigChange} />
 
       {/* Example: Other widgets can use orderConfig */}
       {Object.keys(orderConfig).length > 0 && (

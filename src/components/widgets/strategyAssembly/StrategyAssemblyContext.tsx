@@ -1,20 +1,20 @@
 import React, { useState, useRef, useId, useCallback } from "react";
-import type { GridData, CellPosition } from "../../utils/cardAssemblyUtils";
-import { clearGrid } from "../../utils/cardAssemblyUtils";
-import { ORDER_TYPES } from "../../data/orderTypes";
+import type { GridData, CellPosition } from "../../../utils/cardAssemblyUtils";
+import { clearGrid } from "../../../utils/cardAssemblyUtils";
+import { ORDER_TYPES } from "../../../data/orderTypes";
 import type {
   OrderConfig,
-  CardAssemblyContextType,
-  CardAssemblyProviderProps,
-} from "./CardAssemblyTypes";
-import { CardAssemblyContext } from "./useCardAssembly";
+  StrategyAssemblyContextType,
+  StrategyAssemblyProviderProps,
+} from "./StrategyAssemblyTypes";
+import { StrategyAssemblyContext } from "./useStrategyAssembly";
 
 // Provider component
-export function CardAssemblyProvider({
+export function StrategyAssemblyProvider({
   children,
   onConfigChange,
   initialConfig = {},
-}: CardAssemblyProviderProps): React.ReactElement {
+}: StrategyAssemblyProviderProps): React.ReactElement {
   const baseId = useId();
   const blockCounterRef = useRef(0);
 
@@ -69,7 +69,7 @@ export function CardAssemblyProvider({
     });
   }, [setOrderConfig]);
 
-  const value: CardAssemblyContextType = {
+  const value: StrategyAssemblyContextType = {
     grid,
     orderConfig,
     draggingId,
@@ -92,8 +92,8 @@ export function CardAssemblyProvider({
   };
 
   return (
-    <CardAssemblyContext.Provider value={value}>
+    <StrategyAssemblyContext.Provider value={value}>
       {children}
-    </CardAssemblyContext.Provider>
+    </StrategyAssemblyContext.Provider>
   );
 }

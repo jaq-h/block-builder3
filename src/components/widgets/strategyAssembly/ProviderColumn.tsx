@@ -1,10 +1,10 @@
 import React from "react";
 import styled from "styled-components";
-import Block from "../blocks/block";
-import { isProviderBlockHighlighted } from "../../utils/cardAssemblyUtils";
-import type { GridData } from "../../utils/cardAssemblyUtils";
-import type { OrderTypeDefinition } from "../../data/orderTypes";
-import type { CellPosition } from "../../utils/cardAssemblyUtils";
+import Block from "../../blocks/block";
+import { isProviderBlockHighlighted } from "../../../utils/cardAssemblyUtils";
+import type { GridData } from "../../../utils/cardAssemblyUtils";
+import type { OrderTypeDefinition } from "../../../data/orderTypes";
+import type { CellPosition } from "../../../utils/cardAssemblyUtils";
 
 // Styled Components
 const ProviderColumnContainer = styled.div`
