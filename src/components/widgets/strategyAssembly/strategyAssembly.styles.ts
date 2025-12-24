@@ -112,8 +112,7 @@ export const Column = styled.div`
   border: 1px solid rgba(229, 231, 235, 0.2);
   border-radius: 8px;
   overflow: hidden;
-  padding: 4px;
-  padding-top: 8px;
+  padding: 0;
 `;
 
 export const ColumnHeader = styled.div<{ $tint?: string }>`

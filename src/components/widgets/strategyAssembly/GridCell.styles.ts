@@ -110,7 +110,7 @@ export const CellContainer = styled.div<CellContainerProps>`
         ? "0 0 0 1px var(--accent-color-purple)"
         : "none"};
   border-radius: 8px;
-  margin: 4px;
+  margin: 8px;
   background-color: ${({ $isDisabled, $tint }) =>
     $isDisabled ? "rgb(22, 18, 31)" : $tint || "#686b8214"};
   background-image: ${({ $isOver, $isValidTarget, $isDisabled }) => {
