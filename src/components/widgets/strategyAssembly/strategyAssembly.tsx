@@ -34,11 +34,10 @@ import {
   ColumnHeaderText,
   UtilityRow,
   UtilityButton,
-  UtilityIcon,
   DebugPanel,
 } from "./strategyAssembly.styles";
-import TrashIcon from "../../../assets/icons/trash.svg";
-import ReverseIcon from "../../../assets/icons/reverse.svg";
+import TrashIcon from "../../../assets/icons/trash.svg?react";
+import ReverseIcon from "../../../assets/icons/reverse.svg?react";
 import { SCALE_CONFIG } from "./GridCell.styles";
 import { useKrakenAPI } from "../../../hooks/useKrakenAPI";
 
@@ -526,11 +525,11 @@ const StrategyAssemblyInner: React.FC = () => {
       {/* Utility Buttons */}
       <UtilityRow>
         <UtilityButton onClick={clearAll}>
-          <UtilityIcon src={TrashIcon} alt="Clear" />
+          <TrashIcon width={16} height={16} />
           Clear All
         </UtilityButton>
         <UtilityButton onClick={reverseBlocks}>
-          <UtilityIcon src={ReverseIcon} alt="Reverse" />
+          <ReverseIcon width={16} height={16} />
           Reverse
         </UtilityButton>
       </UtilityRow>

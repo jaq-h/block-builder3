@@ -2,6 +2,7 @@
 import type { BlockData } from "./cardAssemblyUtils";
 import type { OrderTypeDefinition } from "../data/orderTypes";
 import { getDefaultPosition, ORDER_TYPES } from "../data/orderTypes";
+import limitIcon from "../assets/icons/limit.svg";
 
 export interface BlockCreationContext {
   baseId: string;
@@ -13,8 +14,8 @@ export interface CreatedBlocks {
   nextCounter: number;
 }
 
-// Icon paths
-const LIMIT_ICON = "/src/assets/icons/limit.svg";
+// Limit icon for limit axis (imported for proper Vite bundling)
+const LIMIT_ICON = limitIcon;
 
 /**
  * Get the base (non-limit) version icon for a limit order type
