@@ -30,11 +30,12 @@ const Button = styled.button<ButtonProps>`
   justify-content: center;
   align-items: center;
   padding: 3px;
-  border: ${({ $isHighlighted }) =>
-    $isHighlighted ? "2px solid #fff" : "none"};
-  border-radius: 4px;
+  border: 2px solid
+    ${({ $isHighlighted }) =>
+      $isHighlighted ? "rgba(255, 255, 255, 0.5)" : "transparent"};
+  border-radius: 6px;
   background-color: ${({ $isPlaceholder }) =>
-    $isPlaceholder ? "rgba(146, 59, 163, 0.4)" : "#923ba3"};
+    $isPlaceholder ? "rgba(133, 91, 251, 0.3)" : "#855bfb"};
   cursor: ${({ $isDragging, $isPlaceholder }) =>
     $isPlaceholder ? "default" : $isDragging ? "grabbing" : "grab"};
   user-select: none;
@@ -43,41 +44,18 @@ const Button = styled.button<ButtonProps>`
   pointer-events: ${({ $isDragging, $isPlaceholder }) =>
     $isDragging || $isPlaceholder ? "none" : "auto"};
   opacity: ${({ $isPlaceholder }) => ($isPlaceholder ? 0.5 : 1)};
-  color: #fff;
+  color: var(--text-color-icon-logo);
   animation: ${({ $isHighlighted }) =>
     $isHighlighted ? "blockBreathing 1.5s ease-in-out infinite" : "none"};
   &:hover {
     background-color: ${({ $isPlaceholder }) =>
-      $isPlaceholder ? "rgba(146, 59, 163, 0.4)" : "#d0d0d0"};
+      $isPlaceholder
+        ? "rgba(133, 91, 251, 0.3)"
+        : "var(--outline-color-secondary)"};
   }
   svg {
     width: 20px;
     height: 20px;
-  }
-`;
-
-const PercentageTooltip = styled.div`
-  position: absolute;
-  right: -60px;
-  top: 50%;
-  transform: translateY(-50%);
-  background-color: rgba(0, 0, 0, 0.8);
-  color: #fff;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 1001;
-  &::before {
-    content: "";
-    position: absolute;
-    left: -4px;
-    top: 50%;
-    transform: translateY(-50%);
-    border-right: 4px solid rgba(0, 0, 0, 0.8);
-    border-top: 4px solid transparent;
-    border-bottom: 4px solid transparent;
   }
 `;
 
@@ -114,9 +92,7 @@ const Block: React.FC<BlockProps> = ({
   icon,
   abrv,
   axis,
-  yPosition = 50,
   axes = [],
-  hidePercentage = false,
   isHighlighted = false,
   onClick,
   onDragStart,
@@ -136,9 +112,6 @@ const Block: React.FC<BlockProps> = ({
       onDragEnd,
       onVerticalDrag,
     });
-
-  const showPercentage =
-    !hidePercentage && yPosition !== undefined && yPosition >= 0;
 
   return (
     <BlockWrapper onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
@@ -160,14 +133,6 @@ const Block: React.FC<BlockProps> = ({
         }}
       >
         {icon ? <IconImage src={icon} alt={abrv} /> : <span>{abrv}</span>}
-        {showPercentage && (
-          <div style={{ fontSize: "8px", marginTop: "2px" }}>
-            {Math.round(yPosition)}%
-          </div>
-        )}
-        {isDragging && isVerticalOnly && showPercentage && (
-          <PercentageTooltip>{Math.round(yPosition)}%</PercentageTooltip>
-        )}
       </Button>
     </BlockWrapper>
   );

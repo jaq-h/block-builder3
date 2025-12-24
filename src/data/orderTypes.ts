@@ -5,6 +5,7 @@ export type AxisType = "trigger" | "limit";
 export interface OrderTypeDefinition {
   type: string;
   abrv: string;
+  label: string;
   icon?: string;
   allowedRows: number[];
   axes: AxisType[];
@@ -21,6 +22,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "limit",
     abrv: "Lmt",
+    label: "Limit",
     icon: "/src/assets/icons/limit.svg",
     allowedRows: [0, 1],
     axes: ["limit"],
@@ -31,6 +33,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "market",
     abrv: "Mkt",
+    label: "Market",
     icon: "/src/assets/icons/market.svg",
     allowedRows: [1],
     axes: [], // No axes - executes at market price
@@ -39,6 +42,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "iceberg",
     abrv: "Ice",
+    label: "Iceberg",
     icon: "/src/assets/icons/iceberg.svg",
     allowedRows: [1],
     axes: ["limit"],
@@ -49,6 +53,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "stop-loss",
     abrv: "SL",
+    label: "Stop Loss",
     icon: "/src/assets/icons/stop-loss.svg",
     allowedRows: [1, 2],
     axes: ["trigger"],
@@ -59,6 +64,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "stop-loss-limit",
     abrv: "SL-Lmt",
+    label: "Stop Loss Limit",
     icon: "/src/assets/icons/stop-loss-limit.svg",
     allowedRows: [1, 2],
     axes: ["trigger", "limit"],
@@ -70,6 +76,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "take-profit",
     abrv: "TP",
+    label: "Take Profit",
     icon: "/src/assets/icons/take-profit.svg",
     allowedRows: [0, 1],
     axes: ["trigger"],
@@ -80,6 +87,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "take-profit-limit",
     abrv: "TP-Lmt",
+    label: "Take Profit Limit",
     icon: "/src/assets/icons/take-profit-limit.svg",
     allowedRows: [0, 1],
     axes: ["trigger", "limit"],
@@ -91,6 +99,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "trailing-stop",
     abrv: "TS",
+    label: "Trailing Stop",
     icon: "/src/assets/icons/trailing-stop.svg",
     allowedRows: [1, 2],
     axes: ["trigger"],
@@ -101,6 +110,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
   {
     type: "trailing-stop-limit",
     abrv: "TS-Lmt",
+    label: "Trailing Stop Limit",
     icon: "/src/assets/icons/trailing-stop-limit.svg",
     allowedRows: [1, 2],
     axes: ["trigger", "limit"],

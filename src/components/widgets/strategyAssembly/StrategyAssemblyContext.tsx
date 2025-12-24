@@ -4,6 +4,7 @@ import { clearGrid } from "../../../utils/cardAssemblyUtils";
 import { ORDER_TYPES } from "../../../data/orderTypes";
 import type {
   OrderConfig,
+  StrategyPattern,
   StrategyAssemblyContextType,
   StrategyAssemblyProviderProps,
 } from "./StrategyAssemblyTypes";
@@ -14,6 +15,7 @@ export function StrategyAssemblyProvider({
   children,
   onConfigChange,
   initialConfig = {},
+  initialPattern = "conditional",
 }: StrategyAssemblyProviderProps): React.ReactElement {
   const baseId = useId();
   const blockCounterRef = useRef(0);
@@ -22,6 +24,8 @@ export function StrategyAssemblyProvider({
   const [grid, setGrid] = useState<GridData>(() => clearGrid(2, 3));
   const [orderConfig, setOrderConfigInternal] =
     useState<OrderConfig>(initialConfig);
+  const [strategyPattern, setStrategyPattern] =
+    useState<StrategyPattern>(initialPattern);
 
   // UI state (internal only)
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -72,6 +76,7 @@ export function StrategyAssemblyProvider({
   const value: StrategyAssemblyContextType = {
     grid,
     orderConfig,
+    strategyPattern,
     draggingId,
     draggingFromProvider,
     hoveredProviderId,
@@ -82,6 +87,7 @@ export function StrategyAssemblyProvider({
     blockCounterRef,
     setGrid,
     setOrderConfig,
+    setStrategyPattern,
     setDraggingId,
     setDraggingFromProvider,
     setHoveredProviderId,

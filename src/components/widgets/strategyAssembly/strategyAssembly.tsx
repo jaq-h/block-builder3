@@ -1,11 +1,12 @@
 import React from "react";
-import styled from "styled-components";
 import {
   isCellValidForPlacement,
   getAlignment,
   isCellDisabled,
   findBlockInGrid,
   findCellAndPositionData,
+  shouldBeDescending,
+  hasConditionalWithoutPrimary,
 } from "../../../utils/cardAssemblyUtils";
 import { COLUMN_HEADERS, ROW_LABELS } from "../../../data/orderTypes";
 import {
@@ -14,116 +15,46 @@ import {
 } from "../../../utils/blockFactory";
 import { StrategyAssemblyProvider } from "./StrategyAssemblyContext";
 import { useStrategyAssembly } from "./useStrategyAssembly";
-import type { OrderConfig } from "./StrategyAssemblyTypes";
+import type { OrderConfig, StrategyPattern } from "./StrategyAssemblyTypes";
+import { PATTERN_CONFIGS } from "./StrategyAssemblyTypes";
 import ProviderColumn from "./ProviderColumn";
 import GridCell from "./GridCell";
-
-// Styled Components
-const Container = styled.div`
-  max-width: 380px;
-  height: 100%;
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-`;
-
-const Header = styled.div`
-  padding: 16px;
-  text-align: center;
-  border-bottom: 1px solid #444;
-`;
-
-const HeaderText = styled.h2`
-  margin: 0;
-  font-size: 18px;
-  color: #fff;
-`;
-
-const ContentWrapper = styled.div`
-  display: flex;
-  flex: 1;
-  overflow: scroll;
-`;
-
-const ColumnsWrapper = styled.div`
-  display: flex;
-  flex: 1;
-  height: 100%;
-`;
-
-const Column = styled.div<{ $tint?: string }>`
-  display: flex;
-  flex-direction: column;
-  min-width: 100px;
-  width: 100%;
-  background-color: ${({ $tint }) => $tint || "transparent"};
-`;
-
-const ColumnHeader = styled.div<{ $tint?: string }>`
-  padding: 8px;
-  text-align: center;
-  border-bottom: 1px solid #444;
-  background-color: ${({ $tint }) => $tint || "rgba(50, 50, 50, 0.2)"};
-`;
-
-const ColumnHeaderText = styled.span`
-  font-size: 14px;
-  font-weight: 600;
-  color: #ccc;
-`;
-
-const UtilityRow = styled.div`
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  padding: 16px;
-  border-top: 1px solid #444;
-`;
-
-const UtilityButton = styled.button`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border: 1px solid #666;
-  border-radius: 4px;
-  background-color: rgba(80, 80, 80, 0.5);
-  color: #ccc;
-  font-size: 14px;
-  cursor: pointer;
-  transition:
-    background-color 0.2s,
-    border-color 0.2s;
-
-  &:hover {
-    background-color: rgba(100, 100, 100, 0.7);
-    border-color: #888;
-    color: #fff;
-  }
-`;
-
-const DebugPanel = styled.div`
-  padding: 8px;
-  font-size: 10px;
-  color: #888;
-`;
+import {
+  Container,
+  Header,
+  HeaderText,
+  PatternSelectorRow,
+  PatternButton,
+  PatternLabel,
+  PatternDescription,
+  ContentWrapper,
+  ColumnsWrapper,
+  Column,
+  ColumnHeader,
+  ColumnHeaderText,
+  UtilityRow,
+  UtilityButton,
+  DebugPanel,
+} from "./strategyAssembly.styles";
 
 // Props for the main component
 interface StrategyAssemblyProps {
   onConfigChange?: (config: OrderConfig) => void;
   initialConfig?: OrderConfig;
+  initialPattern?: StrategyPattern;
 }
 
 // Main export - wraps with provider
 const StrategyAssembly: React.FC<StrategyAssemblyProps> = ({
   onConfigChange,
   initialConfig,
+  initialPattern,
 }) => {
   return (
     <StrategyAssemblyProvider
       onConfigChange={onConfigChange}
       initialConfig={initialConfig}
+      initialPattern={initialPattern}
     >
       <StrategyAssemblyInner />
     </StrategyAssemblyProvider>
@@ -135,6 +66,7 @@ const StrategyAssemblyInner: React.FC = () => {
   const {
     grid,
     orderConfig,
+    strategyPattern,
     draggingId,
     draggingFromProvider,
     hoveredProviderId,
@@ -145,6 +77,7 @@ const StrategyAssemblyInner: React.FC = () => {
     blockCounterRef,
     setGrid,
     setOrderConfig,
+    setStrategyPattern,
     setDraggingId,
     setDraggingFromProvider,
     setHoveredProviderId,
@@ -153,6 +86,13 @@ const StrategyAssemblyInner: React.FC = () => {
     clearAll,
     reverseBlocks,
   } = useStrategyAssembly();
+
+  // Get pattern config
+  const patternConfig = PATTERN_CONFIGS[strategyPattern];
+
+  // Check if there's a warning condition (conditional without primary)
+  const showPrimaryWarning =
+    strategyPattern === "conditional" && hasConditionalWithoutPrimary(grid);
 
   // Computed values
   const isDragging = draggingId !== null || draggingFromProvider !== null;
@@ -229,6 +169,7 @@ const StrategyAssemblyInner: React.FC = () => {
         targetRow,
         providerBlock.allowedRows,
         grid,
+        strategyPattern,
       )
     ) {
       setDraggingFromProvider(null);
@@ -282,16 +223,32 @@ const StrategyAssemblyInner: React.FC = () => {
     if (!cellElement) return;
 
     const rect = cellElement.getBoundingClientRect();
-    const headerOffset = 20;
-    const bottomMargin = 8;
-    const availableHeight = rect.height - headerOffset - bottomMargin;
+    // Layout constants matching GridCell.tsx
+    const HEADER_HEIGHT = 36;
+    const BOTTOM_PADDING = 20;
+    const BLOCK_HEIGHT = 40;
+
+    // The draggable area starts after header and ends before bottom padding
+    const trackTop = rect.top + HEADER_HEIGHT + BLOCK_HEIGHT / 2;
+    const trackBottom = rect.bottom - BOTTOM_PADDING - BLOCK_HEIGHT / 2;
+    const availableHeight = trackBottom - trackTop;
 
     // Calculate relative Y position within the draggable area
-    const relativeY = mouseY - rect.top - headerOffset;
-
-    // Convert to percentage (0 = bottom, 100 = top)
+    const relativeY = mouseY - trackTop;
     const clampedRelativeY = Math.max(0, Math.min(availableHeight, relativeY));
-    const percentage = 100 - (clampedRelativeY / availableHeight) * 100;
+
+    // Determine if this cell uses descending scale
+    const isDescending = shouldBeDescending(row, col);
+
+    // Convert to percentage based on scale direction
+    let percentage: number;
+    if (isDescending) {
+      // Descending: 0% at top, 100% at bottom
+      percentage = (clampedRelativeY / availableHeight) * 100;
+    } else {
+      // Ascending: 100% at top, 0% at bottom
+      percentage = 100 - (clampedRelativeY / availableHeight) * 100;
+    }
 
     // Round to 1 decimal place
     const roundedPercentage = Math.round(percentage * 10) / 10;
@@ -343,6 +300,7 @@ const StrategyAssemblyInner: React.FC = () => {
           targetRow,
           blockData.allowedRows,
           grid,
+          strategyPattern,
         )
       ) {
         setDraggingId(null);
@@ -423,20 +381,58 @@ const StrategyAssemblyInner: React.FC = () => {
     }
   };
 
+  const handlePatternChange = (pattern: StrategyPattern) => {
+    setStrategyPattern(pattern);
+    // Optionally clear the grid when switching patterns
+    // clearAll();
+  };
+
   const activeAllowedRows = getActiveAllowedRows();
   const showValidTargets =
     isDragging || hoveredProviderId !== null || hoveredGridCell !== null;
 
   const isValidTarget = (colIndex: number, rowIndex: number): boolean => {
     if (!showValidTargets) return false;
-    return isCellValidForPlacement(colIndex, rowIndex, activeAllowedRows, grid);
+    return isCellValidForPlacement(
+      colIndex,
+      rowIndex,
+      activeAllowedRows,
+      grid,
+      strategyPattern,
+    );
+  };
+
+  // Get row label based on pattern
+  const getRowLabel = (rowIndex: number): string => {
+    if (strategyPattern === "conditional") {
+      return patternConfig.rowLabels[
+        rowIndex === 0 ? "top" : rowIndex === 1 ? "middle" : "bottom"
+      ];
+    }
+    return "";
   };
 
   return (
     <Container onMouseMove={handleMouseMove}>
       <Header>
-        <HeaderText>Order Builder</HeaderText>
+        <HeaderText>Strategy Builder</HeaderText>
       </Header>
+
+      {/* Pattern Selector */}
+      <PatternSelectorRow>
+        {(Object.keys(PATTERN_CONFIGS) as StrategyPattern[]).map((pattern) => (
+          <PatternButton
+            key={pattern}
+            $isActive={strategyPattern === pattern}
+            onClick={() => handlePatternChange(pattern)}
+          >
+            <PatternLabel>{PATTERN_CONFIGS[pattern].label}</PatternLabel>
+            <PatternDescription>
+              {PATTERN_CONFIGS[pattern].description}
+            </PatternDescription>
+          </PatternButton>
+        ))}
+      </PatternSelectorRow>
 
       <ContentWrapper>
         {/* Provider Column */}
@@ -445,6 +441,7 @@ const StrategyAssemblyInner: React.FC = () => {
           hoveredGridCell={hoveredGridCell}
           isDragging={isDragging}
           grid={grid}
+          strategyPattern={strategyPattern}
           onProviderDragStart={handleProviderDragStart}
           onProviderDragEnd={handleProviderDragEnd}
           onProviderMouseEnter={handleProviderMouseEnter}
@@ -454,17 +451,17 @@ const StrategyAssemblyInner: React.FC = () => {
         {/* Grid Columns */}
         <ColumnsWrapper>
           {grid.map((column, colIndex) => {
-            const tint =
-              colIndex === 0
-                ? "rgba(100, 200, 100, 0.1)"
-                : "rgba(200, 100, 100, 0.1)";
             const headerTint =
               colIndex === 0
-                ? "rgba(100, 200, 100, 0.2)"
-                : "rgba(200, 100, 100, 0.2)";
+                ? "rgba(100, 200, 100, 0.15)"
+                : "rgba(200, 100, 100, 0.15)";
+            const cellTint =
+              colIndex === 0
+                ? "rgba(100, 200, 100, 0.08)"
+                : "rgba(200, 100, 100, 0.08)";
 
             return (
-              <Column key={colIndex} $tint={tint}>
+              <Column key={colIndex}>
                 <ColumnHeader $tint={headerTint}>
                   <ColumnHeaderText>
                     {COLUMN_HEADERS[colIndex]}
@@ -483,8 +480,17 @@ const StrategyAssemblyInner: React.FC = () => {
                       isValidTarget(colIndex, rowIndex)
                     }
                     isValidTarget={isValidTarget(colIndex, rowIndex)}
-                    isDisabled={isCellDisabled(colIndex, rowIndex, grid)}
+                    isDisabled={isCellDisabled(
+                      colIndex,
+                      rowIndex,
+                      grid,
+                      strategyPattern,
+                    )}
                     align={getAlignment(colIndex)}
+                    strategyPattern={strategyPattern}
+                    rowLabel={getRowLabel(rowIndex)}
+                    showPrimaryWarning={showPrimaryWarning && rowIndex === 1}
+                    tint={cellTint}
                     onMouseEnter={() =>
                       handleGridCellMouseEnter(colIndex, rowIndex)
                     }

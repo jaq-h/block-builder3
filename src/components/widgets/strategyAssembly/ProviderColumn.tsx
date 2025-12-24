@@ -5,27 +5,31 @@ import { isProviderBlockHighlighted } from "../../../utils/cardAssemblyUtils";
 import type { GridData } from "../../../utils/cardAssemblyUtils";
 import type { OrderTypeDefinition } from "../../../data/orderTypes";
 import type { CellPosition } from "../../../utils/cardAssemblyUtils";
+import type { StrategyPattern } from "./StrategyAssemblyTypes";
 
 // Styled Components
 const ProviderColumnContainer = styled.div`
   display: flex;
   flex-direction: column;
-  min-width: 60px;
-  width: 80px;
-  border-right: 1px solid #444;
-  background-color: rgba(50, 50, 50, 0.3);
+  min-width: 90px;
+  width: 110px;
+  border: 1px solid rgba(229, 231, 235, 0.2);
+  border-radius: 8px;
+  background-color: rgb(22, 18, 31);
+  overflow: hidden;
 `;
 
 const ProviderHeader = styled.div`
   padding: 8px;
   text-align: center;
-  border-bottom: 1px solid #444;
+  border-bottom: 1px solid #e5e7eb;
+  background-color: rgba(104, 107, 130, 0.1);
 `;
 
 const ProviderHeaderText = styled.span`
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  color: #ccc;
+  color: rgba(255, 255, 255, 0.8);
 `;
 
 const ProviderRow = styled.div`
@@ -39,12 +43,30 @@ const ProviderRow = styled.div`
   overflow: auto;
 `;
 
+const BlockItemWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+`;
+
+const BlockLabel = styled.span`
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  white-space: normal;
+  word-wrap: break-word;
+  max-width: 100px;
+  line-height: 1.2;
+`;
+
 // Props interface
 interface ProviderColumnProps {
   providerBlocks: OrderTypeDefinition[];
   hoveredGridCell: CellPosition | null;
   isDragging: boolean;
   grid: GridData;
+  strategyPattern: StrategyPattern;
   onProviderDragStart: (type: string) => void;
   onProviderDragEnd: (type: string, x: number, y: number) => void;
   onProviderMouseEnter: (type: string) => void;
@@ -56,6 +78,7 @@ const ProviderColumn: React.FC<ProviderColumnProps> = ({
   hoveredGridCell,
   isDragging,
   grid,
+  strategyPattern,
   onProviderDragStart,
   onProviderDragEnd,
   onProviderMouseEnter,
@@ -68,23 +91,25 @@ const ProviderColumn: React.FC<ProviderColumnProps> = ({
       </ProviderHeader>
       <ProviderRow>
         {providerBlocks.map((block) => (
-          <Block
-            key={block.type}
-            id={block.type}
-            icon={block.icon}
-            abrv={block.abrv}
-            hidePercentage={true}
-            isHighlighted={isProviderBlockHighlighted(
-              block,
-              hoveredGridCell,
-              isDragging,
-              grid,
-            )}
-            onDragStart={() => onProviderDragStart(block.type)}
-            onDragEnd={(_id, x, y) => onProviderDragEnd(block.type, x, y)}
-            onMouseEnter={() => onProviderMouseEnter(block.type)}
-            onMouseLeave={onProviderMouseLeave}
-          />
+          <BlockItemWrapper key={block.type}>
+            <Block
+              id={block.type}
+              icon={block.icon}
+              abrv={block.abrv}
+              isHighlighted={isProviderBlockHighlighted(
+                block,
+                hoveredGridCell,
+                isDragging,
+                grid,
+                strategyPattern,
+              )}
+              onDragStart={() => onProviderDragStart(block.type)}
+              onDragEnd={(_id, x, y) => onProviderDragEnd(block.type, x, y)}
+              onMouseEnter={() => onProviderMouseEnter(block.type)}
+              onMouseLeave={onProviderMouseLeave}
+            />
+            <BlockLabel>{block.label}</BlockLabel>
+          </BlockItemWrapper>
         ))}
       </ProviderRow>
     </ProviderColumnContainer>

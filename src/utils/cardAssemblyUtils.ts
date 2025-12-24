@@ -77,15 +77,29 @@ export const getDiagonalCells = (
   return diagonals;
 };
 
-/** Check if a cell is a valid target considering placement rules */
+/** Strategy pattern type for validation */
+export type StrategyPatternType = "conditional" | "bulk";
+
+/** Check if a cell is a valid target considering placement rules and pattern */
 export const isCellValidForPlacement = (
   colIndex: number,
   rowIndex: number,
   allowedRows: number[],
   grid: GridData,
+  pattern: StrategyPatternType = "conditional",
 ): boolean => {
   if (!allowedRows.includes(rowIndex)) return false;
-  if (!hasAnyBlockBeenPlaced(grid)) return rowIndex === FIRST_PLACEMENT_ROW;
+
+  // Bulk pattern: free placement anywhere allowed
+  if (pattern === "bulk") {
+    return true;
+  }
+
+  // Conditional pattern: requires middle row first, then diagonal placement
+  if (!hasAnyBlockBeenPlaced(grid)) {
+    // First placement must be in middle row (row 1)
+    return rowIndex === FIRST_PLACEMENT_ROW;
+  }
 
   const occupiedCells = getOccupiedCells(grid);
   const diagonalCells = getDiagonalCells(
@@ -105,8 +119,18 @@ export const isCellDisabled = (
   colIndex: number,
   rowIndex: number,
   grid: GridData,
+  pattern: StrategyPatternType = "conditional",
 ): boolean => {
-  if (!hasAnyBlockBeenPlaced(grid)) return rowIndex !== FIRST_PLACEMENT_ROW;
+  // Bulk pattern: no cells are disabled
+  if (pattern === "bulk") {
+    return false;
+  }
+
+  // Conditional pattern: disable based on placement rules
+  if (!hasAnyBlockBeenPlaced(grid)) {
+    // Only middle row is enabled when grid is empty
+    return rowIndex !== FIRST_PLACEMENT_ROW;
+  }
 
   const isOccupied = grid[colIndex][rowIndex].length > 0;
   const occupiedCells = getOccupiedCells(grid);
@@ -116,6 +140,21 @@ export const isCellDisabled = (
     grid[0].length,
   );
   return !isOccupied && !diagonalCells.has(`${colIndex}-${rowIndex}`);
+};
+
+/** Check if middle row has a primary order (for conditional pattern) */
+export const hasMiddleRowOrder = (grid: GridData): boolean => {
+  // Check both columns for middle row (row 1)
+  return grid.some((column) => column[1].length > 0);
+};
+
+/** Check if there are conditional orders without a primary order */
+export const hasConditionalWithoutPrimary = (grid: GridData): boolean => {
+  const hasPrimary = hasMiddleRowOrder(grid);
+  const hasConditional =
+    grid.some((column) => column[0].length > 0) || // Top row
+    grid.some((column) => column[2].length > 0); // Bottom row
+  return hasConditional && !hasPrimary;
 };
 
 /** Find the cell at a given x, y position using data attributes */
@@ -172,6 +211,7 @@ export const isProviderBlockHighlighted = (
   hoveredGridCell: CellPosition | null,
   isDragging: boolean,
   grid: GridData,
+  pattern: StrategyPatternType = "conditional",
 ): boolean => {
   if (isDragging || !hoveredGridCell) return false;
   return (
@@ -181,20 +221,51 @@ export const isProviderBlockHighlighted = (
       hoveredGridCell.row,
       block.allowedRows,
       grid,
+      pattern,
     )
   );
+};
+
+// Layout constants matching GridCell.tsx
+const HEADER_HEIGHT = 36;
+const BOTTOM_PADDING = 20;
+const BLOCK_HEIGHT = 40;
+
+/** Helper to determine if scale should be descending */
+export const shouldBeDescending = (
+  rowIndex: number,
+  colIndex: number,
+): boolean => {
+  // Row 0 (Top/Profit): ascending (0% at bottom, 100% at top)
+  // Row 2 (Bottom/Stop-loss): descending (0% at top, 100% at bottom)
+  // Row 1 (Middle): depends on column
+  //   - Entry (col 0): descending
+  //   - Exit (col 1): ascending
+  if (rowIndex === 0) return false; // Top row: ascending
+  if (rowIndex === 2) return true; // Bottom row: descending
+  return colIndex === 0; // Middle row: Entry column descending
 };
 
 /** Calculate Y position percentage from mouse Y within a cell */
 export const calculateYPosition = (
   mouseY: number,
   cellRect: DOMRect,
-  headerOffset = 20,
-  bottomOffset = 4,
+  isDescending: boolean = false,
 ): number => {
-  const availableHeight = cellRect.height - headerOffset - bottomOffset;
-  const relativeY = mouseY - cellRect.top - headerOffset;
-  return Math.max(0, Math.min(100, 100 - (relativeY / availableHeight) * 100));
+  const trackTop = cellRect.top + HEADER_HEIGHT + BLOCK_HEIGHT / 2;
+  const trackBottom = cellRect.bottom - BOTTOM_PADDING - BLOCK_HEIGHT / 2;
+  const availableHeight = trackBottom - trackTop;
+
+  const relativeY = mouseY - trackTop;
+  const clampedRelativeY = Math.max(0, Math.min(availableHeight, relativeY));
+
+  if (isDescending) {
+    // Descending: 0% at top, 100% at bottom
+    return (clampedRelativeY / availableHeight) * 100;
+  } else {
+    // Ascending: 100% at top, 0% at bottom
+    return 100 - (clampedRelativeY / availableHeight) * 100;
+  }
 };
 
 /** Determine which axis based on X position within cell */
@@ -220,7 +291,8 @@ export const findCellAndPositionData = (
       const row = parseInt(element.getAttribute("data-row") || "-1", 10);
       if (col !== -1 && row !== -1) {
         const axis = findAxisAtPosition(x, rect);
-        const yPosition = calculateYPosition(y, rect);
+        const isDescending = shouldBeDescending(row, col);
+        const yPosition = calculateYPosition(y, rect, isDescending);
         return { col, row, axis, yPosition };
       }
     }
