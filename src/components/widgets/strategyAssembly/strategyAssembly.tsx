@@ -7,16 +7,17 @@ import {
   findCellAndPositionData,
   shouldBeDescending,
   hasConditionalWithoutPrimary,
-} from "../../../utils/cardAssemblyUtils";
-import { COLUMN_HEADERS, ROW_LABELS } from "../../../data/orderTypes";
-import {
   createBlocksFromOrderType,
   buildOrderConfigEntry,
-} from "../../../utils/blockFactory";
+} from "../../../utils";
+import { COLUMN_HEADERS, ROW_LABELS } from "../../../data/orderTypes";
+import type { OrderConfig, StrategyPattern } from "../../../types/grid";
+import { PATTERN_CONFIGS } from "../../../types/grid";
+import { useKrakenAPI } from "../../../hooks";
+import TrashIcon from "../../../assets/icons/trash.svg?react";
+import ReverseIcon from "../../../assets/icons/reverse.svg?react";
 import { StrategyAssemblyProvider } from "./StrategyAssemblyContext";
 import { useStrategyAssembly } from "./useStrategyAssembly";
-import type { OrderConfig, StrategyPattern } from "./StrategyAssemblyTypes";
-import { PATTERN_CONFIGS } from "./StrategyAssemblyTypes";
 import ProviderColumn from "./ProviderColumn";
 import GridCell from "./GridCell";
 import {
@@ -36,10 +37,7 @@ import {
   UtilityButton,
   DebugPanel,
 } from "./strategyAssembly.styles";
-import TrashIcon from "../../../assets/icons/trash.svg?react";
-import ReverseIcon from "../../../assets/icons/reverse.svg?react";
-import { SCALE_CONFIG } from "./GridCell.styles";
-import { useKrakenAPI } from "../../../hooks/useKrakenAPI";
+import { SCALE_CONFIG } from "../../../styles/grid";
 
 // Props for the main component
 interface StrategyAssemblyProps {

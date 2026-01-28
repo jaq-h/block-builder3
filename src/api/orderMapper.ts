@@ -3,7 +3,7 @@
  * Maps UI block data from the Strategy Assembly grid to Kraken order parameters
  */
 
-import type { BlockData, GridData } from "../utils/cardAssemblyUtils";
+import type { BlockData, GridData } from "../types/grid";
 import type {
   OrderParams,
   OrderType,

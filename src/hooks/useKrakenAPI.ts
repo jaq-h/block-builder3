@@ -16,7 +16,7 @@ import {
   type ParsedTickerData,
   type OrderParams,
 } from "../api";
-import type { GridData } from "../utils/cardAssemblyUtils";
+import type { GridData } from "../types/grid";
 
 // ============================================================================
 // Types

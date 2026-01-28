@@ -1,8 +1,15 @@
-// Block factory utilities for creating BlockData from OrderTypeDefinition
-import type { BlockData } from "./cardAssemblyUtils";
+// =============================================================================
+// BLOCK FACTORY - Utilities for creating BlockData from OrderTypeDefinition
+// =============================================================================
+
+import type { BlockData } from "../types/grid";
 import type { OrderTypeDefinition } from "../data/orderTypes";
 import { getDefaultPosition, ORDER_TYPES } from "../data/orderTypes";
 import limitIcon from "../assets/icons/limit.svg";
+
+// =============================================================================
+// TYPES
+// =============================================================================
 
 export interface BlockCreationContext {
   baseId: string;
@@ -17,6 +24,10 @@ export interface CreatedBlocks {
 // Limit icon for limit axis (imported for proper Vite bundling)
 const LIMIT_ICON = limitIcon;
 
+// =============================================================================
+// ICON HELPERS
+// =============================================================================
+
 /**
  * Get the base (non-limit) version icon for a limit order type
  * e.g., "stop-loss-limit" -> stop-loss icon
@@ -24,7 +35,6 @@ const LIMIT_ICON = limitIcon;
  *       "trailing-stop-limit" -> trailing-stop icon
  */
 const getBaseOrderIcon = (orderType: string): string | undefined => {
-  // If it's a limit variant, find the base order type
   if (orderType.endsWith("-limit")) {
     const baseType = orderType.replace("-limit", "");
     const baseOrderDef = ORDER_TYPES.find((ot) => ot.type === baseType);
@@ -58,7 +68,6 @@ const getBlockIcons = (
 
   // Determine trigger icon
   if (axes.includes("trigger")) {
-    // For limit variants (e.g., stop-loss-limit), use the base order icon
     const baseIcon = getBaseOrderIcon(type);
     result.triggerIcon = baseIcon || icon;
   }
@@ -70,6 +79,10 @@ const getBlockIcons = (
 
   return result;
 };
+
+// =============================================================================
+// BLOCK CREATION
+// =============================================================================
 
 /**
  * Creates BlockData instances from an OrderTypeDefinition
@@ -179,16 +192,9 @@ export const createBlocksFromOrderType = (
   return { blocks, nextCounter: currentCounter };
 };
 
-/** Cell display mode based on blocks' axes configurations */
-export type CellDisplayMode = "empty" | "no-axis" | "limit-only" | "dual-axis";
-
-export const getCellDisplayMode = (blocks: BlockData[]): CellDisplayMode => {
-  if (blocks.length === 0) return "empty";
-  if (blocks.every((b) => b.axes.length === 0)) return "no-axis";
-  if (blocks.every((b) => b.axes.length === 1 && b.axes[0] === "limit"))
-    return "limit-only";
-  return "dual-axis";
-};
+// =============================================================================
+// BLOCK HELPERS
+// =============================================================================
 
 /** Check if a block should show percentage */
 export const shouldShowPercentage = (block: BlockData): boolean =>

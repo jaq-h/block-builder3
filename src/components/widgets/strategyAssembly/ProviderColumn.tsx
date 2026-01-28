@@ -1,11 +1,13 @@
 import React from "react";
 import styled from "styled-components";
 import Block from "../../blocks/block";
-import { isProviderBlockHighlighted } from "../../../utils/cardAssemblyUtils";
-import type { GridData } from "../../../utils/cardAssemblyUtils";
+import type {
+  GridData,
+  CellPosition,
+  StrategyPattern,
+} from "../../../types/grid";
 import type { OrderTypeDefinition } from "../../../data/orderTypes";
-import type { CellPosition } from "../../../utils/cardAssemblyUtils";
-import type { StrategyPattern } from "./StrategyAssemblyTypes";
+import { isProviderBlockHighlighted } from "../../../utils";
 
 // Styled Components
 const ProviderColumnContainer = styled.div`

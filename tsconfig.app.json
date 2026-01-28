@@ -16,13 +16,29 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Path aliases */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@components/*": ["src/components/*"],
+      "@widgets/*": ["src/components/widgets/*"],
+      "@common/*": ["src/components/common/*"],
+      "@hooks/*": ["src/hooks/*"],
+      "@utils/*": ["src/utils/*"],
+      "@store/*": ["src/store/*"],
+      "@data/*": ["src/data/*"],
+      "@assets/*": ["src/assets/*"],
+      "@api/*": ["src/api/*"],
+      "@styles/*": ["src/styles/*"],
+    },
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
   },
-  "include": ["src"]
+  "include": ["src"],
 }

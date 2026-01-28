@@ -79,6 +79,7 @@ interface BlockProps {
   axes?: ("trigger" | "limit")[];
   hidePercentage?: boolean;
   isHighlighted?: boolean;
+  isReadOnly?: boolean;
   onClick?: () => void;
   onDragStart?: (id: string) => void;
   onDragEnd?: (id: string, x: number, y: number) => void;
@@ -94,6 +95,7 @@ const Block: React.FC<BlockProps> = ({
   axis,
   axes = [],
   isHighlighted = false,
+  isReadOnly = false,
   onClick,
   onDragStart,
   onDragEnd,
@@ -101,16 +103,21 @@ const Block: React.FC<BlockProps> = ({
   onMouseEnter,
   onMouseLeave,
 }) => {
-  const isVerticallyDraggable = axis !== undefined && axes.length > 0;
-  const blockCursor = isVerticallyDraggable ? "ns-resize" : "grab";
+  const isVerticallyDraggable =
+    !isReadOnly && axis !== undefined && axes.length > 0;
+  const blockCursor = isReadOnly
+    ? "default"
+    : isVerticallyDraggable
+      ? "ns-resize"
+      : "grab";
 
   const { isDragging, isVerticalOnly, position, handleMouseDown } =
     useDraggable({
       id,
       isVerticallyDraggable,
-      onDragStart,
-      onDragEnd,
-      onVerticalDrag,
+      onDragStart: isReadOnly ? undefined : onDragStart,
+      onDragEnd: isReadOnly ? undefined : onDragEnd,
+      onVerticalDrag: isReadOnly ? undefined : onVerticalDrag,
     });
 
   return (
@@ -123,7 +130,7 @@ const Block: React.FC<BlockProps> = ({
       <Button
         $isDragging={isDragging && !isVerticalOnly}
         $isHighlighted={isHighlighted && !isDragging}
-        onMouseDown={handleMouseDown}
+        onMouseDown={isReadOnly ? undefined : handleMouseDown}
         onClick={!isDragging ? onClick : undefined}
         style={{
           ...(isDragging && !isVerticalOnly

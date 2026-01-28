@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { StrategyAssemblyContextType } from "./StrategyAssemblyTypes";
+import type { StrategyAssemblyContextType } from "../../../types/strategyAssembly";
 
 // Create context with null default
 export const StrategyAssemblyContext =

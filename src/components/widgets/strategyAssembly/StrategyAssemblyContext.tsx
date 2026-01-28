@@ -1,13 +1,16 @@
 import React, { useState, useRef, useId, useCallback } from "react";
-import type { GridData, CellPosition } from "../../../utils/cardAssemblyUtils";
-import { clearGrid } from "../../../utils/cardAssemblyUtils";
-import { ORDER_TYPES } from "../../../data/orderTypes";
 import type {
+  GridData,
+  CellPosition,
   OrderConfig,
   StrategyPattern,
+} from "../../../types/grid";
+import { clearGrid } from "../../../utils";
+import { ORDER_TYPES } from "../../../data/orderTypes";
+import type {
   StrategyAssemblyContextType,
   StrategyAssemblyProviderProps,
-} from "./StrategyAssemblyTypes";
+} from "../../../types/strategyAssembly";
 import { StrategyAssemblyContext } from "./useStrategyAssembly";
 
 // Provider component

@@ -1,11 +1,14 @@
 import React from "react";
 import Block from "../../blocks/block";
-import type { BlockData, StrategyPattern } from "../../../types/grid";
-import { shouldBeDescending, getCellDisplayMode } from "../../../utils";
-import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
+import type { BlockData } from "../../../types/grid";
 import {
-  CellContainer,
-  RowLabelBadge,
+  shouldBeDescending,
+  calculatePrice,
+  formatPrice,
+  getCellDisplayMode,
+} from "../../../utils";
+import {
+  ReadOnlyCellContainer,
   CellHeader,
   OrderTypeLabel,
   AxisLabelItem,
@@ -19,77 +22,32 @@ import {
   DashedIndicator,
   PercentageLabel,
   CalculatedPriceLabel,
-  EmptyPlaceholder,
+  EmptyCellMessage,
   CenteredContainer,
-  WarningAlert,
-  WarningIcon,
-  WarningText,
-  WarningSubtext,
   getScaleLabels,
-} from "./GridCell.styles";
+} from "../../../styles/grid";
 
-// Helper to calculate price from percentage offset
-const calculatePrice = (
-  marketPrice: number | null,
-  percentage: number,
-  isDescending: boolean,
-): number | null => {
-  if (marketPrice === null) return null;
-  // Descending (-): price decreases as percentage increases
-  // Ascending (+): price increases as percentage increases
-  const multiplier = isDescending ? 1 - percentage / 100 : 1 + percentage / 100;
-  return marketPrice * multiplier;
-};
-
-// Helper to format price for display
-const formatCalculatedPrice = (price: number | null): string => {
-  if (price === null) return "—";
-  return `$${price.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-};
-
-// Props interface
-interface GridCellProps {
+// Props interface for read-only grid cell
+interface ReadOnlyGridCellProps {
   colIndex: number;
   rowIndex: number;
   blocks: BlockData[];
-  isOver: boolean;
-  isValidTarget: boolean;
-  isDisabled: boolean;
-  align: "left" | "right";
-  strategyPattern: StrategyPattern;
-  rowLabel: string;
-  showPrimaryWarning: boolean;
-  tint?: string;
   currentPrice: number | null;
   priceError?: string | null;
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
-  onBlockDragStart: (id: string) => void;
-  onBlockDragEnd: (id: string, x: number, y: number) => void;
-  onBlockVerticalDrag: (id: string, mouseY: number) => void;
+  tint?: string;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
-const GridCell: React.FC<GridCellProps> = ({
+const ReadOnlyGridCell: React.FC<ReadOnlyGridCellProps> = ({
   colIndex,
   rowIndex,
   blocks,
-  isOver,
-  isValidTarget,
-  isDisabled,
-  strategyPattern,
-  rowLabel,
-  showPrimaryWarning,
-  tint,
   currentPrice,
   priceError,
+  tint,
   onMouseEnter,
   onMouseLeave,
-  onBlockDragStart,
-  onBlockDragEnd,
-  onBlockVerticalDrag,
 }) => {
   const displayMode = getCellDisplayMode(blocks);
   const isDescending = shouldBeDescending(rowIndex, colIndex);
@@ -102,12 +60,7 @@ const GridCell: React.FC<GridCellProps> = ({
   // Check if cell should show axis 2 (limit)
   const hasAxis2Blocks = blocks.some((block) => block.axis === 2);
 
-  // Determine row label type for styling
-  const rowLabelType: "primary" | "conditional" =
-    rowLabel.toLowerCase() === "primary" ? "primary" : "conditional";
-
   const renderPercentageScale = (isDesc: boolean) => {
-    // Use single source of truth for scale labels (whole numbers)
     const labels = getScaleLabels(isDesc);
     return (
       <PercentageScale $isDescending={isDesc}>
@@ -118,7 +71,7 @@ const GridCell: React.FC<GridCellProps> = ({
     );
   };
 
-  // Render market price line and label - now at cell level for centering
+  // Render market price line and label
   const renderMarketPrice = () => {
     return (
       <MarketPriceLine $isDescending={isDescending}>
@@ -126,10 +79,7 @@ const GridCell: React.FC<GridCellProps> = ({
           {priceError
             ? "Price Error"
             : currentPrice
-              ? `$${currentPrice.toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`
+              ? formatPrice(currentPrice)
               : "Loading price..."}
         </MarketPriceLabel>
       </MarketPriceLine>
@@ -190,22 +140,21 @@ const GridCell: React.FC<GridCellProps> = ({
                 $isSingleAxis={isSingleAxis}
                 $isBuy={isBuy}
               >
-                {formatCalculatedPrice(calculatedPrice)}
+                {formatPrice(calculatedPrice)}
               </CalculatedPriceLabel>
               <BlockPositioner
                 $yPosition={block.yPosition}
                 $isDescending={isDescending}
                 $isSingleAxis={isSingleAxis}
               >
+                {/* Read-only block - no drag handlers */}
                 <Block
                   id={block.id}
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
                   axis={block.axis}
                   axes={block.axes}
-                  onDragStart={onBlockDragStart}
-                  onDragEnd={onBlockDragEnd}
-                  onVerticalDrag={onBlockVerticalDrag}
+                  isReadOnly={true}
                 />
               </BlockPositioner>
             </React.Fragment>
@@ -216,28 +165,9 @@ const GridCell: React.FC<GridCellProps> = ({
   };
 
   const renderContent = () => {
-    // Show warning alert in middle row if conditional without primary
-    if (showPrimaryWarning && blocks.length === 0) {
-      return (
-        <WarningAlert>
-          <WarningIcon>
-            <AlertTriangleIcon width={24} height={24} />
-          </WarningIcon>
-          <WarningText>Primary Order Required</WarningText>
-          <WarningSubtext>
-            Place a primary order here before adding conditionals
-          </WarningSubtext>
-        </WarningAlert>
-      );
-    }
-
     // Empty cell
     if (displayMode === "empty") {
-      // In conditional mode, only show placeholder for valid/non-disabled cells
-      if (strategyPattern === "conditional" && isDisabled) {
-        return null; // Don't show placeholder for non-available cells
-      }
-      return <EmptyPlaceholder>Drop here</EmptyPlaceholder>;
+      return <EmptyCellMessage>No active orders</EmptyCellMessage>;
     }
 
     // No-axis blocks (axes: []) - centered, not draggable, no % shown
@@ -257,8 +187,7 @@ const GridCell: React.FC<GridCellProps> = ({
                 icon={block.icon}
                 abrv={block.abrv}
                 axes={block.axes}
-                onDragStart={onBlockDragStart}
-                onDragEnd={onBlockDragEnd}
+                isReadOnly={true}
               />
             ))}
           </CenteredContainer>
@@ -311,24 +240,16 @@ const GridCell: React.FC<GridCellProps> = ({
   };
 
   return (
-    <CellContainer
+    <ReadOnlyCellContainer
       data-col={colIndex}
       data-row={rowIndex}
-      $isOver={isOver}
-      $isValidTarget={isValidTarget}
-      $isDisabled={isDisabled}
-      $align="left"
       $tint={tint}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      {/* Row label badge for conditional pattern - only show when cell can accept placement */}
-      {rowLabel && !isDisabled && (
-        <RowLabelBadge $type={rowLabelType}>{rowLabel}</RowLabelBadge>
-      )}
       {renderContent()}
-    </CellContainer>
+    </ReadOnlyCellContainer>
   );
 };
 
-export default GridCell;
+export default ReadOnlyGridCell;

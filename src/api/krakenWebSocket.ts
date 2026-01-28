@@ -294,7 +294,7 @@ export class KrakenWebSocketManager {
     if (!this.publicWs || this.publicWs.readyState !== WebSocket.OPEN) {
       await this.connectPublic();
     }
-
+    console.log("websocket");
     const subscriptionKey = `ticker:${symbol}`;
     if (this.subscriptions.has(subscriptionKey)) {
       return; // Already subscribed
