@@ -18,8 +18,8 @@ import TrashIcon from "../../../assets/icons/trash.svg?react";
 import ReverseIcon from "../../../assets/icons/reverse.svg?react";
 import { StrategyAssemblyProvider } from "./StrategyAssemblyContext";
 import { useStrategyAssembly } from "./useStrategyAssembly";
-import ProviderColumn from "./ProviderColumn";
-import GridCell from "./GridCell";
+import ProviderColumn from "../../common/grid/ProviderColumn";
+import GridCell from "../../common/grid/GridCell";
 import {
   Container,
   Header,

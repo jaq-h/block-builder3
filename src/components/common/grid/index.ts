@@ -67,3 +67,5 @@ export {
 
 // Export components
 export { default as ReadOnlyGridCell } from "./ReadOnlyGridCell";
+export { default as GridCell } from "./GridCell";
+export { default as ProviderColumn } from "./ProviderColumn";

@@ -121,7 +121,7 @@ const ExecuteButton = styled.button<{ $isSubmitting?: boolean }>`
   }
 `;
 
-const DevModeBadge = styled.div`
+const SimulationBadge = styled.div<{ $isSimulation: boolean }>`
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -129,13 +129,43 @@ const DevModeBadge = styled.div`
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-  background-color: rgba(255, 193, 7, 0.2);
-  color: #ffc107;
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  background-color: ${({ $isSimulation }) =>
+    $isSimulation ? "rgba(255, 193, 7, 0.2)" : "rgba(76, 175, 80, 0.2)"};
+  color: ${({ $isSimulation }) => ($isSimulation ? "#ffc107" : "#4caf50")};
+  border: 1px solid
+    ${({ $isSimulation }) =>
+      $isSimulation ? "rgba(255, 193, 7, 0.3)" : "rgba(76, 175, 80, 0.3)"};
 
   svg {
     stroke: currentColor;
   }
+`;
+
+const SimulationToggle = styled.button<{ $isSimulation: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background-color: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+`;
+
+const SimulationModeContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
 `;
 
 const SuccessMessage = styled.div`
@@ -175,8 +205,15 @@ function AppInner() {
   const [strategyKey, setStrategyKey] = useState(0); // Key to force reset
 
   // Get orders store
-  const { submitOrders, submittedOrders, isSubmitting, error, clearError } =
-    useOrdersStore();
+  const {
+    submitOrders,
+    submittedOrders,
+    isSubmitting,
+    error,
+    clearError,
+    isSimulationMode,
+    toggleSimulationMode,
+  } = useOrdersStore();
 
   // Count active orders for badge
   const activeOrderCount = Object.values(submittedOrders).filter(
@@ -207,6 +244,17 @@ function AppInner() {
   };
 
   const isDev = import.meta.env.DEV;
+
+  // Determine what message to show based on environment and simulation mode
+  const getSimulationMessage = () => {
+    if (isDev) {
+      return "Development Mode - Orders saved locally";
+    }
+    if (isSimulationMode) {
+      return "Simulation Mode - Orders saved locally";
+    }
+    return "Production Mode - Orders sent to API";
+  };
 
   return (
     <AppContainer>
@@ -242,12 +290,30 @@ function AppInner() {
                 {/* Execute Trade Button - only show when there are orders */}
                 {Object.keys(orderConfig).length > 0 && (
                   <ExecuteButtonContainer>
-                    {isDev && (
-                      <DevModeBadge>
+                    <SimulationModeContainer>
+                      <SimulationBadge
+                        $isSimulation={isDev || isSimulationMode}
+                      >
                         <ToolsIcon width={12} height={12} />
-                        Development Mode - Orders saved locally
-                      </DevModeBadge>
-                    )}
+                        {getSimulationMessage()}
+                      </SimulationBadge>
+                      {/* Only show toggle in production - dev always simulates */}
+                      {!isDev && (
+                        <SimulationToggle
+                          $isSimulation={isSimulationMode}
+                          onClick={toggleSimulationMode}
+                          title={
+                            isSimulationMode
+                              ? "Switch to production mode (requires API credentials)"
+                              : "Switch to simulation mode"
+                          }
+                        >
+                          {isSimulationMode
+                            ? "Switch to Production"
+                            : "Switch to Simulation"}
+                        </SimulationToggle>
+                      )}
+                    </SimulationModeContainer>
                     <ExecuteButton
                       onClick={handleExecuteTrade}
                       disabled={isSubmitting}
