@@ -284,9 +284,17 @@ export function getDashedIndicatorProps(
     "absolute w-px border-l-2 border-dashed border-accent-outline pointer-events-none z-[1] -translate-x-1/2";
   const style: CSSProperties = {
     left: isSingleAxis !== false ? "50%" : "35%",
-    top: `calc(${getTrackHeight()} * ${percent} + ${offset + BLOCK_HEIGHT / 2}px)`,
-    bottom: `${endOffset + BLOCK_HEIGHT / 2}px`,
   };
+
+  if (isDesc) {
+    // Descending: market/0% is at the top, block is below → highlight from 0% down to block
+    style.top = `${offset + BLOCK_HEIGHT / 2}px`;
+    style.bottom = `calc(100% - ${getTrackHeight()} * ${percent} - ${offset + BLOCK_HEIGHT / 2}px)`;
+  } else {
+    // Ascending: market/0% is at the bottom, block is above → highlight from block down to 0%
+    style.top = `calc(${getTrackHeight()} * ${percent} + ${offset + BLOCK_HEIGHT / 2}px)`;
+    style.bottom = `${endOffset + BLOCK_HEIGHT / 2}px`;
+  }
   return { className, style };
 }
 
