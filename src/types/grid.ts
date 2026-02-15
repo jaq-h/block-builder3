@@ -2,7 +2,7 @@
 // GRID TYPES - Consolidated grid type definitions
 // =============================================================================
 
-import type { AxisType } from "../data/orderTypes";
+import type { AxisType, SvgIcon } from "../data/orderTypes";
 
 // =============================================================================
 // BLOCK DATA TYPES
@@ -12,10 +12,10 @@ export interface BlockData {
   id: string;
   orderType: string; // Order type identifier (e.g., "limit", "stop-loss-limit")
   label: string; // Display label (e.g., "Limit", "Stop Loss Limit")
-  icon?: string; // Legacy - use providerIcon instead
-  providerIcon?: string; // Icon for the provider column (full order type icon)
-  triggerIcon?: string; // Icon for the trigger axis slider
-  limitIcon?: string; // Icon for the limit axis slider
+  icon?: SvgIcon; // Legacy - use providerIcon instead
+  providerIcon?: SvgIcon; // Icon for the provider column (full order type icon)
+  triggerIcon?: SvgIcon; // Icon for the trigger axis slider
+  limitIcon?: SvgIcon; // Icon for the limit axis slider
   abrv: string;
   allowedRows: number[];
   axis: 1 | 2;

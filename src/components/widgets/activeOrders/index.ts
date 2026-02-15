@@ -1,6 +1,7 @@
 // Active Orders widget exports
 export { default as ActiveOrders } from "./ActiveOrders";
-export { ActiveOrdersProvider, useActiveOrders } from "./ActiveOrdersContext";
+export { ActiveOrdersProvider } from "./ActiveOrdersContext";
+export { useActiveOrders } from "./useActiveOrders";
 
 // Re-export types from consolidated types
 export type {

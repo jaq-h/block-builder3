@@ -2,13 +2,14 @@ import React from "react";
 import { cva } from "class-variance-authority";
 import { cn } from "../../lib/utils";
 import { useDraggable } from "../../hooks/useDraggable";
+import type { SvgIcon } from "../../data/orderTypes";
 
 const buttonVariants = cva(
   [
     "w-10 h-10 flex flex-col justify-center items-center p-[3px]",
     "border-2 rounded-md select-none",
     "text-text-primary",
-    "[&_svg]:w-5 [&_svg]:h-5",
+    "[&_svg]:w-5 [&_svg]:h-5 [&_svg]:stroke-current [&_svg]:pointer-events-none",
   ],
   {
     variants: {
@@ -42,7 +43,7 @@ const buttonVariants = cva(
 
 interface BlockProps {
   id: string;
-  icon?: string;
+  icon?: SvgIcon;
   abrv: string;
   axis?: 1 | 2;
   yPosition?: number;
@@ -90,12 +91,10 @@ const Block: React.FC<BlockProps> = ({
       onVerticalDrag: isReadOnly ? undefined : onVerticalDrag,
     });
 
-  const iconContent = icon ? (
-    <img
-      className="w-6 h-6 brightness-0 invert pointer-events-none"
-      src={icon}
-      alt={abrv}
-    />
+  const IconComponent = icon;
+
+  const iconContent = IconComponent ? (
+    <IconComponent width={20} height={20} />
   ) : (
     <span>{abrv}</span>
   );

@@ -3,9 +3,9 @@
 // =============================================================================
 
 import type { BlockData } from "../types/grid";
-import type { OrderTypeDefinition } from "../data/orderTypes";
+import type { OrderTypeDefinition, SvgIcon } from "../data/orderTypes";
 import { getDefaultPosition, ORDER_TYPES } from "../data/orderTypes";
-import limitIcon from "../assets/icons/limit.svg";
+import LimitIcon from "../assets/icons/limit.svg?react";
 
 // =============================================================================
 // TYPES
@@ -22,7 +22,7 @@ export interface CreatedBlocks {
 }
 
 // Limit icon for limit axis (imported for proper Vite bundling)
-const LIMIT_ICON = limitIcon;
+const LIMIT_ICON = LimitIcon;
 
 // =============================================================================
 // ICON HELPERS
@@ -34,7 +34,7 @@ const LIMIT_ICON = limitIcon;
  *       "take-profit-limit" -> take-profit icon
  *       "trailing-stop-limit" -> trailing-stop icon
  */
-const getBaseOrderIcon = (orderType: string): string | undefined => {
+const getBaseOrderIcon = (orderType: string): SvgIcon | undefined => {
   if (orderType.endsWith("-limit")) {
     const baseType = orderType.replace("-limit", "");
     const baseOrderDef = ORDER_TYPES.find((ot) => ot.type === baseType);
@@ -52,16 +52,16 @@ const getBaseOrderIcon = (orderType: string): string | undefined => {
 const getBlockIcons = (
   orderType: OrderTypeDefinition,
 ): {
-  providerIcon?: string;
-  triggerIcon?: string;
-  limitIcon?: string;
+  providerIcon?: SvgIcon;
+  triggerIcon?: SvgIcon;
+  limitIcon?: SvgIcon;
 } => {
   const { type, icon, axes } = orderType;
 
   const result: {
-    providerIcon?: string;
-    triggerIcon?: string;
-    limitIcon?: string;
+    providerIcon?: SvgIcon;
+    triggerIcon?: SvgIcon;
+    limitIcon?: SvgIcon;
   } = {
     providerIcon: icon,
   };

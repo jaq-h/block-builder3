@@ -1,13 +1,16 @@
 // Order type definitions with default values for the card assembly grid
-import limitIcon from "../assets/icons/limit.svg";
-import marketIcon from "../assets/icons/market.svg";
-import icebergIcon from "../assets/icons/iceberg.svg";
-import stopLossIcon from "../assets/icons/stop-loss.svg";
-import stopLossLimitIcon from "../assets/icons/stop-loss-limit.svg";
-import takeProfitIcon from "../assets/icons/take-profit.svg";
-import takeProfitLimitIcon from "../assets/icons/take-profit-limit.svg";
-import trailingStopIcon from "../assets/icons/trailing-stop.svg";
-import trailingStopLimitIcon from "../assets/icons/trailing-stop-limit.svg";
+import type { FC, SVGProps } from "react";
+import LimitIcon from "../assets/icons/limit.svg?react";
+import MarketIcon from "../assets/icons/market.svg?react";
+import IcebergIcon from "../assets/icons/iceberg.svg?react";
+import StopLossIcon from "../assets/icons/stop-loss.svg?react";
+import StopLossLimitIcon from "../assets/icons/stop-loss-limit.svg?react";
+import TakeProfitIcon from "../assets/icons/take-profit.svg?react";
+import TakeProfitLimitIcon from "../assets/icons/take-profit-limit.svg?react";
+import TrailingStopIcon from "../assets/icons/trailing-stop.svg?react";
+import TrailingStopLimitIcon from "../assets/icons/trailing-stop-limit.svg?react";
+
+export type SvgIcon = FC<SVGProps<SVGSVGElement>>;
 
 export type AxisType = "trigger" | "limit";
 
@@ -15,7 +18,7 @@ export interface OrderTypeDefinition {
   type: string;
   abrv: string;
   label: string;
-  icon?: string;
+  icon?: SvgIcon;
   allowedRows: number[];
   axes: AxisType[];
   // Default Y positions when placed (0-100%)
@@ -32,7 +35,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "limit",
     abrv: "Lmt",
     label: "Limit",
-    icon: limitIcon,
+    icon: LimitIcon,
     allowedRows: [0, 1],
     axes: ["limit"],
     defaults: {
@@ -43,7 +46,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "market",
     abrv: "Mkt",
     label: "Market",
-    icon: marketIcon,
+    icon: MarketIcon,
     allowedRows: [1],
     axes: [], // No axes - executes at market price
     // No defaults - market orders don't have price levels
@@ -52,7 +55,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "iceberg",
     abrv: "Ice",
     label: "Iceberg",
-    icon: icebergIcon,
+    icon: IcebergIcon,
     allowedRows: [1],
     axes: ["limit"],
     defaults: {
@@ -63,7 +66,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "stop-loss",
     abrv: "SL",
     label: "Stop Loss",
-    icon: stopLossIcon,
+    icon: StopLossIcon,
     allowedRows: [1, 2],
     axes: ["trigger"],
     defaults: {
@@ -74,7 +77,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "stop-loss-limit",
     abrv: "SL-Lmt",
     label: "Stop Loss Limit",
-    icon: stopLossLimitIcon,
+    icon: StopLossLimitIcon,
     allowedRows: [1, 2],
     axes: ["trigger", "limit"],
     defaults: {
@@ -86,7 +89,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "take-profit",
     abrv: "TP",
     label: "Take Profit",
-    icon: takeProfitIcon,
+    icon: TakeProfitIcon,
     allowedRows: [0, 1],
     axes: ["trigger"],
     defaults: {
@@ -97,7 +100,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "take-profit-limit",
     abrv: "TP-Lmt",
     label: "Take Profit Limit",
-    icon: takeProfitLimitIcon,
+    icon: TakeProfitLimitIcon,
     allowedRows: [0, 1],
     axes: ["trigger", "limit"],
     defaults: {
@@ -109,7 +112,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "trailing-stop",
     abrv: "TS",
     label: "Trailing Stop",
-    icon: trailingStopIcon,
+    icon: TrailingStopIcon,
     allowedRows: [1, 2],
     axes: ["trigger"],
     defaults: {
@@ -120,7 +123,7 @@ export const ORDER_TYPES: OrderTypeDefinition[] = [
     type: "trailing-stop-limit",
     abrv: "TS-Lmt",
     label: "Trailing Stop Limit",
-    icon: trailingStopLimitIcon,
+    icon: TrailingStopLimitIcon,
     allowedRows: [1, 2],
     axes: ["trigger", "limit"],
     defaults: {

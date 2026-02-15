@@ -50,7 +50,6 @@ export interface ActiveOrdersState {
 // =============================================================================
 
 export interface ActiveOrdersActions {
-  setGrid: React.Dispatch<React.SetStateAction<GridData>>;
   setActiveOrders: React.Dispatch<React.SetStateAction<ActiveOrdersConfig>>;
   setHoveredCell: React.Dispatch<React.SetStateAction<CellPosition | null>>;
   setSelectedOrderId: React.Dispatch<React.SetStateAction<string | null>>;
