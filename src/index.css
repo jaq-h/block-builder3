@@ -122,37 +122,71 @@
     --color-disabled-bg: #666;
     --color-status-green-label-bg: rgba(76, 175, 80, 0.85);
 
-    /* Animations */
-    --animate-breathing: breathing 1.5s ease-in infinite;
-    --animate-block-breathing: blockBreathing 1.5s ease-in-out infinite;
+    /* Animations - kept for animate-none override compatibility */
+    --animate-breathing: none;
+    --animate-block-breathing: none;
 }
 
 /* ============================================================================
-   KEYFRAME ANIMATIONS
+   KEYFRAME ANIMATIONS (compositor-only: opacity + transform)
    ============================================================================ */
 
-@keyframes breathing {
+@keyframes breathingGlow {
     0%,
     100% {
-        border-color: rgba(255, 255, 255, 0.5);
-        box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.1);
+        opacity: 0.4;
     }
     50% {
-        border-color: rgba(255, 255, 255, 1);
-        box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.2);
+        opacity: 1;
     }
 }
 
-@keyframes blockBreathing {
+@keyframes blockBreathingGlow {
     0%,
     100% {
-        border-color: rgba(255, 255, 255, 0.5);
-        box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+        opacity: 0.4;
     }
     50% {
-        border-color: rgba(255, 255, 255, 1);
-        box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+        opacity: 1;
     }
+}
+
+/* ============================================================================
+   COMPOSITED BREATHING ANIMATIONS (via pseudo-element opacity)
+   ============================================================================ */
+
+/* Grid cell breathing — valid drop target / hover indicator */
+.animate-breathing {
+    animation: none !important;
+}
+
+.animate-breathing::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    border: 1px solid rgba(255, 255, 255, 1);
+    box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.2);
+    pointer-events: none;
+    will-change: opacity;
+    animation: breathingGlow 1.5s ease-in infinite;
+}
+
+/* Block button breathing — highlighted provider block */
+.animate-block-breathing {
+    animation: none !important;
+}
+
+.animate-block-breathing::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    border: 2px solid rgba(255, 255, 255, 1);
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+    pointer-events: none;
+    will-change: opacity;
+    animation: blockBreathingGlow 1.5s ease-in-out infinite;
 }
 
 /* ============================================================================
