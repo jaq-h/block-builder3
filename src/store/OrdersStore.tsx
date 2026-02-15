@@ -1,7 +1,7 @@
 import React, {
   createContext,
   useContext,
-  useState,
+  useReducer,
   useCallback,
   useMemo,
 } from "react";
@@ -12,6 +12,11 @@ import type {
   OrderStatus,
 } from "../types/activeOrders";
 import { hasValidCredentials } from "../api";
+import {
+  ordersReducer,
+  createInitialState,
+  type OrdersStoreState,
+} from "./ordersReducer";
 
 // =============================================================================
 // ENVIRONMENT & SIMULATION MODE
@@ -35,17 +40,10 @@ const getDefaultSimulationMode = (): boolean => {
 // TYPES
 // =============================================================================
 
+export type { OrdersStoreState } from "./ordersReducer";
+
 export interface SubmittedOrder extends ActiveOrderEntry {
   originalConfig: OrderConfig[string];
-}
-
-export interface OrdersStoreState {
-  submittedOrders: ActiveOrdersConfig;
-  isSubmitting: boolean;
-  lastSubmissionTime: Date | null;
-  error: string | null;
-  /** Whether simulation mode is active (orders stored locally, not sent to API) */
-  isSimulationMode: boolean;
 }
 
 export interface OrdersStoreActions {
@@ -125,22 +123,18 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
   children,
   forceSimulation,
 }) => {
-  // State
-  const [submittedOrders, setSubmittedOrders] = useState<ActiveOrdersConfig>(
-    {},
-  );
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [lastSubmissionTime, setLastSubmissionTime] = useState<Date | null>(
-    null,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [isSimulationMode, setIsSimulationMode] = useState<boolean>(
+  const [state, dispatch] = useReducer(
+    ordersReducer,
     forceSimulation ?? getDefaultSimulationMode(),
+    createInitialState,
   );
 
+  // Destructure for stable references in callbacks
+  const { isSimulationMode } = state;
+
   // Set simulation mode
-  const setSimulationModeAction = useCallback((enabled: boolean) => {
-    setIsSimulationMode(enabled);
+  const setSimulationMode = useCallback((enabled: boolean) => {
+    dispatch({ type: "SET_SIMULATION_MODE", enabled });
     const prefix = getLogPrefix(enabled);
     console.log(
       `${prefix} Simulation mode ${enabled ? "enabled" : "disabled"}`,
@@ -149,21 +143,18 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
 
   // Toggle simulation mode
   const toggleSimulationMode = useCallback(() => {
-    setIsSimulationMode((prev) => {
-      const newValue = !prev;
-      const prefix = getLogPrefix(newValue);
-      console.log(
-        `${prefix} Simulation mode ${newValue ? "enabled" : "disabled"}`,
-      );
-      return newValue;
-    });
-  }, []);
+    dispatch({ type: "TOGGLE_SIMULATION_MODE" });
+    // Log uses the *new* value, so we invert the current capture
+    const prefix = getLogPrefix(!isSimulationMode);
+    console.log(
+      `${prefix} Simulation mode ${!isSimulationMode ? "enabled" : "disabled"}`,
+    );
+  }, [isSimulationMode]);
 
-  // Submit orders - simulated locally or via API based on simulation mode
+  // Submit orders — simulated locally or via API based on simulation mode
   const submitOrders = useCallback(
     async (config: OrderConfig): Promise<boolean> => {
-      setIsSubmitting(true);
-      setError(null);
+      dispatch({ type: "SUBMIT_START" });
 
       const logPrefix = getLogPrefix(isSimulationMode);
 
@@ -186,27 +177,16 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
             newOrders[activeOrder.id] = activeOrder;
           });
 
-          // Add to submitted orders
-          setSubmittedOrders((prev) => ({
-            ...prev,
-            ...newOrders,
-          }));
+          const timestamp = new Date();
+          dispatch({ type: "SUBMIT_SUCCESS", orders: newOrders, timestamp });
 
           // Simulate orders becoming active after a short delay
+          const orderIds = Object.keys(newOrders);
           setTimeout(() => {
-            setSubmittedOrders((prev) => {
-              const updated = { ...prev };
-              Object.keys(newOrders).forEach((id) => {
-                if (updated[id]) {
-                  updated[id] = { ...updated[id], status: "active" };
-                }
-              });
-              return updated;
-            });
+            dispatch({ type: "ORDERS_ACTIVATED", orderIds });
             console.log(`${logPrefix} Orders are now active`);
           }, 1500);
 
-          setLastSubmissionTime(new Date());
           console.log(`${logPrefix} Orders submitted successfully`);
           return true;
         } else {
@@ -229,11 +209,9 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to submit orders";
-        setError(errorMessage);
+        dispatch({ type: "SUBMIT_FAILURE", error: errorMessage });
         console.error(`${logPrefix} Order submission failed:`, errorMessage);
         return false;
-      } finally {
-        setIsSubmitting(false);
       }
     },
     [isSimulationMode],
@@ -249,17 +227,7 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
           console.log(`${logPrefix} Cancelling order:`, orderId);
           await simulateApiDelay(300);
 
-          setSubmittedOrders((prev) => {
-            if (!prev[orderId]) return prev;
-            return {
-              ...prev,
-              [orderId]: {
-                ...prev[orderId],
-                status: "cancelled" as OrderStatus,
-              },
-            };
-          });
-
+          dispatch({ type: "CANCEL_ORDER", orderId });
           return true;
         } else {
           // Check for credentials
@@ -277,7 +245,7 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to cancel order";
-        setError(errorMessage);
+        dispatch({ type: "SUBMIT_FAILURE", error: errorMessage });
         return false;
       }
     },
@@ -293,19 +261,7 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
         console.log(`${logPrefix} Cancelling all orders`);
         await simulateApiDelay(500);
 
-        setSubmittedOrders((prev) => {
-          const updated = { ...prev };
-          Object.keys(updated).forEach((id) => {
-            if (
-              updated[id].status === "active" ||
-              updated[id].status === "pending"
-            ) {
-              updated[id] = { ...updated[id], status: "cancelled" };
-            }
-          });
-          return updated;
-        });
-
+        dispatch({ type: "CANCEL_ALL" });
         return true;
       } else {
         // Check for credentials
@@ -323,7 +279,7 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to cancel orders";
-      setError(errorMessage);
+      dispatch({ type: "SUBMIT_FAILURE", error: errorMessage });
       return false;
     }
   }, [isSimulationMode]);
@@ -331,16 +287,11 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
   // Update order status manually (for simulations)
   const updateOrderStatus = useCallback(
     (orderId: string, status: OrderStatus) => {
-      setSubmittedOrders((prev) => {
-        if (!prev[orderId]) return prev;
-        return {
-          ...prev,
-          [orderId]: {
-            ...prev[orderId],
-            status,
-            ...(status === "filled" ? { filledAt: new Date() } : {}),
-          },
-        };
+      dispatch({
+        type: "UPDATE_ORDER_STATUS",
+        orderId,
+        status,
+        ...(status === "filled" ? { filledAt: new Date() } : {}),
       });
     },
     [],
@@ -348,7 +299,7 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
 
   // Clear error
   const clearError = useCallback(() => {
-    setError(null);
+    dispatch({ type: "CLEAR_ERROR" });
   }, []);
 
   // Refresh orders from API (or simulate in simulation mode)
@@ -357,7 +308,7 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
 
     if (isSimulationMode) {
       console.log(`${logPrefix} Refreshing orders (local state)`);
-      // In simulation mode, we just log - state is already local
+      // In simulation mode, we just log — state is already local
     } else {
       // TODO: Implement actual API call to fetch orders
       console.log(`${logPrefix} Would fetch orders from API`);
@@ -367,12 +318,8 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
   // Memoize context value
   const contextValue = useMemo<OrdersStoreContextType>(
     () => ({
-      // State
-      submittedOrders,
-      isSubmitting,
-      lastSubmissionTime,
-      error,
-      isSimulationMode,
+      // State (spread from reducer)
+      ...state,
 
       // Actions
       submitOrders,
@@ -381,22 +328,18 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
       updateOrderStatus,
       clearError,
       refreshOrders,
-      setSimulationMode: setSimulationModeAction,
+      setSimulationMode,
       toggleSimulationMode,
     }),
     [
-      submittedOrders,
-      isSubmitting,
-      lastSubmissionTime,
-      error,
-      isSimulationMode,
+      state,
       submitOrders,
       cancelOrder,
       cancelAllOrders,
       updateOrderStatus,
       clearError,
       refreshOrders,
-      setSimulationModeAction,
+      setSimulationMode,
       toggleSimulationMode,
     ],
   );

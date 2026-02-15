@@ -15,3 +15,7 @@ export type {
   OrdersStoreContextType,
   OrdersStoreProviderProps,
 } from "./OrdersStore";
+
+// Reducer exports
+export { ordersReducer, createInitialState } from "./ordersReducer";
+export type { OrdersAction } from "./ordersReducer";
