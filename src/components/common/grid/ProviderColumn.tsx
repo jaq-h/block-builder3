@@ -1,5 +1,4 @@
 import React from "react";
-import styled from "styled-components";
 import Block from "../../blocks/block";
 import type {
   GridData,
@@ -8,59 +7,6 @@ import type {
 } from "../../../types/grid";
 import type { OrderTypeDefinition } from "../../../data/orderTypes";
 import { isProviderBlockHighlighted } from "../../../utils";
-
-// Styled Components
-const ProviderColumnContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  min-width: 90px;
-  width: 110px;
-  border: 1px solid rgba(229, 231, 235, 0.2);
-  border-radius: 8px;
-  background-color: rgb(22, 18, 31);
-  overflow: hidden;
-`;
-
-const ProviderHeader = styled.div`
-  padding: 8px;
-  text-align: center;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: rgba(104, 107, 130, 0.1);
-`;
-
-const ProviderHeaderText = styled.span`
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
-`;
-
-const ProviderRow = styled.div`
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-evenly;
-  padding: 8px;
-  gap: 0;
-  overflow: auto;
-`;
-
-const BlockItemWrapper = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-`;
-
-const BlockLabel = styled.span`
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
-  text-align: center;
-  white-space: normal;
-  word-wrap: break-word;
-  max-width: 100px;
-  line-height: 1.2;
-`;
 
 // Props interface
 interface ProviderColumnProps {
@@ -87,13 +33,15 @@ const ProviderColumn: React.FC<ProviderColumnProps> = ({
   onProviderMouseLeave,
 }) => {
   return (
-    <ProviderColumnContainer>
-      <ProviderHeader>
-        <ProviderHeaderText>Orders</ProviderHeaderText>
-      </ProviderHeader>
-      <ProviderRow>
+    <div className="flex flex-col min-w-[90px] w-[110px] border border-gray-200/20 rounded-lg bg-bg-column overflow-hidden">
+      <div className="p-2 text-center border-b border-gray-200 bg-neutral-bg">
+        <span className="text-sm font-semibold text-text-secondary">
+          Orders
+        </span>
+      </div>
+      <div className="flex-1 flex flex-col items-center justify-evenly p-2 gap-0 overflow-auto">
         {providerBlocks.map((block) => (
-          <BlockItemWrapper key={block.type}>
+          <div key={block.type} className="flex flex-col items-center gap-1">
             <Block
               id={block.type}
               icon={block.icon}
@@ -110,11 +58,13 @@ const ProviderColumn: React.FC<ProviderColumnProps> = ({
               onMouseEnter={() => onProviderMouseEnter(block.type)}
               onMouseLeave={onProviderMouseLeave}
             />
-            <BlockLabel>{block.label}</BlockLabel>
-          </BlockItemWrapper>
+            <span className="text-[11px] text-text-tertiary text-center break-words max-w-[100px] leading-[1.2]">
+              {block.label}
+            </span>
+          </div>
         ))}
-      </ProviderRow>
-    </ProviderColumnContainer>
+      </div>
+    </div>
   );
 };
 

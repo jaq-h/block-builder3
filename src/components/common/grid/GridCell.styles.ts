@@ -1,5 +1,4 @@
 // GridCell styled components - Re-exports from consolidated grid styles
-// This file maintains backward compatibility while using shared styles
 
 export {
   // Scale configuration
@@ -18,58 +17,54 @@ export {
   getPositionPercent,
 
   // Cell containers
-  InteractiveCellContainer,
-  ReadOnlyCellContainer,
+  getInteractiveCellContainerProps,
+  getReadOnlyCellContainerProps,
 
   // Row label badge
-  RowLabelBadge,
+  rowLabelBadge,
 
   // Cell header
-  CellHeader,
-  OrderTypeLabel,
+  cellHeader,
+  orderTypeLabel,
 
   // Axis components
-  AxisLabelItem,
-  SliderArea,
-  AxisColumn,
+  getAxisLabelItemProps,
+  sliderArea,
+  getAxisColumnProps,
 
   // Percentage scale & slider track
-  PercentageScale,
-  SliderTrack,
+  getPercentageScaleProps,
+  getSliderTrackProps,
 
   // Market price line & label
-  MarketPriceLine,
-  MarketPriceLabel,
+  getMarketPriceLineProps,
+  getMarketPriceLabelProps,
 
   // Block positioner
-  BlockPositioner,
+  getBlockPositionerProps,
 
   // Dashed indicator
-  DashedIndicator,
+  getDashedIndicatorProps,
 
   // Percentage label
-  PercentageLabel,
+  getPercentageLabelProps,
 
   // Calculated price label
-  CalculatedPriceLabel,
+  getCalculatedPriceLabelProps,
 
   // Empty state & placeholders
-  EmptyPlaceholder,
-  CenteredContainer,
+  emptyPlaceholder,
+  centeredContainer,
 
   // Warning alert
-  WarningAlert,
-  WarningIcon,
-  WarningText,
-  WarningSubtext,
+  warningAlert,
+  warningIcon,
+  warningText,
+  warningSubtext,
 
   // Status badge (for Active Orders)
-  StatusBadge,
+  statusBadge,
 
   // Empty cell message
-  EmptyCellMessage,
+  emptyCellMessage,
 } from "../../../styles/grid";
-
-// Alias for backward compatibility
-// The interactive cell container was originally called CellContainer
-export { InteractiveCellContainer as CellContainer } from "../../../styles/grid";

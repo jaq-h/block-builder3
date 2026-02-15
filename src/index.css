@@ -1,3 +1,164 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   CUSTOM THEME - Design tokens from theme.ts mirrored for Tailwind
+   ============================================================================ */
+
+@theme {
+    /* Background colors */
+    --color-bg-primary: #0b0611;
+    --color-bg-column: rgb(22, 18, 31);
+    --color-bg-cell-active: rgba(104, 107, 130, 0.08);
+    --color-bg-cell-disabled: rgb(22, 18, 31);
+    --color-bg-header: rgba(104, 107, 130, 0.08);
+    --color-bg-header-hover: rgba(104, 107, 130, 0.1);
+    --color-bg-overlay: rgba(104, 107, 130, 0.05);
+
+    /* Border colors */
+    --color-border-neutral: rgba(104, 107, 130, 0.24);
+    --color-border-dimmed: rgba(229, 231, 235, 0.2);
+    --color-border-disabled: transparent;
+
+    /* Text colors */
+    --color-text-primary: rgba(255, 255, 255, 1);
+    --color-text-secondary: rgba(255, 255, 255, 0.8);
+    --color-text-tertiary: rgba(255, 255, 255, 0.6);
+    --color-text-muted: rgba(255, 255, 255, 0.5);
+    --color-text-dimmed: rgba(255, 255, 255, 0.3);
+    --color-text-placeholder: rgba(104, 107, 130, 0.5);
+
+    /* Accent colors */
+    --color-accent-primary: #855bfb;
+    --color-accent-secondary: #8a61ff;
+    --color-accent-outline: #7132f5;
+    --color-accent-glow: rgba(133, 91, 251, 0.4);
+    --color-accent-glow-strong: rgba(133, 91, 251, 0.8);
+    --color-accent-bg-subtle: rgba(133, 91, 251, 0.2);
+    --color-accent-bg-hover: rgba(133, 91, 251, 0.3);
+
+    /* Entry/Exit tints */
+    --color-entry-tint: rgba(100, 200, 100, 0.08);
+    --color-entry-header: rgba(100, 200, 100, 0.15);
+    --color-entry-badge: rgba(100, 200, 100, 0.25);
+    --color-entry-badge-border: rgba(100, 200, 100, 0.5);
+    --color-entry-text: rgba(150, 255, 150, 0.9);
+    --color-exit-tint: rgba(200, 100, 100, 0.08);
+    --color-exit-header: rgba(200, 100, 100, 0.15);
+
+    /* Conditional badge colors */
+    --color-conditional-badge: rgba(200, 150, 50, 0.25);
+    --color-conditional-badge-border: rgba(200, 150, 50, 0.5);
+    --color-conditional-text: rgba(255, 200, 100, 0.9);
+
+    /* Functional colors - status/semantic */
+    --color-status-green: #4caf50;
+    --color-status-green-bg: rgba(76, 175, 80, 0.2);
+    --color-status-green-bg-strong: rgba(76, 175, 80, 0.3);
+    --color-status-green-border: rgba(76, 175, 80, 0.5);
+    --color-status-green-hover: #45a049;
+
+    --color-status-yellow: #ffc107;
+    --color-status-yellow-bg: rgba(255, 193, 7, 0.2);
+    --color-status-yellow-bg-strong: rgba(255, 193, 7, 0.3);
+    --color-status-yellow-bg-subtle: rgba(255, 193, 7, 0.08);
+    --color-status-yellow-bg-hover: rgba(255, 193, 7, 0.15);
+    --color-status-yellow-border: rgba(255, 193, 7, 0.5);
+
+    --color-status-blue: #2196f3;
+    --color-status-blue-bg: rgba(33, 150, 243, 0.15);
+    --color-status-blue-bg-strong: rgba(33, 150, 243, 0.3);
+    --color-status-blue-bg-hover: rgba(33, 150, 243, 0.25);
+    --color-status-blue-border: rgba(33, 150, 243, 0.5);
+
+    --color-status-red: #f44336;
+    --color-status-red-bg: rgba(244, 67, 54, 0.15);
+    --color-status-red-bg-strong: rgba(244, 67, 54, 0.85);
+    --color-status-red-bg-hover: rgba(244, 67, 54, 0.25);
+    --color-status-red-border: rgba(244, 67, 54, 0.5);
+
+    --color-status-grey: #9e9e9e;
+    --color-status-grey-bg: rgba(158, 158, 158, 0.15);
+    --color-status-grey-bg-strong: rgba(158, 158, 158, 0.3);
+    --color-status-grey-bg-hover: rgba(158, 158, 158, 0.25);
+    --color-status-grey-border: rgba(158, 158, 158, 0.5);
+
+    /* Neutral interactive */
+    --color-neutral-bg: rgba(104, 107, 130, 0.1);
+    --color-neutral-bg-hover: rgba(104, 107, 130, 0.15);
+    --color-neutral-bg-medium: rgba(104, 107, 130, 0.2);
+    --color-neutral-muted: rgba(104, 107, 130, 0.4);
+
+    /* Accent interactive */
+    --color-accent-bg-hover-light: rgba(133, 91, 251, 0.15);
+    --color-accent-bg-subtle-light: rgba(133, 91, 251, 0.1);
+    --color-accent-muted: rgba(133, 91, 251, 0.6);
+
+    /* White opacity scale */
+    --color-white-90: rgba(255, 255, 255, 0.9);
+    --color-white-70: rgba(255, 255, 255, 0.7);
+    --color-white-50: rgba(255, 255, 255, 0.5);
+    --color-white-40: rgba(255, 255, 255, 0.4);
+    --color-white-30: rgba(255, 255, 255, 0.3);
+    --color-white-25: rgba(255, 255, 255, 0.25);
+    --color-white-20: rgba(255, 255, 255, 0.2);
+    --color-white-10: rgba(255, 255, 255, 0.1);
+
+    /* Slider gradient */
+    --color-slider-from: rgba(255, 255, 255, 0.3);
+    --color-slider-to: rgba(255, 255, 255, 0.1);
+
+    /* Row label badge (primary variant) */
+    --color-row-label-bg: rgba(30, 60, 120, 0.4);
+    --color-row-label-text: rgba(130, 170, 255, 0.9);
+    --color-row-label-border: rgba(60, 100, 180, 0.6);
+
+    /* Entry/exit count badge */
+    --color-entry-count-bg: rgba(100, 200, 100, 0.2);
+    --color-entry-count-text: rgba(100, 200, 100, 1);
+    --color-exit-count-bg: rgba(200, 100, 100, 0.2);
+    --color-exit-count-text: rgba(200, 100, 100, 1);
+
+    /* Misc */
+    --color-disabled-bg: #666;
+    --color-status-green-label-bg: rgba(76, 175, 80, 0.85);
+
+    /* Animations */
+    --animate-breathing: breathing 1.5s ease-in infinite;
+    --animate-block-breathing: blockBreathing 1.5s ease-in-out infinite;
+}
+
+/* ============================================================================
+   KEYFRAME ANIMATIONS
+   ============================================================================ */
+
+@keyframes breathing {
+    0%,
+    100% {
+        border-color: rgba(255, 255, 255, 0.5);
+        box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.1);
+    }
+    50% {
+        border-color: rgba(255, 255, 255, 1);
+        box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.2);
+    }
+}
+
+@keyframes blockBreathing {
+    0%,
+    100% {
+        border-color: rgba(255, 255, 255, 0.5);
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+    }
+    50% {
+        border-color: rgba(255, 255, 255, 1);
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+    }
+}
+
+/* ============================================================================
+   CSS CUSTOM PROPERTIES (kept for components referencing var() directly)
+   ============================================================================ */
+
 :root {
     font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
     line-height: 1.5;
@@ -11,6 +172,7 @@
     --border-color-options-row-underscored: rgba(133, 91, 251, 0.72);
     --text-color-icon-logo: rgb(255, 255, 255);
     --text-color-depth-chart-price: rgb(26, 27, 34);
+    --text-color-primary: rgba(255, 255, 255, 0.87);
     --box-shadow-card-primary: 0 0 2px 2px rgba(133, 91, 251, 0.4);
     --background-hover-gradient: linear-gradient(
         to right,

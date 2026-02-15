@@ -1,190 +1,84 @@
-// Strategy Assembly styled components
-import styled from "styled-components";
+// Strategy Assembly styled components → Tailwind + CVA
+import { cva } from "class-variance-authority";
+import type { CSSProperties } from "react";
 
 // =============================================================================
 // CONTAINER & LAYOUT
 // =============================================================================
 
-export const Container = styled.div`
-  max-width: 620px;
-  height: 100%;
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--ds-bg-color);
-`;
+export const container =
+  "max-w-[620px] h-full mx-auto flex flex-col bg-bg-primary";
 
-export const ContentWrapper = styled.div`
-  display: flex;
-  flex: 1;
-  overflow: scroll;
-  gap: 6px;
-  padding: 6px 0;
-`;
+export const contentWrapper = "flex flex-1 overflow-auto gap-1.5 py-1.5";
 
-export const ColumnsWrapper = styled.div`
-  display: flex;
-  flex: 1;
-  height: 100%;
-  gap: 6px;
-`;
+export const columnsWrapper = "flex flex-1 h-full gap-1.5";
 
 // =============================================================================
 // HEADER
 // =============================================================================
 
-export const Header = styled.div`
-  padding: 16px;
-  text-align: center;
-  border-bottom: 1px solid var(--border-color-neutral);
-  background-color: rgba(104, 107, 130, 0.05);
-`;
+export const header =
+  "p-4 text-center border-b border-border-neutral bg-bg-overlay";
 
-export const HeaderText = styled.h2`
-  margin: 0;
-  font-size: 18px;
-  color: var(--text-color-icon-logo);
-`;
+export const headerTextClass = "m-0 text-lg text-text-primary";
 
 // =============================================================================
 // PATTERN SELECTOR
 // =============================================================================
 
-export const PatternSelectorRow = styled.div`
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background-color: rgba(104, 107, 130, 0.08);
-  border-bottom: 1px solid var(--border-color-neutral);
-`;
+export const patternSelectorRow =
+  "flex justify-center gap-2 px-4 py-3 bg-bg-cell-active border-b border-border-neutral";
 
-export const PatternButton = styled.button<{ $isActive: boolean }>`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 16px;
-  border: 2px solid
-    ${({ $isActive }) =>
-      $isActive
-        ? "var(--outline-color-primary)"
-        : "var(--border-color-neutral)"};
-  border-radius: 8px;
-  background-color: ${({ $isActive }) =>
-    $isActive ? "rgba(133, 91, 251, 0.2)" : "rgba(104, 107, 130, 0.1)"};
-  color: ${({ $isActive }) =>
-    $isActive ? "var(--text-color-icon-logo)" : "rgba(255, 255, 255, 0.6)"};
-  cursor: pointer;
-  transition: all 0.2s;
-  min-width: 120px;
+export const patternButton = cva(
+  "flex flex-col items-center px-4 py-2 rounded-lg cursor-pointer transition-all duration-200 min-w-[120px] border-2",
+  {
+    variants: {
+      isActive: {
+        true: "border-accent-outline bg-accent-bg-subtle text-text-primary hover:bg-accent-bg-hover hover:border-accent-secondary",
+        false:
+          "border-border-neutral bg-neutral-bg text-text-tertiary hover:bg-neutral-bg-hover hover:border-accent-primary",
+      },
+    },
+  },
+);
 
-  &:hover {
-    background-color: ${({ $isActive }) =>
-      $isActive ? "rgba(133, 91, 251, 0.3)" : "rgba(104, 107, 130, 0.15)"};
-    border-color: ${({ $isActive }) =>
-      $isActive
-        ? "var(--outline-color-secondary)"
-        : "var(--accent-color-purple)"};
-  }
-`;
+export const patternLabel = "text-xs font-semibold";
 
-export const PatternLabel = styled.span`
-  font-size: 12px;
-  font-weight: 600;
-`;
-
-export const PatternDescription = styled.span`
-  font-size: 9px;
-  opacity: 0.7;
-  margin-top: 2px;
-`;
+export const patternDescription = "text-[9px] opacity-70 mt-0.5";
 
 // =============================================================================
 // COLUMNS
 // =============================================================================
 
-export const Column = styled.div`
-  display: flex;
-  flex-direction: column;
-  min-width: 220px;
-  width: 100%;
-  background-color: rgb(22, 18, 31);
-  border: 1px solid rgba(229, 231, 235, 0.2);
-  border-radius: 8px;
-  overflow: hidden;
-  padding: 0;
-`;
+export const column =
+  "flex flex-col min-w-[220px] w-full bg-bg-column border border-border-dimmed rounded-lg overflow-hidden p-0";
 
-export const ColumnHeader = styled.div<{ $tint?: string }>`
-  padding: 8px;
-  text-align: center;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: ${({ $tint }) => $tint || "rgba(104, 107, 130, 0.08)"};
-`;
+export function getColumnHeaderProps(tint?: string) {
+  const className = "p-2 text-center border-b border-border-dimmed";
+  const style: CSSProperties = {
+    backgroundColor: tint || "rgba(104, 107, 130, 0.08)",
+  };
+  return { className, style };
+}
 
-export const ColumnHeaderText = styled.span`
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
-`;
+export const columnHeaderText = "text-sm font-semibold text-text-secondary";
 
 // =============================================================================
 // UTILITY ROW
 // =============================================================================
 
-export const UtilityRow = styled.div`
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  padding: 16px;
-  border-top: 1px solid var(--border-color-neutral);
-  background-color: rgba(104, 107, 130, 0.05);
-`;
+export const utilityRow =
+  "flex justify-center gap-4 p-4 border-t border-border-neutral bg-bg-overlay";
 
-export const UtilityButton = styled.button`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border: 1px solid var(--border-color-neutral);
-  border-radius: 6px;
-  background-color: rgba(104, 107, 130, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
-  cursor: pointer;
-  transition:
-    background-color 0.2s,
-    border-color 0.2s;
-
-  svg {
-    stroke: rgba(255, 255, 255, 0.8);
-    opacity: 0.8;
-  }
-
-  &:hover {
-    background-color: rgba(133, 91, 251, 0.15);
-    border-color: var(--accent-color-purple);
-    color: var(--text-color-icon-logo);
-
-    svg {
-      stroke: var(--text-color-icon-logo);
-      opacity: 1;
-    }
-  }
-`;
+export const utilityButton =
+  "flex items-center justify-center gap-2 px-4 py-2 border border-border-neutral rounded-md bg-neutral-bg text-text-secondary text-sm cursor-pointer transition-[background-color,border-color] duration-200 [&>svg]:stroke-text-secondary [&>svg]:opacity-80 hover:bg-accent-bg-hover-light hover:border-accent-primary hover:text-text-primary hover:[&>svg]:stroke-text-primary hover:[&>svg]:opacity-100";
 
 // =============================================================================
 // DEBUG PANEL
 // =============================================================================
 
-export const DebugPanel = styled.div`
-  padding: 8px;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
-  background-color: rgba(104, 107, 130, 0.05);
-  border-top: 1px solid var(--border-color-dimmed);
-`;
+export const debugPanel =
+  "p-2 text-[10px] text-text-muted bg-bg-overlay border-t border-border-dimmed";
 
 // =============================================================================
 // COLUMN TINT HELPERS

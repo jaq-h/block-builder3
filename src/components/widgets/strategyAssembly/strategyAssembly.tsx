@@ -21,21 +21,21 @@ import { useStrategyAssembly } from "./useStrategyAssembly";
 import ProviderColumn from "../../common/grid/ProviderColumn";
 import GridCell from "../../common/grid/GridCell";
 import {
-  Container,
-  Header,
-  HeaderText,
-  PatternSelectorRow,
-  PatternButton,
-  PatternLabel,
-  PatternDescription,
-  ContentWrapper,
-  ColumnsWrapper,
-  Column,
-  ColumnHeader,
-  ColumnHeaderText,
-  UtilityRow,
-  UtilityButton,
-  DebugPanel,
+  container,
+  header,
+  headerTextClass,
+  patternSelectorRow,
+  patternButton,
+  patternLabel,
+  patternDescription,
+  contentWrapper,
+  columnsWrapper,
+  column,
+  getColumnHeaderProps,
+  columnHeaderText,
+  utilityRow,
+  utilityButton,
+  debugPanel,
 } from "./strategyAssembly.styles";
 import { SCALE_CONFIG } from "../../../styles/grid";
 
@@ -250,14 +250,11 @@ const StrategyAssemblyInner: React.FC = () => {
     const isDescending = shouldBeDescending(row, col);
 
     // Convert to percentage based on scale direction
-    // Use SCALE_CONFIG.MAX_PERCENT as the maximum value (single source of truth)
     const { MAX_PERCENT } = SCALE_CONFIG;
     let percentage: number;
     if (isDescending) {
-      // Descending: 0% at top, MAX_PERCENT at bottom
       percentage = (clampedRelativeY / availableHeight) * MAX_PERCENT;
     } else {
-      // Ascending: MAX_PERCENT at top, 0% at bottom
       percentage =
         MAX_PERCENT - (clampedRelativeY / availableHeight) * MAX_PERCENT;
     }
@@ -267,8 +264,8 @@ const StrategyAssemblyInner: React.FC = () => {
 
     // Update only this block's position in the grid
     setGrid((prev) => {
-      const newGrid = prev.map((column) =>
-        column.map((rowArray) =>
+      const newGrid = prev.map((gridCol) =>
+        gridCol.map((rowArray) =>
           rowArray.map((b) => {
             if (b.id === id) {
               return { ...b, yPosition: roundedPercentage };
@@ -395,8 +392,6 @@ const StrategyAssemblyInner: React.FC = () => {
 
   const handlePatternChange = (pattern: StrategyPattern) => {
     setStrategyPattern(pattern);
-    // Optionally clear the grid when switching patterns
-    // clearAll();
   };
 
   const activeAllowedRows = getActiveAllowedRows();
@@ -425,28 +420,30 @@ const StrategyAssemblyInner: React.FC = () => {
   };
 
   return (
-    <Container onMouseMove={handleMouseMove}>
-      <Header>
-        <HeaderText>Strategy Builder</HeaderText>
-      </Header>
+    <div className={container} onMouseMove={handleMouseMove}>
+      <div className={header}>
+        <h2 className={headerTextClass}>Strategy Builder</h2>
+      </div>
 
       {/* Pattern Selector */}
-      <PatternSelectorRow>
+      <div className={patternSelectorRow}>
         {(Object.keys(PATTERN_CONFIGS) as StrategyPattern[]).map((pattern) => (
-          <PatternButton
+          <button
             key={pattern}
-            $isActive={strategyPattern === pattern}
+            className={patternButton({ isActive: strategyPattern === pattern })}
             onClick={() => handlePatternChange(pattern)}
           >
-            <PatternLabel>{PATTERN_CONFIGS[pattern].label}</PatternLabel>
-            <PatternDescription>
+            <span className={patternLabel}>
+              {PATTERN_CONFIGS[pattern].label}
+            </span>
+            <span className={patternDescription}>
               {PATTERN_CONFIGS[pattern].description}
-            </PatternDescription>
-          </PatternButton>
+            </span>
+          </button>
         ))}
-      </PatternSelectorRow>
+      </div>
 
-      <ContentWrapper>
+      <div className={contentWrapper}>
         {/* Provider Column */}
         <ProviderColumn
           providerBlocks={providerBlocks}
@@ -461,8 +458,8 @@ const StrategyAssemblyInner: React.FC = () => {
         />
 
         {/* Grid Columns */}
-        <ColumnsWrapper>
-          {grid.map((column, colIndex) => {
+        <div className={columnsWrapper}>
+          {grid.map((gridColumn, colIndex) => {
             const headerTint =
               colIndex === 0
                 ? "rgba(100, 200, 100, 0.15)"
@@ -472,14 +469,19 @@ const StrategyAssemblyInner: React.FC = () => {
                 ? "rgba(100, 200, 100, 0.08)"
                 : "rgba(200, 100, 100, 0.08)";
 
+            const colHeaderProps = getColumnHeaderProps(headerTint);
+
             return (
-              <Column key={colIndex}>
-                <ColumnHeader $tint={headerTint}>
-                  <ColumnHeaderText>
+              <div key={colIndex} className={column}>
+                <div
+                  className={colHeaderProps.className}
+                  style={colHeaderProps.style}
+                >
+                  <span className={columnHeaderText}>
                     {COLUMN_HEADERS[colIndex]}
-                  </ColumnHeaderText>
-                </ColumnHeader>
-                {column.map((row, rowIndex) => (
+                  </span>
+                </div>
+                {gridColumn.map((row, rowIndex) => (
                   <GridCell
                     key={rowIndex}
                     colIndex={colIndex}
@@ -514,34 +516,32 @@ const StrategyAssemblyInner: React.FC = () => {
                     onBlockVerticalDrag={handleBlockVerticalDrag}
                   />
                 ))}
-              </Column>
+              </div>
             );
           })}
-        </ColumnsWrapper>
-      </ContentWrapper>
+        </div>
+      </div>
 
       {/* Utility Buttons */}
-      <UtilityRow>
-        <UtilityButton onClick={clearAll}>
+      <div className={utilityRow}>
+        <button className={utilityButton} onClick={clearAll}>
           <TrashIcon width={16} height={16} />
           Clear All
-        </UtilityButton>
-        <UtilityButton onClick={reverseBlocks}>
+        </button>
+        <button className={utilityButton} onClick={reverseBlocks}>
           <ReverseIcon width={16} height={16} />
           Reverse
-        </UtilityButton>
-      </UtilityRow>
+        </button>
+      </div>
 
       {/* Debug: Order Configuration Display */}
       {Object.keys(orderConfig).length > 0 && (
-        <DebugPanel>
+        <div className={debugPanel}>
           <details>
             <summary>
               Order Config ({Object.keys(orderConfig).length} blocks)
             </summary>
-            <pre
-              style={{ fontSize: "9px", maxHeight: "150px", overflow: "auto" }}
-            >
+            <pre className="text-[9px] max-h-[150px] overflow-auto">
               {JSON.stringify(
                 Object.fromEntries(
                   Object.entries(orderConfig).map(([id, config]) => [
@@ -557,9 +557,9 @@ const StrategyAssemblyInner: React.FC = () => {
               )}
             </pre>
           </details>
-        </DebugPanel>
+        </div>
       )}
-    </Container>
+    </div>
   );
 };
 

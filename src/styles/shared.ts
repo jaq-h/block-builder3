@@ -1,269 +1,152 @@
-// Shared styled components for Strategy Assembly widget
-import styled, { css } from 'styled-components';
-import { colors, spacing, borders, animations, transitions } from './theme';
+// Shared style constants and CVA variants for Strategy Assembly widget
+import { cva } from "class-variance-authority";
+import { cn } from "../lib/utils";
 
 // =============================================================================
-// LAYOUT COMPONENTS
+// LAYOUT CLASSES
 // =============================================================================
 
-export const FlexColumn = styled.div`
-  display: flex;
-  flex-direction: column;
-`;
-
-export const FlexRow = styled.div`
-  display: flex;
-  flex-direction: row;
-`;
-
-export const FlexCenter = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`;
-
-export const FlexSpaceBetween = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-`;
+export const flexColumn = "flex flex-col";
+export const flexRow = "flex flex-row";
+export const flexCenter = "flex items-center justify-center";
+export const flexSpaceBetween = "flex justify-between items-center";
 
 // =============================================================================
-// HEADER COMPONENTS
+// HEADER
 // =============================================================================
 
-export const BaseHeader = styled.div`
-  padding: ${spacing.md};
-  text-align: center;
-  border-bottom: ${borders.width.default} solid ${colors.border.neutral};
-  background-color: ${colors.bg.header};
-`;
+export const baseHeader =
+  "p-2 text-center border-b border-border-neutral bg-bg-header";
 
-export const HeaderText = styled.span<{ $size?: 'sm' | 'md' | 'lg' }>`
-  font-weight: 600;
-  color: ${colors.text.secondary};
-  font-size: ${({ $size }) =>
-    $size === 'sm' ? '12px' :
-    $size === 'lg' ? '18px' :
-    '14px'
-  };
-`;
-
-// =============================================================================
-// BADGE COMPONENTS
-// =============================================================================
-
-export type BadgeType = 'primary' | 'conditional' | 'accent';
-
-const badgeStyles = {
-  primary: css`
-    background-color: ${colors.entry.badge};
-    color: ${colors.entry.text};
-    border-color: ${colors.entry.badgeBorder};
-  `,
-  conditional: css`
-    background-color: ${colors.conditional.badge};
-    color: ${colors.conditional.text};
-    border-color: ${colors.conditional.badgeBorder};
-  `,
-  accent: css`
-    background-color: ${colors.accent.bgSubtle};
-    color: ${colors.accent.secondary};
-    border-color: ${colors.accent.primary};
-  `,
-};
-
-export const Badge = styled.div<{ $type?: BadgeType }>`
-  padding: ${spacing.xxs} ${spacing.sm};
-  border-radius: ${borders.radius.sm};
-  font-size: 8px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border: ${borders.width.default} solid;
-  ${({ $type = 'accent' }) => badgeStyles[$type]}
-`;
+export const headerText = cva("font-semibold text-text-secondary", {
+  variants: {
+    size: {
+      sm: "text-xs",
+      md: "text-sm",
+      lg: "text-lg",
+    },
+  },
+  defaultVariants: {
+    size: "md",
+  },
+});
 
 // =============================================================================
-// BUTTON COMPONENTS
+// BADGE
 // =============================================================================
 
-export const BaseButton = styled.button`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: ${spacing.md};
-  padding: ${spacing.md} ${spacing.xl};
-  border: ${borders.width.default} solid ${colors.border.dimmed};
-  border-radius: ${borders.radius.md};
-  background-color: ${colors.bg.header};
-  color: ${colors.text.secondary};
-  font-size: 14px;
-  cursor: pointer;
-  transition: ${transitions.default};
+export type BadgeType = "primary" | "conditional" | "accent";
 
-  &:hover {
-    background-color: ${colors.accent.bgSubtle};
-    border-color: ${colors.accent.primary};
-    color: ${colors.text.primary};
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-`;
-
-export const IconButton = styled(BaseButton)`
-  padding: ${spacing.md};
-  min-width: auto;
-`;
+export const badge = cva(
+  "px-1.5 py-0.5 rounded text-[8px] font-semibold uppercase tracking-wide border",
+  {
+    variants: {
+      type: {
+        primary: "bg-entry-badge text-entry-text border-entry-badge-border",
+        conditional:
+          "bg-conditional-badge text-conditional-text border-conditional-badge-border",
+        accent:
+          "bg-accent-bg-subtle text-accent-secondary border-accent-primary",
+      },
+    },
+    defaultVariants: {
+      type: "accent",
+    },
+  },
+);
 
 // =============================================================================
-// PLACEHOLDER COMPONENTS
+// BUTTONS
 // =============================================================================
 
-export const EmptyPlaceholder = styled.div`
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: ${colors.text.placeholder};
-  font-size: 12px;
-`;
+export const baseButton =
+  "flex items-center justify-center gap-2 px-4 py-2 border border-border-dimmed rounded-md bg-bg-header text-text-secondary text-sm cursor-pointer transition-all duration-200 hover:bg-accent-bg-subtle hover:border-accent-primary hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed";
+
+export const iconButton = cn(baseButton, "p-2 min-w-0");
 
 // =============================================================================
-// ALERT/WARNING COMPONENTS
+// PLACEHOLDER
 // =============================================================================
 
-export const WarningAlert = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: ${spacing.lg};
-  margin: ${spacing.md};
-  border: ${borders.width.medium} dashed ${colors.accent.primary};
-  border-radius: ${borders.radius.lg};
-  background-color: ${colors.accent.bgSubtle};
-  text-align: center;
-`;
-
-export const WarningIcon = styled.div`
-  font-size: 24px;
-  margin-bottom: ${spacing.md};
-`;
-
-export const WarningText = styled.div`
-  font-size: 11px;
-  color: ${colors.accent.primary};
-  font-weight: 500;
-`;
-
-export const WarningSubtext = styled.div`
-  font-size: 9px;
-  color: ${colors.accent.bgHover};
-  margin-top: ${spacing.xs};
-`;
+export const emptyPlaceholder =
+  "flex-1 flex items-center justify-center text-text-placeholder text-xs";
 
 // =============================================================================
-// ANIMATION MIXINS
+// ALERT/WARNING
 // =============================================================================
 
-export const breathingMixin = css`
-  ${animations.cellBreathing}
-`;
+export const warningAlert =
+  "flex flex-col items-center justify-center p-3 m-2 border-2 border-dashed border-accent-primary rounded-lg bg-accent-bg-subtle text-center";
 
-export const blockBreathingMixin = css`
-  ${animations.blockBreathing}
-`;
+export const warningIcon = "text-2xl mb-2";
+
+export const warningText = "text-[11px] text-accent-primary font-medium";
+
+export const warningSubtext = "text-[9px] text-accent-bg-hover mt-1";
 
 // =============================================================================
 // COMMON PATTERNS
 // =============================================================================
 
-export const AbsolutePositioned = styled.div<{
-  $top?: string;
-  $right?: string;
-  $bottom?: string;
-  $left?: string;
-}>`
-  position: absolute;
-  ${({ $top }) => $top && `top: ${$top};`}
-  ${({ $right }) => $right && `right: ${$right};`}
-  ${({ $bottom }) => $bottom && `bottom: ${$bottom};`}
-  ${({ $left }) => $left && `left: ${$left};`}
-`;
+export function absolutePositioned(pos?: {
+  top?: string;
+  right?: string;
+  bottom?: string;
+  left?: string;
+}) {
+  // For dynamic absolute positioning, return className + style
+  const style: Record<string, string> = {};
+  if (pos?.top) style.top = pos.top;
+  if (pos?.right) style.right = pos.right;
+  if (pos?.bottom) style.bottom = pos.bottom;
+  if (pos?.left) style.left = pos.left;
+  return { className: "absolute", style };
+}
 
-export const ScrollContainer = styled.div`
-  overflow: auto;
-  flex: 1;
-`;
-
-// =============================================================================
-// LABEL COMPONENTS
-// =============================================================================
-
-export const Label = styled.span<{ $size?: 'xs' | 'sm' | 'md' }>`
-  color: ${colors.text.muted};
-  font-size: ${({ $size }) =>
-    $size === 'xs' ? '8px' :
-    $size === 'sm' ? '9px' :
-    '10px'
-  };
-  pointer-events: none;
-`;
-
-export const OrderTypeLabel = styled.div`
-  font-size: 11px;
-  font-weight: 600;
-  color: ${colors.text.secondary};
-  text-transform: capitalize;
-`;
+export const scrollContainer = "overflow-auto flex-1";
 
 // =============================================================================
-// DIVIDER COMPONENTS
+// LABEL
 // =============================================================================
 
-export const HorizontalDivider = styled.div<{ $color?: string }>`
-  width: 100%;
-  height: ${borders.width.default};
-  background-color: ${({ $color }) => $color || colors.border.neutral};
-`;
+export const label = cva("text-text-muted pointer-events-none", {
+  variants: {
+    size: {
+      xs: "text-[8px]",
+      sm: "text-[9px]",
+      md: "text-[10px]",
+    },
+  },
+  defaultVariants: {
+    size: "md",
+  },
+});
 
-export const VerticalDivider = styled.div<{ $color?: string }>`
-  width: ${borders.width.default};
-  height: 100%;
-  background-color: ${({ $color }) => $color || colors.border.neutral};
-`;
-
-// =============================================================================
-// CARD/PANEL COMPONENTS
-// =============================================================================
-
-export const Panel = styled.div`
-  background-color: ${colors.bg.column};
-  border: ${borders.width.default} solid ${colors.border.dimmed};
-  border-radius: ${borders.radius.lg};
-  overflow: hidden;
-`;
-
-export const PanelHeader = styled(BaseHeader)`
-  background-color: ${colors.bg.headerHover};
-`;
-
-export const PanelContent = styled.div`
-  padding: ${spacing.md};
-`;
+export const orderTypeLabel =
+  "text-[11px] font-semibold text-text-secondary capitalize";
 
 // =============================================================================
-// DEBUG COMPONENTS
+// DIVIDERS
 // =============================================================================
 
-export const DebugPanel = styled.div`
-  padding: ${spacing.md};
-  font-size: 10px;
-  color: ${colors.text.muted};
-  background-color: ${colors.bg.overlay};
-  border-top: ${borders.width.default} solid ${colors.border.dimmed};
-`;
+export const horizontalDivider = "w-full h-px bg-border-neutral";
+
+export const verticalDivider = "w-px h-full bg-border-neutral";
+
+// =============================================================================
+// CARD/PANEL
+// =============================================================================
+
+export const panel =
+  "bg-bg-column border border-border-dimmed rounded-lg overflow-hidden";
+
+export const panelHeader = cn(baseHeader, "bg-bg-header-hover");
+
+export const panelContent = "p-2";
+
+// =============================================================================
+// DEBUG
+// =============================================================================
+
+export const debugPanel =
+  "p-2 text-[10px] text-text-muted bg-bg-overlay border-t border-border-dimmed";

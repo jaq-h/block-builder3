@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Routes, Route, Link, useLocation } from "react-router-dom";
-import styled from "styled-components";
+import { cva } from "class-variance-authority";
+import { cn } from "./lib/utils";
 import StrategyAssembly from "./components/widgets/strategyAssembly/strategyAssembly";
 import { ActiveOrders } from "./components/widgets/activeOrders";
 import type { OrderConfig } from "./types/grid";
@@ -13,184 +14,108 @@ import AlertTriangleIcon from "./assets/icons/alert-triangle.svg?react";
 import ClockIcon from "./assets/icons/clock.svg?react";
 
 // =============================================================================
-// STYLED COMPONENTS
+// CVA VARIANTS
 // =============================================================================
 
-const AppContainer = styled.div`
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--ds-bg-color);
-`;
+const navLinkVariants = cva(
+  [
+    "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium",
+    "no-underline transition-all duration-200 border",
+  ],
+  {
+    variants: {
+      isActive: {
+        true: [
+          "text-text-primary bg-accent-bg-subtle border-accent-primary",
+          "hover:bg-accent-bg-hover hover:text-text-primary",
+        ],
+        false: [
+          "text-text-tertiary bg-transparent border-transparent",
+          "hover:bg-neutral-bg-hover hover:text-text-primary",
+        ],
+      },
+    },
+    defaultVariants: {
+      isActive: false,
+    },
+  },
+);
 
-const NavBar = styled.nav`
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 24px;
-  padding: 12px 24px;
-  background-color: rgba(104, 107, 130, 0.1);
-  border-bottom: 1px solid var(--border-color-neutral);
-`;
+const executeButtonVariants = cva(
+  [
+    "px-5 py-2.5 text-white border-none rounded text-sm font-medium",
+    "transition-colors duration-200 flex items-center gap-2",
+    "hover:enabled:bg-status-green-hover disabled:opacity-70",
+  ],
+  {
+    variants: {
+      isSubmitting: {
+        true: "bg-disabled-bg cursor-not-allowed",
+        false: "bg-status-green cursor-pointer",
+      },
+    },
+    defaultVariants: {
+      isSubmitting: false,
+    },
+  },
+);
 
-const NavLink = styled(Link)<{ $isActive: boolean }>`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  text-decoration: none;
-  color: ${({ $isActive }) =>
-    $isActive ? "var(--text-color-icon-logo)" : "rgba(255, 255, 255, 0.6)"};
-  background-color: ${({ $isActive }) =>
-    $isActive ? "rgba(133, 91, 251, 0.2)" : "transparent"};
-  border: 1px solid
-    ${({ $isActive }) =>
-      $isActive ? "var(--accent-color-purple)" : "transparent"};
-  transition: all 0.2s;
+const simulationBadgeVariants = cva(
+  [
+    "inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium",
+    "border [&>svg]:stroke-current",
+  ],
+  {
+    variants: {
+      isSimulation: {
+        true: "bg-status-yellow-bg text-status-yellow border-status-yellow-bg-strong",
+        false:
+          "bg-status-green-bg text-status-green border-status-green-bg-strong",
+      },
+    },
+    defaultVariants: {
+      isSimulation: true,
+    },
+  },
+);
 
-  &:hover {
-    background-color: ${({ $isActive }) =>
-      $isActive ? "rgba(133, 91, 251, 0.25)" : "rgba(104, 107, 130, 0.15)"};
-    color: var(--text-color-icon-logo);
-  }
-`;
+// =============================================================================
+// STATIC CLASS STRINGS
+// =============================================================================
 
-const NavIcon = styled.span`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+const appContainerClass = "min-h-screen flex flex-col bg-bg-primary";
 
-  svg {
-    stroke: currentColor;
-  }
-`;
+const navBarClass =
+  "flex justify-center items-center gap-6 px-6 py-3 bg-neutral-bg border-b border-border-neutral";
 
-const OrderBadge = styled.span`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  font-size: 11px;
-  font-weight: 600;
-  background-color: rgba(76, 175, 80, 0.3);
-  color: #4caf50;
-`;
+const navIconClass =
+  "inline-flex items-center justify-center [&>svg]:stroke-current";
 
-const MainContent = styled.main`
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-`;
+const orderBadgeClass =
+  "inline-flex items-center justify-center min-w-[18px] h-[18px] px-[5px] rounded-full text-[11px] font-semibold bg-status-green-bg-strong text-status-green";
 
-const ExecuteButtonContainer = styled.div`
-  padding: 16px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-`;
+const mainContentClass = "flex-1 flex flex-col";
 
-const ExecuteButton = styled.button<{ $isSubmitting?: boolean }>`
-  padding: 10px 20px;
-  background-color: ${({ $isSubmitting }) =>
-    $isSubmitting ? "#666" : "#4caf50"};
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: ${({ $isSubmitting }) => ($isSubmitting ? "not-allowed" : "pointer")};
-  font-size: 14px;
-  font-weight: 500;
-  transition: background-color 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+const executeButtonContainerClass =
+  "p-4 text-center flex flex-col items-center gap-2";
 
-  &:hover:not(:disabled) {
-    background-color: #45a049;
-  }
+const simulationToggleClass = cn(
+  "inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium",
+  "bg-transparent text-text-tertiary border border-white-20",
+  "cursor-pointer transition-all duration-200",
+  "hover:bg-white-10 hover:text-text-secondary hover:border-white-30",
+);
 
-  &:disabled {
-    opacity: 0.7;
-  }
-`;
+const simulationModeContainerClass = "flex items-center gap-2";
 
-const SimulationBadge = styled.div<{ $isSimulation: boolean }>`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  background-color: ${({ $isSimulation }) =>
-    $isSimulation ? "rgba(255, 193, 7, 0.2)" : "rgba(76, 175, 80, 0.2)"};
-  color: ${({ $isSimulation }) => ($isSimulation ? "#ffc107" : "#4caf50")};
-  border: 1px solid
-    ${({ $isSimulation }) =>
-      $isSimulation ? "rgba(255, 193, 7, 0.3)" : "rgba(76, 175, 80, 0.3)"};
+const successMessageClass =
+  "text-status-green text-[13px] flex items-center gap-1.5 [&>svg]:stroke-current";
 
-  svg {
-    stroke: currentColor;
-  }
-`;
+const errorMessageClass =
+  "text-status-red text-[13px] flex items-center gap-1.5 [&>svg]:stroke-current";
 
-const SimulationToggle = styled.button<{ $isSimulation: boolean }>`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  background-color: transparent;
-  color: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.8);
-    border-color: rgba(255, 255, 255, 0.3);
-  }
-`;
-
-const SimulationModeContainer = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-`;
-
-const SuccessMessage = styled.div`
-  color: #4caf50;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-
-  svg {
-    stroke: currentColor;
-  }
-`;
-
-const ErrorMessage = styled.div`
-  color: #f44336;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-
-  svg {
-    stroke: currentColor;
-  }
-`;
+const successLinkClass =
+  "text-status-green ml-2 inline-flex items-center gap-1";
 
 // =============================================================================
 // INNER APP COMPONENT (uses the store)
@@ -257,26 +182,36 @@ function AppInner() {
   };
 
   return (
-    <AppContainer>
+    <div className={appContainerClass}>
       {/* Navigation Bar */}
-      <NavBar>
-        <NavLink to="/" $isActive={location.pathname === "/"}>
-          <NavIcon>
+      <nav className={navBarClass}>
+        <Link
+          to="/"
+          className={navLinkVariants({ isActive: location.pathname === "/" })}
+        >
+          <span className={navIconClass}>
             <ToolsIcon width={16} height={16} />
-          </NavIcon>
+          </span>
           Strategy Builder
-        </NavLink>
-        <NavLink to="/active" $isActive={location.pathname === "/active"}>
-          <NavIcon>
+        </Link>
+        <Link
+          to="/active"
+          className={navLinkVariants({
+            isActive: location.pathname === "/active",
+          })}
+        >
+          <span className={navIconClass}>
             <OrdersIcon width={16} height={16} />
-          </NavIcon>
+          </span>
           Active Orders
-          {activeOrderCount > 0 && <OrderBadge>{activeOrderCount}</OrderBadge>}
-        </NavLink>
-      </NavBar>
+          {activeOrderCount > 0 && (
+            <span className={orderBadgeClass}>{activeOrderCount}</span>
+          )}
+        </Link>
+      </nav>
 
       {/* Main Content */}
-      <MainContent>
+      <main className={mainContentClass}>
         <Routes>
           {/* Home - Strategy Assembly */}
           <Route
@@ -289,18 +224,20 @@ function AppInner() {
                 />
                 {/* Execute Trade Button - only show when there are orders */}
                 {Object.keys(orderConfig).length > 0 && (
-                  <ExecuteButtonContainer>
-                    <SimulationModeContainer>
-                      <SimulationBadge
-                        $isSimulation={isDev || isSimulationMode}
+                  <div className={executeButtonContainerClass}>
+                    <div className={simulationModeContainerClass}>
+                      <div
+                        className={simulationBadgeVariants({
+                          isSimulation: isDev || isSimulationMode,
+                        })}
                       >
                         <ToolsIcon width={12} height={12} />
                         {getSimulationMessage()}
-                      </SimulationBadge>
+                      </div>
                       {/* Only show toggle in production - dev always simulates */}
                       {!isDev && (
-                        <SimulationToggle
-                          $isSimulation={isSimulationMode}
+                        <button
+                          className={simulationToggleClass}
                           onClick={toggleSimulationMode}
                           title={
                             isSimulationMode
@@ -311,13 +248,15 @@ function AppInner() {
                           {isSimulationMode
                             ? "Switch to Production"
                             : "Switch to Simulation"}
-                        </SimulationToggle>
+                        </button>
                       )}
-                    </SimulationModeContainer>
-                    <ExecuteButton
+                    </div>
+                    <button
+                      className={executeButtonVariants({
+                        isSubmitting: isSubmitting,
+                      })}
                       onClick={handleExecuteTrade}
                       disabled={isSubmitting}
-                      $isSubmitting={isSubmitting}
                     >
                       {isSubmitting ? (
                         <>
@@ -330,33 +269,24 @@ function AppInner() {
                           orders)
                         </>
                       )}
-                    </ExecuteButton>
+                    </button>
                     {showSuccess && (
-                      <SuccessMessage>
+                      <div className={successMessageClass}>
                         <CheckIcon width={14} height={14} />
                         Orders submitted successfully!
-                        <Link
-                          to="/active"
-                          style={{
-                            color: "#4caf50",
-                            marginLeft: "8px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
-                          }}
-                        >
+                        <Link to="/active" className={successLinkClass}>
                           View Active Orders
                           <ArrowRightIcon width={12} height={12} />
                         </Link>
-                      </SuccessMessage>
+                      </div>
                     )}
                     {error && (
-                      <ErrorMessage>
+                      <div className={errorMessageClass}>
                         <AlertTriangleIcon width={14} height={14} />
                         {error}
-                      </ErrorMessage>
+                      </div>
                     )}
-                  </ExecuteButtonContainer>
+                  </div>
                 )}
               </>
             }
@@ -375,8 +305,8 @@ function AppInner() {
             }
           />
         </Routes>
-      </MainContent>
-    </AppContainer>
+      </main>
+    </div>
   );
 }
 

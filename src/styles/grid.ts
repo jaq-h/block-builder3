@@ -2,7 +2,9 @@
 // GRID STYLES - Shared grid styles and constants
 // =============================================================================
 
-import styled from "styled-components";
+import { cva } from "class-variance-authority";
+import { cn } from "../lib/utils";
+import type { CSSProperties } from "react";
 
 // =============================================================================
 // SCALE CONFIGURATION - Single Source of Truth
@@ -65,517 +67,331 @@ export const getPositionPercent = (
 };
 
 // =============================================================================
-// ANIMATIONS
+// CELL CONTAINER - Interactive version with drag/drop states (CVA)
 // =============================================================================
 
-export const breathingAnimation = `
-  @keyframes breathing {
-    0%, 100% {
-      border-color: rgba(255, 255, 255, 0.5);
-      box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.1);
-    }
-    50% {
-      border-color: rgba(255, 255, 255, 1);
-      box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.2);
-    }
+const gridActivePattern =
+  "linear-gradient(to right, rgba(255, 255, 255, 0.4) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.4) 1px, transparent 1px)";
+const gridValidPattern =
+  "linear-gradient(to right, rgba(255, 255, 255, 0.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.2) 1px, transparent 1px)";
+
+export function getInteractiveCellContainerProps(opts: {
+  isOver: boolean;
+  isValidTarget: boolean;
+  isDisabled: boolean;
+  tint?: string;
+}) {
+  const { isOver, isValidTarget, isDisabled, tint } = opts;
+
+  const className = cn(
+    "flex-1 relative rounded-lg m-2 flex flex-col p-2 min-h-[220px] overflow-visible",
+    "transition-[border-color,box-shadow,background-image,background-color] duration-200",
+    // Border
+    isDisabled
+      ? "border border-transparent"
+      : isOver
+        ? "border border-accent-secondary"
+        : isValidTarget
+          ? "border border-accent-primary"
+          : "border border-border-dimmed",
+    // Box shadow
+    isOver
+      ? "shadow-[0_0_0_1px_var(--color-accent-secondary)]"
+      : isValidTarget
+        ? "shadow-[0_0_0_1px_var(--color-accent-primary)]"
+        : "shadow-none",
+    // Background color
+    isDisabled ? "bg-bg-column" : !tint ? "bg-bg-cell-active" : "",
+    // Animation
+    (isOver || isValidTarget) && !isDisabled ? "animate-breathing" : "",
+  );
+
+  const style: CSSProperties = {};
+  if (!isDisabled && tint) {
+    style.backgroundColor = tint;
   }
-`;
+  if (!isDisabled && isOver) {
+    style.backgroundImage = gridActivePattern;
+    style.backgroundSize = "20px 20px";
+  } else if (!isDisabled && isValidTarget) {
+    style.backgroundImage = gridValidPattern;
+    style.backgroundSize = "20px 20px";
+  }
 
-// =============================================================================
-// CELL CONTAINER - Interactive version with drag/drop states
-// =============================================================================
-
-interface InteractiveCellContainerProps {
-  $isOver: boolean;
-  $isValidTarget: boolean;
-  $isDisabled: boolean;
-  $align: "left" | "right";
-  $tint?: string;
+  return { className, style };
 }
-
-export const InteractiveCellContainer = styled.div<InteractiveCellContainerProps>`
-  ${breathingAnimation}
-  flex: 1;
-  position: relative;
-  border: 1px solid
-    ${({ $isOver, $isValidTarget, $isDisabled }) =>
-      $isDisabled
-        ? "transparent"
-        : $isOver
-          ? "var(--outline-color-secondary)"
-          : $isValidTarget
-            ? "var(--accent-color-purple)"
-            : "#e5e7eb"};
-  box-shadow: ${({ $isOver, $isValidTarget }) =>
-    $isOver
-      ? "0 0 0 1px var(--outline-color-secondary)"
-      : $isValidTarget
-        ? "0 0 0 1px var(--accent-color-purple)"
-        : "none"};
-  border-radius: 8px;
-  margin: 8px;
-  background-color: ${({ $isDisabled, $tint }) =>
-    $isDisabled ? "rgb(22, 18, 31)" : $tint || "#686b8214"};
-  background-image: ${({ $isOver, $isValidTarget, $isDisabled }) => {
-    if ($isDisabled) return "none";
-    if ($isOver) {
-      return `
-        linear-gradient(to right, rgba(255, 255, 255, 0.4) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(255, 255, 255, 0.4) 1px, transparent 1px)
-      `;
-    }
-    if ($isValidTarget) {
-      return `
-        linear-gradient(to right, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(255, 255, 255, 0.2) 1px, transparent 1px)
-      `;
-    }
-    return "none";
-  }};
-  background-size: ${({ $isOver, $isValidTarget }) =>
-    $isOver || $isValidTarget ? "20px 20px" : "auto"};
-  animation: ${({ $isOver, $isValidTarget }) =>
-    $isOver || $isValidTarget ? "breathing 1.5s ease-in infinite" : "none"};
-  display: flex;
-  flex-direction: column;
-  padding: 8px;
-  min-height: 220px;
-  overflow: visible;
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s,
-    background-image 0.3s ease-out,
-    background-color 0.2s;
-`;
 
 // =============================================================================
 // CELL CONTAINER - Read-only version for display widgets
 // =============================================================================
 
-interface ReadOnlyCellContainerProps {
-  $tint?: string;
+export function getReadOnlyCellContainerProps(tint?: string) {
+  const className =
+    "flex-1 relative border border-border-dimmed rounded-lg m-2 flex flex-col p-2 min-h-[220px] overflow-visible";
+  const style: CSSProperties = {};
+  if (tint) {
+    style.backgroundColor = tint;
+  } else {
+    style.backgroundColor = "rgba(104, 107, 130, 0.08)";
+  }
+  return { className, style };
 }
 
-export const ReadOnlyCellContainer = styled.div<ReadOnlyCellContainerProps>`
-  flex: 1;
-  position: relative;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  margin: 8px;
-  background-color: ${({ $tint }) => $tint || "#686b8214"};
-  display: flex;
-  flex-direction: column;
-  padding: 8px;
-  min-height: 220px;
-  overflow: visible;
-`;
-
 // =============================================================================
-// ROW LABEL BADGE
+// ROW LABEL BADGE (CVA)
 // =============================================================================
 
-export const RowLabelBadge = styled.div<{ $type: "primary" | "conditional" }>`
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 8px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  background-color: ${({ $type }) =>
-    $type === "primary"
-      ? "rgba(30, 60, 120, 0.4)"
-      : "rgba(200, 150, 50, 0.25)"};
-  color: ${({ $type }) =>
-    $type === "primary"
-      ? "rgba(130, 170, 255, 0.9)"
-      : "rgba(255, 200, 100, 0.9)"};
-  border: 1px solid
-    ${({ $type }) =>
-      $type === "primary"
-        ? "rgba(60, 100, 180, 0.6)"
-        : "rgba(200, 150, 50, 0.5)"};
-`;
+export const rowLabelBadge = cva(
+  "absolute top-1 right-1 px-1.5 py-0.5 rounded-[3px] text-[8px] font-semibold uppercase tracking-wide border",
+  {
+    variants: {
+      type: {
+        primary: "bg-row-label-bg text-row-label-text border-row-label-border",
+        conditional:
+          "bg-conditional-badge text-conditional-text border-conditional-badge-border",
+      },
+    },
+  },
+);
 
 // =============================================================================
 // CELL HEADER
 // =============================================================================
 
-export const CellHeader = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 4px;
-`;
+export const cellHeader = "flex flex-col gap-0.5 mb-1";
 
-export const OrderTypeLabel = styled.div`
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
-  text-transform: capitalize;
-`;
+export const orderTypeLabel =
+  "text-[11px] font-semibold text-text-secondary capitalize";
 
 // =============================================================================
 // AXIS COMPONENTS
 // =============================================================================
 
-export const AxisLabelItem = styled.span<{
-  $position?: "above" | "below";
-  $isSingleAxis?: boolean;
-}>`
-  position: absolute;
-  ${({ $position }) => ($position === "above" ? "top: 2px" : "bottom: 2px")};
-  left: ${({ $isSingleAxis }) => ($isSingleAxis !== false ? "50%" : "35%")};
-  transform: translateX(-50%);
-  font-size: 9px;
-  color: rgba(255, 255, 255, 0.5);
-  white-space: nowrap;
-  pointer-events: none;
-`;
+export function getAxisLabelItemProps(
+  position?: "above" | "below",
+  isSingleAxis?: boolean,
+) {
+  const className = cn(
+    "absolute text-[9px] text-text-muted whitespace-nowrap pointer-events-none -translate-x-1/2",
+    position === "above" ? "top-0.5" : "bottom-0.5",
+  );
+  const style: CSSProperties = {
+    left: isSingleAxis !== false ? "50%" : "35%",
+  };
+  return { className, style };
+}
 
-export const SliderArea = styled.div`
-  flex: 1;
-  position: relative;
-  display: flex;
-  flex-direction: row;
-  overflow: visible;
-`;
+export const sliderArea = "flex-1 relative flex flex-row overflow-visible";
 
-export const AxisColumn = styled.div<{ $isSingleAxis?: boolean }>`
-  position: relative;
-  flex: ${({ $isSingleAxis }) => ($isSingleAxis ? "1" : "0 0 50%")};
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: visible;
-`;
+export function getAxisColumnProps(isSingleAxis?: boolean) {
+  const className = cn(
+    "relative h-full flex flex-col overflow-visible",
+    isSingleAxis ? "flex-1" : "flex-none w-1/2",
+  );
+  return className;
+}
 
 // =============================================================================
 // PERCENTAGE SCALE & SLIDER TRACK
 // =============================================================================
 
-export const PercentageScale = styled.div<{ $isDescending?: boolean }>`
-  position: absolute;
-  left: 0;
-  top: ${({ $isDescending }) =>
-    getTrackStart($isDescending ?? false) + BLOCK_HEIGHT / 2}px;
-  bottom: ${({ $isDescending }) =>
-    getTrackEnd($isDescending ?? false) + BLOCK_HEIGHT / 2}px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  font-size: 8px;
-  color: rgba(255, 255, 255, 0.25);
-  pointer-events: none;
-`;
+export function getPercentageScaleProps(isDescending?: boolean) {
+  const isDesc = isDescending ?? false;
+  const className =
+    "absolute left-0 flex flex-col justify-between text-[8px] text-white-25 pointer-events-none";
+  const style: CSSProperties = {
+    top: `${getTrackStart(isDesc) + BLOCK_HEIGHT / 2}px`,
+    bottom: `${getTrackEnd(isDesc) + BLOCK_HEIGHT / 2}px`,
+  };
+  return { className, style };
+}
 
-export const SliderTrack = styled.div<{
-  $isDescending?: boolean;
-  $isSingleAxis?: boolean;
-}>`
-  position: absolute;
-  left: ${({ $isSingleAxis }) => ($isSingleAxis !== false ? "50%" : "35%")};
-  top: ${({ $isDescending }) =>
-    getTrackStart($isDescending ?? false) + BLOCK_HEIGHT / 2}px;
-  bottom: ${({ $isDescending }) =>
-    getTrackEnd($isDescending ?? false) + BLOCK_HEIGHT / 2}px;
-  width: 2px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.1)
-  );
-  transform: translateX(-50%);
-  pointer-events: none;
-`;
+export function getSliderTrackProps(
+  isDescending?: boolean,
+  isSingleAxis?: boolean,
+) {
+  const isDesc = isDescending ?? false;
+  const className =
+    "absolute w-0.5 bg-gradient-to-b from-slider-from to-slider-to -translate-x-1/2 pointer-events-none";
+  const style: CSSProperties = {
+    left: isSingleAxis !== false ? "50%" : "35%",
+    top: `${getTrackStart(isDesc) + BLOCK_HEIGHT / 2}px`,
+    bottom: `${getTrackEnd(isDesc) + BLOCK_HEIGHT / 2}px`,
+  };
+  return { className, style };
+}
 
 // =============================================================================
 // MARKET PRICE LINE & LABEL
 // =============================================================================
 
-export const MarketPriceLine = styled.div<{ $isDescending?: boolean }>`
-  position: absolute;
-  left: 0;
-  right: 0;
-  ${({ $isDescending }) =>
-    $isDescending ? "top" : "bottom"}: ${MARKET_PADDING}px;
-  height: 0;
-  border-top: 2px dashed var(--outline-color-secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 5;
-  pointer-events: none;
-`;
+export function getMarketPriceLineProps(isDescending?: boolean) {
+  const isDesc = isDescending ?? false;
+  const className =
+    "absolute left-0 right-0 h-0 border-t-2 border-dashed border-accent-secondary flex items-center justify-center z-5 pointer-events-none";
+  const style: CSSProperties = isDesc
+    ? { top: `${MARKET_PADDING}px` }
+    : { bottom: `${MARKET_PADDING}px` };
+  return { className, style };
+}
 
-export const MarketPriceLabel = styled.div<{ $isDescending?: boolean }>`
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  ${({ $isDescending }) => ($isDescending ? "bottom: 6px" : "top: 6px")};
-  font-size: 9px;
-  font-weight: 500;
-  color: var(--text-color-primary);
-  white-space: nowrap;
-  background-color: var(--ds-bg-color);
-  padding: 2px 6px;
-  border-radius: 3px;
-  z-index: 6;
-`;
+export function getMarketPriceLabelProps(isDescending?: boolean) {
+  const isDesc = isDescending ?? false;
+  const className =
+    "absolute left-1/2 -translate-x-1/2 text-[9px] font-medium text-text-primary whitespace-nowrap bg-bg-primary px-1.5 py-0.5 rounded-[3px] z-[6]";
+  const style: CSSProperties = isDesc ? { bottom: "6px" } : { top: "6px" };
+  return { className, style };
+}
 
 // =============================================================================
 // BLOCK POSITIONER
 // =============================================================================
 
-export const BlockPositioner = styled.div<{
-  $yPosition: number;
-  $isDescending?: boolean;
-  $isSingleAxis?: boolean;
-}>`
-  position: absolute;
-  left: ${({ $isSingleAxis }) => ($isSingleAxis !== false ? "0" : "-15%")};
-  right: ${({ $isSingleAxis }) => ($isSingleAxis !== false ? "0" : "15%")};
-  top: ${({ $yPosition, $isDescending }) => {
-    const isDesc = $isDescending ?? false;
-    const percent = getPositionPercent($yPosition, isDesc);
-    const offset = getTrackStart(isDesc);
-    return `calc(${getTrackHeight()} * ${percent} + ${offset}px)`;
-  }};
-  display: flex;
-  justify-content: center;
-  pointer-events: none;
-  z-index: 2;
+export function getBlockPositionerProps(
+  yPosition: number,
+  isDescending?: boolean,
+  isSingleAxis?: boolean,
+) {
+  const isDesc = isDescending ?? false;
+  const percent = getPositionPercent(yPosition, isDesc);
+  const offset = getTrackStart(isDesc);
 
-  > * {
-    pointer-events: auto;
-  }
-`;
+  const className =
+    "absolute flex justify-center pointer-events-none z-[2] [&>*]:pointer-events-auto";
+  const style: CSSProperties = {
+    left: isSingleAxis !== false ? "0" : "-15%",
+    right: isSingleAxis !== false ? "0" : "15%",
+    top: `calc(${getTrackHeight()} * ${percent} + ${offset}px)`,
+  };
+  return { className, style };
+}
 
 // =============================================================================
 // DASHED INDICATOR
 // =============================================================================
 
-export const DashedIndicator = styled.div<{
-  $yPosition: number;
-  $isDescending?: boolean;
-  $isSingleAxis?: boolean;
-}>`
-  position: absolute;
-  left: ${({ $isSingleAxis }) => ($isSingleAxis !== false ? "50%" : "35%")};
-  transform: translateX(-50%);
-  width: 1px;
-  border-left: 2px dashed var(--border-color-options-row-underscored);
-  pointer-events: none;
-  z-index: 1;
-  ${({ $yPosition, $isDescending }) => {
-    const isDesc = $isDescending ?? false;
-    const percent = getPositionPercent($yPosition, isDesc);
-    const offset = getTrackStart(isDesc);
-    const blockTop = `calc(${getTrackHeight()} * ${percent} + ${offset + BLOCK_HEIGHT / 2}px)`;
-    const endOffset = getTrackEnd(isDesc);
-    return `top: ${blockTop}; bottom: ${endOffset + BLOCK_HEIGHT / 2}px;`;
-  }}
-`;
+export function getDashedIndicatorProps(
+  yPosition: number,
+  isDescending?: boolean,
+  isSingleAxis?: boolean,
+) {
+  const isDesc = isDescending ?? false;
+  const percent = getPositionPercent(yPosition, isDesc);
+  const offset = getTrackStart(isDesc);
+  const endOffset = getTrackEnd(isDesc);
+
+  const className =
+    "absolute w-px border-l-2 border-dashed border-accent-outline pointer-events-none z-[1] -translate-x-1/2";
+  const style: CSSProperties = {
+    left: isSingleAxis !== false ? "50%" : "35%",
+    top: `calc(${getTrackHeight()} * ${percent} + ${offset + BLOCK_HEIGHT / 2}px)`,
+    bottom: `${endOffset + BLOCK_HEIGHT / 2}px`,
+  };
+  return { className, style };
+}
 
 // =============================================================================
 // PERCENTAGE LABEL
 // =============================================================================
 
-export const PercentageLabel = styled.div<{
-  $yPosition: number;
-  $isDescending?: boolean;
-  $sign?: string;
-  $isSingleAxis?: boolean;
-}>`
-  position: absolute;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--accent-color-purple);
-  pointer-events: none;
-  z-index: 9999;
-  white-space: nowrap;
-  left: ${({ $isSingleAxis }) =>
-    $isSingleAxis !== false ? "calc(50% + 25px)" : "calc(35% + 25px)"};
-  top: ${({ $yPosition, $isDescending }) => {
-    const isDesc = $isDescending ?? false;
-    const percent = getPositionPercent($yPosition, isDesc);
-    const offset = getTrackStart(isDesc);
-    return `calc(${getTrackHeight()} * ${percent} + ${offset + BLOCK_HEIGHT / 2 - 6}px)`;
-  }};
+export function getPercentageLabelProps(
+  yPosition: number,
+  isDescending?: boolean,
+  sign?: string,
+  isSingleAxis?: boolean,
+) {
+  const isDesc = isDescending ?? false;
+  const percent = getPositionPercent(yPosition, isDesc);
+  const offset = getTrackStart(isDesc);
 
-  &::before {
-    content: "${({ $sign }) => $sign || ""}";
-    margin-right: 1px;
-  }
-`;
+  const className =
+    "absolute text-[10px] font-medium text-accent-primary pointer-events-none z-[9999] whitespace-nowrap";
+  const style: CSSProperties = {
+    left: isSingleAxis !== false ? "calc(50% + 25px)" : "calc(35% + 25px)",
+    top: `calc(${getTrackHeight()} * ${percent} + ${offset + BLOCK_HEIGHT / 2 - 6}px)`,
+  };
+
+  // Sign prefix handled in component via text content
+  return { className, style, sign: sign || "" };
+}
 
 // =============================================================================
 // CALCULATED PRICE LABEL
 // =============================================================================
 
-export const CalculatedPriceLabel = styled.div<{
-  $yPosition: number;
-  $isDescending?: boolean;
-  $isSingleAxis?: boolean;
-  $isBuy?: boolean;
-}>`
-  position: absolute;
-  font-size: 9px;
-  font-weight: 500;
-  color: var(--text-color-primary);
-  pointer-events: none;
-  z-index: 9999;
-  white-space: nowrap;
-  background-color: ${({ $isBuy }) =>
-    $isBuy ? "rgba(76, 175, 80, 0.85)" : "rgba(244, 67, 54, 0.85)"};
-  padding: 2px 6px;
-  border-radius: 3px;
-  left: ${({ $isSingleAxis }) =>
-    $isSingleAxis !== false ? "calc(50% + 25px)" : "calc(35% + 25px)"};
-  top: ${({ $yPosition, $isDescending }) => {
-    const isDesc = $isDescending ?? false;
-    const percent = getPositionPercent($yPosition, isDesc);
-    const offset = getTrackStart(isDesc);
-    return `calc(${getTrackHeight()} * ${percent} + ${offset + BLOCK_HEIGHT / 2 + 8}px)`;
-  }};
-`;
+export function getCalculatedPriceLabelProps(
+  yPosition: number,
+  isDescending?: boolean,
+  isSingleAxis?: boolean,
+  isBuy?: boolean,
+) {
+  const isDesc = isDescending ?? false;
+  const percent = getPositionPercent(yPosition, isDesc);
+  const offset = getTrackStart(isDesc);
+
+  const className =
+    "absolute text-[9px] font-medium text-text-primary pointer-events-none z-[9999] whitespace-nowrap px-1.5 py-0.5 rounded-[3px]";
+  const style: CSSProperties = {
+    backgroundColor: isBuy
+      ? "rgba(76, 175, 80, 0.85)"
+      : "rgba(244, 67, 54, 0.85)",
+    left: isSingleAxis !== false ? "calc(50% + 25px)" : "calc(35% + 25px)",
+    top: `calc(${getTrackHeight()} * ${percent} + ${offset + BLOCK_HEIGHT / 2 + 8}px)`,
+  };
+  return { className, style };
+}
 
 // =============================================================================
 // EMPTY STATE & PLACEHOLDERS
 // =============================================================================
 
-export const EmptyPlaceholder = styled.div`
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(104, 107, 130, 0.5);
-  font-size: 12px;
-`;
+export const emptyPlaceholder =
+  "flex-1 flex items-center justify-center text-text-placeholder text-xs";
 
-export const CenteredContainer = styled.div`
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`;
+export const centeredContainer = "flex-1 flex items-center justify-center";
 
 // =============================================================================
 // WARNING ALERT
 // =============================================================================
 
-export const WarningAlert = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  margin: 8px;
-  border: 2px dashed var(--border-color-options-row-underscored);
-  border-radius: 8px;
-  background-color: rgba(133, 91, 251, 0.1);
-  text-align: center;
-`;
+export const warningAlert =
+  "flex flex-col items-center justify-center p-3 m-2 border-2 border-dashed border-accent-outline rounded-lg bg-accent-bg-subtle-light text-center";
 
-export const WarningIcon = styled.div`
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+export const warningIcon =
+  "mb-2 flex items-center justify-center [&>svg]:stroke-accent-primary";
 
-  svg {
-    stroke: var(--accent-color-purple);
-  }
-`;
+export const warningText = "text-[11px] text-accent-primary font-medium";
 
-export const WarningText = styled.div`
-  font-size: 11px;
-  color: var(--accent-color-purple);
-  font-weight: 500;
-`;
-
-export const WarningSubtext = styled.div`
-  font-size: 9px;
-  color: rgba(133, 91, 251, 0.6);
-  margin-top: 4px;
-`;
+export const warningSubtext = "text-[9px] text-accent-muted mt-1";
 
 // =============================================================================
-// STATUS BADGE
+// STATUS BADGE (CVA)
 // =============================================================================
 
-export const StatusBadge = styled.div<{
-  $status: "active" | "pending" | "filled" | "cancelled";
-}>`
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 8px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  background-color: ${({ $status }) => {
-    switch ($status) {
-      case "active":
-        return "rgba(76, 175, 80, 0.3)";
-      case "pending":
-        return "rgba(255, 193, 7, 0.3)";
-      case "filled":
-        return "rgba(33, 150, 243, 0.3)";
-      case "cancelled":
-        return "rgba(158, 158, 158, 0.3)";
-      default:
-        return "rgba(158, 158, 158, 0.3)";
-    }
-  }};
-  color: ${({ $status }) => {
-    switch ($status) {
-      case "active":
-        return "rgba(76, 175, 80, 1)";
-      case "pending":
-        return "rgba(255, 193, 7, 1)";
-      case "filled":
-        return "rgba(33, 150, 243, 1)";
-      case "cancelled":
-        return "rgba(158, 158, 158, 1)";
-      default:
-        return "rgba(158, 158, 158, 1)";
-    }
-  }};
-  border: 1px solid
-    ${({ $status }) => {
-      switch ($status) {
-        case "active":
-          return "rgba(76, 175, 80, 0.5)";
-        case "pending":
-          return "rgba(255, 193, 7, 0.5)";
-        case "filled":
-          return "rgba(33, 150, 243, 0.5)";
-        case "cancelled":
-          return "rgba(158, 158, 158, 0.5)";
-        default:
-          return "rgba(158, 158, 158, 0.5)";
-      }
-    }};
-`;
+export const statusBadge = cva(
+  "absolute top-1 left-1 px-1.5 py-0.5 rounded-[3px] text-[8px] font-semibold uppercase tracking-wide border",
+  {
+    variants: {
+      status: {
+        active:
+          "bg-status-green-bg-strong text-status-green border-status-green-border",
+        pending:
+          "bg-status-yellow-bg-strong text-status-yellow border-status-yellow-border",
+        filled:
+          "bg-status-blue-bg-strong text-status-blue border-status-blue-border",
+        cancelled:
+          "bg-status-grey-bg-strong text-status-grey border-status-grey-border",
+      },
+    },
+  },
+);
 
 // =============================================================================
 // EMPTY CELL MESSAGE
 // =============================================================================
 
-export const EmptyCellMessage = styled.div`
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(104, 107, 130, 0.4);
-  font-size: 11px;
-  font-style: italic;
-`;
+export const emptyCellMessage =
+  "flex-1 flex items-center justify-center text-neutral-muted text-[11px] italic";
 
 // =============================================================================
 // COLUMN TINT HELPERS

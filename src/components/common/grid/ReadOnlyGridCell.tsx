@@ -8,22 +8,22 @@ import {
   getCellDisplayMode,
 } from "../../../utils";
 import {
-  ReadOnlyCellContainer,
-  CellHeader,
-  OrderTypeLabel,
-  AxisLabelItem,
-  SliderArea,
-  AxisColumn,
-  PercentageScale,
-  SliderTrack,
-  MarketPriceLine,
-  MarketPriceLabel,
-  BlockPositioner,
-  DashedIndicator,
-  PercentageLabel,
-  CalculatedPriceLabel,
-  EmptyCellMessage,
-  CenteredContainer,
+  getReadOnlyCellContainerProps,
+  cellHeader,
+  orderTypeLabel,
+  getAxisLabelItemProps,
+  sliderArea,
+  getAxisColumnProps,
+  getPercentageScaleProps,
+  getSliderTrackProps,
+  getMarketPriceLineProps,
+  getMarketPriceLabelProps,
+  getBlockPositionerProps,
+  getDashedIndicatorProps,
+  getPercentageLabelProps,
+  getCalculatedPriceLabelProps,
+  emptyCellMessage,
+  centeredContainer,
   getScaleLabels,
 } from "../../../styles/grid";
 
@@ -51,38 +51,37 @@ const ReadOnlyGridCell: React.FC<ReadOnlyGridCellProps> = ({
 }) => {
   const displayMode = getCellDisplayMode(blocks);
   const isDescending = shouldBeDescending(rowIndex, colIndex);
-  const orderTypeLabel = blocks.length > 0 ? blocks[0].label : null;
-  const isBuy = colIndex === 0; // colIndex 0 = Buy (Entry), colIndex 1 = Sell (Exit)
+  const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
+  const isBuy = colIndex === 0;
 
-  // Check if cell should show axis 1 (trigger)
   const hasAxis1Blocks = blocks.some((block) => block.axis === 1);
-
-  // Check if cell should show axis 2 (limit)
   const hasAxis2Blocks = blocks.some((block) => block.axis === 2);
 
   const renderPercentageScale = (isDesc: boolean) => {
     const labels = getScaleLabels(isDesc);
+    const scaleProps = getPercentageScaleProps(isDesc);
     return (
-      <PercentageScale $isDescending={isDesc}>
+      <div className={scaleProps.className} style={scaleProps.style}>
         {labels.map((label) => (
           <span key={label}>{label}</span>
         ))}
-      </PercentageScale>
+      </div>
     );
   };
 
-  // Render market price line and label
   const renderMarketPrice = () => {
+    const lineProps = getMarketPriceLineProps(isDescending);
+    const labelProps = getMarketPriceLabelProps(isDescending);
     return (
-      <MarketPriceLine $isDescending={isDescending}>
-        <MarketPriceLabel $isDescending={isDescending}>
+      <div className={lineProps.className} style={lineProps.style}>
+        <div className={labelProps.className} style={labelProps.style}>
           {priceError
             ? "Price Error"
             : currentPrice
               ? formatPrice(currentPrice)
               : "Loading price..."}
-        </MarketPriceLabel>
-      </MarketPriceLine>
+        </div>
+      </div>
     );
   };
 
@@ -92,62 +91,65 @@ const ReadOnlyGridCell: React.FC<ReadOnlyGridCellProps> = ({
     axisLabel: string,
     showPercentageScale: boolean = true,
   ) => {
-    // Determine sign based on ascending/descending
     const sign = isDescending ? "-" : "+";
+    const axisLabelProps = getAxisLabelItemProps(
+      isDescending ? "below" : "above",
+      isSingleAxis,
+    );
+    const trackProps = getSliderTrackProps(isDescending, isSingleAxis);
 
     return (
-      <AxisColumn $isSingleAxis={isSingleAxis}>
+      <div className={getAxisColumnProps(isSingleAxis)}>
         {showPercentageScale && renderPercentageScale(isDescending)}
-        <SliderTrack
-          $isDescending={isDescending}
-          $isSingleAxis={isSingleAxis}
-        />
-        {/* Show axis label above or below market line */}
-        <AxisLabelItem
-          $position={isDescending ? "below" : "above"}
-          $isSingleAxis={isSingleAxis}
-        >
+        <div className={trackProps.className} style={trackProps.style} />
+        <span className={axisLabelProps.className} style={axisLabelProps.style}>
           {axisLabel}
-        </AxisLabelItem>
+        </span>
 
         {axisBlocks.map((block) => {
-          const calculatedPrice = calculatePrice(
+          const calculatedPriceValue = calculatePrice(
             currentPrice,
             block.yPosition,
             isDescending,
           );
-          // Determine which icon to show based on axis (trigger or limit icon for slider)
           const sliderIcon =
             block.axis === 1 ? block.triggerIcon : block.limitIcon;
+          const dashedProps = getDashedIndicatorProps(
+            block.yPosition,
+            isDescending,
+            isSingleAxis,
+          );
+          const pctProps = getPercentageLabelProps(
+            block.yPosition,
+            isDescending,
+            sign,
+            isSingleAxis,
+          );
+          const priceProps = getCalculatedPriceLabelProps(
+            block.yPosition,
+            isDescending,
+            isSingleAxis,
+            isBuy,
+          );
+          const posProps = getBlockPositionerProps(
+            block.yPosition,
+            isDescending,
+            isSingleAxis,
+          );
           return (
             <React.Fragment key={block.id}>
-              <DashedIndicator
-                $yPosition={block.yPosition}
-                $isDescending={isDescending}
-                $isSingleAxis={isSingleAxis}
+              <div
+                className={dashedProps.className}
+                style={dashedProps.style}
               />
-              <PercentageLabel
-                $yPosition={block.yPosition}
-                $isDescending={isDescending}
-                $sign={sign}
-                $isSingleAxis={isSingleAxis}
-              >
+              <div className={pctProps.className} style={pctProps.style}>
+                {pctProps.sign}
                 {block.yPosition.toFixed(2)}%
-              </PercentageLabel>
-              <CalculatedPriceLabel
-                $yPosition={block.yPosition}
-                $isDescending={isDescending}
-                $isSingleAxis={isSingleAxis}
-                $isBuy={isBuy}
-              >
-                {formatPrice(calculatedPrice)}
-              </CalculatedPriceLabel>
-              <BlockPositioner
-                $yPosition={block.yPosition}
-                $isDescending={isDescending}
-                $isSingleAxis={isSingleAxis}
-              >
-                {/* Read-only block - no drag handlers */}
+              </div>
+              <div className={priceProps.className} style={priceProps.style}>
+                {formatPrice(calculatedPriceValue)}
+              </div>
+              <div className={posProps.className} style={posProps.style}>
                 <Block
                   id={block.id}
                   icon={sliderIcon || block.icon}
@@ -156,30 +158,28 @@ const ReadOnlyGridCell: React.FC<ReadOnlyGridCellProps> = ({
                   axes={block.axes}
                   isReadOnly={true}
                 />
-              </BlockPositioner>
+              </div>
             </React.Fragment>
           );
         })}
-      </AxisColumn>
+      </div>
     );
   };
 
   const renderContent = () => {
-    // Empty cell
     if (displayMode === "empty") {
-      return <EmptyCellMessage>No active orders</EmptyCellMessage>;
+      return <div className={emptyCellMessage}>No active orders</div>;
     }
 
-    // No-axis blocks (axes: []) - centered, not draggable, no % shown
     if (displayMode === "no-axis") {
       return (
         <>
-          <CellHeader>
-            {orderTypeLabel && (
-              <OrderTypeLabel>{orderTypeLabel}</OrderTypeLabel>
+          <div className={cellHeader}>
+            {orderTypeLabelText && (
+              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
             )}
-          </CellHeader>
-          <CenteredContainer>
+          </div>
+          <div className={centeredContainer}>
             {blocks.map((block) => (
               <Block
                 key={block.id}
@@ -190,40 +190,38 @@ const ReadOnlyGridCell: React.FC<ReadOnlyGridCellProps> = ({
                 isReadOnly={true}
               />
             ))}
-          </CenteredContainer>
+          </div>
         </>
       );
     }
 
-    // Limit-only blocks (axes: ["limit"]) - single axis centered
     if (displayMode === "limit-only") {
       return (
         <>
-          <CellHeader>
-            {orderTypeLabel && (
-              <OrderTypeLabel>{orderTypeLabel}</OrderTypeLabel>
+          <div className={cellHeader}>
+            {orderTypeLabelText && (
+              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
             )}
-          </CellHeader>
-          <SliderArea>
-            {/* Market price centered at cell level */}
+          </div>
+          <div className={sliderArea}>
             {renderMarketPrice()}
             {renderAxisContent(blocks, true, "Limit", true)}
-          </SliderArea>
+          </div>
         </>
       );
     }
 
-    // Dual-axis mode (trigger and/or limit)
     const axis1Blocks = blocks.filter((block) => block.axis === 1);
     const axis2Blocks = blocks.filter((block) => block.axis === 2);
 
     return (
       <>
-        <CellHeader>
-          {orderTypeLabel && <OrderTypeLabel>{orderTypeLabel}</OrderTypeLabel>}
-        </CellHeader>
-        <SliderArea>
-          {/* Market price centered at cell level - rendered once for all axes */}
+        <div className={cellHeader}>
+          {orderTypeLabelText && (
+            <div className={orderTypeLabel}>{orderTypeLabelText}</div>
+          )}
+        </div>
+        <div className={sliderArea}>
           {renderMarketPrice()}
           {hasAxis1Blocks &&
             renderAxisContent(axis1Blocks, !hasAxis2Blocks, "Trigger", true)}
@@ -232,23 +230,26 @@ const ReadOnlyGridCell: React.FC<ReadOnlyGridCellProps> = ({
               axis2Blocks,
               !hasAxis1Blocks,
               "Limit",
-              !hasAxis1Blocks, // Only show percentage scale if axis 1 isn't present
+              !hasAxis1Blocks,
             )}
-        </SliderArea>
+        </div>
       </>
     );
   };
 
+  const containerProps = getReadOnlyCellContainerProps(tint);
+
   return (
-    <ReadOnlyCellContainer
+    <div
       data-col={colIndex}
       data-row={rowIndex}
-      $tint={tint}
+      className={containerProps.className}
+      style={containerProps.style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
       {renderContent()}
-    </ReadOnlyCellContainer>
+    </div>
   );
 };
 

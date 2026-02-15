@@ -18,33 +18,33 @@ import { getColumnHeaderTint, getColumnCellTint } from "../../../utils";
 import { GRID_CONFIG } from "../../../data/orderTypes";
 import { useOrdersStore } from "../../../store";
 import {
-  Container,
-  ContentWrapper,
-  ColumnsWrapper,
-  Header,
-  HeaderText,
-  StatusBar,
-  StatusInfo,
-  StatusItem,
-  StatusLabel,
-  StatusValue,
-  StatusDot,
-  Column,
-  ColumnHeader,
-  ColumnHeaderText,
-  RefreshButton,
-  EmptyStateContainer,
-  EmptyStateIcon,
-  EmptyStateTitle,
-  EmptyStateDescription,
-  Footer,
-  LastUpdated,
-  DevControlsContainer,
-  DevControlsHeader,
-  DevControlsRow,
-  DevButton,
-  DevLabel,
-  OrderIdSelect,
+  container,
+  contentWrapper,
+  columnsWrapper,
+  header,
+  headerTextClass,
+  statusBar,
+  statusInfo,
+  statusItem,
+  statusLabel,
+  getStatusValueProps,
+  getStatusDotProps,
+  columnClass,
+  getColumnHeaderProps,
+  columnHeaderText,
+  refreshButton,
+  emptyStateContainer,
+  emptyStateIcon,
+  emptyStateTitle,
+  emptyStateDescription,
+  footer,
+  lastUpdated,
+  devControlsContainer,
+  devControlsHeader,
+  devControlsRow,
+  devButton,
+  devLabel,
+  orderIdSelect,
 } from "./ActiveOrders.styles";
 import { useKrakenAPI } from "../../../hooks/useKrakenAPI";
 
@@ -219,67 +219,77 @@ const ActiveOrdersInner: React.FC<ActiveOrdersInnerProps> = ({
   };
 
   return (
-    <Container>
-      <Header>
-        <HeaderText>Active Orders</HeaderText>
-      </Header>
+    <div className={container}>
+      <div className={header}>
+        <h2 className={headerTextClass}>Active Orders</h2>
+      </div>
 
       {/* Status Bar */}
-      <StatusBar>
-        <StatusInfo>
-          <StatusItem>
-            <StatusLabel>Total:</StatusLabel>
-            <StatusValue>{totalOrders}</StatusValue>
-          </StatusItem>
+      <div className={statusBar}>
+        <div className={statusInfo}>
+          <div className={statusItem}>
+            <span className={statusLabel}>Total:</span>
+            <span {...getStatusValueProps()}>{totalOrders}</span>
+          </div>
           {activeCount > 0 && (
-            <StatusItem>
-              <StatusDot $color="#4CAF50" />
-              <StatusValue $color="#4CAF50">{activeCount} Active</StatusValue>
-            </StatusItem>
+            <div className={statusItem}>
+              <span {...getStatusDotProps("#4CAF50")} />
+              <span {...getStatusValueProps("#4CAF50")}>
+                {activeCount} Active
+              </span>
+            </div>
           )}
           {pendingCount > 0 && (
-            <StatusItem>
-              <StatusDot $color="#FFC107" />
-              <StatusValue $color="#FFC107">{pendingCount} Pending</StatusValue>
-            </StatusItem>
+            <div className={statusItem}>
+              <span {...getStatusDotProps("#FFC107")} />
+              <span {...getStatusValueProps("#FFC107")}>
+                {pendingCount} Pending
+              </span>
+            </div>
           )}
           {filledCount > 0 && (
-            <StatusItem>
-              <StatusDot $color="#2196F3" />
-              <StatusValue $color="#2196F3">{filledCount} Filled</StatusValue>
-            </StatusItem>
+            <div className={statusItem}>
+              <span {...getStatusDotProps("#2196F3")} />
+              <span {...getStatusValueProps("#2196F3")}>
+                {filledCount} Filled
+              </span>
+            </div>
           )}
           {cancelledCount > 0 && (
-            <StatusItem>
-              <StatusDot $color="#9E9E9E" />
-              <StatusValue $color="#9E9E9E">
+            <div className={statusItem}>
+              <span {...getStatusDotProps("#9E9E9E")} />
+              <span {...getStatusValueProps("#9E9E9E")}>
                 {cancelledCount} Cancelled
-              </StatusValue>
-            </StatusItem>
+              </span>
+            </div>
           )}
-        </StatusInfo>
-        <RefreshButton onClick={handleRefresh}>
+        </div>
+        <button className={refreshButton} onClick={handleRefresh}>
           <RefreshIcon width={14} height={14} />
           Refresh
-        </RefreshButton>
-      </StatusBar>
+        </button>
+      </div>
 
       {/* Content */}
       {hasDisplayableOrders ? (
-        <ContentWrapper>
-          <ColumnsWrapper>
-            {grid.map((column, colIndex) => {
+        <div className={contentWrapper}>
+          <div className={columnsWrapper}>
+            {grid.map((gridColumn, colIndex) => {
               const headerTint = getColumnHeaderTint(colIndex);
               const cellTint = getColumnCellTint(colIndex);
+              const colHeaderProps = getColumnHeaderProps(headerTint);
 
               return (
-                <Column key={colIndex}>
-                  <ColumnHeader $tint={headerTint}>
-                    <ColumnHeaderText>
+                <div key={colIndex} className={columnClass}>
+                  <div
+                    className={colHeaderProps.className}
+                    style={colHeaderProps.style}
+                  >
+                    <span className={columnHeaderText}>
                       {COLUMN_HEADERS[colIndex]}
-                    </ColumnHeaderText>
-                  </ColumnHeader>
-                  {column.map((row, rowIndex) => (
+                    </span>
+                  </div>
+                  {gridColumn.map((row, rowIndex) => (
                     <ReadOnlyGridCell
                       key={rowIndex}
                       colIndex={colIndex}
@@ -294,56 +304,49 @@ const ActiveOrdersInner: React.FC<ActiveOrdersInnerProps> = ({
                       onMouseLeave={handleCellMouseLeave}
                     />
                   ))}
-                </Column>
+                </div>
               );
             })}
-          </ColumnsWrapper>
-        </ContentWrapper>
+          </div>
+        </div>
       ) : (
-        <EmptyStateContainer>
-          <EmptyStateIcon>
+        <div className={emptyStateContainer}>
+          <div className={emptyStateIcon}>
             <OrdersIcon width={48} height={48} />
-          </EmptyStateIcon>
-          <EmptyStateTitle>
+          </div>
+          <h3 className={emptyStateTitle}>
             {hasAnyOrders ? "No Active Orders" : "No Orders Yet"}
-          </EmptyStateTitle>
-          <EmptyStateDescription>
+          </h3>
+          <p className={emptyStateDescription}>
             {hasAnyOrders
               ? `You have ${filledCount + cancelledCount} completed orders, but no active orders at the moment.`
               : "You don't have any orders yet. Create a strategy to get started."}
-          </EmptyStateDescription>
+          </p>
           <Link
             to="/"
-            style={{
-              marginTop: "16px",
-              color: "var(--accent-color-purple)",
-              textDecoration: "none",
-              fontSize: "13px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
+            className="mt-4 text-accent-primary no-underline text-[13px] inline-flex items-center gap-1.5"
           >
             <ArrowLeftIcon width={14} height={14} />
             Go to Strategy Builder
           </Link>
-        </EmptyStateContainer>
+        </div>
       )}
 
       {/* Dev Controls (Development Mode Only) */}
       {isDev && hasAnyOrders && (
-        <DevControlsContainer>
-          <DevControlsHeader>
+        <div className={devControlsContainer}>
+          <div className={devControlsHeader}>
             <ToolsIcon width={14} height={14} />
             Dev Controls
-            <DevLabel>(Development Mode Only)</DevLabel>
-          </DevControlsHeader>
+            <span className={devLabel}>(Development Mode Only)</span>
+          </div>
 
           {actionableOrders.length > 0 ? (
             <>
-              <DevControlsRow>
-                <DevLabel>Select Order:</DevLabel>
-                <OrderIdSelect
+              <div className={devControlsRow}>
+                <span className={devLabel}>Select Order:</span>
+                <select
+                  className={orderIdSelect}
                   value={selectedOrderId}
                   onChange={(e) => setSelectedOrderId(e.target.value)}
                 >
@@ -353,55 +356,61 @@ const ActiveOrdersInner: React.FC<ActiveOrdersInnerProps> = ({
                       {order.orderId} ({order.type}) - {order.status}
                     </option>
                   ))}
-                </OrderIdSelect>
-                <DevButton
-                  $variant="fill"
+                </select>
+                <button
+                  className={devButton({ variant: "fill" })}
                   onClick={handleFillOrder}
                   disabled={!selectedOrderId}
                 >
                   <CheckIcon width={12} height={12} />
                   Fill Order
-                </DevButton>
-                <DevButton
-                  $variant="cancel"
+                </button>
+                <button
+                  className={devButton({ variant: "cancel" })}
                   onClick={handleCancelOrder}
                   disabled={!selectedOrderId}
                 >
                   <XCircleIcon width={12} height={12} />
                   Cancel Order
-                </DevButton>
-              </DevControlsRow>
+                </button>
+              </div>
 
-              <DevControlsRow>
-                <DevLabel>Bulk Actions:</DevLabel>
-                <DevButton $variant="fill" onClick={handleFillAllOrders}>
+              <div className={devControlsRow}>
+                <span className={devLabel}>Bulk Actions:</span>
+                <button
+                  className={devButton({ variant: "fill" })}
+                  onClick={handleFillAllOrders}
+                >
                   <CheckIcon width={12} height={12} />
                   Fill All ({actionableOrders.length})
-                </DevButton>
-                <DevButton $variant="cancel" onClick={handleCancelAllOrders}>
+                </button>
+                <button
+                  className={devButton({ variant: "cancel" })}
+                  onClick={handleCancelAllOrders}
+                >
                   <XCircleIcon width={12} height={12} />
                   Cancel All ({actionableOrders.length})
-                </DevButton>
-              </DevControlsRow>
+                </button>
+              </div>
             </>
           ) : (
-            <DevControlsRow>
-              <DevLabel>
+            <div className={devControlsRow}>
+              <span className={devLabel}>
                 No active or pending orders to simulate. All orders have been
                 filled or cancelled.
-              </DevLabel>
-            </DevControlsRow>
+              </span>
+            </div>
           )}
-        </DevControlsContainer>
+        </div>
       )}
 
       {/* Footer */}
-      <Footer>
-        <LastUpdated>
+      <div className={footer}>
+        <span className={lastUpdated}>
           Last updated: {new Date().toLocaleTimeString()}
-        </LastUpdated>
-      </Footer>
-    </Container>
+        </span>
+      </div>
+    </div>
   );
 };
 

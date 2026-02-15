@@ -4,27 +4,27 @@ import type { BlockData, StrategyPattern } from "../../../types/grid";
 import { shouldBeDescending, getCellDisplayMode } from "../../../utils";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
 import {
-  CellContainer,
-  RowLabelBadge,
-  CellHeader,
-  OrderTypeLabel,
-  AxisLabelItem,
-  SliderArea,
-  AxisColumn,
-  PercentageScale,
-  SliderTrack,
-  MarketPriceLine,
-  MarketPriceLabel,
-  BlockPositioner,
-  DashedIndicator,
-  PercentageLabel,
-  CalculatedPriceLabel,
-  EmptyPlaceholder,
-  CenteredContainer,
-  WarningAlert,
-  WarningIcon,
-  WarningText,
-  WarningSubtext,
+  getInteractiveCellContainerProps,
+  rowLabelBadge,
+  cellHeader,
+  orderTypeLabel,
+  getAxisLabelItemProps,
+  sliderArea,
+  getAxisColumnProps,
+  getPercentageScaleProps,
+  getSliderTrackProps,
+  getMarketPriceLineProps,
+  getMarketPriceLabelProps,
+  getBlockPositionerProps,
+  getDashedIndicatorProps,
+  getPercentageLabelProps,
+  getCalculatedPriceLabelProps,
+  emptyPlaceholder,
+  centeredContainer,
+  warningAlert,
+  warningIcon,
+  warningText,
+  warningSubtext,
   getScaleLabels,
 } from "./GridCell.styles";
 
@@ -35,8 +35,6 @@ const calculatePrice = (
   isDescending: boolean,
 ): number | null => {
   if (marketPrice === null) return null;
-  // Descending (-): price decreases as percentage increases
-  // Ascending (+): price increases as percentage increases
   const multiplier = isDescending ? 1 - percentage / 100 : 1 + percentage / 100;
   return marketPrice * multiplier;
 };
@@ -93,36 +91,33 @@ const GridCell: React.FC<GridCellProps> = ({
 }) => {
   const displayMode = getCellDisplayMode(blocks);
   const isDescending = shouldBeDescending(rowIndex, colIndex);
-  const orderTypeLabel = blocks.length > 0 ? blocks[0].label : null;
-  const isBuy = colIndex === 0; // colIndex 0 = Buy (Entry), colIndex 1 = Sell (Exit)
+  const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
+  const isBuy = colIndex === 0;
 
-  // Check if cell should show axis 1 (trigger)
   const hasAxis1Blocks = blocks.some((block) => block.axis === 1);
-
-  // Check if cell should show axis 2 (limit)
   const hasAxis2Blocks = blocks.some((block) => block.axis === 2);
 
-  // Determine row label type for styling
   const rowLabelType: "primary" | "conditional" =
     rowLabel.toLowerCase() === "primary" ? "primary" : "conditional";
 
   const renderPercentageScale = (isDesc: boolean) => {
-    // Use single source of truth for scale labels (whole numbers)
     const labels = getScaleLabels(isDesc);
+    const scaleProps = getPercentageScaleProps(isDesc);
     return (
-      <PercentageScale $isDescending={isDesc}>
+      <div className={scaleProps.className} style={scaleProps.style}>
         {labels.map((label) => (
           <span key={label}>{label}</span>
         ))}
-      </PercentageScale>
+      </div>
     );
   };
 
-  // Render market price line and label - now at cell level for centering
   const renderMarketPrice = () => {
+    const lineProps = getMarketPriceLineProps(isDescending);
+    const labelProps = getMarketPriceLabelProps(isDescending);
     return (
-      <MarketPriceLine $isDescending={isDescending}>
-        <MarketPriceLabel $isDescending={isDescending}>
+      <div className={lineProps.className} style={lineProps.style}>
+        <div className={labelProps.className} style={labelProps.style}>
           {priceError
             ? "Price Error"
             : currentPrice
@@ -131,8 +126,8 @@ const GridCell: React.FC<GridCellProps> = ({
                   maximumFractionDigits: 2,
                 })}`
               : "Loading price..."}
-        </MarketPriceLabel>
-      </MarketPriceLine>
+        </div>
+      </div>
     );
   };
 
@@ -142,23 +137,20 @@ const GridCell: React.FC<GridCellProps> = ({
     axisLabel: string,
     showPercentageScale: boolean = true,
   ) => {
-    // Determine sign based on ascending/descending
     const sign = isDescending ? "-" : "+";
+    const axisLabelProps = getAxisLabelItemProps(
+      isDescending ? "below" : "above",
+      isSingleAxis,
+    );
+    const trackProps = getSliderTrackProps(isDescending, isSingleAxis);
 
     return (
-      <AxisColumn $isSingleAxis={isSingleAxis}>
+      <div className={getAxisColumnProps(isSingleAxis)}>
         {showPercentageScale && renderPercentageScale(isDescending)}
-        <SliderTrack
-          $isDescending={isDescending}
-          $isSingleAxis={isSingleAxis}
-        />
-        {/* Show axis label above or below market line */}
-        <AxisLabelItem
-          $position={isDescending ? "below" : "above"}
-          $isSingleAxis={isSingleAxis}
-        >
+        <div className={trackProps.className} style={trackProps.style} />
+        <span className={axisLabelProps.className} style={axisLabelProps.style}>
           {axisLabel}
-        </AxisLabelItem>
+        </span>
 
         {axisBlocks.map((block) => {
           const calculatedPrice = calculatePrice(
@@ -166,37 +158,44 @@ const GridCell: React.FC<GridCellProps> = ({
             block.yPosition,
             isDescending,
           );
-          // Determine which icon to show based on axis (trigger or limit icon for slider)
           const sliderIcon =
             block.axis === 1 ? block.triggerIcon : block.limitIcon;
+          const dashedProps = getDashedIndicatorProps(
+            block.yPosition,
+            isDescending,
+            isSingleAxis,
+          );
+          const pctProps = getPercentageLabelProps(
+            block.yPosition,
+            isDescending,
+            sign,
+            isSingleAxis,
+          );
+          const priceProps = getCalculatedPriceLabelProps(
+            block.yPosition,
+            isDescending,
+            isSingleAxis,
+            isBuy,
+          );
+          const posProps = getBlockPositionerProps(
+            block.yPosition,
+            isDescending,
+            isSingleAxis,
+          );
           return (
             <React.Fragment key={block.id}>
-              <DashedIndicator
-                $yPosition={block.yPosition}
-                $isDescending={isDescending}
-                $isSingleAxis={isSingleAxis}
+              <div
+                className={dashedProps.className}
+                style={dashedProps.style}
               />
-              <PercentageLabel
-                $yPosition={block.yPosition}
-                $isDescending={isDescending}
-                $sign={sign}
-                $isSingleAxis={isSingleAxis}
-              >
+              <div className={pctProps.className} style={pctProps.style}>
+                {pctProps.sign}
                 {block.yPosition.toFixed(2)}%
-              </PercentageLabel>
-              <CalculatedPriceLabel
-                $yPosition={block.yPosition}
-                $isDescending={isDescending}
-                $isSingleAxis={isSingleAxis}
-                $isBuy={isBuy}
-              >
+              </div>
+              <div className={priceProps.className} style={priceProps.style}>
                 {formatCalculatedPrice(calculatedPrice)}
-              </CalculatedPriceLabel>
-              <BlockPositioner
-                $yPosition={block.yPosition}
-                $isDescending={isDescending}
-                $isSingleAxis={isSingleAxis}
-              >
+              </div>
+              <div className={posProps.className} style={posProps.style}>
                 <Block
                   id={block.id}
                   icon={sliderIcon || block.icon}
@@ -207,49 +206,45 @@ const GridCell: React.FC<GridCellProps> = ({
                   onDragEnd={onBlockDragEnd}
                   onVerticalDrag={onBlockVerticalDrag}
                 />
-              </BlockPositioner>
+              </div>
             </React.Fragment>
           );
         })}
-      </AxisColumn>
+      </div>
     );
   };
 
   const renderContent = () => {
-    // Show warning alert in middle row if conditional without primary
     if (showPrimaryWarning && blocks.length === 0) {
       return (
-        <WarningAlert>
-          <WarningIcon>
+        <div className={warningAlert}>
+          <div className={warningIcon}>
             <AlertTriangleIcon width={24} height={24} />
-          </WarningIcon>
-          <WarningText>Primary Order Required</WarningText>
-          <WarningSubtext>
+          </div>
+          <div className={warningText}>Primary Order Required</div>
+          <div className={warningSubtext}>
             Place a primary order here before adding conditionals
-          </WarningSubtext>
-        </WarningAlert>
+          </div>
+        </div>
       );
     }
 
-    // Empty cell
     if (displayMode === "empty") {
-      // In conditional mode, only show placeholder for valid/non-disabled cells
       if (strategyPattern === "conditional" && isDisabled) {
-        return null; // Don't show placeholder for non-available cells
+        return null;
       }
-      return <EmptyPlaceholder>Drop here</EmptyPlaceholder>;
+      return <div className={emptyPlaceholder}>Drop here</div>;
     }
 
-    // No-axis blocks (axes: []) - centered, not draggable, no % shown
     if (displayMode === "no-axis") {
       return (
         <>
-          <CellHeader>
-            {orderTypeLabel && (
-              <OrderTypeLabel>{orderTypeLabel}</OrderTypeLabel>
+          <div className={cellHeader}>
+            {orderTypeLabelText && (
+              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
             )}
-          </CellHeader>
-          <CenteredContainer>
+          </div>
+          <div className={centeredContainer}>
             {blocks.map((block) => (
               <Block
                 key={block.id}
@@ -261,40 +256,38 @@ const GridCell: React.FC<GridCellProps> = ({
                 onDragEnd={onBlockDragEnd}
               />
             ))}
-          </CenteredContainer>
+          </div>
         </>
       );
     }
 
-    // Limit-only blocks (axes: ["limit"]) - single axis centered
     if (displayMode === "limit-only") {
       return (
         <>
-          <CellHeader>
-            {orderTypeLabel && (
-              <OrderTypeLabel>{orderTypeLabel}</OrderTypeLabel>
+          <div className={cellHeader}>
+            {orderTypeLabelText && (
+              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
             )}
-          </CellHeader>
-          <SliderArea>
-            {/* Market price centered at cell level */}
+          </div>
+          <div className={sliderArea}>
             {renderMarketPrice()}
             {renderAxisContent(blocks, true, "Limit", true)}
-          </SliderArea>
+          </div>
         </>
       );
     }
 
-    // Dual-axis mode (trigger and/or limit)
     const axis1Blocks = blocks.filter((block) => block.axis === 1);
     const axis2Blocks = blocks.filter((block) => block.axis === 2);
 
     return (
       <>
-        <CellHeader>
-          {orderTypeLabel && <OrderTypeLabel>{orderTypeLabel}</OrderTypeLabel>}
-        </CellHeader>
-        <SliderArea>
-          {/* Market price centered at cell level - rendered once for all axes */}
+        <div className={cellHeader}>
+          {orderTypeLabelText && (
+            <div className={orderTypeLabel}>{orderTypeLabelText}</div>
+          )}
+        </div>
+        <div className={sliderArea}>
           {renderMarketPrice()}
           {hasAxis1Blocks &&
             renderAxisContent(axis1Blocks, !hasAxis2Blocks, "Trigger", true)}
@@ -303,31 +296,34 @@ const GridCell: React.FC<GridCellProps> = ({
               axis2Blocks,
               !hasAxis1Blocks,
               "Limit",
-              !hasAxis1Blocks, // Only show percentage scale if axis 1 isn't present
+              !hasAxis1Blocks,
             )}
-        </SliderArea>
+        </div>
       </>
     );
   };
 
+  const containerProps = getInteractiveCellContainerProps({
+    isOver,
+    isValidTarget,
+    isDisabled,
+    tint,
+  });
+
   return (
-    <CellContainer
+    <div
       data-col={colIndex}
       data-row={rowIndex}
-      $isOver={isOver}
-      $isValidTarget={isValidTarget}
-      $isDisabled={isDisabled}
-      $align="left"
-      $tint={tint}
+      className={containerProps.className}
+      style={containerProps.style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      {/* Row label badge for conditional pattern - only show when cell can accept placement */}
       {rowLabel && !isDisabled && (
-        <RowLabelBadge $type={rowLabelType}>{rowLabel}</RowLabelBadge>
+        <div className={rowLabelBadge({ type: rowLabelType })}>{rowLabel}</div>
       )}
       {renderContent()}
-    </CellContainer>
+    </div>
   );
 };
 

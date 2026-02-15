@@ -1,74 +1,44 @@
 import React from "react";
-import styled from "styled-components";
+import { cva } from "class-variance-authority";
+import { cn } from "../../lib/utils";
 import { useDraggable } from "../../hooks/useDraggable";
 
-const breathingAnimation = `
-  @keyframes blockBreathing {
-    0%, 100% {
-      border-color: rgba(255, 255, 255, 0.5);
-      box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
-    }
-    50% {
-      border-color: rgba(255, 255, 255, 1);
-      box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
-    }
-  }
-`;
-
-interface ButtonProps {
-  $isDragging: boolean;
-  $isPlaceholder?: boolean;
-  $isHighlighted?: boolean;
-}
-
-const Button = styled.button<ButtonProps>`
-  ${breathingAnimation}
-  width: 40px;
-  height: 40px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 3px;
-  border: 2px solid
-    ${({ $isHighlighted }) =>
-      $isHighlighted ? "rgba(255, 255, 255, 0.5)" : "transparent"};
-  border-radius: 6px;
-  background-color: ${({ $isPlaceholder }) =>
-    $isPlaceholder ? "rgba(133, 91, 251, 0.3)" : "#855bfb"};
-  cursor: ${({ $isDragging, $isPlaceholder }) =>
-    $isPlaceholder ? "default" : $isDragging ? "grabbing" : "grab"};
-  user-select: none;
-  position: ${({ $isDragging }) => ($isDragging ? "fixed" : "relative")};
-  z-index: ${({ $isDragging }) => ($isDragging ? 1000 : 1)};
-  pointer-events: ${({ $isDragging, $isPlaceholder }) =>
-    $isDragging || $isPlaceholder ? "none" : "auto"};
-  opacity: ${({ $isPlaceholder }) => ($isPlaceholder ? 0.5 : 1)};
-  color: var(--text-color-icon-logo);
-  animation: ${({ $isHighlighted }) =>
-    $isHighlighted ? "blockBreathing 1.5s ease-in-out infinite" : "none"};
-  &:hover {
-    background-color: ${({ $isPlaceholder }) =>
-      $isPlaceholder
-        ? "rgba(133, 91, 251, 0.3)"
-        : "var(--outline-color-secondary)"};
-  }
-  svg {
-    width: 20px;
-    height: 20px;
-  }
-`;
-
-const BlockWrapper = styled.div`
-  position: relative;
-`;
-
-const IconImage = styled.img`
-  width: 24px;
-  height: 24px;
-  filter: brightness(0) invert(1);
-  pointer-events: none;
-`;
+const buttonVariants = cva(
+  [
+    "w-10 h-10 flex flex-col justify-center items-center p-[3px]",
+    "border-2 rounded-md select-none",
+    "text-text-primary",
+    "[&_svg]:w-5 [&_svg]:h-5",
+  ],
+  {
+    variants: {
+      isDragging: {
+        true: "fixed z-[1000] pointer-events-none",
+        false: "relative z-[1]",
+      },
+      isPlaceholder: {
+        true: "bg-accent-bg-hover cursor-default pointer-events-none opacity-50 border-transparent hover:bg-accent-bg-hover",
+        false: "bg-accent-primary opacity-100 hover:bg-accent-secondary",
+      },
+      isHighlighted: {
+        true: "border-white-50 animate-block-breathing",
+        false: "border-transparent animate-none",
+      },
+    },
+    compoundVariants: [
+      {
+        isDragging: true,
+        isPlaceholder: false,
+        className: "pointer-events-none",
+      },
+    ],
+    defaultVariants: {
+      isDragging: false,
+      isPlaceholder: false,
+      isHighlighted: false,
+    },
+  },
+);
 
 interface BlockProps {
   id: string;
@@ -120,16 +90,41 @@ const Block: React.FC<BlockProps> = ({
       onVerticalDrag: isReadOnly ? undefined : onVerticalDrag,
     });
 
+  const iconContent = icon ? (
+    <img
+      className="w-6 h-6 brightness-0 invert pointer-events-none"
+      src={icon}
+      alt={abrv}
+    />
+  ) : (
+    <span>{abrv}</span>
+  );
+
   return (
-    <BlockWrapper onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
+    <div
+      className="relative"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
       {isDragging && !isVerticalOnly && (
-        <Button $isDragging={false} $isPlaceholder={true}>
-          {icon ? <IconImage src={icon} alt={abrv} /> : <span>{abrv}</span>}
-        </Button>
+        <button
+          className={buttonVariants({
+            isDragging: false,
+            isPlaceholder: true,
+            isHighlighted: false,
+          })}
+        >
+          {iconContent}
+        </button>
       )}
-      <Button
-        $isDragging={isDragging && !isVerticalOnly}
-        $isHighlighted={isHighlighted && !isDragging}
+      <button
+        className={cn(
+          buttonVariants({
+            isDragging: isDragging && !isVerticalOnly,
+            isPlaceholder: false,
+            isHighlighted: isHighlighted && !isDragging,
+          }),
+        )}
         onMouseDown={isReadOnly ? undefined : handleMouseDown}
         onClick={!isDragging ? onClick : undefined}
         style={{
@@ -139,9 +134,9 @@ const Block: React.FC<BlockProps> = ({
           cursor: isDragging && isVerticalOnly ? "grabbing" : blockCursor,
         }}
       >
-        {icon ? <IconImage src={icon} alt={abrv} /> : <span>{abrv}</span>}
-      </Button>
-    </BlockWrapper>
+        {iconContent}
+      </button>
+    </div>
   );
 };
 
