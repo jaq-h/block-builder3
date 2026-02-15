@@ -1,10 +1,4 @@
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useEffect,
-} from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import type {
   ActiveOrdersContextType,
   ActiveOrdersProviderProps,
@@ -12,12 +6,7 @@ import type {
 } from "../../../types/activeOrders";
 import type { GridData, CellPosition } from "../../../types/grid";
 import { GRID_CONFIG } from "../../../data/orderTypes";
-
-// =============================================================================
-// CONTEXT CREATION
-// =============================================================================
-
-const ActiveOrdersContext = createContext<ActiveOrdersContextType | null>(null);
+import { ActiveOrdersContext } from "./ActiveOrdersContextDef";
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -39,7 +28,6 @@ export const ActiveOrdersProvider: React.FC<ActiveOrdersProviderProps> = ({
   onOrderSelect,
 }) => {
   // Business state
-  const [grid, setGrid] = useState<GridData>(createEmptyGrid);
   const [activeOrders, setActiveOrders] =
     useState<ActiveOrdersConfig>(initialOrders);
 
@@ -59,8 +47,8 @@ export const ActiveOrdersProvider: React.FC<ActiveOrdersProviderProps> = ({
     console.log("Refreshing active orders...");
   }, []);
 
-  // Build grid from active orders whenever they change
-  useEffect(() => {
+  // Derive grid from active orders
+  const grid = useMemo<GridData>(() => {
     const newGrid = createEmptyGrid();
 
     // Populate grid from active orders
@@ -91,7 +79,7 @@ export const ActiveOrdersProvider: React.FC<ActiveOrdersProviderProps> = ({
       }
     });
 
-    setGrid(newGrid);
+    return newGrid;
   }, [activeOrders]);
 
   // Combine state and actions
@@ -103,7 +91,6 @@ export const ActiveOrdersProvider: React.FC<ActiveOrdersProviderProps> = ({
     selectedOrderId,
 
     // Actions
-    setGrid,
     setActiveOrders,
     setHoveredCell,
     setSelectedOrderId,
@@ -116,19 +103,3 @@ export const ActiveOrdersProvider: React.FC<ActiveOrdersProviderProps> = ({
     </ActiveOrdersContext.Provider>
   );
 };
-
-// =============================================================================
-// HOOK
-// =============================================================================
-
-export const useActiveOrders = (): ActiveOrdersContextType => {
-  const context = useContext(ActiveOrdersContext);
-  if (!context) {
-    throw new Error(
-      "useActiveOrders must be used within an ActiveOrdersProvider",
-    );
-  }
-  return context;
-};
-
-export default ActiveOrdersContext;

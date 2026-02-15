@@ -7,7 +7,8 @@ import ToolsIcon from "../../../assets/icons/tools.svg?react";
 import CheckIcon from "../../../assets/icons/check.svg?react";
 import XCircleIcon from "../../../assets/icons/x-circle.svg?react";
 import ArrowLeftIcon from "../../../assets/icons/arrow-left.svg?react";
-import { ActiveOrdersProvider, useActiveOrders } from "./ActiveOrdersContext";
+import { ActiveOrdersProvider } from "./ActiveOrdersContext";
+import { useActiveOrders } from "./useActiveOrders";
 import type {
   ActiveOrdersProps,
   ActiveOrdersConfig,
