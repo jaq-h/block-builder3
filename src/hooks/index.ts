@@ -11,6 +11,9 @@ export { useVerticalDrag } from "./useVerticalDrag";
 // Kraken API hook for price data and order management
 export { useKrakenAPI, default as useKrakenAPIDefault } from "./useKrakenAPI";
 
+// Trade execution hook for order config management and submission
+export { useTradeExecution } from "./useTradeExecution";
+
 // Re-export types from useKrakenAPI
 export type {
   UseKrakenAPIOptions,
@@ -18,3 +21,6 @@ export type {
   OrderSubmitResult,
   ValidationResult,
 } from "./useKrakenAPI";
+
+// Re-export types from useTradeExecution
+export type { UseTradeExecutionReturn } from "./useTradeExecution";
