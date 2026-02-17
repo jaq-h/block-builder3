@@ -1,7 +1,8 @@
 import React from "react";
 import { cva } from "class-variance-authority";
 import { cn } from "../../lib/utils";
-import { useDraggable } from "../../hooks/useDraggable";
+import { useFreeDrag } from "../../hooks/useFreeDrag";
+import { useVerticalDrag } from "../../hooks/useVerticalDrag";
 import type { SvgIcon } from "../../data/orderTypes";
 
 const buttonVariants = cva(
@@ -13,10 +14,6 @@ const buttonVariants = cva(
   ],
   {
     variants: {
-      isDragging: {
-        true: "fixed z-[1000] pointer-events-none",
-        false: "relative z-[1]",
-      },
       isPlaceholder: {
         true: "bg-accent-bg-hover cursor-default pointer-events-none opacity-50 border-transparent hover:bg-accent-bg-hover",
         false: "bg-accent-primary opacity-100 hover:bg-accent-secondary",
@@ -26,15 +23,7 @@ const buttonVariants = cva(
         false: "border-transparent animate-none",
       },
     },
-    compoundVariants: [
-      {
-        isDragging: true,
-        isPlaceholder: false,
-        className: "pointer-events-none",
-      },
-    ],
     defaultVariants: {
-      isDragging: false,
       isPlaceholder: false,
       isHighlighted: false,
     },
@@ -82,14 +71,26 @@ const Block: React.FC<BlockProps> = ({
       ? "ns-resize"
       : "grab";
 
-  const { isDragging, isVerticalOnly, position, handleMouseDown } =
-    useDraggable({
+  // ── Two focused hooks; only one is wired to the button at a time ──
+  const { isDragging: isFreeDragging, handleMouseDown: handleFreeDragDown } =
+    useFreeDrag({
       id,
-      isVerticallyDraggable,
+      icon,
+      abrv,
       onDragStart: isReadOnly ? undefined : onDragStart,
       onDragEnd: isReadOnly ? undefined : onDragEnd,
+    });
+
+  const { isDragging: isVertDragging, handleMouseDown: handleVertDragDown } =
+    useVerticalDrag({
+      id,
       onVerticalDrag: isReadOnly ? undefined : onVerticalDrag,
     });
+
+  const isDragging = isFreeDragging || isVertDragging;
+  const handleMouseDown = isVerticallyDraggable
+    ? handleVertDragDown
+    : handleFreeDragDown;
 
   const IconComponent = icon;
 
@@ -99,38 +100,30 @@ const Block: React.FC<BlockProps> = ({
     <span>{abrv}</span>
   );
 
+  // When performing a free (non-vertical) drag, the moving visual is rendered
+  // by DragOverlay via a portal.  This component only shows the ghost
+  // placeholder at the original grid position.
+  const isFreeFormDragging = isFreeDragging;
+
   return (
     <div
       className="relative"
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      {isDragging && !isVerticalOnly && (
-        <button
-          className={buttonVariants({
-            isDragging: false,
-            isPlaceholder: true,
-            isHighlighted: false,
-          })}
-        >
-          {iconContent}
-        </button>
-      )}
       <button
         className={cn(
           buttonVariants({
-            isDragging: isDragging && !isVerticalOnly,
-            isPlaceholder: false,
+            isPlaceholder: isFreeFormDragging,
             isHighlighted: isHighlighted && !isDragging,
           }),
+          // Keep relative z-index; the overlay portal handles the high z
+          "relative z-1",
         )}
         onMouseDown={isReadOnly ? undefined : handleMouseDown}
         onClick={!isDragging ? onClick : undefined}
         style={{
-          ...(isDragging && !isVerticalOnly
-            ? { left: position.x - 17, top: position.y - 17 }
-            : {}),
-          cursor: isDragging && isVerticalOnly ? "grabbing" : blockCursor,
+          cursor: isVertDragging ? "grabbing" : blockCursor,
         }}
       >
         {iconContent}

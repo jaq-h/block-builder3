@@ -33,7 +33,7 @@ const ProviderColumn: React.FC<ProviderColumnProps> = ({
   onProviderMouseLeave,
 }) => {
   return (
-    <div className="flex flex-col min-w-[90px] w-[110px] border border-gray-200/20 rounded-lg bg-bg-column overflow-hidden">
+    <div className="flex flex-col min-w-22.5 w-27.5 border border-gray-200/20 rounded-lg bg-bg-column overflow-hidden">
       <div className="p-2 text-center border-b border-gray-200 bg-neutral-bg">
         <span className="text-sm font-semibold text-text-secondary">
           Orders
@@ -58,7 +58,7 @@ const ProviderColumn: React.FC<ProviderColumnProps> = ({
               onMouseEnter={() => onProviderMouseEnter(block.type)}
               onMouseLeave={onProviderMouseLeave}
             />
-            <span className="text-[11px] text-text-tertiary text-center break-words max-w-[100px] leading-[1.2]">
+            <span className="text-[11px] text-text-tertiary text-center wrap-break-word max-w-25 leading-[1.2]">
               {block.label}
             </span>
           </div>
