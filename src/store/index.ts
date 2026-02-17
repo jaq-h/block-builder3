@@ -1,21 +1,24 @@
-// Store exports
+// Store – provider component
+export { OrdersStoreProvider } from "./OrdersStore";
+
+// Store – hooks & selectors
 export {
-  OrdersStoreProvider,
   useOrdersStore,
   useActiveOrdersCount,
   usePendingOrdersCount,
   useLiveOrdersCount,
   useOrdersByStatus,
   useIsSimulationMode,
-} from "./OrdersStore";
+} from "./useOrdersStore";
 
+// Store – shared types & context
 export type {
   SubmittedOrder,
   OrdersStoreState,
   OrdersStoreActions,
   OrdersStoreContextType,
   OrdersStoreProviderProps,
-} from "./OrdersStore";
+} from "./OrdersStoreContext";
 
 // Reducer exports
 export { ordersReducer, createInitialState } from "./ordersReducer";

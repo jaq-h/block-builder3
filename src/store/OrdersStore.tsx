@@ -1,22 +1,12 @@
-import {
-  createContext,
-  useContext,
-  useReducer,
-  type FC,
-  type ReactNode,
-} from "react";
+import { useReducer, type FC } from "react";
 import type { OrderConfig } from "../types/grid";
-import type {
-  ActiveOrderEntry,
-  ActiveOrdersConfig,
-  OrderStatus,
-} from "../types/activeOrders";
+import type { ActiveOrdersConfig, OrderStatus } from "../types/activeOrders";
 import { hasValidCredentials } from "../api";
-import {
-  ordersReducer,
-  createInitialState,
-  type OrdersStoreState,
-} from "./ordersReducer";
+import { ordersReducer, createInitialState } from "./ordersReducer";
+import OrdersStoreContext, {
+  type OrdersStoreContextType,
+  type OrdersStoreProviderProps,
+} from "./OrdersStoreContext";
 
 // =============================================================================
 // ENVIRONMENT & SIMULATION MODE
@@ -37,43 +27,6 @@ const getDefaultSimulationMode = (): boolean => {
 };
 
 // =============================================================================
-// TYPES
-// =============================================================================
-
-export type { OrdersStoreState } from "./ordersReducer";
-
-export interface SubmittedOrder extends ActiveOrderEntry {
-  originalConfig: OrderConfig[string];
-}
-
-export interface OrdersStoreActions {
-  submitOrders: (config: OrderConfig) => Promise<boolean>;
-  cancelOrder: (orderId: string) => Promise<boolean>;
-  cancelAllOrders: () => Promise<boolean>;
-  updateOrderStatus: (orderId: string, status: OrderStatus) => void;
-  clearError: () => void;
-  refreshOrders: () => Promise<void>;
-  /** Enable or disable simulation mode */
-  setSimulationMode: (enabled: boolean) => void;
-  /** Toggle simulation mode */
-  toggleSimulationMode: () => void;
-}
-
-export type OrdersStoreContextType = OrdersStoreState & OrdersStoreActions;
-
-export interface OrdersStoreProviderProps {
-  children: ReactNode;
-  /** Force simulation mode on/off (overrides default behavior) */
-  forceSimulation?: boolean;
-}
-
-// =============================================================================
-// CONTEXT
-// =============================================================================
-
-const OrdersStoreContext = createContext<OrdersStoreContextType | null>(null);
-
-// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
@@ -85,10 +38,7 @@ const generateOrderId = (): string => {
 };
 
 /** Convert OrderConfig entry to ActiveOrderEntry */
-const configToActiveOrder = (
-  id: string,
-  config: OrderConfig[string],
-): ActiveOrderEntry => {
+const configToActiveOrder = (id: string, config: OrderConfig[string]) => {
   return {
     id,
     orderId: generateOrderId(),
@@ -328,58 +278,3 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
     </OrdersStoreContext.Provider>
   );
 };
-
-// =============================================================================
-// HOOK
-// =============================================================================
-
-export const useOrdersStore = (): OrdersStoreContextType => {
-  const context = useContext(OrdersStoreContext);
-  if (!context) {
-    throw new Error(
-      "useOrdersStore must be used within an OrdersStoreProvider",
-    );
-  }
-  return context;
-};
-
-// =============================================================================
-// SELECTORS (for derived data)
-// =============================================================================
-
-export const useActiveOrdersCount = (): number => {
-  const { submittedOrders } = useOrdersStore();
-  return Object.values(submittedOrders).filter((o) => o.status === "active")
-    .length;
-};
-
-export const usePendingOrdersCount = (): number => {
-  const { submittedOrders } = useOrdersStore();
-  return Object.values(submittedOrders).filter((o) => o.status === "pending")
-    .length;
-};
-
-export const useOrdersByStatus = (status: OrderStatus): ActiveOrdersConfig => {
-  const { submittedOrders } = useOrdersStore();
-  return Object.fromEntries(
-    Object.entries(submittedOrders).filter(
-      ([, order]) => order.status === status,
-    ),
-  );
-};
-
-/** Count of orders that are active or pending (i.e. "live") */
-export const useLiveOrdersCount = (): number => {
-  const { submittedOrders } = useOrdersStore();
-  return Object.values(submittedOrders).filter(
-    (o) => o.status === "active" || o.status === "pending",
-  ).length;
-};
-
-/** Check if simulation mode is active */
-export const useIsSimulationMode = (): boolean => {
-  const { isSimulationMode } = useOrdersStore();
-  return isSimulationMode;
-};
-
-export default OrdersStoreContext;
