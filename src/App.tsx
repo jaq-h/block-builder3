@@ -4,6 +4,7 @@ import { cva } from "class-variance-authority";
 import { cn } from "./lib/utils";
 import StrategyAssembly from "./components/widgets/strategyAssembly/strategyAssembly";
 import { ActiveOrders } from "./components/widgets/activeOrders";
+import DragOverlay from "./components/common/DragOverlay";
 import type { OrderConfig } from "./types/grid";
 import { OrdersStoreProvider, useOrdersStore } from "./store";
 import ToolsIcon from "./assets/icons/tools.svg?react";
@@ -318,6 +319,9 @@ function App() {
   return (
     <OrdersStoreProvider>
       <AppInner />
+      {/* Rendered via portal into #drag-overlay — completely outside the
+          React tree so drag-position updates never cascade through the grid */}
+      <DragOverlay />
     </OrdersStoreProvider>
   );
 }
