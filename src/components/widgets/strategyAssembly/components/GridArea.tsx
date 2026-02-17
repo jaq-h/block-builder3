@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React from "react";
 import {
   isCellValidForPlacement,
   getAlignment,
@@ -72,18 +72,15 @@ const GridArea: React.FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
   // ─── Hover handlers ──────────────────────────────────────────────
 
-  const handleGridCellMouseEnter = useCallback(
-    (colIndex: number, rowIndex: number) => {
-      if (draggingId === null && draggingFromProvider === null) {
-        setHoveredGridCell({ col: colIndex, row: rowIndex });
-      }
-    },
-    [draggingId, draggingFromProvider, setHoveredGridCell],
-  );
+  const handleGridCellMouseEnter = (colIndex: number, rowIndex: number) => {
+    if (draggingId === null && draggingFromProvider === null) {
+      setHoveredGridCell({ col: colIndex, row: rowIndex });
+    }
+  };
 
-  const handleGridCellMouseLeave = useCallback(() => {
+  const handleGridCellMouseLeave = () => {
     setHoveredGridCell(null);
-  }, [setHoveredGridCell]);
+  };
 
   // ─── Allowed-row computation ─────────────────────────────────────
 
@@ -113,305 +110,259 @@ const GridArea: React.FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
   // ─── Drag handlers ───────────────────────────────────────────────
 
-  const handleDragStart = useCallback(
-    (id: string) => {
-      setDraggingId(id);
-    },
-    [setDraggingId],
-  );
+  const handleDragStart = (id: string) => {
+    setDraggingId(id);
+  };
 
-  const handleProviderDragStart = useCallback(
-    (type: string) => {
-      setDraggingFromProvider(type);
-      setHoveredProviderId(null);
-    },
-    [setDraggingFromProvider, setHoveredProviderId],
-  );
-
-  const handleProviderMouseEnter = useCallback(
-    (type: string) => {
-      if (!draggingFromProvider && !draggingId) {
-        setHoveredProviderId(type);
-      }
-    },
-    [draggingFromProvider, draggingId, setHoveredProviderId],
-  );
-
-  const handleProviderMouseLeave = useCallback(() => {
+  const handleProviderDragStart = (type: string) => {
+    setDraggingFromProvider(type);
     setHoveredProviderId(null);
-  }, [setHoveredProviderId]);
+  };
 
-  const handleProviderDragEnd = useCallback(
-    (type: string, x: number, y: number) => {
-      const positionData = findCellAndPositionData(x, y);
-      if (!positionData) {
-        setDraggingFromProvider(null);
-        setHoverCell(null);
-        return;
-      }
+  const handleProviderMouseEnter = (type: string) => {
+    if (!draggingFromProvider && !draggingId) {
+      setHoveredProviderId(type);
+    }
+  };
 
-      const { col: targetCol, row: targetRow } = positionData;
-      const providerBlock = providerBlocks.find((b) => b.type === type);
+  const handleProviderMouseLeave = () => {
+    setHoveredProviderId(null);
+  };
 
+  const handleProviderDragEnd = (type: string, x: number, y: number) => {
+    const positionData = findCellAndPositionData(x, y);
+    if (!positionData) {
+      setDraggingFromProvider(null);
+      setHoverCell(null);
+      return;
+    }
+
+    const { col: targetCol, row: targetRow } = positionData;
+    const providerBlock = providerBlocks.find((b) => b.type === type);
+
+    if (
+      !providerBlock ||
+      !isCellValidForPlacement(
+        targetCol,
+        targetRow,
+        providerBlock.allowedRows,
+        grid,
+        strategyPattern,
+      )
+    ) {
+      setDraggingFromProvider(null);
+      setHoverCell(null);
+      return;
+    }
+
+    // Use factory to create blocks
+    const { blocks, nextCounter } = createBlocksFromOrderType(providerBlock, {
+      baseId,
+      counter: blockCounterRef.current,
+    });
+    blockCounterRef.current = nextCounter;
+
+    // Update grid
+    setGrid((prev) => {
+      const newGrid = prev.map((col) => col.map((row) => [...row]));
+      blocks.forEach((block) => newGrid[targetCol][targetRow].push(block));
+      return newGrid;
+    });
+
+    // Update order config
+    setOrderConfig((prev) => {
+      const updated = { ...prev };
+      blocks.forEach((block) => {
+        updated[block.id] = buildOrderConfigEntry(
+          block,
+          targetCol,
+          targetRow,
+          type,
+        );
+      });
+      return updated;
+    });
+
+    setDraggingFromProvider(null);
+    setHoverCell(null);
+  };
+
+  // ─── Vertical drag (slider) ──────────────────────────────────────
+
+  const handleBlockVerticalDrag = (id: string, mouseY: number) => {
+    const blockInfo = findBlockInGrid(grid, id);
+    if (!blockInfo) return;
+
+    const { col, row } = blockInfo;
+
+    // Find the cell element to get its bounds
+    const cellElement = document.querySelector(
+      `[data-col="${col}"][data-row="${row}"]`,
+    );
+    if (!cellElement) return;
+
+    const rect = cellElement.getBoundingClientRect();
+    // Layout constants matching GridCell.tsx
+    const HEADER_HEIGHT = 36;
+    const BOTTOM_PADDING = 20;
+    const BLOCK_HEIGHT = 40;
+
+    // The draggable area starts after header and ends before bottom padding
+    const trackTop = rect.top + HEADER_HEIGHT + BLOCK_HEIGHT / 2;
+    const trackBottom = rect.bottom - BOTTOM_PADDING - BLOCK_HEIGHT / 2;
+    const availableHeight = trackBottom - trackTop;
+
+    // Calculate relative Y position within the draggable area
+    const relativeY = mouseY - trackTop;
+    const clampedRelativeY = Math.max(0, Math.min(availableHeight, relativeY));
+
+    // Determine if this cell uses descending scale
+    const isDescending = shouldBeDescending(row, col);
+
+    // Convert to percentage based on scale direction
+    const { MAX_PERCENT } = SCALE_CONFIG;
+    let percentage: number;
+    if (isDescending) {
+      percentage = (clampedRelativeY / availableHeight) * MAX_PERCENT;
+    } else {
+      percentage =
+        MAX_PERCENT - (clampedRelativeY / availableHeight) * MAX_PERCENT;
+    }
+
+    // Round to 2 decimal places for precision display
+    const roundedPercentage = Math.round(percentage * 100) / 100;
+
+    // Update only this block's position in the grid
+    setGrid((prev) => {
+      const newGrid = prev.map((gridCol) =>
+        gridCol.map((rowArray) =>
+          rowArray.map((b) => {
+            if (b.id === id) {
+              return { ...b, yPosition: roundedPercentage };
+            }
+            return b;
+          }),
+        ),
+      );
+      return newGrid;
+    });
+
+    // Update order config for this block only
+    setOrderConfig((prev) => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        yPosition: roundedPercentage,
+      },
+    }));
+  };
+
+  // ─── Drop handler ────────────────────────────────────────────────
+
+  const handleDragEnd = (id: string, x: number, y: number) => {
+    const positionData = findCellAndPositionData(x, y);
+    const blockInfo = findBlockInGrid(grid, id);
+
+    if (!blockInfo) {
+      setDraggingId(null);
+      setHoverCell(null);
+      return;
+    }
+
+    const { col: sourceCol, row: sourceRow, block: blockData } = blockInfo;
+
+    if (positionData) {
+      const { col: targetCol, row: targetRow, axis, yPosition } = positionData;
+
+      // Check if target cell is valid for this block
       if (
-        !providerBlock ||
         !isCellValidForPlacement(
           targetCol,
           targetRow,
-          providerBlock.allowedRows,
+          blockData.allowedRows,
           grid,
           strategyPattern,
         )
       ) {
-        setDraggingFromProvider(null);
-        setHoverCell(null);
-        return;
-      }
-
-      // Use factory to create blocks
-      const { blocks, nextCounter } = createBlocksFromOrderType(providerBlock, {
-        baseId,
-        counter: blockCounterRef.current,
-      });
-      blockCounterRef.current = nextCounter;
-
-      // Update grid
-      setGrid((prev) => {
-        const newGrid = prev.map((col) => col.map((row) => [...row]));
-        blocks.forEach((block) => newGrid[targetCol][targetRow].push(block));
-        return newGrid;
-      });
-
-      // Update order config
-      setOrderConfig((prev) => {
-        const updated = { ...prev };
-        blocks.forEach((block) => {
-          updated[block.id] = buildOrderConfigEntry(
-            block,
-            targetCol,
-            targetRow,
-            type,
-          );
-        });
-        return updated;
-      });
-
-      setDraggingFromProvider(null);
-      setHoverCell(null);
-    },
-    [
-      providerBlocks,
-      grid,
-      strategyPattern,
-      baseId,
-      blockCounterRef,
-      setGrid,
-      setOrderConfig,
-      setDraggingFromProvider,
-      setHoverCell,
-    ],
-  );
-
-  // ─── Vertical drag (slider) ──────────────────────────────────────
-
-  const handleBlockVerticalDrag = useCallback(
-    (id: string, mouseY: number) => {
-      const blockInfo = findBlockInGrid(grid, id);
-      if (!blockInfo) return;
-
-      const { col, row } = blockInfo;
-
-      // Find the cell element to get its bounds
-      const cellElement = document.querySelector(
-        `[data-col="${col}"][data-row="${row}"]`,
-      );
-      if (!cellElement) return;
-
-      const rect = cellElement.getBoundingClientRect();
-      // Layout constants matching GridCell.tsx
-      const HEADER_HEIGHT = 36;
-      const BOTTOM_PADDING = 20;
-      const BLOCK_HEIGHT = 40;
-
-      // The draggable area starts after header and ends before bottom padding
-      const trackTop = rect.top + HEADER_HEIGHT + BLOCK_HEIGHT / 2;
-      const trackBottom = rect.bottom - BOTTOM_PADDING - BLOCK_HEIGHT / 2;
-      const availableHeight = trackBottom - trackTop;
-
-      // Calculate relative Y position within the draggable area
-      const relativeY = mouseY - trackTop;
-      const clampedRelativeY = Math.max(
-        0,
-        Math.min(availableHeight, relativeY),
-      );
-
-      // Determine if this cell uses descending scale
-      const isDescending = shouldBeDescending(row, col);
-
-      // Convert to percentage based on scale direction
-      const { MAX_PERCENT } = SCALE_CONFIG;
-      let percentage: number;
-      if (isDescending) {
-        percentage = (clampedRelativeY / availableHeight) * MAX_PERCENT;
-      } else {
-        percentage =
-          MAX_PERCENT - (clampedRelativeY / availableHeight) * MAX_PERCENT;
-      }
-
-      // Round to 2 decimal places for precision display
-      const roundedPercentage = Math.round(percentage * 100) / 100;
-
-      // Update only this block's position in the grid
-      setGrid((prev) => {
-        const newGrid = prev.map((gridCol) =>
-          gridCol.map((rowArray) =>
-            rowArray.map((b) => {
-              if (b.id === id) {
-                return { ...b, yPosition: roundedPercentage };
-              }
-              return b;
-            }),
-          ),
-        );
-        return newGrid;
-      });
-
-      // Update order config for this block only
-      setOrderConfig((prev) => ({
-        ...prev,
-        [id]: {
-          ...prev[id],
-          yPosition: roundedPercentage,
-        },
-      }));
-    },
-    [grid, setGrid, setOrderConfig],
-  );
-
-  // ─── Drop handler ────────────────────────────────────────────────
-
-  const handleDragEnd = useCallback(
-    (id: string, x: number, y: number) => {
-      const positionData = findCellAndPositionData(x, y);
-      const blockInfo = findBlockInGrid(grid, id);
-
-      if (!blockInfo) {
         setDraggingId(null);
         setHoverCell(null);
         return;
       }
 
-      const { col: sourceCol, row: sourceRow, block: blockData } = blockInfo;
+      // Update block with new position data
+      const updatedBlock = {
+        ...blockData,
+        axis,
+        yPosition,
+      };
 
-      if (positionData) {
-        const {
-          col: targetCol,
-          row: targetRow,
-          axis,
-          yPosition,
-        } = positionData;
+      setGrid((prev) => {
+        const newGrid = prev.map((col) => col.map((row) => [...row]));
 
-        // Check if target cell is valid for this block
-        if (
-          !isCellValidForPlacement(
-            targetCol,
-            targetRow,
-            blockData.allowedRows,
-            grid,
-            strategyPattern,
-          )
-        ) {
-          setDraggingId(null);
-          setHoverCell(null);
-          return;
+        // Remove only this block from source
+        newGrid[sourceCol][sourceRow] = newGrid[sourceCol][sourceRow].filter(
+          (b) => b.id !== id,
+        );
+
+        // Add to target with updated position
+        newGrid[targetCol][targetRow].push(updatedBlock);
+
+        return newGrid;
+      });
+
+      // Update order config for this block only
+      setOrderConfig((prev) => {
+        const updated = { ...prev };
+        if (updated[id]) {
+          updated[id] = {
+            ...updated[id],
+            col: targetCol,
+            row: targetRow,
+            axis,
+            yPosition,
+          };
         }
+        return updated;
+      });
+    } else {
+      // Dropped outside - remove only this block
+      setGrid((prev) => {
+        const newGrid = prev.map((col) => col.map((row) => [...row]));
+        newGrid[sourceCol][sourceRow] = newGrid[sourceCol][sourceRow].filter(
+          (b) => b.id !== id,
+        );
+        return newGrid;
+      });
 
-        // Update block with new position data
-        const updatedBlock = {
-          ...blockData,
-          axis,
-          yPosition,
-        };
+      // Remove from order config
+      setOrderConfig((prev) => {
+        const updated = { ...prev };
+        delete updated[id];
+        return updated;
+      });
+    }
 
-        setGrid((prev) => {
-          const newGrid = prev.map((col) => col.map((row) => [...row]));
-
-          // Remove only this block from source
-          newGrid[sourceCol][sourceRow] = newGrid[sourceCol][sourceRow].filter(
-            (b) => b.id !== id,
-          );
-
-          // Add to target with updated position
-          newGrid[targetCol][targetRow].push(updatedBlock);
-
-          return newGrid;
-        });
-
-        // Update order config for this block only
-        setOrderConfig((prev) => {
-          const updated = { ...prev };
-          if (updated[id]) {
-            updated[id] = {
-              ...updated[id],
-              col: targetCol,
-              row: targetRow,
-              axis,
-              yPosition,
-            };
-          }
-          return updated;
-        });
-      } else {
-        // Dropped outside - remove only this block
-        setGrid((prev) => {
-          const newGrid = prev.map((col) => col.map((row) => [...row]));
-          newGrid[sourceCol][sourceRow] = newGrid[sourceCol][sourceRow].filter(
-            (b) => b.id !== id,
-          );
-          return newGrid;
-        });
-
-        // Remove from order config
-        setOrderConfig((prev) => {
-          const updated = { ...prev };
-          delete updated[id];
-          return updated;
-        });
-      }
-
-      setDraggingId(null);
-      setHoverCell(null);
-    },
-    [
-      grid,
-      strategyPattern,
-      setGrid,
-      setOrderConfig,
-      setDraggingId,
-      setHoverCell,
-    ],
-  );
+    setDraggingId(null);
+    setHoverCell(null);
+  };
 
   // ─── Mouse move (drag tracking) ─────────────────────────────────
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (draggingId !== null || draggingFromProvider !== null) {
-        const target = e.target as HTMLElement;
-        const rowElement = target.closest("[data-col][data-row]");
-        if (rowElement) {
-          const col = parseInt(rowElement.getAttribute("data-col") || "-1", 10);
-          const row = parseInt(rowElement.getAttribute("data-row") || "-1", 10);
-          if (col !== -1 && row !== -1) {
-            setHoverCell({ col, row });
-          }
-        } else {
-          setHoverCell(null);
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (draggingId !== null || draggingFromProvider !== null) {
+      const target = e.target as HTMLElement;
+      const rowElement = target.closest("[data-col][data-row]");
+      if (rowElement) {
+        const col = parseInt(rowElement.getAttribute("data-col") || "-1", 10);
+        const row = parseInt(rowElement.getAttribute("data-row") || "-1", 10);
+        if (col !== -1 && row !== -1) {
+          setHoverCell({ col, row });
         }
+      } else {
+        setHoverCell(null);
       }
-    },
-    [draggingId, draggingFromProvider, setHoverCell],
-  );
+    }
+  };
 
   // ─── Computed values for rendering ───────────────────────────────
 

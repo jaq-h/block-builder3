@@ -1,4 +1,4 @@
-import React, { useState, useRef, useId, useCallback, useMemo } from "react";
+import React, { useState, useRef, useId } from "react";
 import type {
   GridData,
   CellPosition,
@@ -50,25 +50,22 @@ export function StrategyAssemblyProvider({
   // ─── Derived actions ───────────────────────────────────────────────
 
   // Wrap setOrderConfig to notify parent
-  const setOrderConfig: React.Dispatch<React.SetStateAction<OrderConfig>> =
-    useCallback(
-      (action) => {
-        setOrderConfigInternal((prev) => {
-          const newConfig =
-            typeof action === "function" ? action(prev) : action;
-          onConfigChange?.(newConfig);
-          return newConfig;
-        });
-      },
-      [onConfigChange],
-    );
+  const setOrderConfig: React.Dispatch<React.SetStateAction<OrderConfig>> = (
+    action,
+  ) => {
+    setOrderConfigInternal((prev) => {
+      const newConfig = typeof action === "function" ? action(prev) : action;
+      onConfigChange?.(newConfig);
+      return newConfig;
+    });
+  };
 
-  const clearAll = useCallback(() => {
+  const clearAll = () => {
     setGrid(clearGrid(2, 3));
     setOrderConfig({});
-  }, [setOrderConfig]);
+  };
 
-  const reverseBlocks = useCallback(() => {
+  const reverseBlocks = () => {
     setGrid((prev) => [
       [...prev[1].map((row) => [...row])],
       [...prev[0].map((row) => [...row])],
@@ -80,65 +77,46 @@ export function StrategyAssemblyProvider({
       });
       return updated;
     });
-  }, [setOrderConfig]);
+  };
 
-  // ─── Memoized context values ───────────────────────────────────────
+  // ─── Context values ────────────────────────────────────────────────
 
   // Static: never changes after mount
-  const staticValue = useMemo(
-    () => ({
-      providerBlocks: ORDER_TYPES,
-      baseId,
-      blockCounterRef,
-    }),
-    [baseId],
-  );
+  const staticValue = {
+    providerBlocks: ORDER_TYPES,
+    baseId,
+    blockCounterRef,
+  };
 
   // Grid data: changes only on block placement/move/delete/pattern switch
-  const gridDataValue = useMemo(
-    () => ({
-      grid,
-      orderConfig,
-      strategyPattern,
-      setGrid,
-      setOrderConfig,
-      setStrategyPattern,
-      clearAll,
-      reverseBlocks,
-    }),
-    [
-      grid,
-      orderConfig,
-      strategyPattern,
-      setOrderConfig,
-      clearAll,
-      reverseBlocks,
-    ],
-  );
+  const gridDataValue = {
+    grid,
+    orderConfig,
+    strategyPattern,
+    setGrid,
+    setOrderConfig,
+    setStrategyPattern,
+    clearAll,
+    reverseBlocks,
+  };
 
   // Drag: changes on drag start/end and during drag (hoverCell tracking)
-  const dragValue = useMemo(
-    () => ({
-      draggingId,
-      draggingFromProvider,
-      hoverCell,
-      setDraggingId,
-      setDraggingFromProvider,
-      setHoverCell,
-    }),
-    [draggingId, draggingFromProvider, hoverCell],
-  );
+  const dragValue = {
+    draggingId,
+    draggingFromProvider,
+    hoverCell,
+    setDraggingId,
+    setDraggingFromProvider,
+    setHoverCell,
+  };
 
   // Hover: changes on every mouse enter/leave — most volatile
-  const hoverValue = useMemo(
-    () => ({
-      hoveredProviderId,
-      hoveredGridCell,
-      setHoveredProviderId,
-      setHoveredGridCell,
-    }),
-    [hoveredProviderId, hoveredGridCell],
-  );
+  const hoverValue = {
+    hoveredProviderId,
+    hoveredGridCell,
+    setHoveredProviderId,
+    setHoveredGridCell,
+  };
 
   // ─── Nested providers: outermost = most stable, innermost = most volatile
   return (

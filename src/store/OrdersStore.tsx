@@ -1,10 +1,4 @@
-import React, {
-  createContext,
-  useContext,
-  useReducer,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { createContext, useContext, useReducer } from "react";
 import type { OrderConfig } from "../types/grid";
 import type {
   ActiveOrderEntry,
@@ -133,127 +127,121 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
   const { isSimulationMode } = state;
 
   // Set simulation mode
-  const setSimulationMode = useCallback((enabled: boolean) => {
+  const setSimulationMode = (enabled: boolean) => {
     dispatch({ type: "SET_SIMULATION_MODE", enabled });
     const prefix = getLogPrefix(enabled);
     console.log(
       `${prefix} Simulation mode ${enabled ? "enabled" : "disabled"}`,
     );
-  }, []);
+  };
 
   // Toggle simulation mode
-  const toggleSimulationMode = useCallback(() => {
+  const toggleSimulationMode = () => {
     dispatch({ type: "TOGGLE_SIMULATION_MODE" });
     // Log uses the *new* value, so we invert the current capture
     const prefix = getLogPrefix(!isSimulationMode);
     console.log(
       `${prefix} Simulation mode ${!isSimulationMode ? "enabled" : "disabled"}`,
     );
-  }, [isSimulationMode]);
+  };
 
   // Submit orders — simulated locally or via API based on simulation mode
-  const submitOrders = useCallback(
-    async (config: OrderConfig): Promise<boolean> => {
-      dispatch({ type: "SUBMIT_START" });
+  const submitOrders = async (config: OrderConfig): Promise<boolean> => {
+    dispatch({ type: "SUBMIT_START" });
 
-      const logPrefix = getLogPrefix(isSimulationMode);
+    const logPrefix = getLogPrefix(isSimulationMode);
 
-      try {
-        if (isSimulationMode) {
-          // Simulation mode: store orders locally (works in dev and production)
-          console.log(
-            `${logPrefix} Submitting orders locally:`,
-            Object.keys(config).length,
-            "orders",
-          );
+    try {
+      if (isSimulationMode) {
+        // Simulation mode: store orders locally (works in dev and production)
+        console.log(
+          `${logPrefix} Submitting orders locally:`,
+          Object.keys(config).length,
+          "orders",
+        );
 
-          // Simulate API delay for realistic UX
-          await simulateApiDelay(800);
+        // Simulate API delay for realistic UX
+        await simulateApiDelay(800);
 
-          // Convert config entries to active orders
-          const newOrders: ActiveOrdersConfig = {};
-          Object.entries(config).forEach(([id, entry]) => {
-            const activeOrder = configToActiveOrder(id, entry);
-            newOrders[activeOrder.id] = activeOrder;
-          });
+        // Convert config entries to active orders
+        const newOrders: ActiveOrdersConfig = {};
+        Object.entries(config).forEach(([id, entry]) => {
+          const activeOrder = configToActiveOrder(id, entry);
+          newOrders[activeOrder.id] = activeOrder;
+        });
 
-          const timestamp = new Date();
-          dispatch({ type: "SUBMIT_SUCCESS", orders: newOrders, timestamp });
+        const timestamp = new Date();
+        dispatch({ type: "SUBMIT_SUCCESS", orders: newOrders, timestamp });
 
-          // Simulate orders becoming active after a short delay
-          const orderIds = Object.keys(newOrders);
-          setTimeout(() => {
-            dispatch({ type: "ORDERS_ACTIVATED", orderIds });
-            console.log(`${logPrefix} Orders are now active`);
-          }, 1500);
+        // Simulate orders becoming active after a short delay
+        const orderIds = Object.keys(newOrders);
+        setTimeout(() => {
+          dispatch({ type: "ORDERS_ACTIVATED", orderIds });
+          console.log(`${logPrefix} Orders are now active`);
+        }, 1500);
 
-          console.log(`${logPrefix} Orders submitted successfully`);
-          return true;
-        } else {
-          // Production mode with API: make actual API request
-          console.log(`${logPrefix} Submitting orders to API:`, config);
+        console.log(`${logPrefix} Orders submitted successfully`);
+        return true;
+      } else {
+        // Production mode with API: make actual API request
+        console.log(`${logPrefix} Submitting orders to API:`, config);
 
-          // Check for credentials before attempting API call
-          if (!hasValidCredentials()) {
-            throw new Error(
-              "API credentials not configured. Enable simulation mode or configure credentials.",
-            );
-          }
-
-          // TODO: Implement actual API call
-          // For now, throw an error indicating API is not yet implemented
+        // Check for credentials before attempting API call
+        if (!hasValidCredentials()) {
           throw new Error(
-            "Production API integration not implemented yet. Enable simulation mode to test.",
+            "API credentials not configured. Enable simulation mode or configure credentials.",
           );
         }
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Failed to submit orders";
-        dispatch({ type: "SUBMIT_FAILURE", error: errorMessage });
-        console.error(`${logPrefix} Order submission failed:`, errorMessage);
-        return false;
+
+        // TODO: Implement actual API call
+        // For now, throw an error indicating API is not yet implemented
+        throw new Error(
+          "Production API integration not implemented yet. Enable simulation mode to test.",
+        );
       }
-    },
-    [isSimulationMode],
-  );
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to submit orders";
+      dispatch({ type: "SUBMIT_FAILURE", error: errorMessage });
+      console.error(`${logPrefix} Order submission failed:`, errorMessage);
+      return false;
+    }
+  };
 
   // Cancel a single order
-  const cancelOrder = useCallback(
-    async (orderId: string): Promise<boolean> => {
-      const logPrefix = getLogPrefix(isSimulationMode);
+  const cancelOrder = async (orderId: string): Promise<boolean> => {
+    const logPrefix = getLogPrefix(isSimulationMode);
 
-      try {
-        if (isSimulationMode) {
-          console.log(`${logPrefix} Cancelling order:`, orderId);
-          await simulateApiDelay(300);
+    try {
+      if (isSimulationMode) {
+        console.log(`${logPrefix} Cancelling order:`, orderId);
+        await simulateApiDelay(300);
 
-          dispatch({ type: "CANCEL_ORDER", orderId });
-          return true;
-        } else {
-          // Check for credentials
-          if (!hasValidCredentials()) {
-            throw new Error(
-              "API credentials not configured. Enable simulation mode or configure credentials.",
-            );
-          }
-
-          // TODO: Implement actual API call
+        dispatch({ type: "CANCEL_ORDER", orderId });
+        return true;
+      } else {
+        // Check for credentials
+        if (!hasValidCredentials()) {
           throw new Error(
-            "Production API integration not implemented yet. Enable simulation mode to test.",
+            "API credentials not configured. Enable simulation mode or configure credentials.",
           );
         }
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Failed to cancel order";
-        dispatch({ type: "SUBMIT_FAILURE", error: errorMessage });
-        return false;
+
+        // TODO: Implement actual API call
+        throw new Error(
+          "Production API integration not implemented yet. Enable simulation mode to test.",
+        );
       }
-    },
-    [isSimulationMode],
-  );
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to cancel order";
+      dispatch({ type: "SUBMIT_FAILURE", error: errorMessage });
+      return false;
+    }
+  };
 
   // Cancel all active orders
-  const cancelAllOrders = useCallback(async (): Promise<boolean> => {
+  const cancelAllOrders = async (): Promise<boolean> => {
     const logPrefix = getLogPrefix(isSimulationMode);
 
     try {
@@ -282,28 +270,25 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
       dispatch({ type: "SUBMIT_FAILURE", error: errorMessage });
       return false;
     }
-  }, [isSimulationMode]);
+  };
 
   // Update order status manually (for simulations)
-  const updateOrderStatus = useCallback(
-    (orderId: string, status: OrderStatus) => {
-      dispatch({
-        type: "UPDATE_ORDER_STATUS",
-        orderId,
-        status,
-        ...(status === "filled" ? { filledAt: new Date() } : {}),
-      });
-    },
-    [],
-  );
+  const updateOrderStatus = (orderId: string, status: OrderStatus) => {
+    dispatch({
+      type: "UPDATE_ORDER_STATUS",
+      orderId,
+      status,
+      ...(status === "filled" ? { filledAt: new Date() } : {}),
+    });
+  };
 
   // Clear error
-  const clearError = useCallback(() => {
+  const clearError = () => {
     dispatch({ type: "CLEAR_ERROR" });
-  }, []);
+  };
 
   // Refresh orders from API (or simulate in simulation mode)
-  const refreshOrders = useCallback(async (): Promise<void> => {
+  const refreshOrders = async (): Promise<void> => {
     const logPrefix = getLogPrefix(isSimulationMode);
 
     if (isSimulationMode) {
@@ -313,36 +298,23 @@ export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
       // TODO: Implement actual API call to fetch orders
       console.log(`${logPrefix} Would fetch orders from API`);
     }
-  }, [isSimulationMode]);
+  };
 
-  // Memoize context value
-  const contextValue = useMemo<OrdersStoreContextType>(
-    () => ({
-      // State (spread from reducer)
-      ...state,
+  // Context value
+  const contextValue: OrdersStoreContextType = {
+    // State (spread from reducer)
+    ...state,
 
-      // Actions
-      submitOrders,
-      cancelOrder,
-      cancelAllOrders,
-      updateOrderStatus,
-      clearError,
-      refreshOrders,
-      setSimulationMode,
-      toggleSimulationMode,
-    }),
-    [
-      state,
-      submitOrders,
-      cancelOrder,
-      cancelAllOrders,
-      updateOrderStatus,
-      clearError,
-      refreshOrders,
-      setSimulationMode,
-      toggleSimulationMode,
-    ],
-  );
+    // Actions
+    submitOrders,
+    cancelOrder,
+    cancelAllOrders,
+    updateOrderStatus,
+    clearError,
+    refreshOrders,
+    setSimulationMode,
+    toggleSimulationMode,
+  };
 
   return (
     <OrdersStoreContext.Provider value={contextValue}>

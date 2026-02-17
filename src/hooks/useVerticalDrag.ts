@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 
 interface UseVerticalDragOptions {
   id: string;
@@ -16,26 +16,20 @@ export const useVerticalDrag = ({
 }: UseVerticalDragOptions): UseVerticalDragReturn => {
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      setIsDragging(true);
-    },
-    [],
-  );
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
 
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isDragging) return;
-      onVerticalDrag?.(id, e.clientY);
-    },
-    [isDragging, id, onVerticalDrag],
-  );
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging) return;
+    onVerticalDrag?.(id, e.clientY);
+  };
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = () => {
     if (!isDragging) return;
     setIsDragging(false);
-  }, [isDragging]);
+  };
 
   useEffect(() => {
     if (isDragging) {
@@ -46,7 +40,7 @@ export const useVerticalDrag = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  });
 
   return { isDragging, handleMouseDown };
 };

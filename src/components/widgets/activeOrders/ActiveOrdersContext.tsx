@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import type {
   ActiveOrdersContextType,
   ActiveOrdersProviderProps,
@@ -41,14 +41,14 @@ export const ActiveOrdersProvider: React.FC<ActiveOrdersProviderProps> = ({
   }, [selectedOrderId, onOrderSelect]);
 
   // Refresh orders - placeholder for API integration
-  const refreshOrders = useCallback(() => {
+  const refreshOrders = () => {
     // TODO: Implement API call to fetch active orders
     // For now, this is a placeholder that could be connected to an API
     console.log("Refreshing active orders...");
-  }, []);
+  };
 
   // Derive grid from active orders
-  const grid = useMemo<GridData>(() => {
+  const grid: GridData = (() => {
     const newGrid = createEmptyGrid();
 
     // Populate grid from active orders
@@ -80,7 +80,7 @@ export const ActiveOrdersProvider: React.FC<ActiveOrdersProviderProps> = ({
     });
 
     return newGrid;
-  }, [activeOrders]);
+  })();
 
   // Combine state and actions
   const contextValue: ActiveOrdersContextType = {

@@ -3,7 +3,7 @@
  * Provides easy access to WebSocket connections, ticker data, and order submission
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getWebSocketManager,
   getTickerData,
@@ -212,7 +212,7 @@ export const useKrakenAPI = (
   // Connection methods
   // ============================================================================
 
-  const connect = useCallback(async () => {
+  const connect = async () => {
     try {
       // Always connect public for ticker data
       await wsManager.current.connectPublic();
@@ -233,21 +233,21 @@ export const useKrakenAPI = (
       console.error("Failed to connect to Kraken WebSocket:", error);
       throw error;
     }
-  }, [symbol, hasCredentials]);
+  };
 
-  const disconnect = useCallback(() => {
+  const disconnect = () => {
     wsManager.current.disconnect();
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
-  }, []);
+  };
 
   // ============================================================================
   // Ticker methods
   // ============================================================================
 
-  const refreshTicker = useCallback(async () => {
+  const refreshTicker = async () => {
     setIsLoadingTicker(true);
     setTickerError(null);
 
@@ -262,155 +262,149 @@ export const useKrakenAPI = (
     } finally {
       setIsLoadingTicker(false);
     }
-  }, [symbol]);
+  };
 
   // ============================================================================
   // Order methods
   // ============================================================================
 
-  const prepareOrdersFromGrid = useCallback(
-    (grid: GridData, quantity: string): OrderParams[] => {
-      if (!currentPrice) {
-        console.warn("Cannot prepare orders: no current price available");
-        return [];
+  const prepareOrdersFromGrid = (
+    grid: GridData,
+    quantity: string,
+  ): OrderParams[] => {
+    if (!currentPrice) {
+      console.warn("Cannot prepare orders: no current price available");
+      return [];
+    }
+
+    const orders = mapGridToOrders(grid, {
+      symbol,
+      currentPrice,
+      quantity,
+    });
+
+    setPendingOrders(orders);
+    return orders;
+  };
+
+  const validateOrders = (orders: OrderParams[]): ValidationResult => {
+    const errors = new Map<number, string[]>();
+
+    orders.forEach((order, index) => {
+      const orderErrors = validateOrder(order);
+      if (orderErrors.length > 0) {
+        errors.set(index, orderErrors);
       }
+    });
 
-      const orders = mapGridToOrders(grid, {
-        symbol,
-        currentPrice,
-        quantity,
-      });
+    return {
+      isValid: errors.size === 0,
+      errors,
+    };
+  };
 
-      setPendingOrders(orders);
-      return orders;
-    },
-    [symbol, currentPrice],
-  );
-
-  const validateOrders = useCallback(
-    (orders: OrderParams[]): ValidationResult => {
-      const errors = new Map<number, string[]>();
-
-      orders.forEach((order, index) => {
-        const orderErrors = validateOrder(order);
-        if (orderErrors.length > 0) {
-          errors.set(index, orderErrors);
-        }
-      });
-
-      return {
-        isValid: errors.size === 0,
-        errors,
-      };
-    },
-    [],
-  );
-
-  const submitOrders = useCallback(
-    async (orders: OrderParams[]): Promise<OrderSubmitResult> => {
-      if (!hasCredentials) {
-        const result: OrderSubmitResult = {
-          success: false,
-          submittedCount: 0,
-          failedCount: orders.length,
-          errors: ["API credentials are not configured"],
-          orderIds: [],
-        };
-        setLastOrderResult(result);
-        setOrderError(result.errors[0]);
-        return result;
-      }
-
-      // Validate orders first
-      const validation = validateOrders(orders);
-      if (!validation.isValid) {
-        const allErrors: string[] = [];
-        validation.errors.forEach((errs, index) => {
-          errs.forEach((err) => {
-            allErrors.push(`Order ${index + 1}: ${err}`);
-          });
-        });
-
-        const result: OrderSubmitResult = {
-          success: false,
-          submittedCount: 0,
-          failedCount: orders.length,
-          errors: allErrors,
-          orderIds: [],
-        };
-        setLastOrderResult(result);
-        setOrderError(allErrors[0]);
-        return result;
-      }
-
-      setIsSubmitting(true);
-      setOrderError(null);
-
+  const submitOrders = async (
+    orders: OrderParams[],
+  ): Promise<OrderSubmitResult> => {
+    if (!hasCredentials) {
       const result: OrderSubmitResult = {
-        success: true,
+        success: false,
         submittedCount: 0,
-        failedCount: 0,
-        errors: [],
+        failedCount: orders.length,
+        errors: ["API credentials are not configured"],
         orderIds: [],
       };
+      setLastOrderResult(result);
+      setOrderError(result.errors[0]);
+      return result;
+    }
 
-      try {
-        // Ensure private connection
-        if (privateStatus !== "authenticated") {
-          await wsManager.current.connectPrivate();
-        }
+    // Validate orders first
+    const validation = validateOrders(orders);
+    if (!validation.isValid) {
+      const allErrors: string[] = [];
+      validation.errors.forEach((errs, index) => {
+        errs.forEach((err) => {
+          allErrors.push(`Order ${index + 1}: ${err}`);
+        });
+      });
 
-        // Submit orders sequentially
-        for (const order of orders) {
-          try {
-            const response = await wsManager.current.submitOrder(order);
-            if (response.success && response.result?.order_id) {
-              result.submittedCount++;
-              result.orderIds.push(response.result.order_id);
-            } else {
-              result.failedCount++;
-              result.errors.push(response.error || "Unknown error");
-            }
-          } catch (error) {
-            result.failedCount++;
-            result.errors.push(
-              error instanceof Error
-                ? error.message
-                : "Order submission failed",
-            );
-          }
-        }
+      const result: OrderSubmitResult = {
+        success: false,
+        submittedCount: 0,
+        failedCount: orders.length,
+        errors: allErrors,
+        orderIds: [],
+      };
+      setLastOrderResult(result);
+      setOrderError(allErrors[0]);
+      return result;
+    }
 
-        result.success = result.failedCount === 0;
+    setIsSubmitting(true);
+    setOrderError(null);
 
-        if (!result.success) {
-          setOrderError(result.errors[0]);
-        }
+    const result: OrderSubmitResult = {
+      success: true,
+      submittedCount: 0,
+      failedCount: 0,
+      errors: [],
+      orderIds: [],
+    };
 
-        // Clear pending orders on success
-        if (result.success) {
-          setPendingOrders([]);
-        }
-      } catch (error) {
-        result.success = false;
-        result.failedCount = orders.length;
-        result.errors.push(
-          error instanceof Error ? error.message : "Failed to submit orders",
-        );
-        setOrderError(result.errors[0]);
-      } finally {
-        setIsSubmitting(false);
-        setLastOrderResult(result);
+    try {
+      // Ensure private connection
+      if (privateStatus !== "authenticated") {
+        await wsManager.current.connectPrivate();
       }
 
-      return result;
-    },
-    [hasCredentials, privateStatus, validateOrders],
-  );
+      // Submit orders sequentially
+      for (const order of orders) {
+        try {
+          const response = await wsManager.current.submitOrder(order);
+          if (response.success && response.result?.order_id) {
+            result.submittedCount++;
+            result.orderIds.push(response.result.order_id);
+          } else {
+            result.failedCount++;
+            result.errors.push(response.error || "Unknown error");
+          }
+        } catch (error) {
+          result.failedCount++;
+          result.errors.push(
+            error instanceof Error ? error.message : "Order submission failed",
+          );
+        }
+      }
 
-  const clearOrderError = useCallback(() => {
+      result.success = result.failedCount === 0;
+
+      if (!result.success) {
+        setOrderError(result.errors[0]);
+      }
+
+      // Clear pending orders on success
+      if (result.success) {
+        setPendingOrders([]);
+      }
+    } catch (error) {
+      result.success = false;
+      result.failedCount = orders.length;
+      result.errors.push(
+        error instanceof Error ? error.message : "Failed to submit orders",
+      );
+      setOrderError(result.errors[0]);
+    } finally {
+      setIsSubmitting(false);
+      setLastOrderResult(result);
+    }
+
+    return result;
+  };
+
+  const clearOrderError = () => {
     setOrderError(null);
-  }, []);
+  };
 
   // ============================================================================
   // Return value

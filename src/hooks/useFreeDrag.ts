@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { SvgIcon } from "../data/orderTypes";
 import {
   startDragOverlay,
@@ -32,35 +32,26 @@ export const useFreeDrag = ({
   // without causing any React re-renders during the drag.
   const posRef = useRef({ x: 0, y: 0 });
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      posRef.current = { x: e.clientX, y: e.clientY };
-      setIsDragging(true);
-      startDragOverlay(icon, abrv ?? "", e.clientX, e.clientY);
-      onDragStart?.(id);
-    },
-    [id, icon, abrv, onDragStart],
-  );
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    posRef.current = { x: e.clientX, y: e.clientY };
+    setIsDragging(true);
+    startDragOverlay(icon, abrv ?? "", e.clientX, e.clientY);
+    onDragStart?.(id);
+  };
 
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isDragging) return;
-      posRef.current = { x: e.clientX, y: e.clientY };
-      updateDragOverlayPosition(e.clientX, e.clientY);
-    },
-    [isDragging],
-  );
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging) return;
+    posRef.current = { x: e.clientX, y: e.clientY };
+    updateDragOverlayPosition(e.clientX, e.clientY);
+  };
 
-  const handleMouseUp = useCallback(
-    (e: MouseEvent) => {
-      if (!isDragging) return;
-      setIsDragging(false);
-      stopDragOverlay();
-      onDragEnd?.(id, e.clientX, e.clientY);
-    },
-    [isDragging, id, onDragEnd],
-  );
+  const handleMouseUp = (e: MouseEvent) => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    stopDragOverlay();
+    onDragEnd?.(id, e.clientX, e.clientY);
+  };
 
   useEffect(() => {
     if (isDragging) {
@@ -71,7 +62,7 @@ export const useFreeDrag = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  });
 
   return { isDragging, handleMouseDown };
 };

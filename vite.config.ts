@@ -10,7 +10,15 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   return {
-    plugins: [tailwindcss(), react(), svgr()],
+    plugins: [
+      tailwindcss(),
+      react({
+        babel: {
+          plugins: [["babel-plugin-react-compiler"]],
+        },
+      }),
+      svgr(),
+    ],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

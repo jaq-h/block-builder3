@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import type { OrderConfig } from "../types/grid";
 import { useOrdersStore } from "../store";
 
@@ -65,17 +65,14 @@ export function useTradeExecution(): UseTradeExecutionReturn {
       ? "Simulation Mode - Orders saved locally"
       : "Production Mode - Orders sent to API";
 
-  const handleConfigChange = useCallback(
-    (config: OrderConfig) => {
-      setOrderConfig(config);
-      // Clear any previous success message when config changes
-      setShowSuccess(false);
-      clearError();
-    },
-    [clearError],
-  );
+  const handleConfigChange = (config: OrderConfig) => {
+    setOrderConfig(config);
+    // Clear any previous success message when config changes
+    setShowSuccess(false);
+    clearError();
+  };
 
-  const handleExecuteTrade = useCallback(async () => {
+  const handleExecuteTrade = async () => {
     if (Object.keys(orderConfig).length === 0) return;
 
     const success = await submitOrders(orderConfig);
@@ -89,7 +86,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
       // Hide success message after 3 seconds
       setTimeout(() => setShowSuccess(false), 3000);
     }
-  }, [orderConfig, submitOrders]);
+  };
 
   return {
     orderConfig,

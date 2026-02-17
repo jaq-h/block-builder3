@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React from "react";
 import { useGridData } from "../contexts/GridDataContext";
 import { COLUMN_HEADERS, ROW_LABELS } from "../../../../data/orderTypes";
 import { debugPanel } from "../strategyAssembly.styles";
@@ -12,7 +12,7 @@ import { debugPanel } from "../strategyAssembly.styles";
  * Previously, the debug panel re-rendered on every mouse movement because it
  * was part of the monolithic StrategyAssemblyInner.
  */
-const DebugPanel: React.FC = memo(function DebugPanel() {
+const DebugPanel: React.FC = function DebugPanel() {
   const { orderConfig } = useGridData();
 
   const configEntries = Object.keys(orderConfig);
@@ -21,9 +21,7 @@ const DebugPanel: React.FC = memo(function DebugPanel() {
   return (
     <div className={debugPanel}>
       <details>
-        <summary>
-          Order Config ({configEntries.length} blocks)
-        </summary>
+        <summary>Order Config ({configEntries.length} blocks)</summary>
         <pre className="text-[9px] max-h-37.5 overflow-auto">
           {JSON.stringify(
             Object.fromEntries(
@@ -42,6 +40,6 @@ const DebugPanel: React.FC = memo(function DebugPanel() {
       </details>
     </div>
   );
-});
+};
 
 export default DebugPanel;
