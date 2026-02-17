@@ -212,7 +212,7 @@ export function getSliderTrackProps(
 ) {
   const isDesc = isDescending ?? false;
   const className =
-    "absolute w-0.5 bg-gradient-to-b from-slider-from to-slider-to -translate-x-1/2 pointer-events-none";
+    "absolute w-0.5 bg-linear-to-b from-slider-from to-slider-to -translate-x-1/2 pointer-events-none";
   const style: CSSProperties = {
     left: isSingleAxis !== false ? "50%" : "35%",
     top: `${getTrackStart(isDesc) + BLOCK_HEIGHT / 2}px`,
@@ -238,7 +238,7 @@ export function getMarketPriceLineProps(isDescending?: boolean) {
 export function getMarketPriceLabelProps(isDescending?: boolean) {
   const isDesc = isDescending ?? false;
   const className =
-    "absolute left-1/2 -translate-x-1/2 text-[9px] font-medium text-text-primary whitespace-nowrap bg-bg-primary px-1.5 py-0.5 rounded-[3px] z-[6]";
+    "absolute left-1/2 -translate-x-1/2 text-[9px] font-medium text-text-primary whitespace-nowrap bg-bg-primary px-1.5 py-0.5 rounded-[3px] z-6";
   const style: CSSProperties = isDesc ? { bottom: "6px" } : { top: "6px" };
   return { className, style };
 }
@@ -257,7 +257,7 @@ export function getBlockPositionerProps(
   const offset = getTrackStart(isDesc);
 
   const className =
-    "absolute flex justify-center pointer-events-none z-[2] [&>*]:pointer-events-auto";
+    "absolute flex justify-center pointer-events-none z-2 [&>*]:pointer-events-auto";
   const style: CSSProperties = {
     left: isSingleAxis !== false ? "0" : "-15%",
     right: isSingleAxis !== false ? "0" : "15%",
@@ -281,7 +281,7 @@ export function getDashedIndicatorProps(
   const endOffset = getTrackEnd(isDesc);
 
   const className =
-    "absolute w-px border-l-2 border-dashed border-accent-outline pointer-events-none z-[1] -translate-x-1/2";
+    "absolute w-px border-l-2 border-dashed border-accent-outline pointer-events-none z-1 -translate-x-1/2";
   const style: CSSProperties = {
     left: isSingleAxis !== false ? "50%" : "35%",
   };
@@ -313,7 +313,7 @@ export function getPercentageLabelProps(
   const offset = getTrackStart(isDesc);
 
   const className =
-    "absolute text-[10px] font-medium text-accent-primary pointer-events-none z-[9999] whitespace-nowrap";
+    "absolute text-[10px] font-medium text-accent-primary pointer-events-none z-9999 whitespace-nowrap";
   const style: CSSProperties = {
     left: isSingleAxis !== false ? "calc(50% + 25px)" : "calc(35% + 25px)",
     top: `calc(${getTrackHeight()} * ${percent} + ${offset + BLOCK_HEIGHT / 2 - 6}px)`,
@@ -338,7 +338,7 @@ export function getCalculatedPriceLabelProps(
   const offset = getTrackStart(isDesc);
 
   const className =
-    "absolute text-[9px] font-medium text-text-primary pointer-events-none z-[9999] whitespace-nowrap px-1.5 py-0.5 rounded-[3px]";
+    "absolute text-[9px] font-medium text-text-primary pointer-events-none z-9999 whitespace-nowrap px-1.5 py-0.5 rounded-[3px]";
   const style: CSSProperties = {
     backgroundColor: isBuy
       ? "rgba(76, 175, 80, 0.85)"
