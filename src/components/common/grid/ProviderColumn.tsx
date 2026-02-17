@@ -1,4 +1,4 @@
-import React from "react";
+import type { FC } from "react";
 import Block from "../../blocks/block";
 import type {
   GridData,
@@ -21,7 +21,7 @@ interface ProviderColumnProps {
   onProviderMouseLeave: () => void;
 }
 
-const ProviderColumn: React.FC<ProviderColumnProps> = ({
+const ProviderColumn: FC<ProviderColumnProps> = ({
   providerBlocks,
   hoveredGridCell,
   isDragging,

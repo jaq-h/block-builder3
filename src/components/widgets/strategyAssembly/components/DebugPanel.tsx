@@ -1,4 +1,4 @@
-import React from "react";
+import type { FC } from "react";
 import { useGridData } from "../contexts/GridDataContext";
 import { COLUMN_HEADERS, ROW_LABELS } from "../../../../data/orderTypes";
 import { debugPanel } from "../strategyAssembly.styles";
@@ -12,7 +12,7 @@ import { debugPanel } from "../strategyAssembly.styles";
  * Previously, the debug panel re-rendered on every mouse movement because it
  * was part of the monolithic StrategyAssemblyInner.
  */
-const DebugPanel: React.FC = function DebugPanel() {
+const DebugPanel: FC = function DebugPanel() {
   const { orderConfig } = useGridData();
 
   const configEntries = Object.keys(orderConfig);

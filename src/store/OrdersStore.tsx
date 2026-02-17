@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useReducer } from "react";
+import {
+  createContext,
+  useContext,
+  useReducer,
+  type FC,
+  type ReactNode,
+} from "react";
 import type { OrderConfig } from "../types/grid";
 import type {
   ActiveOrderEntry,
@@ -56,7 +62,7 @@ export interface OrdersStoreActions {
 export type OrdersStoreContextType = OrdersStoreState & OrdersStoreActions;
 
 export interface OrdersStoreProviderProps {
-  children: React.ReactNode;
+  children: ReactNode;
   /** Force simulation mode on/off (overrides default behavior) */
   forceSimulation?: boolean;
 }
@@ -113,7 +119,7 @@ const getLogPrefix = (isSimulation: boolean): string => {
 // PROVIDER COMPONENT
 // =============================================================================
 
-export const OrdersStoreProvider: React.FC<OrdersStoreProviderProps> = ({
+export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
   children,
   forceSimulation,
 }) => {

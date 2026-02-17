@@ -1,4 +1,4 @@
-import React from "react";
+import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
 import { shouldBeDescending, getCellDisplayMode } from "../../../utils";
@@ -70,7 +70,7 @@ interface GridCellProps {
   onBlockVerticalDrag: (id: string, mouseY: number) => void;
 }
 
-const GridCell: React.FC<GridCellProps> = ({
+const GridCell: FC<GridCellProps> = ({
   colIndex,
   rowIndex,
   blocks,
@@ -183,7 +183,7 @@ const GridCell: React.FC<GridCellProps> = ({
             isSingleAxis,
           );
           return (
-            <React.Fragment key={block.id}>
+            <Fragment key={block.id}>
               <div
                 className={dashedProps.className}
                 style={dashedProps.style}
@@ -207,7 +207,7 @@ const GridCell: React.FC<GridCellProps> = ({
                   onVerticalDrag={onBlockVerticalDrag}
                 />
               </div>
-            </React.Fragment>
+            </Fragment>
           );
         })}
       </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, type FC } from "react";
 import type {
   ActiveOrdersContextType,
   ActiveOrdersProviderProps,
@@ -22,7 +22,7 @@ const createEmptyGrid = (): GridData =>
 // PROVIDER COMPONENT
 // =============================================================================
 
-export const ActiveOrdersProvider: React.FC<ActiveOrdersProviderProps> = ({
+export const ActiveOrdersProvider: FC<ActiveOrdersProviderProps> = ({
   children,
   initialOrders = {},
   onOrderSelect,

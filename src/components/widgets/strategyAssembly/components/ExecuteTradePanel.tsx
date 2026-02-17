@@ -1,4 +1,4 @@
-import React from "react";
+import type { FC } from "react";
 import { Link } from "react-router-dom";
 import ToolsIcon from "../../../../assets/icons/tools.svg?react";
 import CheckIcon from "../../../../assets/icons/check.svg?react";
@@ -47,7 +47,7 @@ interface ExecuteTradePanelProps {
 // COMPONENT
 // =============================================================================
 
-const ExecuteTradePanel: React.FC<ExecuteTradePanelProps> = ({
+const ExecuteTradePanel: FC<ExecuteTradePanelProps> = ({
   orderCount,
   onExecute,
   isSubmitting,
@@ -82,9 +82,7 @@ const ExecuteTradePanel: React.FC<ExecuteTradePanelProps> = ({
                 : "Switch to simulation mode"
             }
           >
-            {isSimulationMode
-              ? "Switch to Production"
-              : "Switch to Simulation"}
+            {isSimulationMode ? "Switch to Production" : "Switch to Simulation"}
           </button>
         )}
       </div>

@@ -1,4 +1,4 @@
-import React from "react";
+import type { FC } from "react";
 import { useGridData } from "../contexts/GridDataContext";
 import TrashIcon from "../../../../assets/icons/trash.svg?react";
 import ReverseIcon from "../../../../assets/icons/reverse.svg?react";
@@ -13,7 +13,7 @@ import { utilityRow, utilityButton } from "../strategyAssembly.styles";
  * Previously, these buttons re-rendered on every mouse movement because they
  * were part of the monolithic StrategyAssemblyInner.
  */
-const UtilityButtons: React.FC = function UtilityButtons() {
+const UtilityButtons: FC = function UtilityButtons() {
   const { clearAll, reverseBlocks } = useGridData();
 
   return (

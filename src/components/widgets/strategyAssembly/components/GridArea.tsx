@@ -1,4 +1,4 @@
-import React from "react";
+import type { FC, MouseEvent } from "react";
 import {
   isCellValidForPlacement,
   getAlignment,
@@ -42,7 +42,7 @@ interface GridAreaProps {
  * interaction area away from simpler siblings (PatternSelector, UtilityButtons,
  * DebugPanel) that only need GridDataContext.
  */
-const GridArea: React.FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
+const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   // ─── Context subscriptions ───────────────────────────────────────
   const { grid, strategyPattern, setGrid, setOrderConfig } = useGridData();
 
@@ -348,7 +348,7 @@ const GridArea: React.FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
   // ─── Mouse move (drag tracking) ─────────────────────────────────
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = (e: MouseEvent) => {
     if (draggingId !== null || draggingFromProvider !== null) {
       const target = e.target as HTMLElement;
       const rowElement = target.closest("[data-col][data-row]");

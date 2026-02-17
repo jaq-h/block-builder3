@@ -1,4 +1,4 @@
-import React from "react";
+import type { FC } from "react";
 import type { OrderConfig, StrategyPattern } from "../../../types/grid";
 import { useKrakenAPI } from "../../../hooks";
 import { StrategyAssemblyProvider } from "./StrategyAssemblyContext";
@@ -18,7 +18,7 @@ interface StrategyAssemblyProps {
 }
 
 // Main export - wraps with provider
-const StrategyAssembly: React.FC<StrategyAssemblyProps> = ({
+const StrategyAssembly: FC<StrategyAssemblyProps> = ({
   onConfigChange,
   initialConfig,
   initialPattern,
@@ -49,7 +49,7 @@ const StrategyAssembly: React.FC<StrategyAssemblyProps> = ({
  * re-render GridArea — PatternSelector, UtilityButtons, and DebugPanel are
  * completely shielded from those high-frequency updates.
  */
-const StrategyAssemblyInner: React.FC = () => {
+const StrategyAssemblyInner: FC = () => {
   // Kraken API integration for current price — independent of context
   const { currentPrice, tickerError } = useKrakenAPI({
     symbol: "BTC/USD",

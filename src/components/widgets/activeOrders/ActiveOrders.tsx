@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState, type FC } from "react";
 import { Link } from "react-router-dom";
 import { COLUMN_HEADERS, ORDER_TYPES } from "../../../data/orderTypes";
 import OrdersIcon from "../../../assets/icons/orders.svg?react";
@@ -104,7 +104,7 @@ const ordersToGrid = (orders: ActiveOrdersConfig): GridData => {
 // MAIN EXPORT - Wraps with provider
 // =============================================================================
 
-const ActiveOrders: React.FC<ActiveOrdersProps> = ({
+const ActiveOrders: FC<ActiveOrdersProps> = ({
   onOrderSelect,
   initialOrders = {},
 }) => {
@@ -126,9 +126,7 @@ interface ActiveOrdersInnerProps {
   initialOrders: ActiveOrdersConfig;
 }
 
-const ActiveOrdersInner: React.FC<ActiveOrdersInnerProps> = ({
-  initialOrders,
-}) => {
+const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({ initialOrders }) => {
   // Environment check
   const isDev = import.meta.env.DEV;
 

@@ -1,4 +1,4 @@
-import React from "react";
+import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData } from "../../../types/grid";
 import {
@@ -39,7 +39,7 @@ interface ReadOnlyGridCellProps {
   onMouseLeave?: () => void;
 }
 
-const ReadOnlyGridCell: React.FC<ReadOnlyGridCellProps> = ({
+const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   colIndex,
   rowIndex,
   blocks,
@@ -137,7 +137,7 @@ const ReadOnlyGridCell: React.FC<ReadOnlyGridCellProps> = ({
             isSingleAxis,
           );
           return (
-            <React.Fragment key={block.id}>
+            <Fragment key={block.id}>
               <div
                 className={dashedProps.className}
                 style={dashedProps.style}
@@ -159,7 +159,7 @@ const ReadOnlyGridCell: React.FC<ReadOnlyGridCellProps> = ({
                   isReadOnly={true}
                 />
               </div>
-            </React.Fragment>
+            </Fragment>
           );
         })}
       </div>

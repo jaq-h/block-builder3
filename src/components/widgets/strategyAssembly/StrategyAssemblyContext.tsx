@@ -1,4 +1,4 @@
-import React, { useState, useRef, useId } from "react";
+import { useState, useRef, useId } from "react";
 import type {
   GridData,
   CellPosition,

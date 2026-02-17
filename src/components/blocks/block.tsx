@@ -1,4 +1,4 @@
-import React from "react";
+import type { FC } from "react";
 import { cva } from "class-variance-authority";
 import { cn } from "../../lib/utils";
 import { useFreeDrag } from "../../hooks/useFreeDrag";
@@ -48,7 +48,7 @@ interface BlockProps {
   onMouseLeave?: () => void;
 }
 
-const Block: React.FC<BlockProps> = ({
+const Block: FC<BlockProps> = ({
   id,
   icon,
   abrv,

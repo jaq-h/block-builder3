@@ -1,4 +1,4 @@
-import React from "react";
+import type { FC } from "react";
 import type { StrategyPattern } from "../../../../types/grid";
 import { PATTERN_CONFIGS } from "../../../../types/grid";
 import { useGridData } from "../contexts/GridDataContext";
@@ -16,7 +16,7 @@ import {
  * NOT on hover or drag state changes. Previously, it re-rendered on every mouse
  * movement because it was part of the monolithic StrategyAssemblyInner.
  */
-const PatternSelector: React.FC = function PatternSelector() {
+const PatternSelector: FC = function PatternSelector() {
   const { strategyPattern, setStrategyPattern } = useGridData();
 
   return (
