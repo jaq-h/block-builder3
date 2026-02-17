@@ -127,7 +127,7 @@ export function getInteractiveCellContainerProps(opts: {
 
 export function getReadOnlyCellContainerProps(tint?: string) {
   const className =
-    "flex-1 relative border border-border-dimmed rounded-lg m-2 flex flex-col p-2 min-h-[220px] overflow-visible";
+    "flex-1 relative border border-border-dimmed rounded-lg m-2 flex flex-col p-2 min-h-55 overflow-visible";
   const style: CSSProperties = {};
   if (tint) {
     style.backgroundColor = tint;
@@ -257,7 +257,7 @@ export function getBlockPositionerProps(
   const offset = getTrackStart(isDesc);
 
   const className =
-    "absolute flex justify-center pointer-events-none z-2 [&>*]:pointer-events-auto";
+    "absolute flex justify-center pointer-events-none z-2 *:pointer-events-auto";
   const style: CSSProperties = {
     left: isSingleAxis !== false ? "0" : "-15%",
     right: isSingleAxis !== false ? "0" : "15%",
