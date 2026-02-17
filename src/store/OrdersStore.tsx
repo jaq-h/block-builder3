@@ -390,6 +390,14 @@ export const useOrdersByStatus = (status: OrderStatus): ActiveOrdersConfig => {
   );
 };
 
+/** Count of orders that are active or pending (i.e. "live") */
+export const useLiveOrdersCount = (): number => {
+  const { submittedOrders } = useOrdersStore();
+  return Object.values(submittedOrders).filter(
+    (o) => o.status === "active" || o.status === "pending",
+  ).length;
+};
+
 /** Check if simulation mode is active */
 export const useIsSimulationMode = (): boolean => {
   const { isSimulationMode } = useOrdersStore();

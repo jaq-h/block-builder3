@@ -4,6 +4,7 @@ export {
   useOrdersStore,
   useActiveOrdersCount,
   usePendingOrdersCount,
+  useLiveOrdersCount,
   useOrdersByStatus,
   useIsSimulationMode,
 } from "./OrdersStore";
