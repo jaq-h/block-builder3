@@ -217,4 +217,4 @@ Configured in `vite.config.ts` for cleaner imports:
 
 ## License
 
-[MIT](./LICENSE) — Jacques "Jack" Hebert, 2025
+[MIT](./LICENSE) — Jacques Hebert, 2025
