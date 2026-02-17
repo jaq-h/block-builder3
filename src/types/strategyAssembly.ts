@@ -1,5 +1,5 @@
 // =============================================================================
-// STRATEGY ASSEMBLY TYPES - Consolidated strategy assembly type definitions
+// STRATEGY ASSEMBLY TYPES - Split context type definitions
 // =============================================================================
 
 import type { OrderTypeDefinition } from "../data/orderTypes";
@@ -14,16 +14,89 @@ import type {
 export type { StrategyPattern, OrderConfig };
 
 // =============================================================================
-// CONTEXT STATE
+// GRID DATA CONTEXT — Business state (lowest frequency changes)
+// =============================================================================
+
+export interface GridDataState {
+  grid: GridData;
+  orderConfig: OrderConfig;
+  strategyPattern: StrategyPattern;
+}
+
+export interface GridDataActions {
+  setGrid: React.Dispatch<React.SetStateAction<GridData>>;
+  setOrderConfig: React.Dispatch<React.SetStateAction<OrderConfig>>;
+  setStrategyPattern: React.Dispatch<React.SetStateAction<StrategyPattern>>;
+  clearAll: () => void;
+  reverseBlocks: () => void;
+}
+
+export type GridDataContextType = GridDataState & GridDataActions;
+
+// =============================================================================
+// DRAG CONTEXT — Drag UI state (medium frequency changes)
+// =============================================================================
+
+export interface DragState {
+  draggingId: string | null;
+  draggingFromProvider: string | null;
+  hoverCell: CellPosition | null;
+}
+
+export interface DragActions {
+  setDraggingId: React.Dispatch<React.SetStateAction<string | null>>;
+  setDraggingFromProvider: React.Dispatch<React.SetStateAction<string | null>>;
+  setHoverCell: React.Dispatch<React.SetStateAction<CellPosition | null>>;
+}
+
+export type DragContextType = DragState & DragActions;
+
+// =============================================================================
+// HOVER CONTEXT — Hover UI state (highest frequency changes)
+// =============================================================================
+
+export interface HoverState {
+  hoveredProviderId: string | null;
+  hoveredGridCell: CellPosition | null;
+}
+
+export interface HoverActions {
+  setHoveredProviderId: React.Dispatch<React.SetStateAction<string | null>>;
+  setHoveredGridCell: React.Dispatch<React.SetStateAction<CellPosition | null>>;
+}
+
+export type HoverContextType = HoverState & HoverActions;
+
+// =============================================================================
+// STATIC CONTEXT — Refs & immutable data (never changes after mount)
+// =============================================================================
+
+export interface StaticContextType {
+  providerBlocks: OrderTypeDefinition[];
+  baseId: string;
+  blockCounterRef: React.MutableRefObject<number>;
+}
+
+// =============================================================================
+// COMBINED CONTEXT TYPE (backward compatibility)
+// =============================================================================
+
+export type StrategyAssemblyContextType = GridDataContextType &
+  DragContextType &
+  HoverContextType &
+  StaticContextType;
+
+// =============================================================================
+// LEGACY STATE/ACTIONS INTERFACES (backward compatibility)
 // =============================================================================
 
 export interface StrategyAssemblyState {
-  // Business state (exposed to parent via callback)
+  // Business state
   grid: GridData;
   orderConfig: OrderConfig;
   strategyPattern: StrategyPattern;
 
-  // UI state (internal only)
+  // UI state
   draggingId: string | null;
   draggingFromProvider: string | null;
   hoveredProviderId: string | null;
@@ -35,10 +108,6 @@ export interface StrategyAssemblyState {
   baseId: string;
   blockCounterRef: React.MutableRefObject<number>;
 }
-
-// =============================================================================
-// CONTEXT ACTIONS
-// =============================================================================
 
 export interface StrategyAssemblyActions {
   setGrid: React.Dispatch<React.SetStateAction<GridData>>;
@@ -52,13 +121,6 @@ export interface StrategyAssemblyActions {
   clearAll: () => void;
   reverseBlocks: () => void;
 }
-
-// =============================================================================
-// COMBINED CONTEXT TYPE
-// =============================================================================
-
-export type StrategyAssemblyContextType = StrategyAssemblyState &
-  StrategyAssemblyActions;
 
 // =============================================================================
 // PROVIDER PROPS
