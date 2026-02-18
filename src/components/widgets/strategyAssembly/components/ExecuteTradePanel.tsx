@@ -33,10 +33,10 @@ interface ExecuteTradePanelProps {
   error: string | null;
   /** Human-readable simulation/environment message */
   simulationMessage: string;
-  /** Whether we're effectively in simulation mode (dev OR toggled) */
+  /** Whether we're effectively in simulation mode */
   isEffectivelySimulation: boolean;
-  /** Whether the app is in development mode */
-  isDev: boolean;
+  /** Whether the user is allowed to toggle between simulation and API mode */
+  canToggle: boolean;
   /** Whether the simulation toggle is currently on */
   isSimulationMode: boolean;
   /** Toggle simulation mode on/off */
@@ -55,7 +55,7 @@ const ExecuteTradePanel: FC<ExecuteTradePanelProps> = ({
   error,
   simulationMessage,
   isEffectivelySimulation,
-  isDev,
+  canToggle,
   isSimulationMode,
   onToggleSimulationMode,
 }) => {
@@ -71,18 +71,18 @@ const ExecuteTradePanel: FC<ExecuteTradePanelProps> = ({
           <ToolsIcon width={12} height={12} />
           {simulationMessage}
         </div>
-        {/* Only show toggle in production — dev always simulates */}
-        {!isDev && (
+        {/* Only show toggle in dev when API keys are configured */}
+        {canToggle && (
           <button
             className={simulationToggle}
             onClick={onToggleSimulationMode}
             title={
               isSimulationMode
-                ? "Switch to production mode (requires API credentials)"
-                : "Switch to simulation mode"
+                ? "Switch to API mode — orders will be sent to Kraken"
+                : "Switch to simulation mode — orders saved locally"
             }
           >
-            {isSimulationMode ? "Switch to Production" : "Switch to Simulation"}
+            {isSimulationMode ? "Switch to API Mode" : "Switch to Simulation"}
           </button>
         )}
       </div>

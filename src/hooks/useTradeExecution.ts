@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { OrderConfig } from "../types/grid";
 import { useOrdersStore } from "../store";
+import { hasValidCredentials } from "../api";
 
 // =============================================================================
 // TYPES
@@ -19,10 +20,12 @@ export interface UseTradeExecutionReturn {
   isSubmitting: boolean;
   /** Current error message, if any */
   error: string | null;
-  /** Whether simulation mode is active (or forced by dev environment) */
+  /** Whether simulation mode is active */
   isSimulationMode: boolean;
   /** Whether the app is running in development mode */
   isDev: boolean;
+  /** Whether the user is allowed to toggle between simulation and API mode */
+  canToggle: boolean;
   /** Toggle simulation mode on/off */
   toggleSimulationMode: () => void;
   /** Called by StrategyAssembly when the config changes */
@@ -31,7 +34,7 @@ export interface UseTradeExecutionReturn {
   handleExecuteTrade: () => Promise<void>;
   /** Human-readable simulation/environment message */
   simulationMessage: string;
-  /** Whether we're effectively in simulation (dev OR simulation toggle) */
+  /** Whether we're effectively in simulation (prod always, dev when toggled) */
   isEffectivelySimulation: boolean;
 }
 
@@ -54,16 +57,30 @@ export function useTradeExecution(): UseTradeExecutionReturn {
   } = useOrdersStore();
 
   const isDev = import.meta.env.DEV;
-  const isEffectivelySimulation = isDev || isSimulationMode;
+  const hasKeys = hasValidCredentials();
+
+  // ─── Derived state ──────────────────────────────────────────────────
+  //
+  // prod            → always simulation, no toggle
+  // dev + keys      → toggle allowed, default simulation
+  // dev + no keys   → always simulation, no toggle
+  //
+  const canToggle = isDev && hasKeys;
+
+  // In production we always simulate regardless of the toggle.
+  // In dev, respect the toggle value.
+  const isEffectivelySimulation = !isDev || isSimulationMode;
 
   const orderCount = Object.keys(orderConfig).length;
 
   // Determine what message to show based on environment and simulation mode
-  const simulationMessage = isDev
-    ? "Development Mode - Orders saved locally"
+  const simulationMessage = !isDev
+    ? "Simulation Mode — Orders saved locally"
     : isSimulationMode
-      ? "Simulation Mode - Orders saved locally"
-      : "Production Mode - Orders sent to API";
+      ? hasKeys
+        ? "Dev Simulation — Orders saved locally (API keys detected)"
+        : "Dev Simulation — Orders saved locally"
+      : "Dev API Mode — Orders sent to Kraken API";
 
   const handleConfigChange = (config: OrderConfig) => {
     setOrderConfig(config);
@@ -97,6 +114,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     error,
     isSimulationMode,
     isDev,
+    canToggle,
     toggleSimulationMode,
     handleConfigChange,
     handleExecuteTrade,

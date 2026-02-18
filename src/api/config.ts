@@ -26,9 +26,10 @@ export const getKrakenConfig = (): KrakenConfig => {
   const apiKey = import.meta.env.KRAKEN_API_KEY || "";
   const apiSecret = import.meta.env.KRAKEN_API_PRIVATE_KEY || "";
 
-  if (!apiKey || !apiSecret) {
+  // Only warn in development — production intentionally runs without keys
+  if (import.meta.env.DEV && (!apiKey || !apiSecret)) {
     console.warn(
-      "Kraken API credentials not found. Please create a local.env file with:\n" +
+      "Kraken API credentials not found. To enable API mode, create a local.env file with:\n" +
         "KRAKEN_API_KEY=your_api_key\n" +
         "KRAKEN_API_PRIVATE_KEY=your_api_private_key",
     );

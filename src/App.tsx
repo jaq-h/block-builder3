@@ -22,7 +22,7 @@ function AppInner() {
     isSubmitting,
     error,
     isSimulationMode,
-    isDev,
+    canToggle,
     toggleSimulationMode,
     handleConfigChange,
     handleExecuteTrade,
@@ -54,7 +54,7 @@ function AppInner() {
                     error={error}
                     simulationMessage={simulationMessage}
                     isEffectivelySimulation={isEffectivelySimulation}
-                    isDev={isDev}
+                    canToggle={canToggle}
                     isSimulationMode={isSimulationMode}
                     onToggleSimulationMode={toggleSimulationMode}
                   />

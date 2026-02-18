@@ -16,14 +16,12 @@ const isDevelopment = import.meta.env.DEV;
 
 /**
  * Determine if we should use simulation mode:
- * - Always simulate in development
- * - Simulate in production if no valid API credentials are configured
- * - Can be manually enabled via the store actions
+ * - Always simulate in production (hosted app)
+ * - Default to simulation in development (can toggle to API mode if keys found)
  */
 const getDefaultSimulationMode = (): boolean => {
-  if (isDevelopment) return true;
-  // In production, simulate if no credentials are available
-  return !hasValidCredentials();
+  // Always start in simulation — in dev, users can opt into API mode if keys exist
+  return true;
 };
 
 // =============================================================================
@@ -60,9 +58,9 @@ const simulateApiDelay = (ms: number = 500): Promise<void> => {
 /** Get log prefix based on mode */
 const getLogPrefix = (isSimulation: boolean): string => {
   if (isDevelopment) {
-    return isSimulation ? "[DEV SIMULATION]" : "[DEV MODE]";
+    return isSimulation ? "[DEV SIMULATION]" : "[DEV API MODE]";
   }
-  return isSimulation ? "[SIMULATION]" : "[PRODUCTION]";
+  return "[PROD SIMULATION]";
 };
 
 // =============================================================================
@@ -139,20 +137,24 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
         console.log(`${logPrefix} Orders submitted successfully`);
         return true;
       } else {
-        // Production mode with API: make actual API request
-        console.log(`${logPrefix} Submitting orders to API:`, config);
-
-        // Check for credentials before attempting API call
-        if (!hasValidCredentials()) {
+        // API mode — only reachable in dev with valid credentials
+        if (!isDevelopment) {
           throw new Error(
-            "API credentials not configured. Enable simulation mode or configure credentials.",
+            "API mode is not available in production. Simulation only.",
           );
         }
 
-        // TODO: Implement actual API call
-        // For now, throw an error indicating API is not yet implemented
+        if (!hasValidCredentials()) {
+          throw new Error(
+            "API credentials not configured. Add keys to local.env or switch to simulation mode.",
+          );
+        }
+
+        console.log(`${logPrefix} Submitting orders to Kraken API:`, config);
+
+        // TODO: Implement actual Kraken API call
         throw new Error(
-          "Production API integration not implemented yet. Enable simulation mode to test.",
+          "Kraken API integration not implemented yet. Switch to simulation mode to test.",
         );
       }
     } catch (err) {
@@ -176,16 +178,21 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
         dispatch({ type: "CANCEL_ORDER", orderId });
         return true;
       } else {
-        // Check for credentials
-        if (!hasValidCredentials()) {
+        if (!isDevelopment) {
           throw new Error(
-            "API credentials not configured. Enable simulation mode or configure credentials.",
+            "API mode is not available in production. Simulation only.",
           );
         }
 
-        // TODO: Implement actual API call
+        if (!hasValidCredentials()) {
+          throw new Error(
+            "API credentials not configured. Add keys to local.env or switch to simulation mode.",
+          );
+        }
+
+        // TODO: Implement actual Kraken API call
         throw new Error(
-          "Production API integration not implemented yet. Enable simulation mode to test.",
+          "Kraken API integration not implemented yet. Switch to simulation mode to test.",
         );
       }
     } catch (err) {
@@ -208,16 +215,21 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
         dispatch({ type: "CANCEL_ALL" });
         return true;
       } else {
-        // Check for credentials
-        if (!hasValidCredentials()) {
+        if (!isDevelopment) {
           throw new Error(
-            "API credentials not configured. Enable simulation mode or configure credentials.",
+            "API mode is not available in production. Simulation only.",
           );
         }
 
-        // TODO: Implement actual API call
+        if (!hasValidCredentials()) {
+          throw new Error(
+            "API credentials not configured. Add keys to local.env or switch to simulation mode.",
+          );
+        }
+
+        // TODO: Implement actual Kraken API call
         throw new Error(
-          "Production API integration not implemented yet. Enable simulation mode to test.",
+          "Kraken API integration not implemented yet. Switch to simulation mode to test.",
         );
       }
     } catch (err) {
