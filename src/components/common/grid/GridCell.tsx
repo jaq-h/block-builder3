@@ -90,7 +90,7 @@ const GridCell: FC<GridCellProps> = ({
   onBlockVerticalDrag,
 }) => {
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = shouldBeDescending(rowIndex, colIndex);
+  const isDescending = shouldBeDescending(rowIndex, colIndex, strategyPattern, blocks[0]?.orderType);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 

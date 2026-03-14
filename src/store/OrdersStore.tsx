@@ -35,11 +35,19 @@ const generateOrderId = (): string => {
   return `ORD-${timestamp}-${random}`.toUpperCase();
 };
 
+/** Generate a unique strategy ID — groups all orders submitted together */
+const generateStrategyId = (): string => {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 6);
+  return `STR-${timestamp}-${random}`.toUpperCase();
+};
+
 /** Convert OrderConfig entry to ActiveOrderEntry */
-const configToActiveOrder = (id: string, config: OrderConfig[string]) => {
+const configToActiveOrder = (id: string, config: OrderConfig[string], strategyId: string) => {
   return {
     id,
     orderId: generateOrderId(),
+    strategyId,
     col: config.col,
     row: config.row,
     type: config.type,
@@ -117,10 +125,11 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
         // Simulate API delay for realistic UX
         await simulateApiDelay(800);
 
-        // Convert config entries to active orders
+        // Convert config entries to active orders — all share the same strategyId
+        const strategyId = generateStrategyId();
         const newOrders: ActiveOrdersConfig = {};
         Object.entries(config).forEach(([id, entry]) => {
-          const activeOrder = configToActiveOrder(id, entry);
+          const activeOrder = configToActiveOrder(id, entry, strategyId);
           newOrders[activeOrder.id] = activeOrder;
         });
 

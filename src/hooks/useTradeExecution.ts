@@ -16,6 +16,10 @@ export interface UseTradeExecutionReturn {
   showSuccess: boolean;
   /** Key that increments on successful submit — used to force-reset StrategyAssembly */
   strategyKey: number;
+  /** Initial config to seed StrategyAssembly with (e.g. loaded from active orders) */
+  initialConfig: OrderConfig | undefined;
+  /** Whether we're currently editing a previously submitted order config */
+  isEditMode: boolean;
   /** Whether orders are currently being submitted */
   isSubmitting: boolean;
   /** Current error message, if any */
@@ -32,6 +36,8 @@ export interface UseTradeExecutionReturn {
   handleConfigChange: (config: OrderConfig) => void;
   /** Submit the current order config */
   handleExecuteTrade: () => Promise<void>;
+  /** Load an existing config into the StrategyAssembly */
+  loadConfig: (config: OrderConfig) => void;
   /** Human-readable simulation/environment message */
   simulationMessage: string;
   /** Whether we're effectively in simulation (prod always, dev when toggled) */
@@ -46,6 +52,8 @@ export function useTradeExecution(): UseTradeExecutionReturn {
   const [orderConfig, setOrderConfig] = useState<OrderConfig>({});
   const [showSuccess, setShowSuccess] = useState(false);
   const [strategyKey, setStrategyKey] = useState(0);
+  const [initialConfig, setInitialConfig] = useState<OrderConfig | undefined>(undefined);
+  const [isEditMode, setIsEditMode] = useState(false);
 
   const {
     submitOrders,
@@ -89,6 +97,15 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     clearError();
   };
 
+  const loadConfig = (config: OrderConfig) => {
+    setInitialConfig(config);
+    setIsEditMode(true);
+    setOrderConfig({});
+    setShowSuccess(false);
+    clearError();
+    setStrategyKey((prev) => prev + 1);
+  };
+
   const handleExecuteTrade = async () => {
     if (Object.keys(orderConfig).length === 0) return;
 
@@ -96,11 +113,10 @@ export function useTradeExecution(): UseTradeExecutionReturn {
 
     if (success) {
       setShowSuccess(true);
-      // Clear the strategy assembly after successful submission
+      setIsEditMode(false);
+      setInitialConfig(undefined);
       setOrderConfig({});
-      // Increment key to force StrategyAssembly to reset
       setStrategyKey((prev) => prev + 1);
-      // Hide success message after 3 seconds
       setTimeout(() => setShowSuccess(false), 3000);
     }
   };
@@ -110,6 +126,8 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     orderCount,
     showSuccess,
     strategyKey,
+    initialConfig,
+    isEditMode,
     isSubmitting,
     error,
     isSimulationMode,
@@ -118,6 +136,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     toggleSimulationMode,
     handleConfigChange,
     handleExecuteTrade,
+    loadConfig,
     simulationMessage,
     isEffectivelySimulation,
   };

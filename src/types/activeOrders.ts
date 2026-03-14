@@ -17,6 +17,7 @@ export type OrderStatus = "active" | "pending" | "filled" | "cancelled";
 export interface ActiveOrderEntry {
   id: string;
   orderId: string; // External order ID from the exchange
+  strategyId: string; // Groups orders submitted together as one strategy
   col: number;
   row: number;
   type: string;
@@ -71,6 +72,9 @@ export interface ActiveOrdersProviderProps {
 export interface ActiveOrdersProps {
   onOrderSelect?: (orderId: string | null) => void;
   initialOrders?: ActiveOrdersConfig;
+  /** Called when user clicks edit on a strategy group — receives all orders in the group */
+  onEditGroup?: (orders: ActiveOrderEntry[]) => void;
+  editingStrategyId?: string | null;
 }
 
 // =============================================================================

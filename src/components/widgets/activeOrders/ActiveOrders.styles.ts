@@ -6,8 +6,7 @@ import type { CSSProperties } from "react";
 // CONTAINER & LAYOUT
 // =============================================================================
 
-export const container =
-  "max-w-[520px] h-full mx-auto flex flex-col bg-bg-primary";
+export const container = "h-full flex flex-col bg-bg-primary";
 
 export const contentWrapper = "flex flex-1 overflow-auto gap-1.5 p-1.5";
 
@@ -115,6 +114,39 @@ export const orderCountBadge = cva(
 
 export const navLink =
   "inline-flex items-center gap-1 text-xs text-accent-primary no-underline cursor-pointer transition-opacity duration-200 hover:opacity-80 hover:underline [&>svg]:w-3 [&>svg]:h-3";
+
+// =============================================================================
+// ORDER CARDS OVERVIEW
+// =============================================================================
+
+export const cardsWrapper = "flex flex-1 overflow-y-auto flex-col gap-3 p-3";
+
+export const cardsSectionTitle =
+  "text-[11px] font-semibold uppercase tracking-wider text-text-muted px-0.5 mb-1.5";
+
+export const cardsSectionList = "flex flex-col gap-2";
+
+// =============================================================================
+// STRATEGY GROUP
+// =============================================================================
+
+export const strategyGroup = "flex flex-col gap-1.5";
+
+export const strategyGroupHeader =
+  "flex items-center justify-between px-2 py-1.5 rounded-md bg-bg-overlay border border-border-dimmed";
+
+export const strategyGroupMeta = "flex items-center gap-2";
+
+export const strategyGroupLabel =
+  "text-[11px] font-semibold text-text-secondary";
+
+export const strategyGroupTime = "text-[10px] text-text-muted";
+
+export const strategyGroupEditButton =
+  "flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium cursor-pointer transition-all duration-200 [&>svg]:stroke-current border";
+
+export const loadBuilderButton =
+  "flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-all duration-200 [&>svg]:stroke-current border border-accent-primary bg-accent-bg-subtle text-accent-primary hover:bg-accent-bg-hover hover:text-text-primary";
 
 // =============================================================================
 // FOOTER
