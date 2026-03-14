@@ -74,7 +74,7 @@ export const simulationBadgeVariants = cva(
 
 export const appContainer = "min-h-screen flex flex-col bg-bg-primary";
 
-export const mainContent = "flex-1 flex flex-col";
+export const mainContent = "flex-1 flex min-h-0";
 
 // =============================================================================
 // NAVIGATION BAR

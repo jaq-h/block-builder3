@@ -22,6 +22,7 @@ export type WebSocketEventType =
   | "status"
   | "message"
   | "ticker"
+  | "ohlc"
   | "order_response"
   | "error";
 
@@ -248,12 +249,16 @@ export class KrakenWebSocketManager {
   private handlePublicMessage(data: WebSocketMessage): void {
     this.emit("message", { type: "public", data });
 
+    const channel = (data as Record<string, unknown>).channel;
+
     // Handle ticker updates
-    if (
-      data.method === "ticker" ||
-      (data as Record<string, unknown>).channel === "ticker"
-    ) {
+    if (data.method === "ticker" || channel === "ticker") {
       this.emit("ticker", data);
+    }
+
+    // Handle OHLC updates
+    if (channel === "ohlc") {
+      this.emit("ohlc", data);
     }
   }
 
@@ -329,6 +334,59 @@ export class KrakenWebSocketManager {
       params: {
         channel: "ticker",
         symbol: [symbol],
+      },
+    };
+
+    this.publicWs.send(JSON.stringify(message));
+    this.subscriptions.delete(subscriptionKey);
+  }
+
+  /**
+   * Subscribe to OHLC candle data for a symbol
+   */
+  async subscribeOHLC(symbol: string, interval: number = 1): Promise<void> {
+    if (!this.publicWs || this.publicWs.readyState !== WebSocket.OPEN) {
+      await this.connectPublic();
+    }
+
+    const subscriptionKey = `ohlc:${symbol}:${interval}`;
+    if (this.subscriptions.has(subscriptionKey)) {
+      return;
+    }
+
+    const message = {
+      method: "subscribe",
+      params: {
+        channel: "ohlc",
+        symbol: [symbol],
+        interval,
+        snapshot: true,
+      },
+    };
+
+    this.publicWs!.send(JSON.stringify(message));
+    this.subscriptions.add(subscriptionKey);
+  }
+
+  /**
+   * Unsubscribe from OHLC candle data
+   */
+  unsubscribeOHLC(symbol: string, interval: number = 1): void {
+    if (!this.publicWs || this.publicWs.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const subscriptionKey = `ohlc:${symbol}:${interval}`;
+    if (!this.subscriptions.has(subscriptionKey)) {
+      return;
+    }
+
+    const message = {
+      method: "unsubscribe",
+      params: {
+        channel: "ohlc",
+        symbol: [symbol],
+        interval,
       },
     };
 
