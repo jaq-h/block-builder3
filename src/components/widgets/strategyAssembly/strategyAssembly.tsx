@@ -6,22 +6,32 @@ import {
   PatternSelector,
   GridArea,
   UtilityButtons,
-  DebugPanel,
+  ExecuteTradePanel,
 } from "./components";
-import { container, header, headerTextClass } from "./strategyAssembly.styles";
+import { container } from "./strategyAssembly.styles";
 
-// Props for the main component
 interface StrategyAssemblyProps {
   onConfigChange?: (config: OrderConfig) => void;
   initialConfig?: OrderConfig;
   initialPattern?: StrategyPattern;
+  orderCount?: number;
+  onExecute?: () => void;
+  isSubmitting?: boolean;
+  showSuccess?: boolean;
+  error?: string | null;
+  simulationMessage?: string;
+  isEffectivelySimulation?: boolean;
+  canToggle?: boolean;
+  isSimulationMode?: boolean;
+  onToggleSimulationMode?: () => void;
+  isEditMode?: boolean;
 }
 
-// Main export - wraps with provider
 const StrategyAssembly: FC<StrategyAssemblyProps> = ({
   onConfigChange,
   initialConfig,
   initialPattern,
+  ...executeProps
 }) => {
   return (
     <StrategyAssemblyProvider
@@ -29,51 +39,64 @@ const StrategyAssembly: FC<StrategyAssemblyProps> = ({
       initialConfig={initialConfig}
       initialPattern={initialPattern}
     >
-      <StrategyAssemblyInner />
+      <StrategyAssemblyInner {...executeProps} />
     </StrategyAssemblyProvider>
   );
 };
 
+type InnerProps = Omit<StrategyAssemblyProps, "onConfigChange" | "initialConfig" | "initialPattern">;
+
 /**
  * StrategyAssemblyInner — thin shell that composes extracted sub-components.
  *
- * This component does NOT subscribe to any strategy assembly context itself.
- * Each child component subscribes only to the specific context(s) it needs:
- *
+ * Each child subscribes only to the specific context(s) it needs:
  *   - PatternSelector  → GridDataContext only (strategyPattern)
  *   - GridArea          → all 4 contexts (orchestrates drag/drop interactions)
- *   - UtilityButtons    → GridDataContext only (clearAll, reverseBlocks actions)
- *   - DebugPanel        → GridDataContext only (orderConfig)
- *
- * This means hover and drag state changes (the most frequent updates) only
- * re-render GridArea — PatternSelector, UtilityButtons, and DebugPanel are
- * completely shielded from those high-frequency updates.
+ *   - UtilityButtons    → GridDataContext + execute button props
+ *   - ExecuteTradePanel → receives props directly (simulation badge + feedback)
  */
-const StrategyAssemblyInner: FC = () => {
-  // Kraken API integration for current price — independent of context
+const StrategyAssemblyInner: FC<InnerProps> = ({
+  orderCount,
+  onExecute,
+  isSubmitting,
+  showSuccess,
+  error,
+  simulationMessage,
+  isEffectivelySimulation,
+  canToggle,
+  isSimulationMode,
+  onToggleSimulationMode,
+  isEditMode,
+}) => {
   const { currentPrice, tickerError } = useKrakenAPI({
     symbol: "BTC/USD",
     autoConnect: true,
-    pollInterval: 30000, // Update every 30 seconds
+    pollInterval: 30000,
   });
+
+  const showFeedback = orderCount != null && orderCount > 0;
 
   return (
     <div className={container}>
-      <div className={header}>
-        <h2 className={headerTextClass}>Strategy Builder</h2>
-      </div>
-
-      {/* Pattern Selector — re-renders only on strategyPattern change */}
       <PatternSelector />
-
-      {/* Grid Area — handles all drag/drop interaction logic */}
       <GridArea currentPrice={currentPrice} tickerError={tickerError} />
-
-      {/* Utility Buttons — re-renders only on grid data changes */}
-      <UtilityButtons />
-
-      {/* Debug Panel — re-renders only on orderConfig changes */}
-      <DebugPanel />
+      <UtilityButtons
+        orderCount={orderCount}
+        onExecute={onExecute}
+        isSubmitting={isSubmitting}
+        isEditMode={isEditMode}
+      />
+      {showFeedback && onToggleSimulationMode && (
+        <ExecuteTradePanel
+          showSuccess={showSuccess ?? false}
+          error={error ?? null}
+          simulationMessage={simulationMessage ?? ""}
+          isEffectivelySimulation={isEffectivelySimulation ?? true}
+          canToggle={canToggle ?? false}
+          isSimulationMode={isSimulationMode ?? true}
+          onToggleSimulationMode={onToggleSimulationMode}
+        />
+      )}
     </div>
   );
 };
