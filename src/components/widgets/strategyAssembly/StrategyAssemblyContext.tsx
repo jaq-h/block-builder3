@@ -1,12 +1,37 @@
 import { useState, useRef, useId } from "react";
 import type {
   GridData,
+  BlockData,
   CellPosition,
   OrderConfig,
   StrategyPattern,
 } from "../../../types/grid";
 import { clearGrid } from "../../../utils";
 import { ORDER_TYPES } from "../../../data/orderTypes";
+
+/** Reconstruct a GridData visual state from a saved OrderConfig */
+function gridFromConfig(config: OrderConfig): GridData {
+  const g = clearGrid(2, 3);
+  Object.entries(config).forEach(([id, entry]) => {
+    const typeDef = ORDER_TYPES.find((ot) => ot.type === entry.type);
+    if (!typeDef) return;
+    if (entry.col < 0 || entry.col >= 2 || entry.row < 0 || entry.row >= 3)
+      return;
+    const block: BlockData = {
+      id,
+      orderType: entry.type,
+      label: typeDef.label,
+      icon: typeDef.icon,
+      abrv: typeDef.abrv,
+      allowedRows: typeDef.allowedRows,
+      axis: entry.axis ?? 2,
+      yPosition: entry.yPosition ?? 0,
+      axes: typeDef.axes,
+    };
+    g[entry.col][entry.row].push(block);
+  });
+  return g;
+}
 import type { StrategyAssemblyProviderProps } from "../../../types/strategyAssembly";
 import {
   GridDataContext,
@@ -26,7 +51,11 @@ export function StrategyAssemblyProvider({
   const blockCounterRef = useRef(0);
 
   // ─── Business state ────────────────────────────────────────────────
-  const [grid, setGrid] = useState<GridData>(() => clearGrid(2, 3));
+  const [grid, setGrid] = useState<GridData>(() =>
+    Object.keys(initialConfig).length > 0
+      ? gridFromConfig(initialConfig)
+      : clearGrid(2, 3),
+  );
   const [orderConfig, setOrderConfigInternal] =
     useState<OrderConfig>(initialConfig);
   const [strategyPattern, setStrategyPattern] =

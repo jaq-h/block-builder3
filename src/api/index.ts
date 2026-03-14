@@ -93,6 +93,11 @@ export type {
   UIBlockData,
   OrderBuildContext,
 
+  // OHLC types
+  KrakenOHLCData,
+  KrakenOHLCMessage,
+  OHLCInterval,
+
   // Error types
   KrakenAPIError,
 } from './types';

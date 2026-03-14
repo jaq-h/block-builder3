@@ -193,7 +193,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     const blockInfo = findBlockInGrid(grid, id);
     if (!blockInfo) return;
 
-    const { col, row } = blockInfo;
+    const { col, row, block: blockData } = blockInfo;
 
     // Find the cell element to get its bounds
     const cellElement = document.querySelector(
@@ -217,7 +217,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     const clampedRelativeY = Math.max(0, Math.min(availableHeight, relativeY));
 
     // Determine if this cell uses descending scale
-    const isDescending = shouldBeDescending(row, col);
+    const isDescending = shouldBeDescending(row, col, strategyPattern, blockData.orderType);
 
     // Convert to percentage based on scale direction
     const { MAX_PERCENT } = SCALE_CONFIG;
@@ -260,8 +260,8 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   // ─── Drop handler ────────────────────────────────────────────────
 
   const handleDragEnd = (id: string, x: number, y: number) => {
-    const positionData = findCellAndPositionData(x, y);
     const blockInfo = findBlockInGrid(grid, id);
+    const positionData = findCellAndPositionData(x, y, strategyPattern, blockInfo?.block.orderType);
 
     if (!blockInfo) {
       setDraggingId(null);
@@ -367,8 +367,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   // ─── Computed values for rendering ───────────────────────────────
 
   const activeAllowedRows = getActiveAllowedRows();
-  const showValidTargets =
-    isDragging || hoveredProviderId !== null || hoveredGridCell !== null;
+  const showValidTargets = isDragging || hoveredProviderId !== null;
 
   const isValidTarget = (colIndex: number, rowIndex: number): boolean => {
     if (!showValidTargets) return false;

@@ -1,27 +1,23 @@
 import { useEffect, useState, type FC } from "react";
 import { Link } from "react-router-dom";
-import { COLUMN_HEADERS, ORDER_TYPES } from "../../../data/orderTypes";
 import OrdersIcon from "../../../assets/icons/orders.svg?react";
 import RefreshIcon from "../../../assets/icons/refresh.svg?react";
 import ToolsIcon from "../../../assets/icons/tools.svg?react";
 import CheckIcon from "../../../assets/icons/check.svg?react";
 import XCircleIcon from "../../../assets/icons/x-circle.svg?react";
 import ArrowLeftIcon from "../../../assets/icons/arrow-left.svg?react";
+import PencilIcon from "../../../assets/icons/pencil.svg?react";
 import { ActiveOrdersProvider } from "./ActiveOrdersContext";
 import { useActiveOrders } from "./useActiveOrders";
 import type {
   ActiveOrdersProps,
   ActiveOrdersConfig,
+  ActiveOrderEntry,
 } from "../../../types/activeOrders";
-import { ReadOnlyGridCell } from "../../common/grid";
-import type { BlockData, GridData } from "../../../types/grid";
-import { getColumnHeaderTint, getColumnCellTint } from "../../../utils";
-import { GRID_CONFIG } from "../../../data/orderTypes";
 import { useOrdersStore } from "../../../store";
+import OrderCard from "./OrderCard";
 import {
   container,
-  contentWrapper,
-  columnsWrapper,
   header,
   headerTextClass,
   statusBar,
@@ -30,14 +26,18 @@ import {
   statusLabel,
   getStatusValueProps,
   getStatusDotProps,
-  columnClass,
-  getColumnHeaderProps,
-  columnHeaderText,
   refreshButton,
   emptyStateContainer,
   emptyStateIcon,
   emptyStateTitle,
   emptyStateDescription,
+  cardsWrapper,
+  strategyGroup,
+  strategyGroupHeader,
+  strategyGroupMeta,
+  strategyGroupLabel,
+  strategyGroupTime,
+  strategyGroupEditButton,
   footer,
   lastUpdated,
   devControlsContainer,
@@ -47,58 +47,36 @@ import {
   devLabel,
   orderIdSelect,
 } from "./ActiveOrders.styles";
-import { useKrakenAPI } from "../../../hooks/useKrakenAPI";
 
 // =============================================================================
-// HELPER FUNCTIONS
+// HELPERS
 // =============================================================================
 
-/** Create an empty grid */
-const createEmptyGrid = (): GridData =>
-  Array.from({ length: GRID_CONFIG.numColumns }, () =>
-    Array.from({ length: GRID_CONFIG.numRows }, () => []),
+function deriveStrategyLabel(orders: ActiveOrderEntry[]): string {
+  const hasCols = new Set(orders.map((o) => o.col));
+  if (hasCols.has(0) && hasCols.has(1)) return "Conditional Strategy";
+  if (hasCols.has(0) && orders.filter((o) => o.col === 0).length > 1) return "Bulk Entry";
+  if (hasCols.has(0)) return "Entry Order";
+  if (hasCols.has(1)) return "Exit Order";
+  return "Strategy";
+}
+
+// Group orders by strategyId, preserving insertion order (most recent first)
+function groupByStrategy(
+  orders: ActiveOrderEntry[],
+): Map<string, ActiveOrderEntry[]> {
+  const map = new Map<string, ActiveOrderEntry[]>();
+  // Sort newest first by createdAt
+  const sorted = [...orders].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
-
-/** Convert ActiveOrdersConfig to GridData for display */
-const ordersToGrid = (orders: ActiveOrdersConfig): GridData => {
-  const grid = createEmptyGrid();
-
-  Object.entries(orders).forEach(([id, order]) => {
-    // Only show active and pending orders
-    if (order.status !== "active" && order.status !== "pending") return;
-
-    if (
-      order.col >= 0 &&
-      order.col < GRID_CONFIG.numColumns &&
-      order.row >= 0 &&
-      order.row < GRID_CONFIG.numRows
-    ) {
-      // Find the order type definition for proper display
-      const orderTypeDef = ORDER_TYPES.find((ot) => ot.type === order.type);
-
-      const block: BlockData = {
-        id,
-        orderType: order.type,
-        label: orderTypeDef?.label || order.type,
-        icon: orderTypeDef?.icon,
-        abrv: orderTypeDef?.abrv || order.type.substring(0, 3).toUpperCase(),
-        allowedRows: [order.row],
-        axis: order.axis || 1,
-        yPosition: order.yPosition || 0,
-        axes: order.axis
-          ? ((order.axis === 1 ? ["trigger"] : ["limit"]) as (
-              | "trigger"
-              | "limit"
-            )[])
-          : [],
-      };
-
-      grid[order.col][order.row].push(block);
-    }
-  });
-
-  return grid;
-};
+  for (const order of sorted) {
+    const sid = order.strategyId ?? "ungrouped";
+    if (!map.has(sid)) map.set(sid, []);
+    map.get(sid)!.push(order);
+  }
+  return map;
+}
 
 // =============================================================================
 // MAIN EXPORT - Wraps with provider
@@ -107,13 +85,19 @@ const ordersToGrid = (orders: ActiveOrdersConfig): GridData => {
 const ActiveOrders: FC<ActiveOrdersProps> = ({
   onOrderSelect,
   initialOrders = {},
+  onEditGroup,
+  editingStrategyId,
 }) => {
   return (
     <ActiveOrdersProvider
       onOrderSelect={onOrderSelect}
       initialOrders={initialOrders}
     >
-      <ActiveOrdersInner initialOrders={initialOrders} />
+      <ActiveOrdersInner
+        initialOrders={initialOrders}
+        onEditGroup={onEditGroup}
+        editingStrategyId={editingStrategyId}
+      />
     </ActiveOrdersProvider>
   );
 };
@@ -124,75 +108,46 @@ const ActiveOrders: FC<ActiveOrdersProps> = ({
 
 interface ActiveOrdersInnerProps {
   initialOrders: ActiveOrdersConfig;
+  onEditGroup?: (orders: ActiveOrderEntry[]) => void;
+  editingStrategyId?: string | null;
 }
 
-const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({ initialOrders }) => {
-  // Environment check
+const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
+  initialOrders,
+  onEditGroup,
+  editingStrategyId,
+}) => {
   const isDev = import.meta.env.DEV;
-
-  // Dev controls state
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
 
-  // Kraken API integration for current price
-  const { currentPrice, tickerError } = useKrakenAPI({
-    symbol: "BTC/USD",
-    autoConnect: true,
-    pollInterval: 30000, // Update every 30 seconds
-  });
-
-  const { activeOrders, setActiveOrders, setHoveredCell, refreshOrders } =
-    useActiveOrders();
-
-  // Get order store actions for dev controls
+  const { activeOrders, setActiveOrders, refreshOrders } = useActiveOrders();
   const { updateOrderStatus, cancelOrder, cancelAllOrders } = useOrdersStore();
 
-  // Sync initialOrders with context when they change
   useEffect(() => {
     setActiveOrders(initialOrders);
   }, [initialOrders, setActiveOrders]);
 
-  // Convert orders to grid for display
-  const grid = ordersToGrid(activeOrders);
-
   // Count orders by status
   const totalOrders = Object.keys(activeOrders).length;
-  const activeCount = Object.values(activeOrders).filter(
-    (o) => o.status === "active",
-  ).length;
-  const pendingCount = Object.values(activeOrders).filter(
-    (o) => o.status === "pending",
-  ).length;
-  const filledCount = Object.values(activeOrders).filter(
-    (o) => o.status === "filled",
-  ).length;
-  const cancelledCount = Object.values(activeOrders).filter(
-    (o) => o.status === "cancelled",
-  ).length;
+  const activeCount = Object.values(activeOrders).filter((o) => o.status === "active").length;
+  const pendingCount = Object.values(activeOrders).filter((o) => o.status === "pending").length;
+  const filledCount = Object.values(activeOrders).filter((o) => o.status === "filled").length;
+  const cancelledCount = Object.values(activeOrders).filter((o) => o.status === "cancelled").length;
 
-  const handleCellMouseEnter = (colIndex: number, rowIndex: number) => {
-    setHoveredCell({ col: colIndex, row: rowIndex });
-  };
-
-  const handleCellMouseLeave = () => {
-    setHoveredCell(null);
-  };
-
-  const handleRefresh = () => {
-    refreshOrders();
-  };
-
-  // Check if there are any orders to display (active or pending)
   const hasDisplayableOrders = activeCount > 0 || pendingCount > 0;
-
-  // Check if we have any orders at all (including filled/cancelled)
   const hasAnyOrders = totalOrders > 0;
 
-  // Get list of active/pending orders for dev controls
+  // Displayable orders grouped by strategy
+  const displayableOrders = Object.values(activeOrders).filter(
+    (o) => o.status === "active" || o.status === "pending",
+  );
+  const strategyGroups = groupByStrategy(displayableOrders);
+
+  // Dev controls
   const actionableOrders = Object.entries(activeOrders).filter(
     ([, order]) => order.status === "active" || order.status === "pending",
   );
 
-  // Dev control handlers
   const handleFillOrder = () => {
     if (selectedOrderId) {
       updateOrderStatus(selectedOrderId, "filled");
@@ -208,9 +163,7 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({ initialOrders }) => {
   };
 
   const handleFillAllOrders = () => {
-    actionableOrders.forEach(([id]) => {
-      updateOrderStatus(id, "filled");
-    });
+    actionableOrders.forEach(([id]) => updateOrderStatus(id, "filled"));
   };
 
   const handleCancelAllOrders = () => {
@@ -233,37 +186,29 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({ initialOrders }) => {
           {activeCount > 0 && (
             <div className={statusItem}>
               <span {...getStatusDotProps("#4CAF50")} />
-              <span {...getStatusValueProps("#4CAF50")}>
-                {activeCount} Active
-              </span>
+              <span {...getStatusValueProps("#4CAF50")}>{activeCount} Active</span>
             </div>
           )}
           {pendingCount > 0 && (
             <div className={statusItem}>
               <span {...getStatusDotProps("#FFC107")} />
-              <span {...getStatusValueProps("#FFC107")}>
-                {pendingCount} Pending
-              </span>
+              <span {...getStatusValueProps("#FFC107")}>{pendingCount} Pending</span>
             </div>
           )}
           {filledCount > 0 && (
             <div className={statusItem}>
               <span {...getStatusDotProps("#2196F3")} />
-              <span {...getStatusValueProps("#2196F3")}>
-                {filledCount} Filled
-              </span>
+              <span {...getStatusValueProps("#2196F3")}>{filledCount} Filled</span>
             </div>
           )}
           {cancelledCount > 0 && (
             <div className={statusItem}>
               <span {...getStatusDotProps("#9E9E9E")} />
-              <span {...getStatusValueProps("#9E9E9E")}>
-                {cancelledCount} Cancelled
-              </span>
+              <span {...getStatusValueProps("#9E9E9E")}>{cancelledCount} Cancelled</span>
             </div>
           )}
         </div>
-        <button className={refreshButton} onClick={handleRefresh}>
+        <button className={refreshButton} onClick={refreshOrders}>
           <RefreshIcon width={14} height={14} />
           Refresh
         </button>
@@ -271,42 +216,109 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({ initialOrders }) => {
 
       {/* Content */}
       {hasDisplayableOrders ? (
-        <div className={contentWrapper}>
-          <div className={columnsWrapper}>
-            {grid.map((gridColumn, colIndex) => {
-              const headerTint = getColumnHeaderTint(colIndex);
-              const cellTint = getColumnCellTint(colIndex);
-              const colHeaderProps = getColumnHeaderProps(headerTint);
+        <div className={cardsWrapper}>
+          {Array.from(strategyGroups.entries()).map(([sid, groupOrders]) => {
+            const isGroupEditing = sid === editingStrategyId;
+            const label = deriveStrategyLabel(groupOrders);
+            const time = new Date(groupOrders[0].createdAt).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            const entryOrders = groupOrders
+              .filter((o) => o.col === 0)
+              .sort((a, b) => a.row - b.row);
+            const exitOrders = groupOrders
+              .filter((o) => o.col === 1)
+              .sort((a, b) => a.row - b.row);
 
-              return (
-                <div key={colIndex} className={columnClass}>
-                  <div
-                    className={colHeaderProps.className}
-                    style={colHeaderProps.style}
-                  >
-                    <span className={columnHeaderText}>
-                      {COLUMN_HEADERS[colIndex]}
+            const editingBlue = "rgba(100, 140, 255, 0.9)";
+            const headerBorderColor = isGroupEditing
+              ? "rgba(100, 140, 255, 0.35)"
+              : "rgba(255,255,255,0.07)";
+            const headerBg = isGroupEditing
+              ? "rgba(100, 140, 255, 0.06)"
+              : undefined;
+
+            return (
+              <div key={sid} className={strategyGroup}>
+                {/* Group header */}
+                <div
+                  className={strategyGroupHeader}
+                  style={{ borderColor: headerBorderColor, backgroundColor: headerBg }}
+                >
+                  <div className={strategyGroupMeta}>
+                    <span
+                      className={strategyGroupLabel}
+                      style={isGroupEditing ? { color: editingBlue } : undefined}
+                    >
+                      {label}
                     </span>
+                    {isGroupEditing && (
+                      <span
+                        className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0"
+                        style={{
+                          color: editingBlue,
+                          backgroundColor: "rgba(100, 140, 255, 0.12)",
+                        }}
+                      >
+                        Editing
+                      </span>
+                    )}
+                    <span className={strategyGroupTime}>{time}</span>
                   </div>
-                  {gridColumn.map((row, rowIndex) => (
-                    <ReadOnlyGridCell
-                      key={rowIndex}
-                      colIndex={colIndex}
-                      rowIndex={rowIndex}
-                      blocks={row}
-                      currentPrice={currentPrice}
-                      priceError={tickerError}
-                      tint={cellTint}
-                      onMouseEnter={() =>
-                        handleCellMouseEnter(colIndex, rowIndex)
+                  {onEditGroup && (
+                    <button
+                      className={strategyGroupEditButton}
+                      onClick={() => onEditGroup(groupOrders)}
+                      title="Edit strategy in builder"
+                      style={
+                        isGroupEditing
+                          ? {
+                              color: editingBlue,
+                              borderColor: "rgba(100, 140, 255, 0.4)",
+                              backgroundColor: "rgba(100, 140, 255, 0.12)",
+                            }
+                          : {
+                              color: "rgba(255,255,255,0.4)",
+                              borderColor: "rgba(255,255,255,0.12)",
+                              backgroundColor: "transparent",
+                            }
                       }
-                      onMouseLeave={handleCellMouseLeave}
-                    />
-                  ))}
+                    >
+                      <PencilIcon width={11} height={11} />
+                      Edit
+                    </button>
+                  )}
                 </div>
-              );
-            })}
-          </div>
+
+                {/* Entry cards */}
+                {entryOrders.length > 0 && (
+                  <div className="flex flex-col gap-1.5 pl-2">
+                    {entryOrders.map((order) => (
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        isEditing={isGroupEditing}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Exit cards */}
+                {exitOrders.length > 0 && (
+                  <div className="flex flex-col gap-1.5 pl-2">
+                    {exitOrders.map((order) => (
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        isEditing={isGroupEditing}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className={emptyStateContainer}>
@@ -395,8 +407,7 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({ initialOrders }) => {
           ) : (
             <div className={devControlsRow}>
               <span className={devLabel}>
-                No active or pending orders to simulate. All orders have been
-                filled or cancelled.
+                No active or pending orders to simulate. All orders have been filled or cancelled.
               </span>
             </div>
           )}

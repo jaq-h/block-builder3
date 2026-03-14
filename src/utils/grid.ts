@@ -152,12 +152,12 @@ export const isCellValidForPlacement = (
   grid: GridData,
   pattern: StrategyPattern = "conditional",
 ): boolean => {
-  if (!allowedRows.includes(rowIndex)) return false;
-
-  // Bulk pattern: free placement anywhere allowed
+  // Bulk pattern: free placement in any row, ignoring type system row restrictions
   if (pattern === "bulk") {
     return true;
   }
+
+  if (!allowedRows.includes(rowIndex)) return false;
 
   // Conditional pattern: requires middle row first, then diagonal placement
   if (!hasAnyBlockBeenPlaced(grid)) {
@@ -260,17 +260,43 @@ export const formatPrice = (price: number | null): string => {
 // SCALE & POSITION HELPERS
 // =============================================================================
 
+const STOP_LOSS_ORDER_TYPES = new Set([
+  "stop-loss",
+  "stop-loss-limit",
+  "trailing-stop",
+  "trailing-stop-limit",
+]);
+
+/**
+ * Whether a block is in the "downside zone" — determines scale direction.
+ *
+ * Conditional: row 2 is the downside zone (bottom row, stop-loss territory).
+ * Bulk: stop-loss order types are the downside zone (rows are unrestricted).
+ *
+ * Downside zone → positive % for entry, negative % for exit.
+ * Upside zone   → negative % for entry, positive % for exit.
+ */
+const isDownsideZone = (
+  rowIndex: number,
+  pattern: StrategyPattern | undefined,
+  orderType: string | undefined,
+): boolean => {
+  if (pattern === "bulk" && orderType) {
+    return STOP_LOSS_ORDER_TYPES.has(orderType);
+  }
+  return rowIndex === 2;
+};
+
 /** Helper to determine if scale should be descending */
 export const shouldBeDescending = (
   rowIndex: number,
   colIndex: number,
+  pattern?: StrategyPattern,
+  orderType?: string,
 ): boolean => {
-  const isBuy = colIndex === 0;
-
-  if (rowIndex === 2) {
-    return !isBuy;
-  }
-  return isBuy;
+  // Downside zone: descending for exit (col 1) → sign "-" for exit, "+" for entry
+  // Upside zone:   descending for entry (col 0) → sign "-" for entry, "+" for exit
+  return isDownsideZone(rowIndex, pattern, orderType) ? colIndex === 1 : colIndex === 0;
 };
 
 /** Get alignment based on column index */
@@ -349,6 +375,8 @@ export const findAxisAtPosition = (mouseX: number, cellRect: DOMRect): 1 | 2 =>
 export const findCellAndPositionData = (
   x: number,
   y: number,
+  pattern?: StrategyPattern,
+  orderType?: string,
 ): { col: number; row: number; axis: 1 | 2; yPosition: number } | null => {
   const elements = document.querySelectorAll("[data-col][data-row]");
 
@@ -364,7 +392,7 @@ export const findCellAndPositionData = (
       const row = parseInt(element.getAttribute("data-row") || "-1", 10);
       if (col !== -1 && row !== -1) {
         const axis = findAxisAtPosition(x, rect);
-        const isDescending = shouldBeDescending(row, col);
+        const isDescending = shouldBeDescending(row, col, pattern, orderType);
         const yPosition = calculateYPosition(y, rect, isDescending);
         return { col, row, axis, yPosition };
       }
@@ -387,14 +415,11 @@ export const isProviderBlockHighlighted = (
   pattern: StrategyPattern = "conditional",
 ): boolean => {
   if (isDragging || !hoveredGridCell) return false;
-  return (
-    block.allowedRows.includes(hoveredGridCell.row) &&
-    isCellValidForPlacement(
-      hoveredGridCell.col,
-      hoveredGridCell.row,
-      block.allowedRows,
-      grid,
-      pattern,
-    )
+  return isCellValidForPlacement(
+    hoveredGridCell.col,
+    hoveredGridCell.row,
+    block.allowedRows,
+    grid,
+    pattern,
   );
 };

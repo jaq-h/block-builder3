@@ -205,6 +205,32 @@ export interface OrderBuildContext {
   reduceOnly?: boolean;
 }
 
+// ============================================================================
+// OHLC Types (for WebSocket v2 OHLC channel)
+// ============================================================================
+
+export interface KrakenOHLCData {
+  symbol: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  vwap: number;
+  trades: number;
+  volume: number;
+  interval_begin: string; // RFC3339 timestamp
+  interval: number; // interval in minutes
+}
+
+export interface KrakenOHLCMessage {
+  channel: "ohlc";
+  type: "snapshot" | "update";
+  data: KrakenOHLCData[];
+}
+
+// Supported OHLC intervals in minutes
+export type OHLCInterval = 1 | 5 | 15 | 30 | 60 | 240 | 1440 | 10080 | 21600;
+
 // Error types
 export interface KrakenAPIError {
   code: string;
