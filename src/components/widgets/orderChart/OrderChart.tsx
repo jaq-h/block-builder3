@@ -201,16 +201,6 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
             </p>
           </div>
         )}
-
-        {/* Empty state when no orders */}
-        {!isLoading &&
-          Object.values(orders).every((o) => o.yPosition === undefined) && (
-            <div className="absolute inset-0 flex items-end justify-center pointer-events-none pb-4">
-              <p className="text-[11px] text-text-muted opacity-60">
-                Place orders to see price levels
-              </p>
-            </div>
-          )}
       </div>
     </div>
   );
