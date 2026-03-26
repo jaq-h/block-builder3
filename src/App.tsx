@@ -6,7 +6,14 @@ import { OrdersStoreProvider, useOrdersStore } from "./store";
 import { useLiveOrdersCount } from "./store";
 import { OrderChart } from "./components/widgets/orderChart";
 import { useTradeExecution } from "./hooks";
-import { appContainer, mainContent, navBar, navLinkVariants, navIcon, orderBadge } from "./App.styles";
+import {
+  appContainer,
+  mainContent,
+  navBar,
+  navLinkVariants,
+  navIcon,
+  orderBadge,
+} from "./App.styles";
 import ToolsIcon from "./assets/icons/tools.svg?react";
 import OrdersIcon from "./assets/icons/orders.svg?react";
 
@@ -18,7 +25,9 @@ function AppInner() {
   const { submittedOrders } = useOrdersStore();
   const liveOrderCount = useLiveOrdersCount();
   const [activeTab, setActiveTab] = useState<"assembly" | "orders">("assembly");
-  const [editingStrategyId, setEditingStrategyId] = useState<string | null>(null);
+  const [editingStrategyId, setEditingStrategyId] = useState<string | null>(
+    null,
+  );
 
   const {
     orderConfig,
@@ -45,7 +54,9 @@ function AppInner() {
   }, [isEditMode]);
 
   // Load an entire strategy group into the builder for editing
-  const handleEditGroup = (orders: import("./types/activeOrders").ActiveOrderEntry[]) => {
+  const handleEditGroup = (
+    orders: import("./types/activeOrders").ActiveOrderEntry[],
+  ) => {
     const config: import("./types/grid").OrderConfig = {};
     for (const order of orders) {
       config[order.id] = {
@@ -74,7 +85,9 @@ function AppInner() {
           row: liveEntry.row,
           type: liveEntry.type,
           ...(liveEntry.axis !== undefined && { axis: liveEntry.axis }),
-          ...(liveEntry.yPosition !== undefined && { yPosition: liveEntry.yPosition }),
+          ...(liveEntry.yPosition !== undefined && {
+            yPosition: liveEntry.yPosition,
+          }),
         };
       }
     }
@@ -82,7 +95,7 @@ function AppInner() {
   }, [submittedOrders, isEditMode, editingStrategyId, orderConfig]);
 
   const assemblyPanel = (
-    <div className="flex flex-col w-[700px] shrink-0">
+    <div className="overflow-hidden">
       <StrategyAssembly
         key={strategyKey}
         onConfigChange={handleConfigChange}
@@ -103,13 +116,13 @@ function AppInner() {
   );
 
   const ordersPanel = (
-    <div className="flex flex-col flex-1 min-w-0 min-h-0">
-      {/* Chart preview — top half: shows live assembly config only */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+    <div className="grid grid-rows-[400px_1fr] overflow-hidden">
+      {/* Chart — fixed 400px row */}
+      <div className="overflow-hidden">
         <OrderChart orders={orderConfig} />
       </div>
-      {/* Active orders list — bottom half */}
-      <div className="flex-1 min-h-0 overflow-hidden border-t border-border-neutral">
+      {/* Active orders — fills remaining height */}
+      <div className="overflow-scroll max-h-200 border-t border-border-neutral">
         <ActiveOrders
           onOrderSelect={(orderId) => {
             console.log("Selected order:", orderId);
@@ -150,14 +163,14 @@ function AppInner() {
       </nav>
 
       <main className={mainContent}>
-        {/* Large screens: side by side */}
-        <div className="hidden lg:flex flex-1 min-h-0 overflow-hidden gap-4 px-6 py-4">
+        {/* Large screens: CSS grid layout */}
+        <div className="hidden lg:grid grid-cols-[700px_minmax(300px,1fr)] gap-4 px-6 py-4 h-full overflow-hidden">
           {assemblyPanel}
           {ordersPanel}
         </div>
 
         {/* Small screens: single active tab */}
-        <div className="flex flex-1 min-h-0 overflow-hidden lg:hidden px-4 py-4">
+        <div className="px-4 py-4 lg:hidden">
           {activeTab === "assembly" ? assemblyPanel : ordersPanel}
         </div>
       </main>

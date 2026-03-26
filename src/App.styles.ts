@@ -72,9 +72,9 @@ export const simulationBadgeVariants = cva(
 // LAYOUT
 // =============================================================================
 
-export const appContainer = "min-h-screen flex flex-col bg-bg-primary";
+export const appContainer = "flex-1 min-h-0 grid grid-rows-[auto_1fr] overflow-hidden bg-bg-primary";
 
-export const mainContent = "flex-1 flex min-h-0";
+export const mainContent = "overflow-hidden";
 
 // =============================================================================
 // NAVIGATION BAR

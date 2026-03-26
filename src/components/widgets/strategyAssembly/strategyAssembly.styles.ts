@@ -6,9 +6,10 @@ import type { CSSProperties } from "react";
 // CONTAINER & LAYOUT
 // =============================================================================
 
-export const container = "max-w-[700px] h-full flex flex-col bg-bg-primary";
+export const container = "h-full flex flex-col max-w-[700px] bg-bg-primary";
 
-export const contentWrapper = "flex flex-1 overflow-auto gap-1.5 py-1.5";
+export const contentWrapper =
+  "flex flex-1 min-h-0 max-h-[763px] overflow-auto gap-1.5 py-1.5";
 
 export const columnsWrapper = "flex flex-1 h-full gap-1.5";
 
