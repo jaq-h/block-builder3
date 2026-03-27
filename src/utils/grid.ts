@@ -283,8 +283,11 @@ const isDownsideZone = (
 ): boolean => {
   if (pattern === "bulk" && orderType) {
     return STOP_LOSS_ORDER_TYPES.has(orderType);
+  } else if (pattern === "conditional") {
+    return rowIndex === 2;
+  } else {
+    return false;
   }
-  return rowIndex === 2;
 };
 
 /** Helper to determine if scale should be descending */
@@ -296,7 +299,9 @@ export const shouldBeDescending = (
 ): boolean => {
   // Downside zone: descending for exit (col 1) → sign "-" for exit, "+" for entry
   // Upside zone:   descending for entry (col 0) → sign "-" for entry, "+" for exit
-  return isDownsideZone(rowIndex, pattern, orderType) ? colIndex === 1 : colIndex === 0;
+  return isDownsideZone(rowIndex, pattern, orderType)
+    ? colIndex === 1
+    : colIndex === 0;
 };
 
 /** Get alignment based on column index */

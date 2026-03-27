@@ -65,6 +65,7 @@ function AppInner() {
         type: order.type,
         ...(order.axis !== undefined && { axis: order.axis }),
         ...(order.yPosition !== undefined && { yPosition: order.yPosition }),
+        ...(order.direction !== undefined && { direction: order.direction }),
       };
     }
     loadConfig(config);
@@ -85,9 +86,8 @@ function AppInner() {
           row: liveEntry.row,
           type: liveEntry.type,
           ...(liveEntry.axis !== undefined && { axis: liveEntry.axis }),
-          ...(liveEntry.yPosition !== undefined && {
-            yPosition: liveEntry.yPosition,
-          }),
+          ...(liveEntry.yPosition !== undefined && { yPosition: liveEntry.yPosition }),
+          ...(liveEntry.direction !== undefined && { direction: liveEntry.direction }),
         };
       }
     }
