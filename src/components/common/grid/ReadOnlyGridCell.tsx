@@ -2,7 +2,6 @@ import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData } from "../../../types/grid";
 import {
-  shouldBeDescending,
   calculatePrice,
   formatPrice,
   getCellDisplayMode,
@@ -50,7 +49,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   onMouseLeave,
 }) => {
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = shouldBeDescending(rowIndex, colIndex);
+  const isDescending = blocks[0]?.direction === "downside";
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 

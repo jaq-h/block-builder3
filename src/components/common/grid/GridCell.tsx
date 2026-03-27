@@ -1,7 +1,7 @@
 import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
-import { shouldBeDescending, getCellDisplayMode } from "../../../utils";
+import { getCellDisplayMode } from "../../../utils";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
 import {
   getInteractiveCellContainerProps,
@@ -90,7 +90,7 @@ const GridCell: FC<GridCellProps> = ({
   onBlockVerticalDrag,
 }) => {
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = shouldBeDescending(rowIndex, colIndex, strategyPattern, blocks[0]?.orderType);
+  const isDescending = blocks[0]?.direction === "downside";
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 

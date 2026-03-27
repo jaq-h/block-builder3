@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback, type FC } from "react";
 import { LineStyle } from "lightweight-charts";
 import type { OrderConfig } from "../../../types/grid";
-import { shouldBeDescending } from "../../../utils";
 import { ORDER_TYPES, COLUMN_HEADERS } from "../../../data/orderTypes";
 import { useKrakenAPI } from "../../../hooks/useKrakenAPI";
 import { useOHLCData, TIMEFRAME_MAP } from "../../../hooks/useOHLCData";
@@ -88,7 +87,7 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     const prices: number[] = [];
 
     for (const [, o] of orderEntries) {
-      const desc = shouldBeDescending(o.row, o.col, undefined, o.type);
+      const desc = o.direction === "downside";
       const typeDef = ORDER_TYPES.find((t) => t.type === o.type);
       const colLabel = COLUMN_HEADERS[o.col] ?? "";
       // Determine axis label: map axis index (1-based) to the axes array

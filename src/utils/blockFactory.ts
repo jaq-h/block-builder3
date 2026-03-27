@@ -115,6 +115,7 @@ export const createBlocksFromOrderType = (
       allowedRows,
       axis: 1,
       yPosition: -1,
+      direction: "upside",
       axes: [],
     });
   }
@@ -133,6 +134,7 @@ export const createBlocksFromOrderType = (
       allowedRows,
       axis: 2,
       yPosition: getDefaultPosition(orderType, "limit"),
+      direction: "upside",
       axes: ["limit"],
     });
   }
@@ -151,6 +153,7 @@ export const createBlocksFromOrderType = (
       allowedRows,
       axis: 1,
       yPosition: getDefaultPosition(orderType, "trigger"),
+      direction: "upside",
       axes: ["trigger"],
     });
   }
@@ -169,6 +172,7 @@ export const createBlocksFromOrderType = (
       allowedRows,
       axis: 1,
       yPosition: getDefaultPosition(orderType, "trigger"),
+      direction: "upside",
       axes: ["trigger"],
     });
 
@@ -185,6 +189,7 @@ export const createBlocksFromOrderType = (
       allowedRows,
       axis: 2,
       yPosition: getDefaultPosition(orderType, "limit"),
+      direction: "upside",
       axes: ["limit"],
     });
   }
@@ -216,9 +221,10 @@ export const buildOrderConfigEntry = (
   type: string;
   axis?: 1 | 2;
   yPosition?: number;
+  direction?: "upside" | "downside";
 } => {
   if (block.axes.length === 0) {
     return { col, row, type };
   }
-  return { col, row, axis: block.axis, yPosition: block.yPosition, type };
+  return { col, row, axis: block.axis, yPosition: block.yPosition, direction: block.direction, type };
 };

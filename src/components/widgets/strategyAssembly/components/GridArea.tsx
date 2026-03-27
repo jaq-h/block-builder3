@@ -155,12 +155,18 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
       return;
     }
 
-    // Use factory to create blocks
-    const { blocks, nextCounter } = createBlocksFromOrderType(providerBlock, {
+    // Use factory to create blocks, then stamp direction from placement context
+    const { blocks: rawBlocks, nextCounter } = createBlocksFromOrderType(providerBlock, {
       baseId,
       counter: blockCounterRef.current,
     });
     blockCounterRef.current = nextCounter;
+    const blocks = rawBlocks.map((block) => ({
+      ...block,
+      direction: shouldBeDescending(targetRow, targetCol, strategyPattern, block.orderType)
+        ? "downside" as const
+        : "upside" as const,
+    }));
 
     // Update grid
     setGrid((prev) => {
@@ -216,8 +222,8 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     const relativeY = mouseY - trackTop;
     const clampedRelativeY = Math.max(0, Math.min(availableHeight, relativeY));
 
-    // Determine if this cell uses descending scale
-    const isDescending = shouldBeDescending(row, col, strategyPattern, blockData.orderType);
+    // Determine if this cell uses descending scale (read from block — set at placement)
+    const isDescending = blockData.direction === "downside";
 
     // Convert to percentage based on scale direction
     const { MAX_PERCENT } = SCALE_CONFIG;
@@ -289,11 +295,14 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
         return;
       }
 
-      // Update block with new position data
+      // Update block with new position data and recompute direction for new cell
       const updatedBlock = {
         ...blockData,
         axis,
         yPosition,
+        direction: shouldBeDescending(targetRow, targetCol, strategyPattern, blockData.orderType)
+          ? "downside" as const
+          : "upside" as const,
       };
 
       setGrid((prev) => {

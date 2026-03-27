@@ -8,6 +8,8 @@ import type { AxisType, SvgIcon } from "../data/orderTypes";
 // BLOCK DATA TYPES
 // =============================================================================
 
+export type BlockDirection = "upside" | "downside";
+
 export interface BlockData {
   id: string;
   orderType: string; // Order type identifier (e.g., "limit", "stop-loss-limit")
@@ -20,6 +22,8 @@ export interface BlockData {
   allowedRows: number[];
   axis: 1 | 2;
   yPosition: number; // 0-50% for position, -1 for no position
+  /** Price direction relative to market. "upside" = above market, "downside" = below. Set at placement time. */
+  direction: BlockDirection;
   axes: AxisType[];
   linkedBlockId?: string;
 }
@@ -167,6 +171,7 @@ export interface OrderConfigEntry {
   type: string;
   axis?: 1 | 2;
   yPosition?: number;
+  direction?: BlockDirection;
 }
 
 export type OrderConfig = Record<string, OrderConfigEntry>;

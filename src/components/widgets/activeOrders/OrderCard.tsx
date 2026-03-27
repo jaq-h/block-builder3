@@ -2,7 +2,6 @@ import type { FC } from "react";
 import type { ActiveOrderEntry } from "../../../types/activeOrders";
 import { getStatusColor, getStatusLabel } from "../../../types/activeOrders";
 import { ORDER_TYPES, COLUMN_HEADERS } from "../../../data/orderTypes";
-import { shouldBeDescending } from "../../../utils";
 
 // =============================================================================
 // HELPERS
@@ -36,8 +35,7 @@ const OrderCard: FC<OrderCardProps> = ({ order, isEditing = false }) => {
   const statusColor = getStatusColor(order.status);
   const statusLabel = getStatusLabel(order.status);
   const axisLabel = order.axis ? AXIS_LABELS[order.axis] : null;
-  const isDescending = shouldBeDescending(order.row, order.col, undefined, order.type);
-  const sign = isDescending ? "-" : "+";
+  const sign = order.direction === "downside" ? "-" : "+";
 
   const editingBlue = "rgba(100, 140, 255, 0.9)";
 

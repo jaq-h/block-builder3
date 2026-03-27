@@ -6,6 +6,7 @@ import type {
 } from "../../../types/activeOrders";
 import type { GridData, CellPosition } from "../../../types/grid";
 import { GRID_CONFIG } from "../../../data/orderTypes";
+import { shouldBeDescending } from "../../../utils";
 import { ActiveOrdersContext } from "./ActiveOrdersContextDef";
 
 // =============================================================================
@@ -68,6 +69,8 @@ export const ActiveOrdersProvider: FC<ActiveOrdersProviderProps> = ({
           allowedRows: [order.row],
           axis: order.axis || 1,
           yPosition: order.yPosition || 0,
+          direction: order.direction ??
+            (shouldBeDescending(order.row, order.col, undefined, order.type) ? "downside" as const : "upside" as const),
           axes: order.axis
             ? ((order.axis === 1 ? ["trigger"] : ["limit"]) as (
                 | "trigger"

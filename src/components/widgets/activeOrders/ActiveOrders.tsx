@@ -55,7 +55,8 @@ import {
 function deriveStrategyLabel(orders: ActiveOrderEntry[]): string {
   const hasCols = new Set(orders.map((o) => o.col));
   if (hasCols.has(0) && hasCols.has(1)) return "Conditional Strategy";
-  if (hasCols.has(0) && orders.filter((o) => o.col === 0).length > 1) return "Bulk Entry";
+  if (hasCols.has(0) && orders.filter((o) => o.col === 0).length > 1)
+    return "Bulk Entry";
   if (hasCols.has(0)) return "Entry Order";
   if (hasCols.has(1)) return "Exit Order";
   return "Strategy";
@@ -129,10 +130,18 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
 
   // Count orders by status
   const totalOrders = Object.keys(activeOrders).length;
-  const activeCount = Object.values(activeOrders).filter((o) => o.status === "active").length;
-  const pendingCount = Object.values(activeOrders).filter((o) => o.status === "pending").length;
-  const filledCount = Object.values(activeOrders).filter((o) => o.status === "filled").length;
-  const cancelledCount = Object.values(activeOrders).filter((o) => o.status === "cancelled").length;
+  const activeCount = Object.values(activeOrders).filter(
+    (o) => o.status === "active",
+  ).length;
+  const pendingCount = Object.values(activeOrders).filter(
+    (o) => o.status === "pending",
+  ).length;
+  const filledCount = Object.values(activeOrders).filter(
+    (o) => o.status === "filled",
+  ).length;
+  const cancelledCount = Object.values(activeOrders).filter(
+    (o) => o.status === "cancelled",
+  ).length;
 
   const hasDisplayableOrders = activeCount > 0 || pendingCount > 0;
   const hasAnyOrders = totalOrders > 0;
@@ -186,25 +195,33 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
           {activeCount > 0 && (
             <div className={statusItem}>
               <span {...getStatusDotProps("#4CAF50")} />
-              <span {...getStatusValueProps("#4CAF50")}>{activeCount} Active</span>
+              <span {...getStatusValueProps("#4CAF50")}>
+                {activeCount} Active
+              </span>
             </div>
           )}
           {pendingCount > 0 && (
             <div className={statusItem}>
               <span {...getStatusDotProps("#FFC107")} />
-              <span {...getStatusValueProps("#FFC107")}>{pendingCount} Pending</span>
+              <span {...getStatusValueProps("#FFC107")}>
+                {pendingCount} Pending
+              </span>
             </div>
           )}
           {filledCount > 0 && (
             <div className={statusItem}>
               <span {...getStatusDotProps("#2196F3")} />
-              <span {...getStatusValueProps("#2196F3")}>{filledCount} Filled</span>
+              <span {...getStatusValueProps("#2196F3")}>
+                {filledCount} Filled
+              </span>
             </div>
           )}
           {cancelledCount > 0 && (
             <div className={statusItem}>
               <span {...getStatusDotProps("#9E9E9E")} />
-              <span {...getStatusValueProps("#9E9E9E")}>{cancelledCount} Cancelled</span>
+              <span {...getStatusValueProps("#9E9E9E")}>
+                {cancelledCount} Cancelled
+              </span>
             </div>
           )}
         </div>
@@ -220,10 +237,13 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
           {Array.from(strategyGroups.entries()).map(([sid, groupOrders]) => {
             const isGroupEditing = sid === editingStrategyId;
             const label = deriveStrategyLabel(groupOrders);
-            const time = new Date(groupOrders[0].createdAt).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            });
+            const time = new Date(groupOrders[0].createdAt).toLocaleTimeString(
+              [],
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            );
             const entryOrders = groupOrders
               .filter((o) => o.col === 0)
               .sort((a, b) => a.row - b.row);
@@ -244,12 +264,17 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
                 {/* Group header */}
                 <div
                   className={strategyGroupHeader}
-                  style={{ borderColor: headerBorderColor, backgroundColor: headerBg }}
+                  style={{
+                    borderColor: headerBorderColor,
+                    backgroundColor: headerBg,
+                  }}
                 >
                   <div className={strategyGroupMeta}>
                     <span
                       className={strategyGroupLabel}
-                      style={isGroupEditing ? { color: editingBlue } : undefined}
+                      style={
+                        isGroupEditing ? { color: editingBlue } : undefined
+                      }
                     >
                       {label}
                     </span>
@@ -333,13 +358,6 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
               ? `You have ${filledCount + cancelledCount} completed orders, but no active orders at the moment.`
               : "You don't have any orders yet. Create a strategy to get started."}
           </p>
-          <Link
-            to="/"
-            className="mt-4 text-accent-primary no-underline text-[13px] inline-flex items-center gap-1.5"
-          >
-            <ArrowLeftIcon width={14} height={14} />
-            Go to Strategy Builder
-          </Link>
         </div>
       )}
 
@@ -407,7 +425,8 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
           ) : (
             <div className={devControlsRow}>
               <span className={devLabel}>
-                No active or pending orders to simulate. All orders have been filled or cancelled.
+                No active or pending orders to simulate. All orders have been
+                filled or cancelled.
               </span>
             </div>
           )}

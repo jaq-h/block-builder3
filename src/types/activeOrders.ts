@@ -23,6 +23,7 @@ export interface ActiveOrderEntry {
   type: string;
   axis?: 1 | 2;
   yPosition?: number;
+  direction?: "upside" | "downside";
   status: OrderStatus;
   createdAt: Date;
   filledAt?: Date;

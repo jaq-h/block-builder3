@@ -53,6 +53,7 @@ const configToActiveOrder = (id: string, config: OrderConfig[string], strategyId
     type: config.type,
     axis: config.axis,
     yPosition: config.yPosition,
+    direction: config.direction,
     status: "pending" as OrderStatus,
     createdAt: new Date(),
   };
