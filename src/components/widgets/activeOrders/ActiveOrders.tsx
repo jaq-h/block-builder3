@@ -1,11 +1,9 @@
 import { useEffect, useState, type FC } from "react";
-import { Link } from "react-router-dom";
 import OrdersIcon from "../../../assets/icons/orders.svg?react";
 import RefreshIcon from "../../../assets/icons/refresh.svg?react";
 import ToolsIcon from "../../../assets/icons/tools.svg?react";
 import CheckIcon from "../../../assets/icons/check.svg?react";
 import XCircleIcon from "../../../assets/icons/x-circle.svg?react";
-import ArrowLeftIcon from "../../../assets/icons/arrow-left.svg?react";
 import PencilIcon from "../../../assets/icons/pencil.svg?react";
 import { ActiveOrdersProvider } from "./ActiveOrdersContext";
 import { useActiveOrders } from "./useActiveOrders";
