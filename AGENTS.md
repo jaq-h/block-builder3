@@ -42,6 +42,10 @@ Some tests deliberately assert **current, wrong** behaviour. They are commented
 `CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. If you are fixing the
 underlying bug, change the test and the comment together; do not quietly loosen it.
 
+`src/test/pointerCapture.ts` installs a tracking `setPointerCapture` on `Element.prototype`:
+jsdom ships `PointerEvent` but not the capture methods, so without it the assertion that a
+drag survives a release outside the window has nothing to assert against.
+
 `src/test/fakeWebSocket.ts` is a controllable `WebSocket` stand-in whose `send`
 throws while CONNECTING, exactly as the browser does; that strictness is what
 makes the connect race in `src/api/krakenWebSocket.ts` fail a test rather than
@@ -85,6 +89,22 @@ Simulation mode is decided in `src/hooks/useTradeExecution.ts`:
   are actually present.
 
 So a dev server with no `local.env` is safe to click through end to end.
+
+## Interaction: pointer, keyboard and touch
+
+The README's **Interaction model** section is authoritative. Three things bite in ordinary work:
+
+- **Never add a `window` mouse listener to drive a drag.** The gesture layer is
+  `usePointerGesture`, on Pointer Events with `setPointerCapture`, which is what delivers a
+  release outside the browser window. Mouse events are also suppressed during a drag, because
+  `pointerdown` calls `preventDefault`.
+- **Every new interactive affordance needs a keyboard path and an announcement**, not just a
+  handler. Placement is expressed in terms of a target cell in `GridArea`
+  (`placeProviderInCell` / `moveBlockToCell`); the pointer drag and the command model both
+  call it. Anything that bypasses those two functions will work for one input method only.
+- **A block on a price axis is a `role="slider"` whose value is signed** - positive above the
+  market price, negative below - so arrow-key direction matches on-screen direction on both
+  scale directions. `yPosition` in the data stays an unsigned magnitude plus a `direction`.
 
 ## Layout and the CSS cascade
 

@@ -157,9 +157,16 @@ function AppInner() {
 
   return (
     <div className={appContainer}>
+      {/* The page needs a level-1 heading, and the visible layout has no room
+          for one: the two panels start at `h2`. Visually hidden keeps the
+          heading order honest without claiming layout the phone lane owns. */}
+      <h1 className="sr-only">Block Builder</h1>
+
       {/* Tab nav - only visible on small screens */}
-      <nav className={`${navBar} lg:hidden`}>
+      <nav className={`${navBar} lg:hidden`} aria-label="Panels">
         <button
+          type="button"
+          aria-pressed={activeTab === "assembly"}
           onClick={() => setActiveTab("assembly")}
           className={navLinkVariants({ isActive: activeTab === "assembly" })}
         >
@@ -169,6 +176,8 @@ function AppInner() {
           Strategy Builder
         </button>
         <button
+          type="button"
+          aria-pressed={activeTab === "orders"}
           onClick={() => setActiveTab("orders")}
           className={navLinkVariants({ isActive: activeTab === "orders" })}
         >

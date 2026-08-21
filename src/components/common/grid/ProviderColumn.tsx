@@ -17,8 +17,17 @@ interface ProviderColumnProps {
   strategyPattern: StrategyPattern;
   onProviderDragStart: (type: string) => void;
   onProviderDragEnd: (type: string, x: number, y: number) => void;
+  onProviderDragCancel: (type: string) => void;
   onProviderMouseEnter: (type: string) => void;
   onProviderMouseLeave: () => void;
+  /** Enter, Space or a tap: pick this order type up, place it, or put it back. */
+  onProviderActivate: (type: string, origin: "keyboard" | "pointer") => void;
+  onCommandMove: (dCol: number, dRow: number) => void;
+  onCommandCancel: () => void;
+  /** The order type currently picked up by the command model, if any. */
+  carryingType: string | null;
+  focusType: string | null;
+  onFocusHandled: () => void;
 }
 
 const ProviderColumn: FC<ProviderColumnProps> = ({
@@ -29,11 +38,22 @@ const ProviderColumn: FC<ProviderColumnProps> = ({
   strategyPattern,
   onProviderDragStart,
   onProviderDragEnd,
+  onProviderDragCancel,
   onProviderMouseEnter,
   onProviderMouseLeave,
+  onProviderActivate,
+  onCommandMove,
+  onCommandCancel,
+  carryingType,
+  focusType,
+  onFocusHandled,
 }) => {
   return (
-    <div className="flex flex-col min-w-22.5 w-27.5 border border-gray-200/20 rounded-lg bg-bg-column overflow-hidden">
+    <div
+      role="group"
+      aria-label="Order types"
+      className="flex flex-col min-w-22.5 w-27.5 border border-gray-200/20 rounded-lg bg-bg-column overflow-hidden"
+    >
       <div className="p-2 text-center border-b border-gray-200 bg-neutral-bg">
         <span className="text-sm font-semibold text-text-secondary">
           Orders
@@ -46,6 +66,7 @@ const ProviderColumn: FC<ProviderColumnProps> = ({
               id={block.type}
               icon={block.icon}
               abrv={block.abrv}
+              label={block.label}
               isHighlighted={isProviderBlockHighlighted(
                 block,
                 hoveredGridCell,
@@ -53,12 +74,24 @@ const ProviderColumn: FC<ProviderColumnProps> = ({
                 grid,
                 strategyPattern,
               )}
+              isCarrying={carryingType === block.type}
+              shouldFocus={focusType === block.type}
+              onFocusHandled={onFocusHandled}
               onDragStart={() => onProviderDragStart(block.type)}
               onDragEnd={(_id, x, y) => onProviderDragEnd(block.type, x, y)}
+              onDragCancel={() => onProviderDragCancel(block.type)}
+              onActivate={(_id, origin) =>
+                onProviderActivate(block.type, origin)
+              }
+              onCommandMove={onCommandMove}
+              onCommandCancel={onCommandCancel}
               onMouseEnter={() => onProviderMouseEnter(block.type)}
               onMouseLeave={onProviderMouseLeave}
             />
-            <span className="text-[11px] text-text-tertiary text-center wrap-break-word max-w-25 leading-[1.2]">
+            <span
+              aria-hidden="true"
+              className="text-[11px] text-text-tertiary text-center wrap-break-word max-w-25 leading-[1.2]"
+            >
               {block.label}
             </span>
           </div>

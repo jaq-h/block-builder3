@@ -8,7 +8,7 @@ Built with **React 19** (with **React Compiler**), **TypeScript**, **Vite 7**, a
 
 ## Features
 
-- **Strategy Builder** — Drag-and-drop grid interface for assembling multi-leg order strategies (conditional orders, bulk orders)
+- **Strategy Builder** - Grid interface for assembling multi-leg order strategies (conditional orders, bulk orders), driveable with a mouse, a finger or the keyboard alone
 - **Active Orders** — View and manage submitted orders with real-time status tracking
 - **Kraken API Integration** — REST and WebSocket clients for authentication, order placement, and live market data
 - **Simulation Mode** — Test strategies locally without connecting to the Kraken API (always active in development)
@@ -210,9 +210,58 @@ The project enables the **React Compiler** (`babel-plugin-react-compiler`) via V
 
 Drag logic is split into purpose-specific hooks:
 
+- **`usePointerGesture`** - The pointer primitive underneath both drag hooks: capture, tap-versus-drag, cancel
 - **`useFreeDrag`** — Free-form drag for moving blocks between grid cells (integrates with the drag overlay portal)
 - **`useVerticalDrag`** — Constrained vertical drag for sliding blocks along the price-scale axis
+- **`useBlockCommand`** - The select-then-place command model layered over the drag
 - **`useTradeExecution`** — Order configuration management, submission flow, simulation mode toggle
+
+---
+
+## Interaction model
+
+The builder has one interaction model, reached three ways. All of them end up calling the
+same two placement functions in `GridArea`, expressed in terms of a target **cell** rather
+than a pointer coordinate, so the input methods cannot drift apart.
+
+**Pointer: mouse, touch and pen.** `usePointerGesture` handles the raw gesture on Pointer
+Events, so one code path serves all three devices. Two details are load-bearing:
+
+- The dragged element takes `setPointerCapture`, which is what delivers `pointerup` even
+  when the button is released **outside the browser window**. The previous
+  `window.addEventListener("mouseup")` implementation never saw that release, and the block
+  stayed glued to the cursor.
+- Blocks carry `touch-action: none`. Without it the browser claims a finger drag for page
+  scrolling before the first `pointermove` arrives.
+
+A release that never travelled more than a few pixels is a **tap**, not a zero-length drop,
+and is handed to the command model instead of the drop handler.
+
+**Command model: keyboard, screen readers and taps.** Focus a block and press Enter to pick
+it up; the arrow keys choose a target cell; Enter places it; Escape returns it. Tab is never
+swallowed - it abandons the carry and moves focus on, so a carried block cannot trap the
+keyboard. On touch the same model is driven by taps: tap a block, tap a cell.
+
+The arrow keys step only between **legal** cells, so Enter is never refused. They prefer a
+cell straight ahead and otherwise take the nearest legal cell in that direction, which is
+what makes the diagonal placement rule reachable at all: with one block placed, the only
+other legal cells are its diagonals, and a strictly orthogonal step could never leave the
+cell it started in.
+
+The pure half of that model - the transitions and the target arithmetic - lives in
+`src/utils/blockCommand.ts` and is directly testable. `useBlockCommand` adds the two things
+a reducer cannot supply: what gets announced, and where focus lands afterwards.
+
+**The price axis** is a block's most important property, so it is reachable every way too: a
+pointer drags the block up and down its axis, and on the keyboard it behaves as a real
+vertical slider - `role="slider"` with arrow keys (Shift for a larger step, Page Up/Down
+larger still, Home/End for the ends of the axis). Its `aria-valuenow` is the **signed** offset
+from the market price, positive above and negative below, so the value always moves the same
+way the block does on screen whichever direction the cell's scale runs.
+
+Announcements go through `LiveAnnouncer`, which alternates between two live regions: a
+screen reader only reads a region whose content **changed**, so two identical messages in a
+row would otherwise be silent the second time.
 
 ### Error Boundaries
 
@@ -256,6 +305,7 @@ src/
 │   ├── common/
 │   │   ├── DragOverlay.tsx        # Portal-rendered drag ghost (rAF-driven positioning)
 │   │   ├── dragOverlayStore.ts    # Module-level drag state (useSyncExternalStore)
+│   │   ├── LiveAnnouncer.tsx      # Two alternating live regions for announcements
 │   │   ├── ErrorBoundary.tsx      # Recoverable fallback UI in place of a blank page
 │   │   ├── NavBar.tsx             # Navigation bar with live order badge
 │   │   └── grid/                  # Shared grid components
@@ -307,8 +357,11 @@ src/
 │   └── index.ts
 │
 ├── hooks/                         # Custom React hooks
+│   ├── usePointerGesture.ts       # Pointer primitive (capture, tap vs drag, cancel)
 │   ├── useFreeDrag.ts             # Free-form drag (provider → grid cell)
 │   ├── useVerticalDrag.ts         # Vertical-axis drag (price scale sliding)
+│   ├── useBlockCommand.ts         # Select-then-place command model (keyboard, taps)
+│   ├── useAnnouncer.ts            # Live-region message state
 │   ├── useKrakenAPI.ts            # Kraken API hook (prices, order management)
 │   ├── useOHLCData.ts             # OHLC candle fetching for the chart
 │   ├── useTradeExecution.ts       # Trade config, submission & simulation flow
@@ -339,6 +392,7 @@ src/
 │   └── index.ts                   # Barrel export
 │
 ├── utils/                         # Pure utility functions
+│   ├── blockCommand.ts            # Select-then-place state machine (pure half)
 │   ├── blockFactory.ts            # Factory for creating block data
 │   ├── grid.ts                    # Grid manipulation helpers
 │   └── index.ts

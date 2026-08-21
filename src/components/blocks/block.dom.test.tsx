@@ -1,0 +1,438 @@
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import Block, { BLOCK_INSTRUCTIONS_ID } from "./block";
+import { getSnapshot } from "@common/dragOverlayStore";
+import {
+  installPointerCapture,
+  type PointerCaptureTracker,
+} from "@/test/pointerCapture";
+
+// =============================================================================
+// HARNESS
+// =============================================================================
+
+const pointer = (
+  type: string,
+  { x = 0, y = 0, pointerId = 1 }: { x?: number; y?: number; pointerId?: number } = {},
+) => {
+  const event = new PointerEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+  });
+  Object.defineProperties(event, {
+    pointerId: { value: pointerId },
+    isPrimary: { value: true },
+    pointerType: { value: "mouse" },
+    clientX: { value: x },
+    clientY: { value: y },
+  });
+  return event;
+};
+
+const drag = (element: Element, from: [number, number], to: [number, number]) => {
+  fireEvent(element, pointer("pointerdown", { x: from[0], y: from[1] }));
+  fireEvent(element, pointer("pointermove", { x: to[0], y: to[1] }));
+  fireEvent(element, pointer("pointerup", { x: to[0], y: to[1] }));
+};
+
+const tap = (element: Element, at: [number, number] = [10, 10]) => {
+  fireEvent(element, pointer("pointerdown", { x: at[0], y: at[1] }));
+  fireEvent(element, pointer("pointerup", { x: at[0], y: at[1] }));
+};
+
+let capture: PointerCaptureTracker;
+
+beforeEach(() => {
+  capture = installPointerCapture();
+});
+
+afterEach(() => {
+  capture.restore();
+});
+
+// =============================================================================
+// PALETTE BLOCKS - free drag
+// =============================================================================
+
+describe("Block, as a palette entry", () => {
+  it("has an accessible name and points at the shared instructions", () => {
+    render(<Block id="limit" abrv="Lmt" label="Limit" />);
+
+    // The instructions themselves are rendered once, by GridArea, so in
+    // isolation only the reference is here to assert.
+    expect(screen.getByRole("button", { name: "Add Limit order" })).toHaveAttribute(
+      "aria-describedby",
+      BLOCK_INSTRUCTIONS_ID,
+    );
+  });
+
+  it("opts out of the browser's touch gestures", () => {
+    render(<Block id="limit" abrv="Lmt" label="Limit" />);
+
+    // Without this a finger drag is claimed as a page scroll before the first
+    // pointermove arrives, and the block never moves.
+    expect(screen.getByRole("button")).toHaveClass("touch-none");
+  });
+
+  it("reports a drag with the coordinates it ended at", () => {
+    const onDragStart = vi.fn();
+    const onDragEnd = vi.fn();
+    render(
+      <Block
+        id="limit"
+        abrv="Lmt"
+        label="Limit"
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      />,
+    );
+
+    drag(screen.getByRole("button"), [10, 10], [220, 340]);
+
+    expect(onDragStart).toHaveBeenCalledWith("limit");
+    expect(onDragEnd).toHaveBeenCalledWith("limit", 220, 340);
+  });
+
+  it("shows the drag overlay for the duration of the drag", () => {
+    render(<Block id="limit" abrv="Lmt" label="Limit" />);
+    const button = screen.getByRole("button");
+
+    fireEvent(button, pointer("pointerdown", { x: 10, y: 10 }));
+    expect(getSnapshot().active).toBe(true);
+
+    fireEvent(button, pointer("pointerup", { x: 200, y: 200 }));
+    expect(getSnapshot().active).toBe(false);
+  });
+
+  it("clears the overlay when the browser cancels the drag", () => {
+    const onDragEnd = vi.fn();
+    const onDragCancel = vi.fn();
+    render(
+      <Block
+        id="limit"
+        abrv="Lmt"
+        label="Limit"
+        onDragEnd={onDragEnd}
+        onDragCancel={onDragCancel}
+      />,
+    );
+    const button = screen.getByRole("button");
+
+    fireEvent(button, pointer("pointerdown", { x: 10, y: 10 }));
+    fireEvent(button, pointer("pointermove", { x: 90, y: 90 }));
+    fireEvent(button, pointer("pointercancel", { x: 90, y: 90 }));
+
+    // A cancelled drag returns the block; it is not a drop outside the grid,
+    // which would delete it.
+    expect(onDragCancel).toHaveBeenCalledWith("limit");
+    expect(onDragEnd).not.toHaveBeenCalled();
+    expect(getSnapshot().active).toBe(false);
+  });
+
+  it("treats a tap as a command, not as a zero-length drop", () => {
+    const onDragEnd = vi.fn();
+    const onActivate = vi.fn();
+    render(
+      <Block
+        id="limit"
+        abrv="Lmt"
+        label="Limit"
+        onDragEnd={onDragEnd}
+        onActivate={onActivate}
+      />,
+    );
+
+    tap(screen.getByRole("button"));
+
+    expect(onActivate).toHaveBeenCalledWith("limit", "pointer");
+    expect(onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("still reports a drop when the pointer is released off-window", () => {
+    const onDragEnd = vi.fn();
+    render(<Block id="limit" abrv="Lmt" label="Limit" onDragEnd={onDragEnd} />);
+
+    drag(screen.getByRole("button"), [10, 10], [-300, -200]);
+
+    expect(onDragEnd).toHaveBeenCalledWith("limit", -300, -200);
+    expect(getSnapshot().active).toBe(false);
+  });
+});
+
+// =============================================================================
+// PLACED BLOCKS - the price axis
+// =============================================================================
+
+describe("Block, placed on a price axis", () => {
+  const placed = (props: Record<string, unknown> = {}) =>
+    render(
+      <Block
+        id="b1"
+        abrv="Lmt"
+        label="Limit"
+        axis={2}
+        axes={["limit"]}
+        yPosition={25}
+        direction="upside"
+        cellDescription="Entry column, primary row"
+        priceText="$95,861.25"
+        {...props}
+      />,
+    );
+
+  it("is a vertical slider carrying its offset and its price", () => {
+    placed();
+
+    const slider = screen.getByRole("slider", {
+      name: "Limit limit price, Entry column, primary row",
+    });
+    expect(slider).toHaveAttribute("aria-orientation", "vertical");
+    expect(slider).toHaveAttribute("aria-valuenow", "25");
+    expect(slider).toHaveAttribute("aria-valuemin", "0");
+    expect(slider).toHaveAttribute("aria-valuemax", "50");
+    expect(slider).toHaveAttribute("aria-valuetext", "+25.00%, $95,861.25");
+  });
+
+  it("signs the value by which side of the market it sits on", () => {
+    placed({ direction: "downside" });
+
+    const slider = screen.getByRole("slider");
+    expect(slider).toHaveAttribute("aria-valuenow", "-25");
+    expect(slider).toHaveAttribute("aria-valuemin", "-50");
+    expect(slider).toHaveAttribute("aria-valuemax", "0");
+    expect(slider).toHaveAttribute("aria-valuetext", "-25.00%, $95,861.25");
+  });
+
+  it("drops the sign at the market price itself", () => {
+    placed({ yPosition: 0 });
+
+    expect(screen.getByRole("slider")).toHaveAttribute(
+      "aria-valuetext",
+      "0.00%, $95,861.25",
+    );
+  });
+
+  it("reports a vertical drag by pointer Y", () => {
+    const onVerticalDrag = vi.fn();
+    placed({ onVerticalDrag });
+
+    fireEvent(screen.getByRole("slider"), pointer("pointerdown", { x: 50, y: 200 }));
+    fireEvent(screen.getByRole("slider"), pointer("pointermove", { x: 52, y: 260 }));
+    fireEvent(screen.getByRole("slider"), pointer("pointerup", { x: 52, y: 260 }));
+
+    expect(onVerticalDrag).toHaveBeenCalledWith("b1", 260);
+  });
+
+  it("moves along the axis with the arrow keys, up meaning a higher price", () => {
+    const onAdjustPrice = vi.fn();
+    placed({ onAdjustPrice });
+    const slider = screen.getByRole("slider");
+
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+    fireEvent.keyDown(slider, { key: "ArrowDown" });
+    fireEvent.keyDown(slider, { key: "ArrowUp", shiftKey: true });
+    fireEvent.keyDown(slider, { key: "PageUp" });
+    fireEvent.keyDown(slider, { key: "PageDown" });
+
+    expect(onAdjustPrice.mock.calls).toEqual([
+      ["b1", 1],
+      ["b1", -1],
+      ["b1", 5],
+      ["b1", 10],
+      ["b1", -10],
+    ]);
+  });
+
+  it("reaches either end of the axis with Home and End", () => {
+    const onAdjustPrice = vi.fn();
+    placed({ onAdjustPrice });
+    const slider = screen.getByRole("slider");
+
+    fireEvent.keyDown(slider, { key: "Home" });
+    fireEvent.keyDown(slider, { key: "End" });
+
+    // Clamped by the grid, so a step wider than the axis lands on its end.
+    expect(onAdjustPrice.mock.calls).toEqual([
+      ["b1", -100],
+      ["b1", 100],
+    ]);
+  });
+
+  it("picks the block up on Enter rather than adjusting the price", () => {
+    const onActivate = vi.fn();
+    const onAdjustPrice = vi.fn();
+    placed({ onActivate, onAdjustPrice });
+
+    fireEvent.keyDown(screen.getByRole("slider"), { key: "Enter" });
+
+    expect(onActivate).toHaveBeenCalledWith("b1", "keyboard");
+    expect(onAdjustPrice).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// THE COMMAND MODEL, FROM THE KEYBOARD
+// =============================================================================
+
+describe("Block, while being carried", () => {
+  const carried = (props: Record<string, unknown> = {}) =>
+    render(
+      <Block id="limit" abrv="Lmt" label="Limit" isCarrying {...props} />,
+    );
+
+  it("steers the target cell with the arrow keys", () => {
+    const onCommandMove = vi.fn();
+    carried({ onCommandMove });
+    const button = screen.getByRole("button");
+
+    fireEvent.keyDown(button, { key: "ArrowLeft" });
+    fireEvent.keyDown(button, { key: "ArrowRight" });
+    fireEvent.keyDown(button, { key: "ArrowUp" });
+    fireEvent.keyDown(button, { key: "ArrowDown" });
+
+    expect(onCommandMove.mock.calls).toEqual([
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ]);
+  });
+
+  it("places on Enter and on Space", () => {
+    const onActivate = vi.fn();
+    carried({ onActivate });
+    const button = screen.getByRole("button");
+
+    fireEvent.keyDown(button, { key: "Enter" });
+    fireEvent.keyDown(button, { key: " " });
+
+    expect(onActivate.mock.calls).toEqual([
+      ["limit", "keyboard"],
+      ["limit", "keyboard"],
+    ]);
+  });
+
+  it("puts the block back on Escape", () => {
+    const onCommandCancel = vi.fn();
+    carried({ onCommandCancel });
+
+    fireEvent.keyDown(screen.getByRole("button"), { key: "Escape" });
+
+    expect(onCommandCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts the block back on a second tap", () => {
+    const onActivate = vi.fn();
+    carried({ onActivate });
+
+    tap(screen.getByRole("button"));
+
+    // The pointer half of "put it down again" - a finger has no Escape key.
+    expect(onActivate).toHaveBeenCalledWith("limit", "pointer");
+  });
+
+  it("lets Tab through, so a carried block can never trap the keyboard", () => {
+    const onCommandCancel = vi.fn();
+    carried({ onCommandCancel });
+
+    const prevented = !fireEvent.keyDown(screen.getByRole("button"), {
+      key: "Tab",
+    });
+
+    expect(onCommandCancel).toHaveBeenCalledTimes(1);
+    expect(prevented).toBe(false);
+  });
+
+  it("swallows the arrow keys so the page does not scroll underneath", () => {
+    carried({ onCommandMove: vi.fn() });
+
+    const notPrevented = fireEvent.keyDown(screen.getByRole("button"), {
+      key: "ArrowDown",
+    });
+
+    expect(notPrevented).toBe(false);
+  });
+});
+
+// =============================================================================
+// FOCUS
+// =============================================================================
+
+describe("Block focus handover", () => {
+  it("takes focus when asked and reports that it has", () => {
+    const onFocusHandled = vi.fn();
+    render(
+      <Block
+        id="b1"
+        abrv="Lmt"
+        label="Limit"
+        shouldFocus
+        onFocusHandled={onFocusHandled}
+      />,
+    );
+
+    expect(document.activeElement).toBe(screen.getByRole("button"));
+    expect(onFocusHandled).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves focus alone otherwise", () => {
+    render(<Block id="b1" abrv="Lmt" label="Limit" />);
+
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
+// =============================================================================
+// READ-ONLY BLOCKS
+// =============================================================================
+
+describe("Block, read-only", () => {
+  it("is described rather than offered as a control", () => {
+    render(
+      <Block
+        id="b1"
+        abrv="Lmt"
+        label="Limit"
+        axis={2}
+        axes={["limit"]}
+        yPosition={25}
+        direction="downside"
+        cellDescription="Entry column, primary row"
+        priceText="$57,000.00"
+        isReadOnly
+      />,
+    );
+
+    // A tab stop that promises an interaction the panel does not offer is
+    // worse than no tab stop at all.
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("slider")).toBeNull();
+    expect(
+      screen.getByRole("img", {
+        name: "Limit limit price, Entry column, primary row, -25.00%, $57,000.00",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("ignores pointer input entirely", () => {
+    const onDragStart = vi.fn();
+    const onVerticalDrag = vi.fn();
+    render(
+      <Block
+        id="b1"
+        abrv="Lmt"
+        label="Limit"
+        isReadOnly
+        onDragStart={onDragStart}
+        onVerticalDrag={onVerticalDrag}
+      />,
+    );
+
+    drag(screen.getByRole("img"), [10, 10], [100, 100]);
+
+    expect(onDragStart).not.toHaveBeenCalled();
+    expect(onVerticalDrag).not.toHaveBeenCalled();
+  });
+});

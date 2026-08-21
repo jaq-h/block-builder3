@@ -1,46 +1,41 @@
-import { useState, useEffect } from "react";
+import {
+  usePointerGesture,
+  type PointerGestureHandlers,
+} from "./usePointerGesture";
 
 interface UseVerticalDragOptions {
   id: string;
-  onVerticalDrag?: (id: string, mouseY: number) => void;
+  onVerticalDrag?: (id: string, pointerY: number) => void;
+  /** The pointer went down and up without moving: a tap or a click, not a drag. */
+  onActivate?: (id: string) => void;
+  disabled?: boolean;
 }
 
 interface UseVerticalDragReturn {
   isDragging: boolean;
-  handleMouseDown: (e: React.MouseEvent) => void;
+  handlers: PointerGestureHandlers;
 }
 
+/**
+ * Vertical drag of a placed block along its price axis - the interaction that
+ * sets the order's price. On pointer events, so a finger can price an order.
+ *
+ * The block is captured on pointer down, so dragging past the edge of the cell,
+ * or off the window entirely, still ends the drag on release.
+ */
 export const useVerticalDrag = ({
   id,
   onVerticalDrag,
+  onActivate,
+  disabled = false,
 }: UseVerticalDragOptions): UseVerticalDragReturn => {
-  const [isDragging, setIsDragging] = useState(false);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isDragging) return;
-    onVerticalDrag?.(id, e.clientY);
-  };
-
-  const handleMouseUp = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-  };
-
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
+  const { isActive, handlers } = usePointerGesture({
+    disabled,
+    onMove: ({ y }) => onVerticalDrag?.(id, y),
+    onUp: (_point, moved) => {
+      if (!moved) onActivate?.(id);
+    },
   });
 
-  return { isDragging, handleMouseDown };
+  return { isDragging: isActive, handlers };
 };

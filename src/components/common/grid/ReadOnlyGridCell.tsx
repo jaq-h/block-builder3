@@ -153,8 +153,12 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                   id={block.id}
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
+                  label={block.label}
                   axis={block.axis}
                   axes={block.axes}
+                  yPosition={block.yPosition}
+                  direction={block.direction}
+                  priceText={formatPrice(calculatedPriceValue)}
                   isReadOnly={true}
                 />
               </div>
@@ -185,6 +189,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                 id={block.id}
                 icon={block.icon}
                 abrv={block.abrv}
+                label={block.label}
                 axes={block.axes}
                 isReadOnly={true}
               />

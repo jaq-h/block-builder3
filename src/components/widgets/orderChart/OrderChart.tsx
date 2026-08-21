@@ -178,6 +178,9 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf}
+              type="button"
+              // Active state is inline colour only without this.
+              aria-pressed={tf === activeTimeframe}
               onClick={() => setActiveTimeframe(tf)}
               className="px-2 py-0.5 rounded text-[11px] font-medium transition-colors duration-150 cursor-pointer"
               style={

@@ -2,6 +2,7 @@ import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
 import { getCellDisplayMode } from "../../../utils";
+import { describeCell } from "../../../utils/blockCommand";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
 import {
   getInteractiveCellContainerProps,
@@ -56,6 +57,8 @@ interface GridCellProps {
   isOver: boolean;
   isValidTarget: boolean;
   isDisabled: boolean;
+  /** The cell the command model would place the carried block into. */
+  isCommandTarget: boolean;
   align: "left" | "right";
   strategyPattern: StrategyPattern;
   rowLabel: string;
@@ -67,7 +70,18 @@ interface GridCellProps {
   onMouseLeave: () => void;
   onBlockDragStart: (id: string) => void;
   onBlockDragEnd: (id: string, x: number, y: number) => void;
-  onBlockVerticalDrag: (id: string, mouseY: number) => void;
+  onBlockDragCancel: (id: string) => void;
+  onBlockVerticalDrag: (id: string, pointerY: number) => void;
+  onBlockActivate: (id: string, origin: "keyboard" | "pointer") => void;
+  onBlockCommandMove: (dCol: number, dRow: number) => void;
+  onBlockCommandCancel: () => void;
+  onBlockAdjustPrice: (id: string, delta: number) => void;
+  onCellActivate: () => void;
+  /** True while the command model is carrying a block; the cell is then a drop target. */
+  isCarryActive: boolean;
+  carryingBlockId: string | null;
+  focusBlockId: string | null;
+  onBlockFocusHandled: () => void;
 }
 
 const GridCell: FC<GridCellProps> = ({
@@ -77,6 +91,7 @@ const GridCell: FC<GridCellProps> = ({
   isOver,
   isValidTarget,
   isDisabled,
+  isCommandTarget,
   strategyPattern,
   rowLabel,
   showPrimaryWarning,
@@ -87,7 +102,17 @@ const GridCell: FC<GridCellProps> = ({
   onMouseLeave,
   onBlockDragStart,
   onBlockDragEnd,
+  onBlockDragCancel,
   onBlockVerticalDrag,
+  onBlockActivate,
+  onBlockCommandMove,
+  onBlockCommandCancel,
+  onBlockAdjustPrice,
+  onCellActivate,
+  isCarryActive,
+  carryingBlockId,
+  focusBlockId,
+  onBlockFocusHandled,
 }) => {
   const displayMode = getCellDisplayMode(blocks);
   const isDescending = blocks[0]?.direction === "downside";
@@ -99,6 +124,25 @@ const GridCell: FC<GridCellProps> = ({
 
   const rowLabelType: "primary" | "conditional" =
     rowLabel.toLowerCase() === "primary" ? "primary" : "conditional";
+
+  const cellDescription = describeCell(
+    { col: colIndex, row: rowIndex },
+    strategyPattern,
+  );
+
+  // Every block in the cell shares the same command wiring; only the id differs.
+  const commandProps = (blockId: string) => ({
+    isCarrying: carryingBlockId === blockId,
+    shouldFocus: focusBlockId === blockId,
+    onFocusHandled: onBlockFocusHandled,
+    onActivate: onBlockActivate,
+    onCommandMove: onBlockCommandMove,
+    onCommandCancel: onBlockCommandCancel,
+    onDragStart: onBlockDragStart,
+    onDragEnd: onBlockDragEnd,
+    onDragCancel: onBlockDragCancel,
+    cellDescription,
+  });
 
   const renderPercentageScale = (isDesc: boolean) => {
     const labels = getScaleLabels(isDesc);
@@ -200,11 +244,15 @@ const GridCell: FC<GridCellProps> = ({
                   id={block.id}
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
+                  label={block.label}
                   axis={block.axis}
                   axes={block.axes}
-                  onDragStart={onBlockDragStart}
-                  onDragEnd={onBlockDragEnd}
+                  yPosition={block.yPosition}
+                  direction={block.direction}
+                  priceText={formatCalculatedPrice(calculatedPrice)}
                   onVerticalDrag={onBlockVerticalDrag}
+                  onAdjustPrice={onBlockAdjustPrice}
+                  {...commandProps(block.id)}
                 />
               </div>
             </Fragment>
@@ -251,9 +299,9 @@ const GridCell: FC<GridCellProps> = ({
                 id={block.id}
                 icon={block.icon}
                 abrv={block.abrv}
+                label={block.label}
                 axes={block.axes}
-                onDragStart={onBlockDragStart}
-                onDragEnd={onBlockDragEnd}
+                {...commandProps(block.id)}
               />
             ))}
           </div>
@@ -304,20 +352,32 @@ const GridCell: FC<GridCellProps> = ({
   };
 
   const containerProps = getInteractiveCellContainerProps({
-    isOver,
+    isOver: isOver || isCommandTarget,
     isValidTarget,
     isDisabled,
     tint,
   });
 
+  const occupants =
+    blocks.length === 0
+      ? "empty"
+      : blocks.map((block) => block.label).join(", ");
+
   return (
     <div
       data-col={colIndex}
       data-row={rowIndex}
+      // A group rather than a button: the keyboard path is arrows plus Enter on
+      // the carried block, so the click here is a second way to reach the same
+      // command and never the only way.
+      role="group"
+      aria-label={`${cellDescription}, ${occupants}`}
+      aria-current={isCommandTarget ? "location" : undefined}
       className={containerProps.className}
       style={containerProps.style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      onClick={isCarryActive ? onCellActivate : undefined}
     >
       {rowLabel && !isDisabled && (
         <div className={rowLabelBadge({ type: rowLabelType })}>{rowLabel}</div>
