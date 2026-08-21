@@ -343,6 +343,25 @@ describe("useBlockCommand", () => {
       );
     });
 
+    it("promises no arrow keys in a cell that draws no axis", () => {
+      // A bulk cell holding any axis-less block draws every block in it
+      // without an axis, so nothing wires the arrow keys there. Refusing the
+      // move and then naming an affordance that is not present would leave a
+      // screen-reader user reaching for a control this render never built.
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(...blocksFor("stop-loss-limit", 0));
+      grid[0][1].push(...blocksFor("market", 10));
+      const { result, moveBlock } = setup(grid);
+
+      act(() => result.current.activateBlock(grid[0][1][0].id, "keyboard"));
+
+      expect(result.current.carrying).toBeNull();
+      expect(moveBlock).not.toHaveBeenCalled();
+      expect(result.current.announcement.text).toBe(
+        "Stop Loss Limit cannot be moved on its own: its trigger and limit must stay in the same cell.",
+      );
+    });
+
     it("refuses the limit leg by tap as well as by keyboard", () => {
       const { grid, blocks } = gridWithOrder("take-profit-limit");
       const { result, moveBlock } = setup(grid);

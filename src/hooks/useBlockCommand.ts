@@ -18,7 +18,7 @@ import {
   type CarriedBlock,
   type CommandSource,
 } from "../utils/blockCommand";
-import { findBlockInGrid } from "../utils/grid";
+import { findBlockInGrid, getCellDisplayMode } from "../utils/grid";
 import { useAnnouncer, type Announcement } from "./useAnnouncer";
 
 // =============================================================================
@@ -209,10 +209,19 @@ export const useBlockCommand = ({
     // One leg of a dual-axis order cannot travel on its own: it would leave its
     // partner behind and the two halves would be submitted as two orders on
     // opposite sides. Refusing silently would make Enter look broken, so say
-    // what the block can still do instead.
-    if (hasDualAxisPartner(grid[cell.col][cell.row], found.block)) {
+    // what the block can still do instead - but only what it can actually do
+    // *in this render*. A cell holding any axis-less block draws every block in
+    // it without an axis, and then no arrow keys are wired at all, so promising
+    // them would point the listener at an affordance that is not there.
+    const cellBlocks = grid[cell.col][cell.row];
+    if (hasDualAxisPartner(cellBlocks, found.block)) {
+      const onPriceAxis = getCellDisplayMode(cellBlocks) !== "no-axis";
       announce(
-        `${found.block.label} cannot be moved on its own: its trigger and limit must stay in the same cell. Use the arrow keys to move it along the price axis.`,
+        `${found.block.label} cannot be moved on its own: its trigger and limit must stay in the same cell.${
+          onPriceAxis
+            ? " Use the arrow keys to move it along the price axis."
+            : ""
+        }`,
       );
       return;
     }

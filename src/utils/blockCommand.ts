@@ -236,9 +236,18 @@ export const describeCell = (
  * anything together. Moving one on its own would split the order across two
  * cells, which flips one leg from buy to sell.
  *
- * The pointer drag never offered this - every block on an axis is wired to the
- * vertical drag, so free drag cannot reach it - so the cell-level pick-up must
- * not offer it either.
+ * In every cell that draws a price axis the pointer drag never offered this
+ * either, because a block on an axis is wired to the vertical drag and free
+ * drag cannot reach it - so the cell-level pick-up must not offer it.
+ *
+ * That is not a universal invariant, and the earlier claim that it was is
+ * wrong. In the bulk pattern a cell holding any axis-less block draws *every*
+ * block in it without an axis (`getCellDisplayMode` returns "no-axis"), so its
+ * paired legs fall through to the free drag and a mouse can still split the
+ * order there. Refusing the cell-level pick-up does not close that; it is a
+ * pre-existing gap in the renderer, filed for the lane that gives the
+ * block-to-price mapping a single owner. The conditional pattern cannot reach
+ * it, because an occupied cell is never a valid target.
  *
  * Sharing an order type is not enough on its own: the bulk pattern is
  * "multiple independent orders", so two separate Market or Limit orders can sit

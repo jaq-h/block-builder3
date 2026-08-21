@@ -263,6 +263,17 @@ Announcements go through `LiveAnnouncer`, which alternates between two live regi
 screen reader only reads a region whose content **changed**, so two identical messages in a
 row would otherwise be silent the second time.
 
+**Known gap, bulk pattern only.** A bulk cell holding any axis-less block draws *every*
+block in it without an axis: `getCellDisplayMode` returns `"no-axis"` as soon as one block
+has no axes, and that decides the whole cell. Two things follow, and both are limited to
+that case. Keyboard and tap pick-up of a paired dual-axis leg is refused there, and the
+refusal deliberately does not offer the arrow keys, because that render wires none. Mouse
+free drag, on the other hand, still reaches those legs and can split a paired order across
+cells - which is pre-existing behaviour rather than something this interaction introduced.
+The conditional pattern cannot reach any of it, because an occupied cell is never a valid
+target. The real fix is to give the block-to-price mapping one owner instead of several
+consumers that have to agree, and that is filed as its own piece of work.
+
 ### Error Boundaries
 
 Two `ErrorBoundary` instances stop a single throw from blanking the page:
