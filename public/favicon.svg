@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Block Builder">
+  <rect width="64" height="64" rx="14" fill="#0b0611"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="none" stroke="#855bfb" stroke-opacity="0.4" stroke-width="1.5"/>
+  <g fill="#ffffff" fill-opacity="0.05">
+    <rect x="8" y="8" width="14" height="48" rx="2"/>
+    <rect x="25" y="8" width="14" height="48" rx="2"/>
+    <rect x="42" y="8" width="14" height="48" rx="2"/>
+  </g>
+  <g fill="#855bfb">
+    <rect x="8" y="33" width="14" height="16" rx="3" fill-opacity="0.62"/>
+    <rect x="25" y="13" width="14" height="16" rx="3"/>
+    <rect x="42" y="23" width="14" height="16" rx="3" fill-opacity="0.8"/>
+  </g>
+</svg>
