@@ -48,8 +48,12 @@ function AppInner() {
     isEffectivelySimulation,
   } = useTradeExecution();
 
-  // Clear editing highlight when edit mode ends (after submit/clear)
+  // Clear editing highlight when edit mode ends (after submit/clear).
+  // KNOWN ISSUE: this resets state from an effect instead of deriving it during
+  // render, which costs a cascading re-render. Fixing it changes render timing,
+  // so it is tracked separately rather than in the CI/test-foundation change.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isEditMode) setEditingStrategyId(null);
   }, [isEditMode]);
 

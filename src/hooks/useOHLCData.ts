@@ -88,6 +88,10 @@ export const useOHLCData = ({
   // Fetch historical data on mount / interval change
   useEffect(() => {
     let cancelled = false;
+    // KNOWN ISSUE: seeding the loading/error state from inside the effect causes
+    // a cascading render on every symbol/interval change. Reworking it changes
+    // observable loading behaviour, so it is tracked separately.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoading(true);
     setError(null);
 

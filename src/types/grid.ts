@@ -112,10 +112,10 @@ export interface InteractiveGridCellProps extends BaseGridCellProps {
   onBlockVerticalDrag: (id: string, mouseY: number) => void;
 }
 
-// Props for read-only grid cells (Active Orders)
-export interface ReadOnlyGridCellProps extends BaseGridCellProps {
-  // Read-only cells don't need drag handlers or validation states
-}
+// Props for read-only grid cells (Active Orders).
+// Read-only cells need no drag handlers or validation state, so this is
+// currently an alias rather than an extension.
+export type ReadOnlyGridCellProps = BaseGridCellProps;
 
 // =============================================================================
 // STRATEGY PATTERN TYPES

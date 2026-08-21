@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Only the newest run for a given branch matters; cancel the ones it superseded
+# rather than paying for results nobody will read.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The workflow only ever reads the repository. It needs no secrets: the Kraken
+# credentials are a local-development concern and nothing here talks to the
+# exchange.
+permissions:
+  contents: read
+
+env:
+  # Turn npm's progress bars and funding notices off; they only add noise to logs.
+  NPM_CONFIG_FUND: "false"
+  NPM_CONFIG_AUDIT: "false"
+
+jobs:
+  # The four gates run in parallel and report independently, so a PR's check list
+  # says which one broke without anyone opening the logs.
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-project
+      # `npm run build` type-checks too, but running tsc on its own reports a
+      # type error as a type error instead of as a failed build.
+      - name: Check types
+        run: npx tsc -b
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-project
+      - name: Run ESLint
+        run: npm run lint
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-project
+      - name: Run Vitest with coverage
+        run: npm run test:coverage
+
+      # Coverage is reported, not enforced: the suite deliberately targets the
+      # order-mapping and grid logic rather than chasing a repository-wide
+      # number. The artifact lets a reviewer see where that stands.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+          # Warn rather than error: if the suite crashed before writing coverage,
+          # the test failure is the signal, not a missing artifact.
+          if-no-files-found: warn
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-project
+      - name: Build
+        run: npm run build

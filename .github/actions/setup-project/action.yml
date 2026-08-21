@@ -1,0 +1,24 @@
+name: Set up project
+description: >-
+  Install Node at the version pinned in .nvmrc and restore the project's
+  dependencies from the lockfile. Shared by every CI job so the toolchain can
+  only be defined in one place.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        # Single source of truth for the Node version, shared with local `nvm use`.
+        node-version-file: .nvmrc
+        # Caches the npm download cache, keyed on package-lock.json, so a run
+        # that changes no dependency skips the network entirely.
+        cache: npm
+
+    - name: Install dependencies
+      shell: bash
+      # `npm ci` installs exactly what the lockfile pins and fails outright if
+      # package.json and package-lock.json have drifted apart, so a
+      # hand-edited dependency cannot reach main unnoticed.
+      run: npm ci
