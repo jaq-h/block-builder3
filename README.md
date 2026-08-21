@@ -214,6 +214,18 @@ Drag logic is split into purpose-specific hooks:
 - **`useVerticalDrag`** — Constrained vertical drag for sliding blocks along the price-scale axis
 - **`useTradeExecution`** — Order configuration management, submission flow, simulation mode toggle
 
+### Error Boundaries
+
+Two `ErrorBoundary` instances stop a single throw from blanking the page:
+
+- **Root** - wraps `<App/>` in `main.tsx`, so an uncaught render error anywhere shows a
+  recoverable fallback instead of a white screen.
+- **Chart** - wraps `<OrderChart/>` in `App.tsx`, so a chart-library failure or a malformed
+  candle payload cannot take the strategy builder down with it.
+
+Each fallback offers a **Try again** that re-mounts the subtree, and accepts an `onError`
+callback for forwarding the error to real error reporting.
+
 ---
 
 ## Project Structure
@@ -231,6 +243,7 @@ src/
 │   ├── krakenRest.ts              # REST API client
 │   ├── krakenWebSocket.ts         # WebSocket client for live data
 │   ├── orderMapper.ts             # Maps internal order config → Kraken API format
+│   ├── tickerUpdate.ts            # Parses & merges v2 ticker WebSocket frames
 │   ├── types.ts                   # API-specific type definitions
 │   └── index.ts                   # Barrel export
 │
@@ -243,6 +256,7 @@ src/
 │   ├── common/
 │   │   ├── DragOverlay.tsx        # Portal-rendered drag ghost (rAF-driven positioning)
 │   │   ├── dragOverlayStore.ts    # Module-level drag state (useSyncExternalStore)
+│   │   ├── ErrorBoundary.tsx      # Recoverable fallback UI in place of a blank page
 │   │   ├── NavBar.tsx             # Navigation bar with live order badge
 │   │   └── grid/                  # Shared grid components
 │   │       ├── GridCell.tsx       # Interactive grid cell (Strategy Builder)
@@ -284,6 +298,7 @@ src/
 │           ├── ActiveOrders.styles.ts          # CVA styles
 │           ├── ActiveOrdersContext.tsx          # Provider wiring
 │           ├── ActiveOrdersContextDef.ts       # Context creation (separate for Fast Refresh)
+│           ├── OrderCard.tsx                   # Single submitted-order card
 │           ├── useActiveOrders.ts              # Consumer hook
 │           └── index.ts                        # Barrel export
 │
@@ -295,6 +310,7 @@ src/
 │   ├── useFreeDrag.ts             # Free-form drag (provider → grid cell)
 │   ├── useVerticalDrag.ts         # Vertical-axis drag (price scale sliding)
 │   ├── useKrakenAPI.ts            # Kraken API hook (prices, order management)
+│   ├── useOHLCData.ts             # OHLC candle fetching for the chart
 │   ├── useTradeExecution.ts       # Trade config, submission & simulation flow
 │   └── index.ts
 │
