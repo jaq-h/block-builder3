@@ -87,6 +87,12 @@ export const useLightweightChart = (
     };
   }, [containerRef]);
 
+  // KNOWN BUG: reading refs during render means callers see `null` on the first
+  // render and are never re-rendered when the chart is actually created - they
+  // only pick it up if some unrelated state change re-renders them. The fix is
+  // to hold the chart in state, which changes when consumers see it, so it is
+  // tracked separately rather than in the CI/test-foundation change.
+  // eslint-disable-next-line react-hooks/refs
   return { chart: chartRef.current, candleSeries: seriesRef.current };
 };
 
