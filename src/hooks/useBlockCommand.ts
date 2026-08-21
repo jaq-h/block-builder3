@@ -1,4 +1,4 @@
-import { useReducer, useState } from "react";
+import { useReducer, useRef, useState } from "react";
 import type {
   CellPosition,
   GridData,
@@ -94,6 +94,10 @@ export const useBlockCommand = ({
 
   const carrying = state.carrying;
 
+  // Set for the instant between a tap that picks a block up and the click the
+  // browser appends to that same tap. See `activateBlock`.
+  const pointerPickUpRef = useRef(false);
+
   const isCarrying = (key: string): boolean => {
     if (!carrying) return false;
     return carrying.source.kind === "provider"
@@ -105,12 +109,13 @@ export const useBlockCommand = ({
   const sourceKey = (source: CommandSource): string =>
     source.kind === "provider" ? source.type : source.id;
 
+  /** True when the block was actually picked up, false when it was refused. */
   const pickUp = (
     source: CommandSource,
     allowedRows: number[],
     preferred: CellPosition | null,
     origin: ActivationOrigin,
-  ) => {
+  ): boolean => {
     let targets = validTargetsFor(allowedRows, grid, strategyPattern);
     // A placed block can always go back where it came from.
     if (preferred) targets = withOriginCell(targets, preferred);
@@ -118,7 +123,7 @@ export const useBlockCommand = ({
       announce(
         `${describeSource(source)} cannot be placed anywhere in the grid right now.`,
       );
-      return;
+      return false;
     }
     dispatch({ type: "pickUp", source, targets, preferred });
     // The same choice the reducer makes, so the announcement can never name a
@@ -127,9 +132,11 @@ export const useBlockCommand = ({
     announce(
       `Picked up ${describeSource(source)}. ${CARRY_HELP[origin]} Target: ${describeCell(target, strategyPattern)}.`,
     );
+    return true;
   };
 
   const commit = (block: CarriedBlock, cell: CellPosition) => {
+    pointerPickUpRef.current = false;
     const placedId =
       block.source.kind === "provider"
         ? placeProvider(block.source.type, cell)
@@ -156,6 +163,7 @@ export const useBlockCommand = ({
   };
 
   const cancel = ({ restoreFocus = true }: CancelOptions = {}) => {
+    pointerPickUpRef.current = false;
     if (!carrying) return;
     dispatch({ type: "cancel" });
     if (restoreFocus) setFocusRequest(sourceKey(carrying.source));
@@ -210,15 +218,27 @@ export const useBlockCommand = ({
       return;
     }
 
-    pickUp(
+    const carried = pickUp(
       { kind: "grid", id, label: found.block.label, origin: cell },
       found.block.allowedRows,
       cell,
       origin,
     );
+
+    // The browser appends a click to every tap, and it bubbles from the block
+    // to the cell holding it - which, now that something is carried, is a live
+    // placement target. Left alone it puts the block straight back down in the
+    // cell it was just picked up from, so tap-to-pick-up on the grid would do
+    // nothing at all. Only this branch consumes the tap: a tap on a block that
+    // is *not* the carried one deliberately falls through to its cell.
+    if (carried && origin === "pointer") pointerPickUpRef.current = true;
   };
 
   const activateCell = (cell: CellPosition) => {
+    if (pointerPickUpRef.current) {
+      pointerPickUpRef.current = false;
+      return;
+    }
     if (!carrying) return;
     const isValid = carrying.targets.some((target) =>
       samePosition(target, cell),

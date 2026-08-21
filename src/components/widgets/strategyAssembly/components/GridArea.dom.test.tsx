@@ -11,7 +11,12 @@ import { StaticContext } from "../contexts/StaticContext";
 import { ORDER_TYPES } from "@data/orderTypes";
 import { clearGrid } from "@utils/grid";
 import { BLOCK_HEIGHT, getBlockTopPx } from "@styles/grid";
-import type { BlockData, CellPosition, GridData } from "@/types/grid";
+import type {
+  BlockData,
+  CellPosition,
+  GridData,
+  StrategyPattern,
+} from "@/types/grid";
 import type { OrderConfig } from "@/types/grid";
 import {
   installPointerCapture,
@@ -31,19 +36,25 @@ const TRACK_TOP = 400;
 const TRACK_HEIGHT = 181.5;
 const MARKET_PRICE = 100_000;
 
-const placedLimit = (yPosition: number): BlockData => ({
-  id: "b1",
+const placedLimit = (
+  yPosition: number,
+  id: string = "b1",
+): BlockData => ({
+  id,
   orderType: "limit",
   label: "Limit",
   abrv: "Lmt",
-  allowedRows: [0, 1],
+  allowedRows: [0, 1, 2],
   axis: 2,
   yPosition,
   direction: "downside",
   axes: ["limit"],
 });
 
-const Harness: FC<{ initialGrid: GridData }> = ({ initialGrid }) => {
+const Harness: FC<{
+  initialGrid: GridData;
+  pattern?: StrategyPattern;
+}> = ({ initialGrid, pattern = "conditional" }) => {
   const [grid, setGrid] = useState<GridData>(initialGrid);
   const [orderConfig, setOrderConfig] = useState<OrderConfig>({});
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -64,7 +75,7 @@ const Harness: FC<{ initialGrid: GridData }> = ({ initialGrid }) => {
       value={{
         grid,
         orderConfig,
-        strategyPattern: "conditional",
+        strategyPattern: pattern,
         setGrid,
         setOrderConfig,
         setStrategyPattern: vi.fn(),
@@ -231,5 +242,98 @@ describe("GridArea, pricing a block on its axis", () => {
     fireEvent(slider, pointer("pointerup", centre + 1000));
 
     expect(slider).toHaveAttribute("aria-valuenow", "-50");
+  });
+});
+
+// =============================================================================
+// TAP TO PICK UP - the click the browser appends to every tap
+// =============================================================================
+//
+// A real tap is `pointerdown`, `pointerup`, and then a `click` the browser
+// synthesises and dispatches from the same element. That click bubbles out of
+// the block and into the cell holding it, which is a live placement target the
+// instant something is carried. Dispatching only the pointer events, as the
+// tests above do, never sees it - which is how a tap that picked a block up
+// and immediately put it back down went unnoticed.
+
+/** The two Limits sit in different cells, so one can be tapped onto the other. */
+const renderTwoBlocks = () => {
+  const grid = clearGrid(2, 3);
+  grid[0][1].push(placedLimit(25, "b1"));
+  grid[1][0].push(placedLimit(10, "b2"));
+  render(<Harness initialGrid={grid} pattern="bulk" />);
+
+  const [first, second] = screen.getAllByRole("slider");
+  return { first, second };
+};
+
+/** Pointer down, up, and the click a browser appends - in that order. */
+const tap = (element: Element) => {
+  fireEvent(element, pointer("pointerdown", 0));
+  fireEvent(element, pointer("pointerup", 0));
+  fireEvent.click(element, { bubbles: true });
+};
+
+const cell = (col: number, row: number) =>
+  document.querySelector(`[data-col="${col}"][data-row="${row}"]`)!;
+
+const announcement = () =>
+  screen
+    .getAllByRole("status")
+    .map((region) => region.textContent)
+    .filter(Boolean)
+    .join("");
+
+describe("GridArea, tapping a placed block", () => {
+  it("picks the block up and keeps it carried through the trailing click", () => {
+    const { first } = renderTwoBlocks();
+
+    tap(first);
+
+    expect(announcement()).toContain("Picked up Limit block");
+    expect(announcement()).not.toContain("Placed");
+    // The cell the block would land in if placed now: proof a carry is live.
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+  });
+
+  it("puts the block back down on a second tap, once", () => {
+    const { first } = renderTwoBlocks();
+
+    tap(first);
+    tap(first);
+
+    expect(announcement()).toBe(
+      "Cancelled. Limit block left in Entry column, row 2.",
+    );
+    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Limit");
+  });
+
+  it("places the carried block when a block in another cell is tapped", () => {
+    const { first, second } = renderTwoBlocks();
+
+    tap(first);
+    // A tap on a block that is not the carried one falls through to its cell,
+    // which is what decides where the carried block lands.
+    tap(second);
+
+    expect(announcement()).toBe(
+      "Placed Limit block in Exit column, row 1.",
+    );
+    expect(cell(1, 0)).toHaveAttribute(
+      "aria-label",
+      "Exit column, row 1, Limit, Limit",
+    );
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+  });
+
+  it("places the carried block when an empty cell is tapped", () => {
+    const { first } = renderTwoBlocks();
+
+    tap(first);
+    fireEvent.click(cell(1, 2));
+
+    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Limit");
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
   });
 });
