@@ -188,6 +188,9 @@ export const useKrakenAPI = (
         clearInterval(pollIntervalRef.current);
       }
     };
+    // Mount-scoped: this fetches the first price and opens the connection once.
+    // `refreshTicker` and `connect` are re-created every render, so listing them
+    // would tear down and redo that mount work on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoConnect]);
 
@@ -208,6 +211,9 @@ export const useKrakenAPI = (
         }
       };
     }
+    // The interval must be rebuilt only when the poll interval or symbol changes.
+    // `refreshTicker` is re-created every render, so listing it would clear and
+    // re-schedule the interval on every render and the poll would never fire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollInterval, symbol]);
 
