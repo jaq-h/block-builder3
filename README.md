@@ -20,7 +20,8 @@ Built with **React 19** (with **React Compiler**), **TypeScript**, **Vite 7**, a
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18+)
+- [Node.js](https://nodejs.org/) - the version used by CI is pinned in `.nvmrc` (`nvm use`).
+  Vite 7 requires Node 20.19+ or 22.12+.
 - npm
 
 ### Installation
@@ -54,6 +55,28 @@ npm run preview
 ```
 npm run lint
 ```
+
+### Tests
+
+```
+npm test              # run the suite once
+npm run test:watch    # re-run on change
+npm run test:coverage # run with a coverage report
+```
+
+Tests run on [Vitest](https://vitest.dev/), configured in the `test` block of
+`vite.config.ts` so they share the app's plugins and path aliases. Component tests use
+React Testing Library against jsdom. See `AGENTS.md` for the conventions the suite follows.
+
+---
+
+## Continuous Integration
+
+Every pull request, and every push to `main`, runs four independent checks via GitHub
+Actions (`.github/workflows/ci.yml`): **Typecheck**, **Lint**, **Unit tests** and
+**Production build**. They run in parallel and report separately, so a red check names the
+gate that broke. Dependencies are installed from the lockfile with `npm ci` and cached
+between runs, and no job requires any Kraken credential.
 
 ---
 
