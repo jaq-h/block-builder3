@@ -187,6 +187,13 @@ const renderPlacedLimit = (yPosition: number) => {
   return { slider, centre: blockTop + BLOCK_HEIGHT / 2 };
 };
 
+/** The price the cell renders for a Limit on its descending scale. */
+const limitPrice = (yPosition: number) =>
+  `$${(MARKET_PRICE * (1 - yPosition / 100)).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
 /** The block's centre, derived from the percentage the grid now holds. */
 const renderedCentre = (): number => {
   const value = Number(screen.getByRole("slider").getAttribute("aria-valuenow"));
@@ -229,6 +236,36 @@ describe("GridArea, pricing a block on its axis", () => {
     fireEvent(slider, pointer("pointerup", centre + 12));
 
     expect(slider).toHaveAttribute("aria-valuenow", "-25");
+  });
+
+  it("does not re-price the order when a tap jitters inside the slop", () => {
+    const { slider, centre } = renderPlacedLimit(25);
+
+    // A finger never holds still. 3px of travel is under TAP_SLOP_PX, so the
+    // release is a pick-up rather than a drag - but 3px of this track is 1.35
+    // percentage points, about $1,345 at this market price, and the user is
+    // told only that the block was picked up.
+    fireEvent(slider, pointer("pointerdown", centre + 12));
+    fireEvent(slider, pointer("pointermove", centre + 15));
+    fireEvent(slider, pointer("pointerup", centre + 15));
+
+    expect(slider).toHaveAttribute("aria-valuenow", "-25");
+    expect(screen.getByText("-25.00%")).toBeInTheDocument();
+    expect(screen.getByText(limitPrice(25))).toBeInTheDocument();
+  });
+
+  it("keeps the travel spent inside the slop once a drag leaves it", () => {
+    const { slider, centre } = renderPlacedLimit(25);
+
+    // The same 3px of jitter, but this time the finger goes on to drag. The
+    // block must end up under the point it was grabbed at, with the early
+    // travel counted rather than dropped and with no jump as the slop is left.
+    fireEvent(slider, pointer("pointerdown", centre + 12));
+    fireEvent(slider, pointer("pointermove", centre + 15));
+    fireEvent(slider, pointer("pointermove", centre + 32));
+    fireEvent(slider, pointer("pointerup", centre + 32));
+
+    expect(renderedCentre()).toBeCloseTo(centre + 20, 1);
   });
 
   it("carries the block by the point it was grabbed at", () => {

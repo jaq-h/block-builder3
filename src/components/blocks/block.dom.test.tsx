@@ -247,22 +247,20 @@ describe("Block, placed on a price axis", () => {
     expect(onVerticalDrag).toHaveBeenCalledWith("b1", 260);
   });
 
-  it("does not re-price the block when a tap grabs it off centre", () => {
+  it("reports nothing at all from a tap that jitters inside the slop", () => {
     const onVerticalDrag = vi.fn();
     const onActivate = vi.fn();
     placed({ onVerticalDrag, onActivate });
     const slider = screen.getByRole("slider");
     stubRect(slider, 180, 40);
 
-    // A finger lands near the bottom edge and jitters within the tap slop. The
-    // consumer maps the reported Y as though it were the block's centre, so
-    // without the grab offset this tap alone would move the price by 15px of
-    // track before the pick-up the user actually asked for.
+    // A finger lands near the bottom edge and travels 3px before lifting. That
+    // gesture is a tap - a pick-up - so the price must not follow it.
     fireEvent(slider, pointer("pointerdown", { x: 50, y: 215 }));
-    fireEvent(slider, pointer("pointermove", { x: 50, y: 215 }));
-    fireEvent(slider, pointer("pointerup", { x: 50, y: 215 }));
+    fireEvent(slider, pointer("pointermove", { x: 50, y: 218 }));
+    fireEvent(slider, pointer("pointerup", { x: 50, y: 218 }));
 
-    expect(onVerticalDrag).toHaveBeenCalledWith("b1", 200);
+    expect(onVerticalDrag).not.toHaveBeenCalled();
     expect(onActivate).toHaveBeenCalledWith("b1", "pointer");
   });
 
@@ -273,11 +271,15 @@ describe("Block, placed on a price axis", () => {
     stubRect(slider, 180, 40);
 
     fireEvent(slider, pointer("pointerdown", { x: 50, y: 215 }));
+    fireEvent(slider, pointer("pointermove", { x: 50, y: 218 }));
     fireEvent(slider, pointer("pointermove", { x: 50, y: 315 }));
     fireEvent(slider, pointer("pointerup", { x: 50, y: 315 }));
 
     // The pointer travelled 100px, so the block does too: its centre goes from
-    // 200 to 300 rather than jumping to the pointer at 315.
+    // 200 to 300 rather than jumping to the pointer at 315. The 3px spent
+    // inside the slop on the way is carried by the move that leaves it, not
+    // dropped.
+    expect(onVerticalDrag).toHaveBeenCalledTimes(1);
     expect(onVerticalDrag).toHaveBeenLastCalledWith("b1", 300);
   });
 

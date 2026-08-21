@@ -67,7 +67,6 @@ export interface UseBlockCommandReturn {
   /** A tap on a cell while carrying. */
   activateCell: (cell: CellPosition) => void;
   moveTarget: (dCol: number, dRow: number) => void;
-  place: () => void;
   cancel: (options?: CancelOptions) => void;
   announce: (text: string) => void;
   announcement: Announcement;
@@ -265,11 +264,6 @@ export const useBlockCommand = ({
     );
   };
 
-  const place = () => {
-    if (!carrying) return;
-    commit(carrying, carrying.target);
-  };
-
   return {
     carrying,
     isCarrying,
@@ -277,7 +271,6 @@ export const useBlockCommand = ({
     activateBlock,
     activateCell,
     moveTarget,
-    place,
     cancel,
     announce,
     announcement,

@@ -36,8 +36,12 @@ export interface UsePointerGestureOptions {
    * inside it the pointer landed.
    */
   onDown?: (point: GesturePoint, element: HTMLElement) => void;
-  /** Fired for every move of the captured pointer. */
-  onMove?: (point: GesturePoint) => void;
+  /**
+   * Fired for every move of the captured pointer. `moved` is false while the
+   * gesture is still inside `TAP_SLOP_PX` and might yet turn out to be a tap;
+   * it is already true on the move that crosses the threshold.
+   */
+  onMove?: (point: GesturePoint, moved: boolean) => void;
   /**
    * Fired on release. `moved` is false when the pointer never travelled beyond
    * `TAP_SLOP_PX`, i.e. this was a tap or a click rather than a drag.
@@ -149,7 +153,7 @@ export const usePointerGesture = ({
       const dy = e.clientY - gesture.startY;
       if (Math.hypot(dx, dy) > TAP_SLOP_PX) gesture.moved = true;
     }
-    onMove?.({ x: e.clientX, y: e.clientY });
+    onMove?.({ x: e.clientX, y: e.clientY }, gesture.moved);
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLElement>) => {

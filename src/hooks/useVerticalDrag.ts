@@ -29,6 +29,13 @@ interface UseVerticalDragReturn {
  * landed - is subtracted here for the whole gesture. Without it, grabbing a
  * block near its edge re-prices the order the moment it moves at all, which on
  * a finger is any tap: 20px of track before the pick-up the user asked for.
+ *
+ * Movement inside the tap slop is not forwarded at all, because that gesture
+ * may still turn out to be a tap - a pick-up, not a re-price - and a finger
+ * rarely holds perfectly still. Nothing is lost by waiting: the mapping is
+ * absolute rather than incremental, so the move that crosses the threshold
+ * carries the whole travel and the block is still positioned by the point it
+ * was grabbed at.
  */
 export const useVerticalDrag = ({
   id,
@@ -46,7 +53,10 @@ export const useVerticalDrag = ({
       const rect = element.getBoundingClientRect();
       grabOffsetRef.current = y - (rect.top + rect.height / 2);
     },
-    onMove: ({ y }) => onVerticalDrag?.(id, y - grabOffsetRef.current),
+    onMove: ({ y }, moved) => {
+      if (!moved) return;
+      onVerticalDrag?.(id, y - grabOffsetRef.current);
+    },
     onUp: (_point, moved) => {
       if (!moved) onActivate?.(id);
     },

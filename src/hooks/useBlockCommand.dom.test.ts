@@ -174,7 +174,7 @@ describe("useBlockCommand", () => {
 
       act(() => result.current.activateProvider("limit", "keyboard"));
       act(() => result.current.moveTarget(1, 0));
-      act(() => result.current.place());
+      act(() => result.current.activateProvider("limit", "keyboard"));
 
       expect(placeProvider).toHaveBeenCalledWith("limit", { col: 1, row: 1 });
       expect(result.current.carrying).toBeNull();
@@ -241,7 +241,7 @@ describe("useBlockCommand", () => {
       );
 
       act(() => view.result.current.activateProvider("limit", "keyboard"));
-      act(() => view.result.current.place());
+      act(() => view.result.current.activateProvider("limit", "keyboard"));
 
       // The targets are a snapshot from pick-up time, so the live grid can
       // still refuse. Announcing "Placed" then would be a lie to the one user
@@ -265,7 +265,7 @@ describe("useBlockCommand", () => {
       );
 
       act(() => view.result.current.activateProvider("limit", "keyboard"));
-      act(() => view.result.current.place());
+      act(() => view.result.current.activateProvider("limit", "keyboard"));
 
       // Nothing was created, so focus returns to the palette entry rather than
       // being dropped on the body.
@@ -293,7 +293,7 @@ describe("useBlockCommand", () => {
 
       act(() => result.current.activateBlock("b1", "keyboard"));
       act(() => result.current.moveTarget(1, 0));
-      act(() => result.current.place());
+      act(() => result.current.activateBlock("b1", "keyboard"));
 
       // With this block in the Entry primary cell, the only other legal cell
       // is the Exit upper conditional - a diagonal.
@@ -305,7 +305,7 @@ describe("useBlockCommand", () => {
       const { result, moveBlock } = setup(gridWithLimit());
 
       act(() => result.current.activateBlock("b1", "keyboard"));
-      act(() => result.current.place());
+      act(() => result.current.activateBlock("b1", "keyboard"));
 
       // Its own cell reads as occupied to the placement rules, so it has to be
       // added back deliberately - otherwise a pick-up could never be undone
@@ -368,7 +368,7 @@ describe("useBlockCommand", () => {
       });
 
       act(() => result.current.moveTarget(1, 0));
-      act(() => result.current.place());
+      act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
 
       expect(moveBlock).toHaveBeenCalledWith(blocks[0].id, { col: 1, row: 2 });
     });
@@ -399,7 +399,7 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying?.source).toMatchObject({ id: first.id });
 
       act(() => result.current.moveTarget(1, 0));
-      act(() => result.current.place());
+      act(() => result.current.activateBlock(first.id, "keyboard"));
 
       expect(moveBlock).toHaveBeenCalledWith(first.id, { col: 1, row: 1 });
     });
@@ -412,7 +412,7 @@ describe("useBlockCommand", () => {
 
       act(() => result.current.activateBlock(second.id, "keyboard"));
       act(() => result.current.moveTarget(0, -1));
-      act(() => result.current.place());
+      act(() => result.current.activateBlock(second.id, "keyboard"));
 
       expect(moveBlock).toHaveBeenCalledWith(second.id, { col: 0, row: 0 });
     });
@@ -462,7 +462,7 @@ describe("useBlockCommand", () => {
     const { result } = setup();
 
     act(() => result.current.activateProvider("limit", "keyboard"));
-    act(() => result.current.place());
+    act(() => result.current.activateProvider("limit", "keyboard"));
     act(() => result.current.clearFocusRequest());
 
     expect(result.current.focusRequest).toBeNull();
