@@ -27,3 +27,6 @@ local.env
 *.njsproj
 *.sln
 *.sw?
+
+# Test coverage output
+coverage

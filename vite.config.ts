@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
@@ -39,6 +40,31 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.KRAKEN_API_PRIVATE_KEY": JSON.stringify(
         env.KRAKEN_API_PRIVATE_KEY,
       ),
+    },
+    // Vitest reuses everything above - the same plugins (so `?react` SVG imports
+    // and the React compiler behave identically) and the same `resolve.alias`
+    // map, so there is no second copy of the alias table to drift out of sync.
+    test: {
+      // Most of the suite is pure logic, which runs faster and more honestly in
+      // node. Component tests opt into the DOM with a `@vitest-environment
+      // jsdom` docblock, so we only pay for jsdom where it is actually used.
+      environment: "node",
+      setupFiles: ["./src/test/setup.ts"],
+      include: ["src/**/*.{test,spec}.{ts,tsx}"],
+      restoreMocks: true,
+      coverage: {
+        provider: "v8",
+        reporter: ["text", "lcov"],
+        include: ["src/**/*.{ts,tsx}"],
+        exclude: [
+          "src/**/*.test.{ts,tsx}",
+          "src/test/**",
+          "src/**/index.ts", // re-export barrels
+          "src/**/*.styles.ts",
+          "src/types/**",
+          "src/main.tsx",
+        ],
+      },
     },
   };
 });
