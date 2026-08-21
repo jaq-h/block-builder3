@@ -28,15 +28,70 @@ export type WebSocketEventType =
 
 export type WebSocketEventHandler = (data: unknown) => void;
 
+export type SocketKind = "public" | "private";
+
+/**
+ * Payload of the `error` event. `fatal` marks the terminal case: reconnection
+ * has been abandoned and the socket will not come back without an explicit
+ * `connect` call, so the UI must surface it rather than wait it out.
+ */
+export interface WebSocketErrorEvent {
+  type: SocketKind;
+  error: unknown;
+  fatal: boolean;
+}
+
+/**
+ * Everything that is per-socket. Keeping it in one record is what stops the
+ * public socket's reconnect budget from being spent by the private one, and
+ * makes it obvious that `connecting` has to be cleared wherever `ws` is.
+ */
+interface SocketState {
+  ws: WebSocket | null;
+  status: WebSocketStatus;
+  /**
+   * The in-flight connect promise. Callers that race on mount are handed this
+   * same promise instead of opening a second socket, which is what used to
+   * leave the first caller sending on a replaced, still-CONNECTING socket.
+   */
+  connecting: Promise<void> | null;
+  reconnectAttempts: number;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+}
+
+const createSocketState = (): SocketState => ({
+  ws: null,
+  status: "disconnected",
+  connecting: null,
+  reconnectAttempts: 0,
+  reconnectTimer: null,
+});
+
+/**
+ * Detach every handler from a socket before we let go of it, so an orphaned
+ * socket cannot still drive status or schedule a reconnect after it is replaced.
+ */
+const abandon = (ws: WebSocket | null): void => {
+  if (!ws) return;
+  ws.onopen = null;
+  ws.onmessage = null;
+  ws.onerror = null;
+  ws.onclose = null;
+  if (
+    ws.readyState === WebSocket.CONNECTING ||
+    ws.readyState === WebSocket.OPEN
+  ) {
+    ws.close();
+  }
+};
+
 /**
  * Kraken WebSocket Manager
  * Manages connections to both public and private WebSocket endpoints
  */
 export class KrakenWebSocketManager {
-  private publicWs: WebSocket | null = null;
-  private privateWs: WebSocket | null = null;
-  private publicStatus: WebSocketStatus = "disconnected";
-  private privateStatus: WebSocketStatus = "disconnected";
+  private publicSocket: SocketState = createSocketState();
+  private privateSocket: SocketState = createSocketState();
   private authToken: string | null = null;
   private eventHandlers: Map<WebSocketEventType, Set<WebSocketEventHandler>> =
     new Map();
@@ -49,11 +104,15 @@ export class KrakenWebSocketManager {
       timeout: ReturnType<typeof setTimeout>;
     }
   > = new Map();
-  private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectDelay: number = 1000;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  private subscriptions: Set<string> = new Set();
+  /**
+   * Live public-channel subscriptions, keyed so a repeat subscribe is a no-op,
+   * and holding the exact `subscribe` frame so every one can be replayed after
+   * a reconnect. Without the replay the app comes back connected but silent.
+   */
+  private subscriptions: Map<string, Record<string, unknown>> = new Map();
 
   constructor() {
     // Initialize event handler maps
@@ -61,6 +120,7 @@ export class KrakenWebSocketManager {
       "status",
       "message",
       "ticker",
+      "ohlc",
       "order_response",
       "error",
     ];
@@ -103,128 +163,218 @@ export class KrakenWebSocketManager {
     }
   }
 
+  private setStatus(type: SocketKind, status: WebSocketStatus): void {
+    const state = type === "public" ? this.publicSocket : this.privateSocket;
+    state.status = status;
+    this.emit("status", { type, status });
+  }
+
   /**
    * Get the current status of WebSocket connections
    */
   getStatus(): { public: WebSocketStatus; private: WebSocketStatus } {
     return {
-      public: this.publicStatus,
-      private: this.privateStatus,
+      public: this.publicSocket.status,
+      private: this.privateSocket.status,
     };
+  }
+
+  /**
+   * Send a frame on a socket, but only when it is actually open.
+   * Returns whether the frame went out, so callers never have to assume.
+   */
+  private send(type: SocketKind, message: unknown): boolean {
+    const { ws } = type === "public" ? this.publicSocket : this.privateSocket;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+    ws.send(JSON.stringify(message));
+    return true;
   }
 
   /**
    * Connect to the public WebSocket for market data
    */
-  async connectPublic(): Promise<void> {
-    if (this.publicWs?.readyState === WebSocket.OPEN) {
-      return;
+  connectPublic(): Promise<void> {
+    const state = this.publicSocket;
+
+    if (state.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+    // A connect is already in flight: hand every racing caller the same promise
+    // rather than opening a second socket over the top of the first.
+    if (state.connecting) {
+      return state.connecting;
     }
 
-    this.publicStatus = "connecting";
-    this.emit("status", { type: "public", status: this.publicStatus });
+    // Anything left over (a CONNECTING socket from an aborted attempt, a
+    // CLOSING one) is detached first so it cannot fire handlers we no longer own.
+    abandon(state.ws);
+    state.ws = null;
 
-    return new Promise((resolve, reject) => {
+    this.setStatus("public", "connecting");
+
+    const attempt = new Promise<void>((resolve, reject) => {
+      let ws: WebSocket;
       try {
-        this.publicWs = new WebSocket(KRAKEN_WS_PUBLIC_URL);
-
-        this.publicWs.onopen = () => {
-          this.publicStatus = "connected";
-          this.reconnectAttempts = 0;
-          this.emit("status", { type: "public", status: this.publicStatus });
-          this.startHeartbeat();
-          resolve();
-        };
-
-        this.publicWs.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data) as WebSocketMessage;
-            this.handlePublicMessage(data);
-          } catch (error) {
-            console.error("Failed to parse public WebSocket message:", error);
-          }
-        };
-
-        this.publicWs.onerror = (error) => {
-          console.error("Public WebSocket error:", error);
-          this.emit("error", { type: "public", error });
-          reject(new Error("Public WebSocket connection error"));
-        };
-
-        this.publicWs.onclose = () => {
-          this.publicStatus = "disconnected";
-          this.emit("status", { type: "public", status: this.publicStatus });
-          this.attemptReconnect("public");
-        };
+        ws = new WebSocket(KRAKEN_WS_PUBLIC_URL);
       } catch (error) {
-        this.publicStatus = "error";
-        this.emit("status", { type: "public", status: this.publicStatus });
+        this.setStatus("public", "error");
         reject(error);
+        return;
       }
+
+      state.ws = ws;
+      // Every handler below checks that it still owns the current socket, so a
+      // socket that was replaced mid-flight goes quietly instead of flipping
+      // status or scheduling a reconnect for a connection nobody is using.
+      const isCurrent = () => this.publicSocket.ws === ws;
+
+      ws.onopen = () => {
+        if (!isCurrent()) return;
+        state.reconnectAttempts = 0;
+        this.setStatus("public", "connected");
+        this.startHeartbeat();
+        // Restore subscriptions before resolving, so a caller that connects and
+        // then subscribes never races the replay.
+        this.replaySubscriptions();
+        resolve();
+      };
+
+      ws.onmessage = (event) => {
+        if (!isCurrent()) return;
+        try {
+          const data = JSON.parse(event.data) as WebSocketMessage;
+          this.handlePublicMessage(data);
+        } catch (error) {
+          console.error("Failed to parse public WebSocket message:", error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        if (!isCurrent()) return;
+        this.emit("error", {
+          type: "public",
+          error,
+          fatal: false,
+        } satisfies WebSocketErrorEvent);
+        reject(new Error("Public WebSocket connection error"));
+      };
+
+      ws.onclose = () => {
+        if (!isCurrent()) return;
+        state.ws = null;
+        this.setStatus("public", "disconnected");
+        // A close before open leaves the connect promise unsettled otherwise.
+        reject(new Error("Public WebSocket closed before it opened"));
+        this.attemptReconnect("public");
+      };
     });
+
+    state.connecting = attempt;
+    // The rejection is delivered to callers through the returned promise; this
+    // copy exists only to clear the memo, so its rejection is swallowed here.
+    const clear = () => {
+      if (state.connecting === attempt) state.connecting = null;
+    };
+    attempt.then(clear, clear);
+
+    return attempt;
   }
 
   /**
    * Connect to the private WebSocket for authenticated operations
    */
-  async connectPrivate(): Promise<void> {
+  connectPrivate(): Promise<void> {
     if (!hasValidCredentials()) {
-      throw new Error("API credentials are not configured");
+      return Promise.reject(new Error("API credentials are not configured"));
     }
 
-    if (this.privateWs?.readyState === WebSocket.OPEN) {
-      return;
+    const state = this.privateSocket;
+
+    if (state.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+    if (state.connecting) {
+      return state.connecting;
     }
 
-    this.privateStatus = "connecting";
-    this.emit("status", { type: "private", status: this.privateStatus });
+    abandon(state.ws);
+    state.ws = null;
+
+    this.setStatus("private", "connecting");
+
+    const attempt = this.openPrivate();
+
+    state.connecting = attempt;
+    const clear = () => {
+      if (state.connecting === attempt) state.connecting = null;
+    };
+    attempt.then(clear, clear);
+
+    return attempt;
+  }
+
+  private async openPrivate(): Promise<void> {
+    const state = this.privateSocket;
 
     try {
-      // Get authentication token
       this.authToken = await getWebSocketToken();
     } catch (error) {
-      this.privateStatus = "error";
-      this.emit("status", { type: "private", status: this.privateStatus });
+      this.setStatus("private", "error");
       throw new Error(`Failed to get WebSocket token: ${error}`);
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
+      let ws: WebSocket;
       try {
-        this.privateWs = new WebSocket(KRAKEN_WS_PRIVATE_URL);
-
-        this.privateWs.onopen = () => {
-          this.privateStatus = "connected";
-          // Authenticate immediately after connection
-          this.authenticate();
-          resolve();
-        };
-
-        this.privateWs.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data) as WebSocketMessage;
-            this.handlePrivateMessage(data);
-          } catch (error) {
-            console.error("Failed to parse private WebSocket message:", error);
-          }
-        };
-
-        this.privateWs.onerror = (error) => {
-          console.error("Private WebSocket error:", error);
-          this.emit("error", { type: "private", error });
-          reject(new Error("Private WebSocket connection error"));
-        };
-
-        this.privateWs.onclose = () => {
-          this.privateStatus = "disconnected";
-          this.authToken = null;
-          this.emit("status", { type: "private", status: this.privateStatus });
-          this.attemptReconnect("private");
-        };
+        ws = new WebSocket(KRAKEN_WS_PRIVATE_URL);
       } catch (error) {
-        this.privateStatus = "error";
-        this.emit("status", { type: "private", status: this.privateStatus });
+        this.setStatus("private", "error");
         reject(error);
+        return;
       }
+
+      state.ws = ws;
+      const isCurrent = () => this.privateSocket.ws === ws;
+
+      ws.onopen = () => {
+        if (!isCurrent()) return;
+        state.reconnectAttempts = 0;
+        state.status = "connected";
+        // Authenticate immediately after connection
+        this.authenticate();
+        resolve();
+      };
+
+      ws.onmessage = (event) => {
+        if (!isCurrent()) return;
+        try {
+          const data = JSON.parse(event.data) as WebSocketMessage;
+          this.handlePrivateMessage(data);
+        } catch (error) {
+          console.error("Failed to parse private WebSocket message:", error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        if (!isCurrent()) return;
+        this.emit("error", {
+          type: "private",
+          error,
+          fatal: false,
+        } satisfies WebSocketErrorEvent);
+        reject(new Error("Private WebSocket connection error"));
+      };
+
+      ws.onclose = () => {
+        if (!isCurrent()) return;
+        state.ws = null;
+        this.authToken = null;
+        this.setStatus("private", "disconnected");
+        reject(new Error("Private WebSocket closed before it opened"));
+        this.attemptReconnect("private");
+      };
     });
   }
 
@@ -232,15 +382,24 @@ export class KrakenWebSocketManager {
    * Authenticate the private WebSocket connection
    */
   private authenticate(): void {
-    if (!this.privateWs || !this.authToken) {
+    if (!this.privateSocket.ws || !this.authToken) {
       return;
     }
 
     // Send authentication message - Kraken v2 WebSocket uses token-based auth
     // The token is included in subsequent requests, not as a separate auth message
-    this.privateStatus = "authenticated";
-    this.reconnectAttempts = 0;
-    this.emit("status", { type: "private", status: this.privateStatus });
+    this.setStatus("private", "authenticated");
+  }
+
+  /**
+   * Re-send every live subscription frame. Called on each successful open, so a
+   * reconnect restores the channels instead of leaving the app connected to
+   * nothing and showing stale prices.
+   */
+  private replaySubscriptions(): void {
+    for (const message of this.subscriptions.values()) {
+      this.send("public", message);
+    }
   }
 
   /**
@@ -269,8 +428,10 @@ export class KrakenWebSocketManager {
     this.emit("message", { type: "private", data });
 
     // Handle order responses
-    if (data.req_id !== undefined && this.pendingRequests.has(data.req_id)) {
-      const pending = this.pendingRequests.get(data.req_id)!;
+    if (data.req_id !== undefined) {
+      const pending = this.pendingRequests.get(data.req_id);
+      if (!pending) return;
+
       clearTimeout(pending.timeout);
       this.pendingRequests.delete(data.req_id);
 
@@ -293,68 +454,79 @@ export class KrakenWebSocketManager {
   }
 
   /**
+   * Subscribe to a public channel, reserving the key before the connect await so
+   * two callers racing on mount cannot both send the same subscribe frame.
+   */
+  private async subscribe(
+    key: string,
+    message: Record<string, unknown>,
+  ): Promise<void> {
+    if (this.subscriptions.has(key)) {
+      return; // Already subscribed
+    }
+    // Reserved before the await, so a second caller racing this one sees the key
+    // and returns instead of sending the same frame again.
+    this.subscriptions.set(key, message);
+
+    const wasOpen = this.publicSocket.ws?.readyState === WebSocket.OPEN;
+
+    try {
+      await this.connectPublic();
+    } catch (error) {
+      this.subscriptions.delete(key);
+      throw error;
+    }
+
+    // If the socket had to be opened, the replay in `onopen` has already sent
+    // this frame - it was in the map before the socket came up. Only a caller
+    // joining an already-open socket has to send for itself.
+    if (wasOpen) {
+      this.send("public", message);
+    }
+  }
+
+  /**
+   * Unsubscribe from a public channel. The key is dropped whether or not the
+   * frame can go out, so a channel is never replayed after a reconnect.
+   */
+  private unsubscribe(key: string, message: Record<string, unknown>): void {
+    if (!this.subscriptions.delete(key)) {
+      return; // Not subscribed
+    }
+    this.send("public", message);
+  }
+
+  /**
    * Subscribe to ticker updates for a symbol
    */
   async subscribeTicker(symbol: string): Promise<void> {
-    if (!this.publicWs || this.publicWs.readyState !== WebSocket.OPEN) {
-      await this.connectPublic();
-    }
-    const subscriptionKey = `ticker:${symbol}`;
-    if (this.subscriptions.has(subscriptionKey)) {
-      return; // Already subscribed
-    }
-
-    const message = {
+    await this.subscribe(`ticker:${symbol}`, {
       method: "subscribe",
       params: {
         channel: "ticker",
         symbol: [symbol],
       },
-    };
-
-    this.publicWs!.send(JSON.stringify(message));
-    this.subscriptions.add(subscriptionKey);
+    });
   }
 
   /**
    * Unsubscribe from ticker updates
    */
   unsubscribeTicker(symbol: string): void {
-    if (!this.publicWs || this.publicWs.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    const subscriptionKey = `ticker:${symbol}`;
-    if (!this.subscriptions.has(subscriptionKey)) {
-      return; // Not subscribed
-    }
-
-    const message = {
+    this.unsubscribe(`ticker:${symbol}`, {
       method: "unsubscribe",
       params: {
         channel: "ticker",
         symbol: [symbol],
       },
-    };
-
-    this.publicWs.send(JSON.stringify(message));
-    this.subscriptions.delete(subscriptionKey);
+    });
   }
 
   /**
    * Subscribe to OHLC candle data for a symbol
    */
   async subscribeOHLC(symbol: string, interval: number = 1): Promise<void> {
-    if (!this.publicWs || this.publicWs.readyState !== WebSocket.OPEN) {
-      await this.connectPublic();
-    }
-
-    const subscriptionKey = `ohlc:${symbol}:${interval}`;
-    if (this.subscriptions.has(subscriptionKey)) {
-      return;
-    }
-
-    const message = {
+    await this.subscribe(`ohlc:${symbol}:${interval}`, {
       method: "subscribe",
       params: {
         channel: "ohlc",
@@ -362,43 +534,28 @@ export class KrakenWebSocketManager {
         interval,
         snapshot: true,
       },
-    };
-
-    this.publicWs!.send(JSON.stringify(message));
-    this.subscriptions.add(subscriptionKey);
+    });
   }
 
   /**
    * Unsubscribe from OHLC candle data
    */
   unsubscribeOHLC(symbol: string, interval: number = 1): void {
-    if (!this.publicWs || this.publicWs.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    const subscriptionKey = `ohlc:${symbol}:${interval}`;
-    if (!this.subscriptions.has(subscriptionKey)) {
-      return;
-    }
-
-    const message = {
+    this.unsubscribe(`ohlc:${symbol}:${interval}`, {
       method: "unsubscribe",
       params: {
         channel: "ohlc",
         symbol: [symbol],
         interval,
       },
-    };
-
-    this.publicWs.send(JSON.stringify(message));
-    this.subscriptions.delete(subscriptionKey);
+    });
   }
 
   /**
    * Submit an order via WebSocket
    */
   async submitOrder(params: OrderParams): Promise<KrakenOrderResponse> {
-    if (!this.privateWs || this.privateStatus !== "authenticated") {
+    if (this.privateSocket.status !== "authenticated") {
       await this.connectPrivate();
     }
 
@@ -413,29 +570,14 @@ export class KrakenWebSocketManager {
       req_id: reqId,
     };
 
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(reqId);
-        reject(new Error("Order request timed out"));
-      }, 30000); // 30 second timeout
-
-      this.pendingRequests.set(reqId, { resolve, reject, timeout });
-
-      try {
-        this.privateWs!.send(JSON.stringify(request));
-      } catch (error) {
-        clearTimeout(timeout);
-        this.pendingRequests.delete(reqId);
-        reject(error);
-      }
-    });
+    return this.request(reqId, request, "Order request timed out");
   }
 
   /**
    * Cancel an order via WebSocket
    */
   async cancelOrder(orderId: string): Promise<KrakenOrderResponse> {
-    if (!this.privateWs || this.privateStatus !== "authenticated") {
+    if (this.privateSocket.status !== "authenticated") {
       await this.connectPrivate();
     }
 
@@ -450,44 +592,71 @@ export class KrakenWebSocketManager {
       req_id: reqId,
     };
 
+    return this.request(reqId, request, "Cancel order request timed out");
+  }
+
+  /**
+   * Send a request on the private socket and wait for the matching `req_id`.
+   */
+  private request(
+    reqId: number,
+    request: unknown,
+    timeoutMessage: string,
+  ): Promise<KrakenOrderResponse> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(reqId);
-        reject(new Error("Cancel order request timed out"));
-      }, 30000);
+        reject(new Error(timeoutMessage));
+      }, 30000); // 30 second timeout
 
       this.pendingRequests.set(reqId, { resolve, reject, timeout });
 
-      try {
-        this.privateWs!.send(JSON.stringify(request));
-      } catch (error) {
+      if (!this.send("private", request)) {
         clearTimeout(timeout);
         this.pendingRequests.delete(reqId);
-        reject(error);
+        reject(new Error("Private WebSocket is not connected"));
       }
     });
   }
 
   /**
-   * Attempt to reconnect after disconnection
+   * Attempt to reconnect after disconnection. Each socket carries its own
+   * budget, so a flapping public connection cannot exhaust the private one's.
    */
-  private attemptReconnect(type: "public" | "private"): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.warn(`Max reconnect attempts reached for ${type} WebSocket`);
+  private attemptReconnect(type: SocketKind): void {
+    const state = type === "public" ? this.publicSocket : this.privateSocket;
+
+    if (state.reconnectTimer) {
+      return; // A reconnect is already scheduled
+    }
+
+    if (state.reconnectAttempts >= this.maxReconnectAttempts) {
+      const error = new Error(
+        `Gave up reconnecting the ${type} WebSocket after ${this.maxReconnectAttempts} attempts`,
+      );
+      console.warn(error.message);
+      // Tell the UI. Staying silent here is what left the app looking connected
+      // while the connection was permanently dead.
+      this.setStatus(type, "error");
+      this.emit("error", {
+        type,
+        error,
+        fatal: true,
+      } satisfies WebSocketErrorEvent);
       return;
     }
 
-    this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    state.reconnectAttempts++;
+    const delay = this.reconnectDelay * Math.pow(2, state.reconnectAttempts - 1);
 
-    console.log(`Attempting to reconnect ${type} WebSocket in ${delay}ms...`);
-
-    setTimeout(() => {
-      if (type === "public") {
-        this.connectPublic().catch(console.error);
-      } else {
-        this.connectPrivate().catch(console.error);
-      }
+    state.reconnectTimer = setTimeout(() => {
+      state.reconnectTimer = null;
+      const reconnect =
+        type === "public" ? this.connectPublic() : this.connectPrivate();
+      reconnect.catch(() => {
+        // The failure is already reported through the `status` and `error`
+        // events, and `onclose` schedules the next attempt.
+      });
     }, delay);
   }
 
@@ -501,12 +670,8 @@ export class KrakenWebSocketManager {
 
     this.heartbeatInterval = setInterval(() => {
       // Send ping to keep connection alive
-      if (this.publicWs?.readyState === WebSocket.OPEN) {
-        this.publicWs.send(JSON.stringify({ method: "ping" }));
-      }
-      if (this.privateWs?.readyState === WebSocket.OPEN) {
-        this.privateWs.send(JSON.stringify({ method: "ping" }));
-      }
+      this.send("public", { method: "ping" });
+      this.send("private", { method: "ping" });
     }, 30000); // Every 30 seconds
   }
 
@@ -529,22 +694,23 @@ export class KrakenWebSocketManager {
     // Clear subscriptions
     this.subscriptions.clear();
 
-    if (this.publicWs) {
-      this.publicWs.close();
-      this.publicWs = null;
+    for (const state of [this.publicSocket, this.privateSocket]) {
+      if (state.reconnectTimer) {
+        clearTimeout(state.reconnectTimer);
+        state.reconnectTimer = null;
+      }
+      // Detaching before closing is what stops `onclose` from scheduling a
+      // reconnect for a connection the caller just asked us to drop.
+      abandon(state.ws);
+      state.ws = null;
+      state.connecting = null;
+      state.reconnectAttempts = 0;
     }
 
-    if (this.privateWs) {
-      this.privateWs.close();
-      this.privateWs = null;
-    }
-
-    this.publicStatus = "disconnected";
-    this.privateStatus = "disconnected";
     this.authToken = null;
 
-    this.emit("status", { type: "public", status: this.publicStatus });
-    this.emit("status", { type: "private", status: this.privateStatus });
+    this.setStatus("public", "disconnected");
+    this.setStatus("private", "disconnected");
   }
 }
 

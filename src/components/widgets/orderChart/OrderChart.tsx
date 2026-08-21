@@ -18,7 +18,7 @@ const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1D", "1W"];
 // =============================================================================
 
 interface OrderChartProps {
-  /** Live assembly config — only orders currently in the grid are shown */
+  /** Live assembly config - only orders currently in the grid are shown */
   orders: OrderConfig;
 }
 
@@ -27,7 +27,7 @@ interface OrderChartProps {
 // =============================================================================
 
 const OrderChart: FC<OrderChartProps> = ({ orders }) => {
-  const { currentPrice, tickerError } = useKrakenAPI({
+  const { currentPrice, tickerError, publicStatus } = useKrakenAPI({
     symbol: "BTC/USD",
     autoConnect: true,
     pollInterval: 30000,
@@ -163,6 +163,16 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
             BTC / USD
           </span>
           <span className="text-[11px] text-text-muted">{priceLabel}</span>
+          {/* The manager gives up reconnecting after a fixed number of tries.
+              Without this the app just keeps showing the last price it saw. */}
+          {publicStatus === "error" && (
+            <span
+              className="text-[11px] text-status-yellow"
+              title="Reconnection was abandoned. Prices now come from the 30s poll only."
+            >
+              Live feed offline
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           {TIMEFRAMES.map((tf) => (

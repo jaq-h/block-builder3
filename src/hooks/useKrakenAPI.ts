@@ -11,10 +11,13 @@ import {
   validateOrder,
   createOrderPreview,
   hasValidCredentials,
+  parseTickerUpdate,
+  applyTickerUpdate,
   DEFAULT_SYMBOL,
   type WebSocketStatus,
   type ParsedTickerData,
   type OrderParams,
+  type WebSocketErrorEvent,
 } from "../api";
 import type { GridData } from "../types/grid";
 
@@ -138,23 +141,20 @@ export const useKrakenAPI = (
     };
 
     const handleTicker = (data: unknown) => {
-      // Process real-time ticker updates
-      const tickerUpdate = data as { data?: { last?: string } };
-      if (tickerUpdate.data?.last) {
-        setTickerData((prev) =>
-          prev
-            ? {
-                ...prev,
-                last: parseFloat(tickerUpdate.data!.last!),
-              }
-            : prev,
-        );
-      }
+      // Every field the frame carries is applied, and a tick that arrives
+      // before the first REST poll seeds the record instead of being dropped.
+      const update = parseTickerUpdate(data);
+      if (!update) return;
+      setTickerData((prev) => applyTickerUpdate(prev, update));
     };
 
     const handleError = (data: unknown) => {
-      const errorData = data as { type: string; error: unknown };
+      const errorData = data as WebSocketErrorEvent;
       console.error(`Kraken API error (${errorData.type}):`, errorData.error);
+      // A `fatal` error means reconnection has been abandoned. The manager also
+      // moves that socket to the `error` status, which is what reaches the UI
+      // through `publicStatus` / `privateStatus` below - `tickerError` is left
+      // alone because REST polling still works and still has a fresh price.
     };
 
     manager.on("status", handleStatus);
@@ -177,7 +177,10 @@ export const useKrakenAPI = (
     refreshTicker();
 
     if (autoConnect) {
-      connect();
+      // `connect` reports the failure through the `status` and `error` events
+      // and the manager retries on its own, so there is nothing to do here
+      // beyond keeping the rejection from surfacing as an unhandled promise.
+      connect().catch(() => {});
     }
 
     return () => {

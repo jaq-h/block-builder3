@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import StrategyAssembly from "./components/widgets/strategyAssembly/strategyAssembly";
 import { ActiveOrders } from "./components/widgets/activeOrders";
 import DragOverlay from "./components/common/DragOverlay";
@@ -16,6 +16,8 @@ import {
 } from "./App.styles";
 import ToolsIcon from "./assets/icons/tools.svg?react";
 import OrdersIcon from "./assets/icons/orders.svg?react";
+import ErrorBoundary from "./components/common/ErrorBoundary";
+import { cn } from "./lib/utils";
 
 // =============================================================================
 // INNER APP COMPONENT (uses the store)
@@ -25,9 +27,7 @@ function AppInner() {
   const { submittedOrders } = useOrdersStore();
   const liveOrderCount = useLiveOrdersCount();
   const [activeTab, setActiveTab] = useState<"assembly" | "orders">("assembly");
-  const [editingStrategyId, setEditingStrategyId] = useState<string | null>(
-    null,
-  );
+  const [editedStrategyId, setEditedStrategyId] = useState<string | null>(null);
 
   const {
     orderConfig,
@@ -48,14 +48,11 @@ function AppInner() {
     isEffectivelySimulation,
   } = useTradeExecution();
 
-  // Clear editing highlight when edit mode ends (after submit/clear).
-  // KNOWN ISSUE: this resets state from an effect instead of deriving it during
-  // render, which costs a cascading re-render. Fixing it changes render timing,
-  // so it is tracked separately rather than in the CI/test-foundation change.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!isEditMode) setEditingStrategyId(null);
-  }, [isEditMode]);
+  // The editing highlight only exists while the builder is in edit mode, so it
+  // is derived during render rather than cleared from an effect afterwards -
+  // that clearing cost a whole extra render pass and briefly showed the
+  // highlight on a strategy that was no longer being edited.
+  const editingStrategyId = isEditMode ? editedStrategyId : null;
 
   // Load an entire strategy group into the builder for editing
   const handleEditGroup = (
@@ -73,7 +70,7 @@ function AppInner() {
       };
     }
     loadConfig(config);
-    setEditingStrategyId(orders[0]?.strategyId ?? null);
+    setEditedStrategyId(orders[0]?.strategyId ?? null);
   };
 
   // Merge live assembly positions into submitted orders while editing.
@@ -98,8 +95,18 @@ function AppInner() {
     return merged;
   }, [submittedOrders, isEditMode, editingStrategyId, orderConfig]);
 
+  // Both panels are rendered exactly once, in one tree. Below `lg` the inactive
+  // one is hidden with `display: none` rather than swapped out, which is what
+  // keeps its component state alive: rendering the same element in a desktop
+  // branch and a mobile branch mounted two independent copies, so crossing the
+  // 1024px breakpoint swapped in an empty grid and silently lost the strategy.
   const assemblyPanel = (
-    <div className="overflow-hidden">
+    <div
+      className={cn(
+        "overflow-hidden",
+        activeTab !== "assembly" && "hidden lg:block",
+      )}
+    >
       <StrategyAssembly
         key={strategyKey}
         onConfigChange={handleConfigChange}
@@ -120,17 +127,26 @@ function AppInner() {
   );
 
   const ordersPanel = (
-    <div className="grid grid-rows-[400px_1fr] overflow-hidden">
-      {/* Chart — fixed 400px row */}
+    <div
+      className={cn(
+        "grid grid-rows-[400px_1fr] overflow-hidden",
+        activeTab !== "orders" && "hidden lg:grid",
+      )}
+    >
+      {/* Chart - fixed 400px row. Boundaried separately so a bad candle payload
+          or a chart-library throw cannot take the builder down with it. */}
       <div className="overflow-hidden">
-        <OrderChart orders={orderConfig} />
+        <ErrorBoundary
+          title="The chart could not be displayed"
+          message="Your strategy is unaffected - you can keep building and submitting orders."
+          compact
+        >
+          <OrderChart orders={orderConfig} />
+        </ErrorBoundary>
       </div>
-      {/* Active orders — fills remaining height */}
+      {/* Active orders - fills remaining height */}
       <div className="overflow-scroll max-h-200 border-t border-border-neutral">
         <ActiveOrders
-          onOrderSelect={(orderId) => {
-            console.log("Selected order:", orderId);
-          }}
           initialOrders={displayOrders}
           onEditGroup={handleEditGroup}
           editingStrategyId={editingStrategyId}
@@ -141,7 +157,7 @@ function AppInner() {
 
   return (
     <div className={appContainer}>
-      {/* Tab nav — only visible on small screens */}
+      {/* Tab nav - only visible on small screens */}
       <nav className={`${navBar} lg:hidden`}>
         <button
           onClick={() => setActiveTab("assembly")}
@@ -167,15 +183,11 @@ function AppInner() {
       </nav>
 
       <main className={mainContent}>
-        {/* Large screens: CSS grid layout */}
-        <div className="hidden lg:grid grid-cols-[700px_minmax(300px,1fr)] gap-4 px-6 py-4 h-full overflow-hidden">
+        {/* One tree for both layouts: a stacked, tabbed column below `lg`, and
+            the two-column grid above it. */}
+        <div className="px-4 py-4 lg:grid lg:grid-cols-[700px_minmax(300px,1fr)] lg:gap-4 lg:px-6 lg:h-full lg:overflow-hidden">
           {assemblyPanel}
           {ordersPanel}
-        </div>
-
-        {/* Small screens: single active tab */}
-        <div className="px-4 py-4 lg:hidden">
-          {activeTab === "assembly" ? assemblyPanel : ordersPanel}
         </div>
       </main>
     </div>
@@ -190,7 +202,7 @@ function App() {
   return (
     <OrdersStoreProvider>
       <AppInner />
-      {/* Rendered via portal into #drag-overlay — completely outside the
+      {/* Rendered via portal into #drag-overlay - completely outside the
           React tree so drag-position updates never cascade through the grid */}
       <DragOverlay />
     </OrdersStoreProvider>

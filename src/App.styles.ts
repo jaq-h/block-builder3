@@ -30,17 +30,26 @@ export const navLinkVariants = cva(
   },
 );
 
+// The `!` modifiers are load-bearing, not decoration. `src/index.css` still
+// carries the Vite starter's bare `button { ... }` rules, and because those sit
+// outside any cascade layer they beat every Tailwind utility - which is layered -
+// no matter how specific it is. Without them the app's primary action renders in
+// the generic grey button skin instead of green. The real fix is to move that
+// reset into `@layer base`, which changes how every button in the app paints, so
+// it belongs in its own change rather than riding along here.
 export const executeButtonVariants = cva(
   [
-    "px-5 py-2.5 text-white border-none rounded text-sm font-medium",
-    "transition-colors duration-200 flex items-center gap-2",
-    "hover:enabled:bg-status-green-hover disabled:opacity-70",
+    "px-5! py-2.5! text-white! border-none! rounded! text-sm! font-medium!",
+    // The label carries a live order count, so it must not wrap or re-flow the
+    // action bar as that count changes.
+    "whitespace-nowrap transition-colors duration-200 flex items-center gap-2",
+    "hover:enabled:bg-status-green-hover! disabled:opacity-70",
   ],
   {
     variants: {
       isSubmitting: {
-        true: "bg-disabled-bg cursor-not-allowed",
-        false: "bg-status-green cursor-pointer",
+        true: "bg-disabled-bg! cursor-not-allowed",
+        false: "bg-status-green! cursor-pointer",
       },
     },
     defaultVariants: {
@@ -72,7 +81,13 @@ export const simulationBadgeVariants = cva(
 // LAYOUT
 // =============================================================================
 
-export const appContainer = "flex-1 min-h-0 grid grid-rows-[auto_1fr] overflow-hidden bg-bg-primary";
+// `lg:h-dvh` is what makes the desktop shell a real fixed-height shell. Without
+// it nothing in the chain has a resolved height, so `h-full` further down
+// collapses to `auto`, the content grows past the viewport and the action bar -
+// Execute Trade included - ends up clipped below the fold. Below `lg` the height
+// stays content-driven so the tabbed layout keeps scrolling with the page.
+export const appContainer =
+  "flex-1 min-h-0 lg:h-dvh grid grid-rows-[auto_1fr] overflow-hidden bg-bg-primary";
 
 export const mainContent = "overflow-hidden";
 
@@ -94,7 +109,7 @@ export const orderBadge =
 // =============================================================================
 
 export const executeButtonContainer =
-  "p-4 text-center flex flex-col items-center gap-2";
+  "shrink-0 p-4 text-center flex flex-col items-center gap-2";
 
 export const simulationModeContainer = "flex items-center gap-2";
 

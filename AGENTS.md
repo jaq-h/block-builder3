@@ -42,6 +42,12 @@ Some tests deliberately assert **current, wrong** behaviour. They are commented
 `CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. If you are fixing the
 underlying bug, change the test and the comment together; do not quietly loosen it.
 
+`src/test/fakeWebSocket.ts` is a controllable `WebSocket` stand-in whose `send`
+throws while CONNECTING, exactly as the browser does; that strictness is what
+makes the connect race in `src/api/krakenWebSocket.ts` fail a test rather than
+pass quietly. `src/test/panelStubs.tsx` plus `src/test/mountTracker.ts` count
+component mounts, which is how `src/App.test.tsx` detects a duplicated tree.
+
 Coverage is reported, not enforced. The suite targets the logic where a defect would
 corrupt a real order (`src/api/orderMapper.ts`, `src/api/krakenAuth.ts`, `src/utils/`)
 rather than chasing a repository-wide percentage.
@@ -64,6 +70,11 @@ bundle through `define`, which means **the API private key ships in the browser*
 known and is being re-architected separately. Do not build new work on top of it, and never
 commit a real credential: local keys go in `local.env` (gitignored, see `local.env.example`).
 
+Keep the `?? ""` on those two `define` values. Without it `JSON.stringify(undefined)`
+produces no string, and Vitest's transform substitutes the literal `"undefined"` -
+a truthy value that makes `hasValidCredentials()` claim credentials exist when
+none do, in tests only.
+
 CI needs no secrets, and no test may hardcode a live credential. `src/api/krakenAuth.test.ts`
 signs against the throwaway example vector Kraken publishes in its own API docs.
 
@@ -74,6 +85,31 @@ Simulation mode is decided in `src/hooks/useTradeExecution.ts`:
   are actually present.
 
 So a dev server with no `local.env` is safe to click through end to end.
+
+## Layout and the CSS cascade
+
+Three traps live in the layout, and each is easy to reintroduce.
+
+**The desktop shell only has a height above `lg`.** `body`/`#root` are
+content-sized, so `h-full` resolves to `auto` unless something above it commits to
+a height. `appContainer` (`src/App.styles.ts`) supplies that with `lg:h-dvh`; the
+assembly panel below it is a flex column whose action bar is `shrink-0` and whose
+grid area scrolls. Remove the `lg:h-dvh` and the action bar - Execute Trade
+included - drops below the fold again. Below `lg` the height is deliberately
+content-driven so the tabbed layout still scrolls with the page.
+
+**Bare element rules in `src/index.css` beat every Tailwind utility.** `button {}`
+and friends there sit outside any cascade layer, and unlayered CSS wins over
+layered CSS regardless of specificity - so `bg-status-green` on a `<button>` does
+nothing. `executeButtonVariants` works around it with `!` modifiers and says why.
+The real fix is to move that reset into `@layer base`, which repaints every button
+in the app and so wants its own change.
+
+**Render each panel once.** `src/App.tsx` renders `assemblyPanel` and
+`ordersPanel` in a single tree and hides the inactive one below `lg` with
+`display: none`. Using a JSX element variable in two branches mounts two
+independent components, and crossing the breakpoint then swaps in an empty one -
+silent data loss. `src/App.test.tsx` fails if that returns.
 
 ## Path aliases
 

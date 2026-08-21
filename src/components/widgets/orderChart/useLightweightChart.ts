@@ -3,7 +3,7 @@
  * Creates a chart instance with candlestick series attached to a container ref
  */
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -20,11 +20,16 @@ interface UseLightweightChartReturn {
   candleSeries: ISeriesApi<"Candlestick"> | null;
 }
 
+const NO_CHART: UseLightweightChartReturn = { chart: null, candleSeries: null };
+
 export const useLightweightChart = (
   containerRef: RefObject<HTMLDivElement | null>,
 ): UseLightweightChartReturn => {
-  const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  // The chart is an external object created in an effect, so it has to be held
+  // in state rather than a ref: a ref read during render hands the caller `null`
+  // on the first pass and never re-renders them once the chart exists, so their
+  // `setData` effects never re-run and the chart stays empty.
+  const [instance, setInstance] = useState<UseLightweightChartReturn>(NO_CHART);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -67,8 +72,7 @@ export const useLightweightChart = (
       borderVisible: false,
     });
 
-    chartRef.current = chart;
-    seriesRef.current = series;
+    setInstance({ chart, candleSeries: series });
 
     // Resize observer to keep chart sized to container
     const resizeObserver = new ResizeObserver((entries) => {
@@ -82,18 +86,11 @@ export const useLightweightChart = (
     return () => {
       resizeObserver.disconnect();
       chart.remove();
-      chartRef.current = null;
-      seriesRef.current = null;
+      setInstance(NO_CHART);
     };
   }, [containerRef]);
 
-  // KNOWN BUG: reading refs during render means callers see `null` on the first
-  // render and are never re-rendered when the chart is actually created - they
-  // only pick it up if some unrelated state change re-renders them. The fix is
-  // to hold the chart in state, which changes when consumers see it, so it is
-  // tracked separately rather than in the CI/test-foundation change.
-  // eslint-disable-next-line react-hooks/refs
-  return { chart: chartRef.current, candleSeries: seriesRef.current };
+  return instance;
 };
 
 /**
