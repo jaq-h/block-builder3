@@ -91,11 +91,29 @@ export const parseTickerUpdate = (raw: unknown): TickerUpdate | null => {
  * `previous` is `null` until the first REST poll lands. Ticks that arrive
  * before it used to be thrown away; instead they seed a record from the update
  * itself, so the price the user sees is the socket's, not the 30s poll's.
+ *
+ * A frame that cannot establish a price - bid/ask only, or a non-positive
+ * `last` - is not allowed to seed, and `previous` is handed straight back. The
+ * zero it would otherwise seed reads downstream as a real price of 0, and these
+ * numbers become order prices.
  */
-export const applyTickerUpdate = (
+export function applyTickerUpdate(
+  previous: ParsedTickerData,
+  update: TickerUpdate,
+): ParsedTickerData;
+export function applyTickerUpdate(
   previous: ParsedTickerData | null,
   update: TickerUpdate,
-): ParsedTickerData => {
+): ParsedTickerData | null;
+export function applyTickerUpdate(
+  previous: ParsedTickerData | null,
+  update: TickerUpdate,
+): ParsedTickerData | null {
+  // Merging onto an existing record always yields one; only seeding can decline.
+  if (previous === null && !(update.last !== undefined && update.last > 0)) {
+    return null;
+  }
+
   const base: ParsedTickerData = previous ?? {
     symbol: update.symbol ?? "",
     ask: 0,
@@ -126,4 +144,4 @@ export const applyTickerUpdate = (
   }
 
   return merged;
-};
+}

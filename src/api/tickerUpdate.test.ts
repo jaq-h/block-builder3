@@ -114,8 +114,22 @@ describe("applyTickerUpdate", () => {
     // 30s poll landed, which is what made the socket feed look dead.
     const result = applyTickerUpdate(null, { symbol: "BTC/USD", last: 101 });
 
-    expect(result.last).toBe(101);
-    expect(result.symbol).toBe("BTC/USD");
+    expect(result).toMatchObject({ last: 101, symbol: "BTC/USD" });
+  });
+
+  it.each([
+    ["carries no price at all", { symbol: "BTC/USD", bid: 100, ask: 101 }],
+    ["states a zero price", { symbol: "BTC/USD", last: 0, bid: 100 }],
+  ])("declines to seed a record from a frame that %s", (_label, update) => {
+    // Seeding `last: 0` here reaches the grid as a real price of 0, and these
+    // numbers are order prices. There is no price yet, so say so.
+    expect(applyTickerUpdate(null, update)).toBeNull();
+  });
+
+  it("still merges a bid-only frame onto a record that has a price", () => {
+    const result = applyTickerUpdate(restSnapshot, { bid: 90 });
+
+    expect(result).toMatchObject({ bid: 90, last: restSnapshot.last });
   });
 
   it("leaves fields the frame did not mention alone", () => {
@@ -157,8 +171,7 @@ describe("applyTickerUpdate", () => {
   it("does not divide by an unknown opening price", () => {
     const result = applyTickerUpdate(null, { last: 101 });
 
-    expect(result.change24h).toBe(0);
-    expect(result.changePercent24h).toBe(0);
+    expect(result).toMatchObject({ change24h: 0, changePercent24h: 0 });
   });
 
   it("does not mutate the previous ticker record", () => {

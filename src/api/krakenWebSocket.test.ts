@@ -124,18 +124,26 @@ describe("KrakenWebSocketManager - concurrent connects", () => {
     expect(() => manager.unsubscribeTicker("BTC/USD")).not.toThrow();
   });
 
-  it("drops the subscription when the connect it was waiting on fails", async () => {
+  it("keeps the subscription when the connect it was waiting on fails", async () => {
     const ticker = manager.subscribeTicker("BTC/USD");
     await flush();
-    FakeWebSocket.last.dropConnection();
+    const first = FakeWebSocket.last;
+    first.dropConnection();
 
+    // The caller still hears about the failure.
     await expect(ticker).rejects.toThrow();
 
-    // Nothing left behind to be replayed onto a later connection.
-    const reconnect = manager.connectPublic();
-    FakeWebSocket.last.openConnection();
-    await reconnect;
-    expect(subscribedChannels(FakeWebSocket.last)).toEqual([]);
+    // ...but the intent outlives it. The manager reconnects on its own, and
+    // nothing ever asks for this channel a second time, so a dropped key would
+    // leave the app connected and subscribed to nothing until a reload.
+    await vi.advanceTimersByTimeAsync(1000);
+    const reopened = FakeWebSocket.last;
+    expect(reopened).not.toBe(first);
+
+    reopened.openConnection();
+    await flush();
+
+    expect(subscribedChannels(reopened)).toEqual(["ticker:BTC/USD"]);
   });
 });
 
@@ -282,6 +290,25 @@ describe("KrakenWebSocketManager - teardown", () => {
     await reconnect;
 
     expect(subscribedChannels(FakeWebSocket.last)).toEqual([]);
+  });
+
+  it("settles an in-flight connect that disconnect abandons", async () => {
+    const connecting = manager.connectPublic();
+
+    manager.disconnect();
+
+    // Every path that would settle this promise runs from a handler `disconnect`
+    // has just detached, so only an explicit abort can release the caller.
+    await expect(connecting).rejects.toThrow("WebSocket disconnected");
+  });
+
+  it("releases a subscribe suspended on the connect it was awaiting", async () => {
+    const ticker = manager.subscribeTicker("BTC/USD");
+    await flush();
+
+    manager.disconnect();
+
+    await expect(ticker).rejects.toThrow("WebSocket disconnected");
   });
 
   it("stops an abandoned socket from driving status after it is replaced", async () => {

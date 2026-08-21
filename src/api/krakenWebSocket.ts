@@ -55,6 +55,12 @@ interface SocketState {
    * leave the first caller sending on a replaced, still-CONNECTING socket.
    */
   connecting: Promise<void> | null;
+  /**
+   * Settles `connecting` from the outside. Every path that would otherwise
+   * resolve an attempt runs from a socket handler, so once `disconnect()` has
+   * detached those handlers only this can release a suspended caller.
+   */
+  abortConnecting: ((error: Error) => void) | null;
   reconnectAttempts: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -63,6 +69,7 @@ const createSocketState = (): SocketState => ({
   ws: null,
   status: "disconnected",
   connecting: null,
+  abortConnecting: null,
   reconnectAttempts: 0,
   reconnectTimer: null,
 });
@@ -193,6 +200,39 @@ export class KrakenWebSocketManager {
   }
 
   /**
+   * Memoise an in-flight connect on `state` and hand back the promise callers
+   * await. The attempt is raced against an abort handle so `disconnect()` can
+   * settle it: the socket handlers it would otherwise settle from have just
+   * been detached, which used to strand the caller on a promise forever.
+   */
+  private trackConnect(
+    state: SocketState,
+    open: () => Promise<void>,
+  ): Promise<void> {
+    let abort!: (error: Error) => void;
+    const aborted = new Promise<never>((_, reject) => {
+      abort = reject;
+    });
+
+    const attempt = Promise.race([open(), aborted]);
+
+    state.connecting = attempt;
+    state.abortConnecting = abort;
+
+    // The rejection is delivered to callers through the returned promise; this
+    // copy exists only to clear the memo, so its rejection is swallowed here.
+    const clear = () => {
+      if (state.connecting === attempt) {
+        state.connecting = null;
+        state.abortConnecting = null;
+      }
+    };
+    attempt.then(clear, clear);
+
+    return attempt;
+  }
+
+  /**
    * Connect to the public WebSocket for market data
    */
   connectPublic(): Promise<void> {
@@ -214,7 +254,13 @@ export class KrakenWebSocketManager {
 
     this.setStatus("public", "connecting");
 
-    const attempt = new Promise<void>((resolve, reject) => {
+    return this.trackConnect(state, () => this.openPublic());
+  }
+
+  private openPublic(): Promise<void> {
+    const state = this.publicSocket;
+
+    return new Promise<void>((resolve, reject) => {
       let ws: WebSocket;
       try {
         ws = new WebSocket(KRAKEN_WS_PUBLIC_URL);
@@ -270,16 +316,6 @@ export class KrakenWebSocketManager {
         this.attemptReconnect("public");
       };
     });
-
-    state.connecting = attempt;
-    // The rejection is delivered to callers through the returned promise; this
-    // copy exists only to clear the memo, so its rejection is swallowed here.
-    const clear = () => {
-      if (state.connecting === attempt) state.connecting = null;
-    };
-    attempt.then(clear, clear);
-
-    return attempt;
   }
 
   /**
@@ -304,15 +340,7 @@ export class KrakenWebSocketManager {
 
     this.setStatus("private", "connecting");
 
-    const attempt = this.openPrivate();
-
-    state.connecting = attempt;
-    const clear = () => {
-      if (state.connecting === attempt) state.connecting = null;
-    };
-    attempt.then(clear, clear);
-
-    return attempt;
+    return this.trackConnect(state, () => this.openPrivate());
   }
 
   private async openPrivate(): Promise<void> {
@@ -456,6 +484,12 @@ export class KrakenWebSocketManager {
   /**
    * Subscribe to a public channel, reserving the key before the connect await so
    * two callers racing on mount cannot both send the same subscribe frame.
+   *
+   * The key is durable intent, not a record of a frame that went out: a failed
+   * connect keeps it, so the replay on the next successful open establishes the
+   * channel. Dropping it here is what left the app connected but subscribed to
+   * nothing whenever the very first connect failed, since neither caller is
+   * ever asked to subscribe a second time.
    */
   private async subscribe(
     key: string,
@@ -470,12 +504,8 @@ export class KrakenWebSocketManager {
 
     const wasOpen = this.publicSocket.ws?.readyState === WebSocket.OPEN;
 
-    try {
-      await this.connectPublic();
-    } catch (error) {
-      this.subscriptions.delete(key);
-      throw error;
-    }
+    // The caller still hears about the failure; only the intent survives it.
+    await this.connectPublic();
 
     // If the socket had to be opened, the replay in `onopen` has already sent
     // this frame - it was in the map before the socket came up. Only a caller
@@ -703,6 +733,11 @@ export class KrakenWebSocketManager {
       // reconnect for a connection the caller just asked us to drop.
       abandon(state.ws);
       state.ws = null;
+      // Release anyone suspended on the in-flight connect. Its resolve paths all
+      // hang off the handlers just detached, so without this the caller - a
+      // `subscribe` awaiting `connectPublic` among them - waits forever.
+      state.abortConnecting?.(new Error("WebSocket disconnected"));
+      state.abortConnecting = null;
       state.connecting = null;
       state.reconnectAttempts = 0;
     }

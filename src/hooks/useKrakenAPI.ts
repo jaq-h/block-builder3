@@ -217,10 +217,10 @@ export const useKrakenAPI = (
 
   const connect = async () => {
     try {
-      // Always connect public for ticker data
-      await wsManager.current.connectPublic();
-
-      // Subscribe to ticker updates
+      // Subscribing connects the public socket itself, and registers the intent
+      // first. Awaiting a separate `connectPublic()` beforehand meant a failed
+      // first connect skipped the subscribe entirely, so the manager's own
+      // reconnect brought the socket back with no ticker channel on it.
       await wsManager.current.subscribeTicker(symbol);
 
       // Connect private if credentials are available
