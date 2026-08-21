@@ -6,6 +6,7 @@ import type {
   StrategyPattern,
 } from "../../../types/grid";
 import type { OrderTypeDefinition } from "../../../data/orderTypes";
+import type { CancelOptions } from "../../../hooks/useBlockCommand";
 import { isProviderBlockHighlighted } from "../../../utils";
 
 // Props interface
@@ -23,7 +24,7 @@ interface ProviderColumnProps {
   /** Enter, Space or a tap: pick this order type up, place it, or put it back. */
   onProviderActivate: (type: string, origin: "keyboard" | "pointer") => void;
   onCommandMove: (dCol: number, dRow: number) => void;
-  onCommandCancel: () => void;
+  onCommandCancel: (options?: CancelOptions) => void;
   /** The order type currently picked up by the command model, if any. */
   carryingType: string | null;
   focusType: string | null;

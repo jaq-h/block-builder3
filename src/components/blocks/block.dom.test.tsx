@@ -42,6 +42,25 @@ const tap = (element: Element, at: [number, number] = [10, 10]) => {
   fireEvent(element, pointer("pointerup", { x: at[0], y: at[1] }));
 };
 
+/**
+ * jsdom gives every element a zero-sized box at the origin, so the block's own
+ * geometry has to be supplied for anything that measures where inside it the
+ * pointer landed.
+ */
+const stubRect = (element: Element, top: number, height: number) => {
+  vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+    top,
+    bottom: top + height,
+    height,
+    left: 0,
+    right: 40,
+    width: 40,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect);
+};
+
 let capture: PointerCaptureTracker;
 
 beforeEach(() => {
@@ -217,12 +236,49 @@ describe("Block, placed on a price axis", () => {
   it("reports a vertical drag by pointer Y", () => {
     const onVerticalDrag = vi.fn();
     placed({ onVerticalDrag });
+    const slider = screen.getByRole("slider");
+    // Grabbed exactly on the block's centre, so the reported Y is the pointer's.
+    stubRect(slider, 180, 40);
 
-    fireEvent(screen.getByRole("slider"), pointer("pointerdown", { x: 50, y: 200 }));
-    fireEvent(screen.getByRole("slider"), pointer("pointermove", { x: 52, y: 260 }));
-    fireEvent(screen.getByRole("slider"), pointer("pointerup", { x: 52, y: 260 }));
+    fireEvent(slider, pointer("pointerdown", { x: 50, y: 200 }));
+    fireEvent(slider, pointer("pointermove", { x: 52, y: 260 }));
+    fireEvent(slider, pointer("pointerup", { x: 52, y: 260 }));
 
     expect(onVerticalDrag).toHaveBeenCalledWith("b1", 260);
+  });
+
+  it("does not re-price the block when a tap grabs it off centre", () => {
+    const onVerticalDrag = vi.fn();
+    const onActivate = vi.fn();
+    placed({ onVerticalDrag, onActivate });
+    const slider = screen.getByRole("slider");
+    stubRect(slider, 180, 40);
+
+    // A finger lands near the bottom edge and jitters within the tap slop. The
+    // consumer maps the reported Y as though it were the block's centre, so
+    // without the grab offset this tap alone would move the price by 15px of
+    // track before the pick-up the user actually asked for.
+    fireEvent(slider, pointer("pointerdown", { x: 50, y: 215 }));
+    fireEvent(slider, pointer("pointermove", { x: 50, y: 215 }));
+    fireEvent(slider, pointer("pointerup", { x: 50, y: 215 }));
+
+    expect(onVerticalDrag).toHaveBeenCalledWith("b1", 200);
+    expect(onActivate).toHaveBeenCalledWith("b1", "pointer");
+  });
+
+  it("carries the block by the point it was grabbed at, not by its centre", () => {
+    const onVerticalDrag = vi.fn();
+    placed({ onVerticalDrag });
+    const slider = screen.getByRole("slider");
+    stubRect(slider, 180, 40);
+
+    fireEvent(slider, pointer("pointerdown", { x: 50, y: 215 }));
+    fireEvent(slider, pointer("pointermove", { x: 50, y: 315 }));
+    fireEvent(slider, pointer("pointerup", { x: 50, y: 315 }));
+
+    // The pointer travelled 100px, so the block does too: its centre goes from
+    // 200 to 300 rather than jumping to the pointer at 315.
+    expect(onVerticalDrag).toHaveBeenLastCalledWith("b1", 300);
   });
 
   it("moves along the axis with the arrow keys, up meaning a higher price", () => {
@@ -314,13 +370,15 @@ describe("Block, while being carried", () => {
     ]);
   });
 
-  it("puts the block back on Escape", () => {
+  it("puts the block back on Escape, and takes focus with it", () => {
     const onCommandCancel = vi.fn();
     carried({ onCommandCancel });
 
     fireEvent.keyDown(screen.getByRole("button"), { key: "Escape" });
 
     expect(onCommandCancel).toHaveBeenCalledTimes(1);
+    // Escape is a deliberate return: focus belongs back on the source block.
+    expect(onCommandCancel).toHaveBeenCalledWith();
   });
 
   it("puts the block back on a second tap", () => {
@@ -343,6 +401,10 @@ describe("Block, while being carried", () => {
 
     expect(onCommandCancel).toHaveBeenCalledTimes(1);
     expect(prevented).toBe(false);
+    // The browser moves focus on before a focus request could be honoured, so
+    // handing focus back here would land the user on this block again and
+    // swallow the Tab after all.
+    expect(onCommandCancel).toHaveBeenCalledWith({ restoreFocus: false });
   });
 
   it("swallows the arrow keys so the page does not scroll underneath", () => {
@@ -414,6 +476,17 @@ describe("Block, read-only", () => {
         name: "Limit limit price, Entry column, primary row, -25.00%, $57,000.00",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("describes an order it holds rather than offering to add one", () => {
+    render(<Block id="b1" abrv="Mkt" label="Market" isReadOnly />);
+
+    // The Active Orders panel has no placement affordance, so "Add" would
+    // invite an action that does not exist.
+    expect(
+      screen.getByRole("img", { name: "Market order" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Add Market order" })).toBeNull();
   });
 
   it("ignores pointer input entirely", () => {

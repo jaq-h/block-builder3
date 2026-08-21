@@ -3,6 +3,7 @@ import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
 import { getCellDisplayMode } from "../../../utils";
 import { describeCell } from "../../../utils/blockCommand";
+import type { CancelOptions } from "../../../hooks/useBlockCommand";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
 import {
   getInteractiveCellContainerProps,
@@ -74,7 +75,7 @@ interface GridCellProps {
   onBlockVerticalDrag: (id: string, pointerY: number) => void;
   onBlockActivate: (id: string, origin: "keyboard" | "pointer") => void;
   onBlockCommandMove: (dCol: number, dRow: number) => void;
-  onBlockCommandCancel: () => void;
+  onBlockCommandCancel: (options?: CancelOptions) => void;
   onBlockAdjustPrice: (id: string, delta: number) => void;
   onCellActivate: () => void;
   /** True while the command model is carrying a block; the cell is then a drop target. */

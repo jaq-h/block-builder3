@@ -9,6 +9,7 @@ import {
   commandReducer,
   describeCell,
   describeSource,
+  hasPairedLeg,
   IDLE_COMMAND_STATE,
   samePosition,
   validTargetsFor,
@@ -35,6 +36,15 @@ import { useAnnouncer, type Announcement } from "./useAnnouncer";
  */
 export type ActivationOrigin = "keyboard" | "pointer";
 
+export interface CancelOptions {
+  /**
+   * Hand focus back to the block the carry started on. Tab must not: the
+   * browser has already moved focus on by the time the request is honoured,
+   * and restoring it would drag the user back to the block they just left.
+   */
+  restoreFocus?: boolean;
+}
+
 export interface UseBlockCommandOptions {
   grid: GridData;
   strategyPattern: StrategyPattern;
@@ -57,7 +67,7 @@ export interface UseBlockCommandReturn {
   activateCell: (cell: CellPosition) => void;
   moveTarget: (dCol: number, dRow: number) => void;
   place: () => void;
-  cancel: () => void;
+  cancel: (options?: CancelOptions) => void;
   announce: (text: string) => void;
   announcement: Announcement;
   /** The block id that should take focus, once React has rendered it. */
@@ -122,17 +132,31 @@ export const useBlockCommand = ({
       block.source.kind === "provider"
         ? placeProvider(block.source.type, cell)
         : moveBlock(block.source.id, cell);
+
+    // `null` is how the grid refuses a placement, and it can disagree with the
+    // targets snapshotted at pick-up time - the grid may have been emptied or
+    // filled since. Saying "Placed" then would be a lie to the one user who has
+    // nothing but the announcement to go on.
+    if (placedId === null) {
+      dispatch({ type: "cancel" });
+      setFocusRequest(sourceKey(block.source));
+      announce(
+        `${describeCell(cell, strategyPattern)} cannot take this order any more. ${describeSource(block.source)} was not placed.`,
+      );
+      return;
+    }
+
     dispatch({ type: "place" });
-    setFocusRequest(placedId ?? sourceKey(block.source));
+    setFocusRequest(placedId);
     announce(
       `Placed ${describeSource(block.source)} in ${describeCell(cell, strategyPattern)}.`,
     );
   };
 
-  const cancel = () => {
+  const cancel = ({ restoreFocus = true }: CancelOptions = {}) => {
     if (!carrying) return;
     dispatch({ type: "cancel" });
-    setFocusRequest(sourceKey(carrying.source));
+    if (restoreFocus) setFocusRequest(sourceKey(carrying.source));
     announce(
       carrying.source.kind === "provider"
         ? `Cancelled. ${describeSource(carrying.source)} returned to the palette.`
@@ -172,6 +196,18 @@ export const useBlockCommand = ({
     const found = findBlockInGrid(grid, id);
     if (!found) return;
     const cell = { col: found.col, row: found.row };
+
+    // One leg of a dual-axis order cannot travel on its own: it would leave its
+    // partner behind and the two halves would be submitted as two orders on
+    // opposite sides. Refusing silently would make Enter look broken, so say
+    // what the block can still do instead.
+    if (hasPairedLeg(grid[cell.col][cell.row], found.block)) {
+      announce(
+        `${found.block.label} cannot be moved on its own: its trigger and limit must stay in the same cell. Use the arrow keys to move it along the price axis.`,
+      );
+      return;
+    }
+
     pickUp(
       { kind: "grid", id, label: found.block.label, origin: cell },
       found.block.allowedRows,

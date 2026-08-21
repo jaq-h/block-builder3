@@ -4,6 +4,7 @@ import { cn } from "../../lib/utils";
 import { useFreeDrag } from "../../hooks/useFreeDrag";
 import { useVerticalDrag } from "../../hooks/useVerticalDrag";
 import type { SvgIcon } from "../../data/orderTypes";
+import type { CancelOptions } from "../../hooks/useBlockCommand";
 import { SCALE_CONFIG } from "../../styles/grid";
 
 /** The id every block's instructions are described by. Rendered once by GridArea. */
@@ -87,7 +88,7 @@ interface BlockProps {
   /** Arrows while carrying: choose another target cell. */
   onCommandMove?: (dCol: number, dRow: number) => void;
   /** Escape while carrying: put the block back. */
-  onCommandCancel?: () => void;
+  onCommandCancel?: (options?: CancelOptions) => void;
   /** Arrows on a placed block: move it along the price axis, towards higher prices. */
   onAdjustPrice?: (id: string, delta: number) => void;
   onMouseEnter?: () => void;
@@ -201,8 +202,11 @@ const Block: FC<BlockProps> = ({
           return;
         case "Tab":
           // Tab is never swallowed - the carry is abandoned and focus moves on,
-          // so a carried block can never trap the keyboard.
-          onCommandCancel?.();
+          // so a carried block can never trap the keyboard. Focus must not be
+          // handed back here: the browser moves it before the request is
+          // honoured, so restoring it would yank the user back to this block
+          // and swallow the Tab after all.
+          onCommandCancel?.({ restoreFocus: false });
           return;
         default:
           return;
@@ -287,9 +291,13 @@ const Block: FC<BlockProps> = ({
   const sign = signedPercent === 0 ? "" : signedPercent > 0 ? "+" : "-";
   const valueText = `${sign}${Math.abs(signedPercent).toFixed(2)}%${priceText ? `, ${priceText}` : ""}`;
 
+  // Only a palette entry offers to add anything. A read-only block describes
+  // an order that already exists, in a panel with no placement affordance.
   const staticLabel = cellDescription
     ? `${name} order, ${cellDescription}`
-    : `Add ${name} order`;
+    : isReadOnly
+      ? `${name} order`
+      : `Add ${name} order`;
 
   // A read-only block is information, not a control: it must not be a tab stop
   // that promises an interaction the panel does not offer.

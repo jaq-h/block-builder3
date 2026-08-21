@@ -30,8 +30,12 @@ export interface GesturePoint {
 }
 
 export interface UsePointerGestureOptions {
-  /** Fired on pointer down, before it is known whether this is a tap or a drag. */
-  onDown?: (point: GesturePoint) => void;
+  /**
+   * Fired on pointer down, before it is known whether this is a tap or a drag.
+   * `element` is the one the gesture started on, so a caller can measure where
+   * inside it the pointer landed.
+   */
+  onDown?: (point: GesturePoint, element: HTMLElement) => void;
   /** Fired for every move of the captured pointer. */
   onMove?: (point: GesturePoint) => void;
   /**
@@ -133,7 +137,7 @@ export const usePointerGesture = ({
       element,
     };
     setIsActive(true);
-    onDown?.({ x: e.clientX, y: e.clientY });
+    onDown?.({ x: e.clientX, y: e.clientY }, element);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLElement>) => {

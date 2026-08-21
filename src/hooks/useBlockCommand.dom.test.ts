@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useBlockCommand } from "./useBlockCommand";
 import { clearGrid } from "@utils/grid";
-import { ORDER_TYPES } from "@data/orderTypes";
+import { createBlocksFromOrderType } from "@utils/blockFactory";
+import { getOrderType, ORDER_TYPES } from "@data/orderTypes";
 import type { BlockData, GridData } from "@/types/grid";
 
 // =============================================================================
@@ -44,6 +45,22 @@ const gridWithLimit = () => {
   const grid = clearGrid(2, 3);
   grid[0][1].push(limitBlock());
   return grid;
+};
+
+/**
+ * A cell holding a real order type's blocks, built by the same factory the
+ * grid uses - so a dual-axis type really does put two blocks in one cell.
+ */
+const gridWithOrder = (type: string, col = 0, row = 1) => {
+  const grid = clearGrid(2, 3);
+  const definition = getOrderType(type);
+  if (!definition) throw new Error(`unknown order type: ${type}`);
+  const { blocks } = createBlocksFromOrderType(definition, {
+    baseId: "t",
+    counter: 0,
+  });
+  grid[col][row].push(...blocks);
+  return { grid, blocks };
 };
 
 // =============================================================================
@@ -208,6 +225,30 @@ describe("useBlockCommand", () => {
       );
     });
 
+    it("says the order was not placed when the grid refuses it downstream", () => {
+      const grid = clearGrid(2, 3);
+      const view = renderHook(() =>
+        useBlockCommand({
+          grid,
+          strategyPattern: "conditional",
+          providerBlocks: ORDER_TYPES,
+          placeProvider: () => null,
+          moveBlock: () => null,
+        }),
+      );
+
+      act(() => view.result.current.activateProvider("limit", "keyboard"));
+      act(() => view.result.current.place());
+
+      // The targets are a snapshot from pick-up time, so the live grid can
+      // still refuse. Announcing "Placed" then would be a lie to the one user
+      // who has nothing but the announcement to go on.
+      expect(view.result.current.announcement.text).toBe(
+        "Entry column, primary row cannot take this order any more. Limit order was not placed.",
+      );
+      expect(view.result.current.carrying).toBeNull();
+    });
+
     it("keeps focus somewhere real when the placement is rejected downstream", () => {
       const grid = clearGrid(2, 3);
       const view = renderHook(() =>
@@ -277,6 +318,79 @@ describe("useBlockCommand", () => {
 
       expect(result.current.carrying).toBeNull();
       expect(result.current.focusRequest).toBe("b1");
+      expect(result.current.announcement.text).toBe(
+        "Cancelled. Limit block left in Entry column, primary row.",
+      );
+    });
+
+    it("refuses to move one leg of a dual-axis order, and says why", () => {
+      const { grid, blocks } = gridWithOrder("stop-loss-limit");
+      const { result, moveBlock } = setup(grid);
+
+      // The trigger and the limit share a cell; moving one alone would submit
+      // them as two orders on opposite sides of the market.
+      expect(blocks).toHaveLength(2);
+
+      act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
+
+      expect(result.current.carrying).toBeNull();
+      expect(moveBlock).not.toHaveBeenCalled();
+      expect(result.current.announcement.text).toBe(
+        "Stop Loss Limit cannot be moved on its own: its trigger and limit must stay in the same cell. Use the arrow keys to move it along the price axis.",
+      );
+    });
+
+    it("refuses the limit leg by tap as well as by keyboard", () => {
+      const { grid, blocks } = gridWithOrder("take-profit-limit");
+      const { result, moveBlock } = setup(grid);
+
+      act(() => result.current.activateBlock(blocks[1].id, "pointer"));
+
+      expect(result.current.carrying).toBeNull();
+      expect(moveBlock).not.toHaveBeenCalled();
+      expect(result.current.announcement.text).toContain(
+        "Take Profit Limit cannot be moved on its own",
+      );
+    });
+
+    it("still picks up a single-block order", () => {
+      const { grid, blocks } = gridWithOrder("stop-loss");
+      const { result, moveBlock } = setup(grid);
+
+      expect(blocks).toHaveLength(1);
+
+      act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
+      expect(result.current.carrying?.source).toMatchObject({
+        id: blocks[0].id,
+      });
+
+      act(() => result.current.moveTarget(1, 0));
+      act(() => result.current.place());
+
+      expect(moveBlock).toHaveBeenCalledWith(blocks[0].id, { col: 1, row: 2 });
+    });
+
+    it("still picks up a market order, which has no axis at all", () => {
+      const { grid, blocks } = gridWithOrder("market");
+      const { result } = setup(grid);
+
+      act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
+
+      expect(result.current.carrying?.source).toMatchObject({
+        id: blocks[0].id,
+      });
+    });
+
+    it("does not hand focus back when the carry is abandoned by Tab", () => {
+      const { result } = setup(gridWithLimit());
+
+      act(() => result.current.activateBlock("b1", "keyboard"));
+      act(() => result.current.cancel({ restoreFocus: false }));
+
+      // Tab has already moved focus on by the time a focus request would be
+      // honoured; restoring it would drag the user back and swallow the Tab.
+      expect(result.current.carrying).toBeNull();
+      expect(result.current.focusRequest).toBeNull();
       expect(result.current.announcement.text).toBe(
         "Cancelled. Limit block left in Entry column, primary row.",
       );

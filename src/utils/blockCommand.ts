@@ -9,7 +9,12 @@
 //
 // Everything here is pure. The DOM-facing half lives in `useBlockCommand`.
 
-import type { CellPosition, GridData, StrategyPattern } from "../types/grid";
+import type {
+  BlockData,
+  CellPosition,
+  GridData,
+  StrategyPattern,
+} from "../types/grid";
 import { isCellValidForPlacement } from "./grid";
 
 // =============================================================================
@@ -223,6 +228,24 @@ export const describeCell = (
   const row = ROW_NAMES[cell.row] ?? `row ${cell.row + 1}`;
   return `${column} column, ${row} row`;
 };
+
+/**
+ * True when this block is one leg of a multi-block order: a dual-axis order
+ * type (stop-loss-limit and friends) puts a trigger block and a limit block in
+ * the same cell, and they only mean anything together. Moving one on its own
+ * would split the order across two cells, which flips one leg from buy to sell.
+ *
+ * The pointer drag never offered this - every block on an axis is wired to the
+ * vertical drag, so free drag cannot reach it - so the cell-level pick-up must
+ * not offer it either.
+ */
+export const hasPairedLeg = (
+  cellBlocks: BlockData[],
+  block: BlockData,
+): boolean =>
+  cellBlocks.some(
+    (other) => other.id !== block.id && other.orderType === block.orderType,
+  );
 
 export const describeSource = (source: CommandSource): string =>
   source.kind === "provider"
