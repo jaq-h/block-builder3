@@ -482,35 +482,42 @@ export class KrakenWebSocketManager {
   }
 
   /**
-   * Subscribe to a public channel, reserving the key before the connect await so
-   * two callers racing on mount cannot both send the same subscribe frame.
+   * Ensure a public channel is live: register the intent if it is new, and make
+   * sure there is a socket carrying it either way.
    *
    * The key is durable intent, not a record of a frame that went out: a failed
    * connect keeps it, so the replay on the next successful open establishes the
-   * channel. Dropping it here is what left the app connected but subscribed to
+   * channel. Dropping it is what left the app connected but subscribed to
    * nothing whenever the very first connect failed, since neither caller is
    * ever asked to subscribe a second time.
+   *
+   * A key the manager already holds still has to reach the connect below. It is
+   * the only route a remounting consumer has back to a socket the manager gave
+   * up reconnecting, and returning early there stranded the app on the REST
+   * poll until a page reload.
    */
   private async subscribe(
     key: string,
     message: Record<string, unknown>,
   ): Promise<void> {
-    if (this.subscriptions.has(key)) {
-      return; // Already subscribed
+    const isNew = !this.subscriptions.has(key);
+    if (isNew) {
+      // Reserved before the await, so a second caller racing this one sees the
+      // key and returns instead of sending the same frame again.
+      this.subscriptions.set(key, message);
     }
-    // Reserved before the await, so a second caller racing this one sees the key
-    // and returns instead of sending the same frame again.
-    this.subscriptions.set(key, message);
 
     const wasOpen = this.publicSocket.ws?.readyState === WebSocket.OPEN;
 
-    // The caller still hears about the failure; only the intent survives it.
+    // A no-op on an open socket, the memoised promise while one is connecting,
+    // and a fresh socket otherwise. The caller still hears about a failure;
+    // only the intent survives it.
     await this.connectPublic();
 
     // If the socket had to be opened, the replay in `onopen` has already sent
     // this frame - it was in the map before the socket came up. Only a caller
-    // joining an already-open socket has to send for itself.
-    if (wasOpen) {
+    // joining an already-open socket with a new key has to send for itself.
+    if (isNew && wasOpen) {
       this.send("public", message);
     }
   }

@@ -237,6 +237,46 @@ describe("KrakenWebSocketManager - reconnect", () => {
     expect(manager.getStatus().public).toBe("error");
   });
 
+  it("reopens for a channel it already holds after it gave up reconnecting", async () => {
+    const fatal: WebSocketErrorEvent[] = [];
+    manager.on("error", (data) => {
+      const event = data as WebSocketErrorEvent;
+      if (event.fatal) fatal.push(event);
+    });
+
+    const original = await connectAndSubscribe();
+    expect(subscribedChannels(original)).toHaveLength(2);
+
+    // Burn the whole budget, so the manager stops retrying on its own.
+    for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+      FakeWebSocket.last.dropConnection();
+      await vi.advanceTimersByTimeAsync(delay);
+    }
+    FakeWebSocket.last.dropConnection();
+    await vi.advanceTimersByTimeAsync(60000);
+
+    expect(manager.getStatus().public).toBe("error");
+    expect(fatal).toHaveLength(1);
+
+    // A consumer remounts and asks for a symbol the manager still holds. That
+    // is the app's only way back from the terminal state short of a reload, so
+    // it has to reach the connect rather than return on the held key.
+    const before = FakeWebSocket.instances.length;
+    const resubscribe = manager.subscribeTicker("BTC/USD");
+    await flush();
+    expect(FakeWebSocket.instances.length).toBe(before + 1);
+
+    const reopened = FakeWebSocket.last;
+    reopened.openConnection();
+    await resubscribe;
+
+    expect(manager.getStatus().public).toBe("connected");
+    expect(subscribedChannels(reopened)).toEqual([
+      "ticker:BTC/USD",
+      "ohlc:BTC/USD",
+    ]);
+  });
+
   it("resets the budget once a reconnect succeeds", async () => {
     const connecting = manager.connectPublic().catch(() => {});
     FakeWebSocket.last.openConnection();
