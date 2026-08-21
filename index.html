@@ -2,9 +2,47 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
-        <link rel="icon" type="image/svg+xml" href="/vite.svg" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
         <title>Block Builder</title>
+        <meta
+            name="description"
+            content="A visual, grid-based strategy builder for assembling and managing multi-leg crypto trading orders on the Kraken exchange."
+        />
+
+        <!-- The app is dark-only. `theme-color` matches --color-bg-primary so the
+             browser chrome does not sit against a different background, and
+             `color-scheme` stops the white flash before the CSS loads. -->
+        <meta name="theme-color" content="#0b0611" />
+        <meta name="color-scheme" content="dark" />
+
+        <!-- SVG for browsers that take it, .ico as the universal fallback (and so
+             the browser's automatic /favicon.ico request is not answered by the
+             SPA rewrite with a page of HTML). -->
+        <link rel="icon" href="/favicon.ico" sizes="32x32" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="Block Builder" />
+        <meta property="og:title" content="Block Builder" />
+        <meta
+            property="og:description"
+            content="A visual, grid-based strategy builder for assembling and managing multi-leg crypto trading orders on the Kraken exchange."
+        />
+        <meta property="og:url" content="https://block-builder3.vercel.app/" />
+        <meta
+            property="og:image"
+            content="https://block-builder3.vercel.app/og-image.png"
+        />
+        <meta property="og:image:type" content="image/png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta
+            property="og:image:alt"
+            content="Block Builder: three order blocks placed at different price levels on a dark grid."
+        />
+        <meta name="twitter:card" content="summary_large_image" />
     </head>
     <body>
         <div id="root"></div>

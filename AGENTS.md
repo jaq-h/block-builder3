@@ -46,6 +46,17 @@ Coverage is reported, not enforced. The suite targets the logic where a defect w
 corrupt a real order (`src/api/orderMapper.ts`, `src/api/krakenAuth.ts`, `src/utils/`)
 rather than chasing a repository-wide percentage.
 
+## Deployment
+
+Vercel, configured entirely by `vercel.json`; the README's **Deployment** section justifies every
+entry in it. Two facts bite during ordinary work:
+
+- **A new external endpoint has to be added to the CSP's `connect-src`.** Miss it and the request
+  is blocked in production only, with nothing in the source to explain why. `npm run preview` does
+  not apply these headers because they live in `vercel.json`, not in the app; `npx vercel dev` does.
+- **The chart panel is code-split.** Import it from the `orderChart` barrel, never from
+  `./OrderChart` directly, or `lightweight-charts` lands back in the initial chunk.
+
 ## Credentials and simulation mode
 
 `vite.config.ts` injects `KRAKEN_API_KEY` and `KRAKEN_API_PRIVATE_KEY` into the client

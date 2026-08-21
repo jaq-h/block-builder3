@@ -80,6 +80,72 @@ between runs, and no job requires any Kraken credential.
 
 ---
 
+## Deployment
+
+The app is a static single-page bundle hosted on [Vercel](https://vercel.com/) at
+<https://block-builder3.vercel.app/>. Everything the platform needs is declared in
+`vercel.json`; the build is plain `npm run build` and no environment variable is set on the
+deployment.
+
+### SPA rewrite
+
+Vercel checks the filesystem before it applies a rewrite, so real files still win and every
+other path falls through to `/index.html`. `/assets/` is deliberately excluded: those
+filenames are content-hashed, so a request for one that no longer exists is a stale client
+asking for a superseded build. It should get an honest 404 rather than a page of HTML served
+under a JavaScript content type.
+
+### Security headers
+
+| Header | Why |
+|---|---|
+| `Content-Security-Policy` | See below. |
+| `X-Content-Type-Options: nosniff` | Stops a browser second-guessing a declared content type. |
+| `X-Frame-Options: DENY` | Legacy backstop for the CSP's `frame-ancestors 'none'`. |
+| `Referrer-Policy: strict-origin-when-cross-origin` | Sends the origin, never the path, to a third party. |
+| `Permissions-Policy` | Denies every powerful device API. The app uses none of them. |
+| `Cross-Origin-Opener-Policy: same-origin` | Severs `window.opener` from anything the page opens. |
+
+The CSP is:
+
+```
+default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none';
+form-action 'none'; script-src 'self'; style-src 'self' 'unsafe-inline';
+img-src 'self' data:; font-src 'self';
+connect-src 'self' https://api.kraken.com wss://ws.kraken.com wss://ws-auth.kraken.com
+```
+
+Two entries need explaining:
+
+- **`connect-src` names every host the app talks to**: `api.kraken.com` for the REST ticker and
+  OHLC candles, `ws.kraken.com` for the public feed and `ws-auth.kraken.com` for the private one.
+  A new endpoint has to be added here as well as in the code, or the request is blocked at
+  runtime with nothing in the source to explain why.
+- **`style-src` allows `'unsafe-inline'`** because React writes inline `style` attributes and
+  `lightweight-charts` injects a stylesheet of its own once the chart mounts. A static deploy has
+  no way to issue a per-response nonce, and pinning a hash of a minified third-party stylesheet
+  would break silently on the next dependency bump. `script-src` stays `'self'` with neither
+  `'unsafe-inline'` nor `'unsafe-eval'`, which is the directive that actually gates code execution.
+
+`npm run preview` serves the build *without* these headers, because they live in `vercel.json`
+rather than in the app. To exercise a CSP change locally, run the deployment itself with
+`npx vercel dev`.
+
+### Caching
+
+`/assets/*` is content-hashed by Vite, so it is served `public, max-age=31536000, immutable`.
+Everything else, `index.html` included, keeps Vercel's revalidate-on-every-request default, so a
+new deploy is picked up immediately.
+
+### Code splitting
+
+`lightweight-charts` is only reachable from the chart panel, so the panel is exported through a
+`lazy()` boundary in `components/widgets/orderChart/LazyOrderChart.tsx` and the library never
+enters the initial payload. The barrel re-exports the boundary rather than the implementation, so
+no import can pull it back in by accident.
+
+---
+
 ## Kraken API Setup (Optional)
 
 To enable live market data and real order placement:
@@ -206,6 +272,12 @@ src/
 │       │       ├── UtilityButtons.tsx  # Clear / reset controls
 │       │       ├── DebugPanel.tsx      # Debug state inspector
 │       │       └── index.ts           # Barrel export
+│       │
+│       ├── orderChart/            # Price chart widget (code-split)
+│       │   ├── LazyOrderChart.tsx     # lazy() boundary + loading fallback
+│       │   ├── OrderChart.tsx         # Chart panel - the only lightweight-charts importer
+│       │   ├── useLightweightChart.ts # Chart instance lifecycle
+│       │   └── index.ts               # Barrel export (re-exports the lazy boundary)
 │       │
 │       └── activeOrders/          # Active Orders widget
 │           ├── ActiveOrders.tsx                # Main component
