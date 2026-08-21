@@ -1,7 +1,7 @@
 import { useReducer, type FC } from "react";
 import type { OrderConfig } from "../types/grid";
 import type { ActiveOrdersConfig, OrderStatus } from "../types/activeOrders";
-import { hasValidCredentials } from "../api";
+import { isLiveTradingAvailable } from "../api";
 import { ordersReducer, createInitialState } from "./ordersReducer";
 import OrdersStoreContext, {
   type OrdersStoreContextType,
@@ -20,7 +20,7 @@ const isDevelopment = import.meta.env.DEV;
  * - Default to simulation in development (can toggle to API mode if keys found)
  */
 const getDefaultSimulationMode = (): boolean => {
-  // Always start in simulation — in dev, users can opt into API mode if keys exist
+  // Always start in simulation - in dev, users can opt into API mode if keys exist
   return true;
 };
 
@@ -35,7 +35,7 @@ const generateOrderId = (): string => {
   return `ORD-${timestamp}-${random}`.toUpperCase();
 };
 
-/** Generate a unique strategy ID — groups all orders submitted together */
+/** Generate a unique strategy ID - groups all orders submitted together */
 const generateStrategyId = (): string => {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 6);
@@ -108,7 +108,7 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
     );
   };
 
-  // Submit orders — simulated locally or via API based on simulation mode
+  // Submit orders - simulated locally or via API based on simulation mode
   const submitOrders = async (config: OrderConfig): Promise<boolean> => {
     dispatch({ type: "SUBMIT_START" });
 
@@ -126,7 +126,7 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
         // Simulate API delay for realistic UX
         await simulateApiDelay(800);
 
-        // Convert config entries to active orders — all share the same strategyId
+        // Convert config entries to active orders - all share the same strategyId
         const strategyId = generateStrategyId();
         const newOrders: ActiveOrdersConfig = {};
         Object.entries(config).forEach(([id, entry]) => {
@@ -147,16 +147,13 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
         console.log(`${logPrefix} Orders submitted successfully`);
         return true;
       } else {
-        // API mode — only reachable in dev with valid credentials
-        if (!isDevelopment) {
+        // API mode - only reachable when the server reports live trading
+        // The browser holds no credential and cannot sign anything, so this is
+        // a UI guard, not the security boundary. The real refusal is server
+        // side, in `api/_lib/serverConfig.ts`.
+        if (!isLiveTradingAvailable()) {
           throw new Error(
-            "API mode is not available in production. Simulation only.",
-          );
-        }
-
-        if (!hasValidCredentials()) {
-          throw new Error(
-            "API credentials not configured. Add keys to local.env or switch to simulation mode.",
+            "Live trading is not enabled on this deployment. Switch to simulation mode, or run the app locally or self-hosted with live trading configured on the server.",
           );
         }
 
@@ -188,15 +185,12 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
         dispatch({ type: "CANCEL_ORDER", orderId });
         return true;
       } else {
-        if (!isDevelopment) {
+        // The browser holds no credential and cannot sign anything, so this is
+        // a UI guard, not the security boundary. The real refusal is server
+        // side, in `api/_lib/serverConfig.ts`.
+        if (!isLiveTradingAvailable()) {
           throw new Error(
-            "API mode is not available in production. Simulation only.",
-          );
-        }
-
-        if (!hasValidCredentials()) {
-          throw new Error(
-            "API credentials not configured. Add keys to local.env or switch to simulation mode.",
+            "Live trading is not enabled on this deployment. Switch to simulation mode, or run the app locally or self-hosted with live trading configured on the server.",
           );
         }
 
@@ -225,15 +219,12 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
         dispatch({ type: "CANCEL_ALL" });
         return true;
       } else {
-        if (!isDevelopment) {
+        // The browser holds no credential and cannot sign anything, so this is
+        // a UI guard, not the security boundary. The real refusal is server
+        // side, in `api/_lib/serverConfig.ts`.
+        if (!isLiveTradingAvailable()) {
           throw new Error(
-            "API mode is not available in production. Simulation only.",
-          );
-        }
-
-        if (!hasValidCredentials()) {
-          throw new Error(
-            "API credentials not configured. Add keys to local.env or switch to simulation mode.",
+            "Live trading is not enabled on this deployment. Switch to simulation mode, or run the app locally or self-hosted with live trading configured on the server.",
           );
         }
 
@@ -271,7 +262,7 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
 
     if (isSimulationMode) {
       console.log(`${logPrefix} Refreshing orders (local state)`);
-      // In simulation mode, we just log — state is already local
+      // In simulation mode, we just log - state is already local
     } else {
       // TODO: Implement actual API call to fetch orders
       console.log(`${logPrefix} Would fetch orders from API`);

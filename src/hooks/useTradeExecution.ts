@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { OrderConfig } from "../types/grid";
 import { useOrdersStore } from "../store";
-import { hasValidCredentials } from "../api";
+import { useTradingMode } from "./useTradingMode";
 
 // =============================================================================
 // TYPES
@@ -14,7 +14,7 @@ export interface UseTradeExecutionReturn {
   orderCount: number;
   /** Whether a success message should be displayed */
   showSuccess: boolean;
-  /** Key that increments on successful submit — used to force-reset StrategyAssembly */
+  /** Key that increments on successful submit - used to force-reset StrategyAssembly */
   strategyKey: number;
   /** Initial config to seed StrategyAssembly with (e.g. loaded from active orders) */
   initialConfig: OrderConfig | undefined;
@@ -28,6 +28,8 @@ export interface UseTradeExecutionReturn {
   isSimulationMode: boolean;
   /** Whether the app is running in development mode */
   isDev: boolean;
+  /** Whether this deployment's server will sign real Kraken requests */
+  isLiveAvailable: boolean;
   /** Whether the user is allowed to toggle between simulation and API mode */
   canToggle: boolean;
   /** Toggle simulation mode on/off */
@@ -40,7 +42,7 @@ export interface UseTradeExecutionReturn {
   loadConfig: (config: OrderConfig) => void;
   /** Human-readable simulation/environment message */
   simulationMessage: string;
-  /** Whether we're effectively in simulation (prod always, dev when toggled) */
+  /** Whether we're effectively in simulation (always, unless the server is live and the toggle is off) */
   isEffectivelySimulation: boolean;
 }
 
@@ -65,30 +67,30 @@ export function useTradeExecution(): UseTradeExecutionReturn {
   } = useOrdersStore();
 
   const isDev = import.meta.env.DEV;
-  const hasKeys = hasValidCredentials();
+
+  // Whether real orders are possible is the server's answer, not the browser's.
+  // A build has no credential in it, so `import.meta.env.DEV` no longer tells us
+  // anything about what this deployment can do.
+  const { liveAvailable: isLiveAvailable } = useTradingMode();
 
   // ─── Derived state ──────────────────────────────────────────────────
   //
-  // prod            → always simulation, no toggle
-  // dev + keys      → toggle allowed, default simulation
-  // dev + no keys   → always simulation, no toggle
+  // server simulation/misconfigured → always simulation, no toggle
+  // server live                     → toggle allowed, default simulation
   //
-  const canToggle = isDev && hasKeys;
+  const canToggle = isLiveAvailable;
 
-  // In production we always simulate regardless of the toggle.
-  // In dev, respect the toggle value.
-  const isEffectivelySimulation = !isDev || isSimulationMode;
+  // Without a signing server there is nothing the toggle could switch to.
+  const isEffectivelySimulation = !isLiveAvailable || isSimulationMode;
 
   const orderCount = Object.keys(orderConfig).length;
 
   // Determine what message to show based on environment and simulation mode
-  const simulationMessage = !isDev
-    ? "Simulation Mode — Orders saved locally"
+  const simulationMessage = !isLiveAvailable
+    ? "Simulation Mode - Orders saved locally"
     : isSimulationMode
-      ? hasKeys
-        ? "Dev Simulation — Orders saved locally (API keys detected)"
-        : "Dev Simulation — Orders saved locally"
-      : "Dev API Mode — Orders sent to Kraken API";
+      ? "Simulation Mode - Orders saved locally (live trading available)"
+      : "Live API Mode - Orders sent to Kraken";
 
   const handleConfigChange = (config: OrderConfig) => {
     setOrderConfig(config);
@@ -132,6 +134,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     error,
     isSimulationMode,
     isDev,
+    isLiveAvailable,
     canToggle,
     toggleSimulationMode,
     handleConfigChange,

@@ -23,6 +23,9 @@ export { useKrakenAPI, default as useKrakenAPIDefault } from "./useKrakenAPI";
 // Trade execution hook for order config management and submission
 export { useTradeExecution } from "./useTradeExecution";
 
+// Server-reported trading mode (simulation or live)
+export { useTradingMode } from "./useTradingMode";
+
 // OHLC candle data hook for chart integration
 export { useOHLCData, TIMEFRAME_MAP } from "./useOHLCData";
 

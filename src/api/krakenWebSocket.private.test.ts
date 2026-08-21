@@ -1,15 +1,16 @@
 // The public and private sockets keep separate reconnect state. Proving that
-// needs credentials, which needs module mocks, which are file-scoped - hence a
-// second file rather than another `describe` in `krakenWebSocket.test.ts`.
+// needs the server to report live trading, which needs module mocks, which are
+// file-scoped - hence a second file rather than another `describe` in
+// `krakenWebSocket.test.ts`.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("./config", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./config")>()),
-  hasValidCredentials: () => true,
+vi.mock("./tradingMode", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./tradingMode")>()),
+  isLiveTradingAvailable: () => true,
 }));
 
-vi.mock("./krakenAuth", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./krakenAuth")>()),
+vi.mock("./krakenServer", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./krakenServer")>()),
   getWebSocketToken: async () => "test-token",
 }));
 

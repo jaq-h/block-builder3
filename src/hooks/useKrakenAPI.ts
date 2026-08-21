@@ -10,7 +10,6 @@ import {
   mapGridToOrders,
   validateOrder,
   createOrderPreview,
-  hasValidCredentials,
   parseTickerUpdate,
   applyTickerUpdate,
   DEFAULT_SYMBOL,
@@ -19,6 +18,7 @@ import {
   type OrderParams,
   type WebSocketErrorEvent,
 } from "../api";
+import { useTradingMode } from "./useTradingMode";
 import type { GridData } from "../types/grid";
 
 // ============================================================================
@@ -59,6 +59,7 @@ export interface UseKrakenAPIReturn {
   clearOrderError: () => void;
 
   // Validation
+  /** Whether this deployment's server will sign real Kraken requests */
   hasCredentials: boolean;
   validateOrders: (orders: OrderParams[]) => ValidationResult;
 }
@@ -118,7 +119,9 @@ export const useKrakenAPI = (
   const isConnected =
     publicStatus === "connected" || privateStatus === "authenticated";
   const currentPrice = tickerData?.last ?? null;
-  const hasCredentials = hasValidCredentials();
+  // Server-reported. The browser holds no credential of its own any more, so
+  // "do we have credentials" is really "will the server sign for us".
+  const { liveAvailable: hasCredentials } = useTradingMode();
   const orderPreviews = pendingOrders.map(createOrderPreview);
 
   // ============================================================================
@@ -339,7 +342,7 @@ export const useKrakenAPI = (
         success: false,
         submittedCount: 0,
         failedCount: orders.length,
-        errors: ["API credentials are not configured"],
+        errors: ["Live trading is not enabled on this deployment"],
         orderIds: [],
       };
       setLastOrderResult(result);

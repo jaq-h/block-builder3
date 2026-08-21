@@ -165,10 +165,8 @@ export interface WebSocketSubscription {
 // Authentication Types
 // ============================================================================
 
-export interface KrakenCredentials {
-  apiKey: string;
-  apiSecret: string;
-}
+// Credentials are a server-side concern and are typed in `api/_lib/serverConfig.ts`.
+// Nothing in this bundle may hold, or even describe, a Kraken key.
 
 export interface AuthToken {
   token: string;
