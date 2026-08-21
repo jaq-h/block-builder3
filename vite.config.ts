@@ -36,9 +36,14 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      "import.meta.env.KRAKEN_API_KEY": JSON.stringify(env.KRAKEN_API_KEY),
+      // `?? ""` matters: `JSON.stringify(undefined)` is `undefined`, not a
+      // string, and Vitest's transform then substitutes the literal text
+      // `"undefined"` - a truthy value that makes `hasValidCredentials()` claim
+      // credentials exist when none do. An empty string is the honest default
+      // in every environment.
+      "import.meta.env.KRAKEN_API_KEY": JSON.stringify(env.KRAKEN_API_KEY ?? ""),
       "import.meta.env.KRAKEN_API_PRIVATE_KEY": JSON.stringify(
-        env.KRAKEN_API_PRIVATE_KEY,
+        env.KRAKEN_API_PRIVATE_KEY ?? "",
       ),
     },
     // Vitest reuses everything above - the same plugins (so `?react` SVG imports

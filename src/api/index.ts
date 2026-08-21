@@ -41,7 +41,16 @@ export {
   resetWebSocketManager,
   type WebSocketEventType,
   type WebSocketEventHandler,
+  type WebSocketErrorEvent,
+  type SocketKind,
 } from './krakenWebSocket';
+
+// Ticker WebSocket updates
+export {
+  parseTickerUpdate,
+  applyTickerUpdate,
+  type TickerUpdate,
+} from './tickerUpdate';
 
 // Order Mapper
 export {

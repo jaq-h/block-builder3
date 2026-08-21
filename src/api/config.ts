@@ -18,38 +18,37 @@ export interface KrakenConfig {
 const KRAKEN_WS_URL = "wss://ws-auth.kraken.com/v2";
 const KRAKEN_REST_URL = "https://api.kraken.com";
 
+// The credentials are baked into the bundle by `vite.config.ts` at build time,
+// so they cannot change while the app is running. Resolving them once at module
+// scope keeps `getKrakenConfig()` free to be called from render without either
+// re-reading the environment or re-emitting the warning below on every call.
+const config: KrakenConfig = {
+  apiKey: import.meta.env.KRAKEN_API_KEY || "",
+  apiSecret: import.meta.env.KRAKEN_API_PRIVATE_KEY || "",
+  wsUrl: KRAKEN_WS_URL,
+  restUrl: KRAKEN_REST_URL,
+};
+
+// Warn once, at import time, rather than once per call. Production intentionally
+// runs without keys, so the warning would be pure noise there.
+if (import.meta.env.DEV && (!config.apiKey || !config.apiSecret)) {
+  console.warn(
+    "Kraken API credentials not found. To enable API mode, create a local.env file with:\n" +
+      "KRAKEN_API_KEY=your_api_key\n" +
+      "KRAKEN_API_PRIVATE_KEY=your_api_private_key",
+  );
+}
+
 /**
  * Get Kraken API configuration from environment variables
- * In Vite, environment variables must be prefixed with VITE_
  */
-export const getKrakenConfig = (): KrakenConfig => {
-  const apiKey = import.meta.env.KRAKEN_API_KEY || "";
-  const apiSecret = import.meta.env.KRAKEN_API_PRIVATE_KEY || "";
-
-  // Only warn in development — production intentionally runs without keys
-  if (import.meta.env.DEV && (!apiKey || !apiSecret)) {
-    console.warn(
-      "Kraken API credentials not found. To enable API mode, create a local.env file with:\n" +
-        "KRAKEN_API_KEY=your_api_key\n" +
-        "KRAKEN_API_PRIVATE_KEY=your_api_private_key",
-    );
-  }
-
-  return {
-    apiKey,
-    apiSecret,
-    wsUrl: KRAKEN_WS_URL,
-    restUrl: KRAKEN_REST_URL,
-  };
-};
+export const getKrakenConfig = (): KrakenConfig => config;
 
 /**
  * Check if API credentials are configured
  */
-export const hasValidCredentials = (): boolean => {
-  const config = getKrakenConfig();
-  return Boolean(config.apiKey && config.apiSecret);
-};
+export const hasValidCredentials = (): boolean =>
+  Boolean(config.apiKey && config.apiSecret);
 
 /**
  * Default trading pair
@@ -61,7 +60,6 @@ export const DEFAULT_SYMBOL = "BTC/USD";
  */
 export const validateConfig = (): { valid: boolean; errors: string[] } => {
   const errors: string[] = [];
-  const config = getKrakenConfig();
 
   if (!config.apiKey) {
     errors.push("KRAKEN_API_KEY is not set");

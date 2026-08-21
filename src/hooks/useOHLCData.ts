@@ -60,7 +60,7 @@ const fetchHistoricalOHLC = async (
   const json = await res.json();
   if (json.error?.length) throw new Error(json.error.join(", "));
 
-  // Result keys vary — grab the first non-"last" key
+  // Result keys vary - grab the first non-"last" key
   const dataKey = Object.keys(json.result).find((k) => k !== "last");
   if (!dataKey) return [];
 
@@ -74,46 +74,74 @@ const fetchHistoricalOHLC = async (
   }));
 };
 
+/**
+ * Everything a completed request produced, tagged with the request it came from.
+ * Keeping the tag in the same state as the data is what lets `isLoading` and
+ * `error` be derived during render: state that belongs to a different
+ * symbol/interval is simply not this request's, so there is nothing to reset
+ * from an effect and no cascading render on every timeframe change.
+ */
+interface OHLCState {
+  requestKey: string;
+  candles: CandlestickData<UTCTimestamp>[];
+  latestCandle: CandlestickData<UTCTimestamp> | null;
+  error: string | null;
+}
+
+// Stable identity, so a consumer's effect deps do not churn while loading.
+const NO_CANDLES: CandlestickData<UTCTimestamp>[] = [];
+
+const INITIAL_STATE: OHLCState = {
+  requestKey: "",
+  candles: NO_CANDLES,
+  latestCandle: null,
+  error: null,
+};
+
 export const useOHLCData = ({
   symbol,
   interval,
 }: UseOHLCDataOptions): UseOHLCDataReturn => {
-  const [candles, setCandles] = useState<CandlestickData<UTCTimestamp>[]>([]);
-  const [latestCandle, setLatestCandle] =
-    useState<CandlestickData<UTCTimestamp> | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const requestKey = `${symbol}:${interval}`;
+  const [state, setState] = useState<OHLCState>(INITIAL_STATE);
   const prevIntervalRef = useRef<number | null>(null);
+
+  // Until the fetch for this exact symbol/interval resolves, we are loading and
+  // hold nothing for it.
+  const isCurrent = state.requestKey === requestKey;
+  const candles = isCurrent ? state.candles : NO_CANDLES;
+  const latestCandle = isCurrent ? state.latestCandle : null;
+  const error = isCurrent ? state.error : null;
+  const isLoading = !isCurrent;
 
   // Fetch historical data on mount / interval change
   useEffect(() => {
     let cancelled = false;
-    // KNOWN ISSUE: seeding the loading/error state from inside the effect causes
-    // a cascading render on every symbol/interval change. Reworking it changes
-    // observable loading behaviour, so it is tracked separately.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsLoading(true);
-    setError(null);
 
     fetchHistoricalOHLC(symbol, interval)
       .then((data) => {
-        if (!cancelled) {
-          setCandles(data);
-          setLatestCandle(data[data.length - 1] ?? null);
-          setIsLoading(false);
-        }
+        if (cancelled) return;
+        setState({
+          requestKey,
+          candles: data,
+          latestCandle: data[data.length - 1] ?? null,
+          error: null,
+        });
       })
       .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to fetch OHLC");
-          setIsLoading(false);
-        }
+        if (cancelled) return;
+        setState({
+          requestKey,
+          candles: NO_CANDLES,
+          latestCandle: null,
+          error: err instanceof Error ? err.message : "Failed to fetch OHLC",
+        });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [symbol, interval]);
+  }, [symbol, interval, requestKey]);
 
   // WebSocket subscription for real-time updates
   const handleOHLC = useCallback(
@@ -132,13 +160,18 @@ export const useOHLCData = ({
       if (!relevant.length) return;
 
       if (msg.type === "update") {
-        // Real-time update — update latest candle
+        // Real-time update - update latest candle, but only onto the request
+        // this tick actually belongs to.
         const candle = krakenToCandle(relevant[relevant.length - 1]);
-        setLatestCandle(candle);
+        setState((prev) =>
+          prev.requestKey === requestKey
+            ? { ...prev, latestCandle: candle }
+            : prev,
+        );
       }
       // We ignore "snapshot" from WS since we already have REST backfill
     },
-    [symbol, interval],
+    [symbol, interval, requestKey],
   );
 
   useEffect(() => {

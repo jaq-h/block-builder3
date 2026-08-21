@@ -21,6 +21,7 @@ import { useHover } from "../contexts/HoverContext";
 import { useStatic } from "../contexts/StaticContext";
 import {
   contentWrapper,
+  contentRow,
   columnsWrapper,
   column,
   getColumnHeaderProps,
@@ -33,7 +34,7 @@ interface GridAreaProps {
 }
 
 /**
- * GridArea — encapsulates all drag/drop interaction logic and renders the
+ * GridArea - encapsulates all drag/drop interaction logic and renders the
  * ProviderColumn + grid columns.
  *
  * This component subscribes to all four contexts because it orchestrates
@@ -156,16 +157,24 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     }
 
     // Use factory to create blocks, then stamp direction from placement context
-    const { blocks: rawBlocks, nextCounter } = createBlocksFromOrderType(providerBlock, {
-      baseId,
-      counter: blockCounterRef.current,
-    });
+    const { blocks: rawBlocks, nextCounter } = createBlocksFromOrderType(
+      providerBlock,
+      {
+        baseId,
+        counter: blockCounterRef.current,
+      },
+    );
     blockCounterRef.current = nextCounter;
     const blocks = rawBlocks.map((block) => ({
       ...block,
-      direction: shouldBeDescending(targetRow, targetCol, strategyPattern, block.orderType)
-        ? "downside" as const
-        : "upside" as const,
+      direction: shouldBeDescending(
+        targetRow,
+        targetCol,
+        strategyPattern,
+        block.orderType,
+      )
+        ? ("downside" as const)
+        : ("upside" as const),
     }));
 
     // Update grid
@@ -222,7 +231,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     const relativeY = mouseY - trackTop;
     const clampedRelativeY = Math.max(0, Math.min(availableHeight, relativeY));
 
-    // Determine if this cell uses descending scale (read from block — set at placement)
+    // Determine if this cell uses descending scale (read from block - set at placement)
     const isDescending = blockData.direction === "downside";
 
     // Convert to percentage based on scale direction
@@ -267,7 +276,12 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
   const handleDragEnd = (id: string, x: number, y: number) => {
     const blockInfo = findBlockInGrid(grid, id);
-    const positionData = findCellAndPositionData(x, y, strategyPattern, blockInfo?.block.orderType);
+    const positionData = findCellAndPositionData(
+      x,
+      y,
+      strategyPattern,
+      blockInfo?.block.orderType,
+    );
 
     if (!blockInfo) {
       setDraggingId(null);
@@ -300,9 +314,14 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
         ...blockData,
         axis,
         yPosition,
-        direction: shouldBeDescending(targetRow, targetCol, strategyPattern, blockData.orderType)
-          ? "downside" as const
-          : "upside" as const,
+        direction: shouldBeDescending(
+          targetRow,
+          targetCol,
+          strategyPattern,
+          blockData.orderType,
+        )
+          ? ("downside" as const)
+          : ("upside" as const),
       };
 
       setGrid((prev) => {
@@ -402,81 +421,83 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
   return (
     <div className={contentWrapper} onMouseMove={handleMouseMove}>
-      {/* Provider Column */}
-      <ProviderColumn
-        providerBlocks={providerBlocks}
-        hoveredGridCell={hoveredGridCell}
-        isDragging={isDragging}
-        grid={grid}
-        strategyPattern={strategyPattern}
-        onProviderDragStart={handleProviderDragStart}
-        onProviderDragEnd={handleProviderDragEnd}
-        onProviderMouseEnter={handleProviderMouseEnter}
-        onProviderMouseLeave={handleProviderMouseLeave}
-      />
+      <div className={contentRow}>
+        {/* Provider Column */}
+        <ProviderColumn
+          providerBlocks={providerBlocks}
+          hoveredGridCell={hoveredGridCell}
+          isDragging={isDragging}
+          grid={grid}
+          strategyPattern={strategyPattern}
+          onProviderDragStart={handleProviderDragStart}
+          onProviderDragEnd={handleProviderDragEnd}
+          onProviderMouseEnter={handleProviderMouseEnter}
+          onProviderMouseLeave={handleProviderMouseLeave}
+        />
 
-      {/* Grid Columns */}
-      <div className={columnsWrapper}>
-        {grid.map((gridColumn, colIndex) => {
-          const headerTint =
-            colIndex === 0
-              ? "rgba(100, 200, 100, 0.15)"
-              : "rgba(200, 100, 100, 0.15)";
-          const cellTint =
-            colIndex === 0
-              ? "rgba(100, 200, 100, 0.08)"
-              : "rgba(200, 100, 100, 0.08)";
+        {/* Grid Columns */}
+        <div className={columnsWrapper}>
+          {grid.map((gridColumn, colIndex) => {
+            const headerTint =
+              colIndex === 0
+                ? "rgba(100, 200, 100, 0.15)"
+                : "rgba(200, 100, 100, 0.15)";
+            const cellTint =
+              colIndex === 0
+                ? "rgba(100, 200, 100, 0.08)"
+                : "rgba(200, 100, 100, 0.08)";
 
-          const colHeaderProps = getColumnHeaderProps(headerTint);
+            const colHeaderProps = getColumnHeaderProps(headerTint);
 
-          return (
-            <div key={colIndex} className={column}>
-              <div
-                className={colHeaderProps.className}
-                style={colHeaderProps.style}
-              >
-                <span className={columnHeaderText}>
-                  {COLUMN_HEADERS[colIndex]}
-                </span>
+            return (
+              <div key={colIndex} className={column}>
+                <div
+                  className={colHeaderProps.className}
+                  style={colHeaderProps.style}
+                >
+                  <span className={columnHeaderText}>
+                    {COLUMN_HEADERS[colIndex]}
+                  </span>
+                </div>
+                {gridColumn.map((row, rowIndex) => (
+                  <GridCell
+                    key={rowIndex}
+                    colIndex={colIndex}
+                    rowIndex={rowIndex}
+                    blocks={row}
+                    isOver={
+                      hoverCell?.col === colIndex &&
+                      hoverCell?.row === rowIndex &&
+                      isDragging &&
+                      isValidTarget(colIndex, rowIndex)
+                    }
+                    isValidTarget={isValidTarget(colIndex, rowIndex)}
+                    isDisabled={isCellDisabled(
+                      colIndex,
+                      rowIndex,
+                      grid,
+                      strategyPattern,
+                    )}
+                    align={getAlignment(colIndex)}
+                    strategyPattern={strategyPattern}
+                    rowLabel={getRowLabel(rowIndex)}
+                    showPrimaryWarning={showPrimaryWarning && rowIndex === 1}
+                    tint={cellTint}
+                    currentPrice={currentPrice}
+                    priceError={tickerError}
+                    onMouseEnter={() =>
+                      handleGridCellMouseEnter(colIndex, rowIndex)
+                    }
+                    onMouseLeave={handleGridCellMouseLeave}
+                    onBlockDragStart={handleDragStart}
+                    onBlockDragEnd={handleDragEnd}
+                    onBlockVerticalDrag={handleBlockVerticalDrag}
+                  />
+                ))}
               </div>
-              {gridColumn.map((row, rowIndex) => (
-                <GridCell
-                  key={rowIndex}
-                  colIndex={colIndex}
-                  rowIndex={rowIndex}
-                  blocks={row}
-                  isOver={
-                    hoverCell?.col === colIndex &&
-                    hoverCell?.row === rowIndex &&
-                    isDragging &&
-                    isValidTarget(colIndex, rowIndex)
-                  }
-                  isValidTarget={isValidTarget(colIndex, rowIndex)}
-                  isDisabled={isCellDisabled(
-                    colIndex,
-                    rowIndex,
-                    grid,
-                    strategyPattern,
-                  )}
-                  align={getAlignment(colIndex)}
-                  strategyPattern={strategyPattern}
-                  rowLabel={getRowLabel(rowIndex)}
-                  showPrimaryWarning={showPrimaryWarning && rowIndex === 1}
-                  tint={cellTint}
-                  currentPrice={currentPrice}
-                  priceError={tickerError}
-                  onMouseEnter={() =>
-                    handleGridCellMouseEnter(colIndex, rowIndex)
-                  }
-                  onMouseLeave={handleGridCellMouseLeave}
-                  onBlockDragStart={handleDragStart}
-                  onBlockDragEnd={handleDragEnd}
-                  onBlockVerticalDrag={handleBlockVerticalDrag}
-                />
-              ))}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
