@@ -9,8 +9,9 @@ import {
   commandReducer,
   describeCell,
   describeSource,
-  hasPairedLeg,
+  hasDualAxisPartner,
   IDLE_COMMAND_STATE,
+  initialTarget,
   samePosition,
   validTargetsFor,
   withOriginCell,
@@ -120,8 +121,9 @@ export const useBlockCommand = ({
       return;
     }
     dispatch({ type: "pickUp", source, targets, preferred });
-    const target =
-      targets.find((cell) => samePosition(cell, preferred)) ?? targets[0];
+    // The same choice the reducer makes, so the announcement can never name a
+    // cell other than the one that is actually the target.
+    const target = initialTarget(targets, preferred) ?? targets[0];
     announce(
       `Picked up ${describeSource(source)}. ${CARRY_HELP[origin]} Target: ${describeCell(target, strategyPattern)}.`,
     );
@@ -201,7 +203,7 @@ export const useBlockCommand = ({
     // partner behind and the two halves would be submitted as two orders on
     // opposite sides. Refusing silently would make Enter look broken, so say
     // what the block can still do instead.
-    if (hasPairedLeg(grid[cell.col][cell.row], found.block)) {
+    if (hasDualAxisPartner(grid[cell.col][cell.row], found.block)) {
       announce(
         `${found.block.label} cannot be moved on its own: its trigger and limit must stay in the same cell. Use the arrow keys to move it along the price axis.`,
       );

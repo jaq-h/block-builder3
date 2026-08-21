@@ -15,7 +15,7 @@ import { samePosition } from "../../../../utils/blockCommand";
 import type { BlockData, CellPosition } from "../../../../types/grid";
 import { COLUMN_HEADERS } from "../../../../data/orderTypes";
 import { PATTERN_CONFIGS } from "../../../../types/grid";
-import { SCALE_CONFIG } from "../../../../styles/grid";
+import { positionFromPointer, SCALE_CONFIG } from "../../../../styles/grid";
 import ProviderColumn from "../../../common/grid/ProviderColumn";
 import GridCell from "../../../common/grid/GridCell";
 import LiveAnnouncer from "../../../common/LiveAnnouncer";
@@ -361,48 +361,31 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     }));
   };
 
+  /**
+   * `pointerY` is where the block's centre should end up, and the axis column
+   * is the element the renderer lays that centre out within. Measuring anything
+   * else - the containing cell, say - reads a block back at a different
+   * percentage than it was drawn at, and every drag then jumps on its first
+   * move. `positionFromPointer` is the inverse of that layout.
+   */
   const handleBlockVerticalDrag = (id: string, pointerY: number) => {
     const blockInfo = findBlockInGrid(grid, id);
     if (!blockInfo) return;
 
     const { col, row, block: blockData } = blockInfo;
 
-    // Find the cell element to get its bounds
-    const cellElement = document.querySelector(
-      `[data-col="${col}"][data-row="${row}"]`,
+    const trackElement = document.querySelector(
+      `[data-axis-track="${col}-${row}-${blockData.axis}"]`,
     );
-    if (!cellElement) return;
+    if (!trackElement) return;
 
-    const rect = cellElement.getBoundingClientRect();
-    // Layout constants matching GridCell.tsx
-    const HEADER_HEIGHT = 36;
-    const BOTTOM_PADDING = 20;
-    const BLOCK_HEIGHT = 40;
+    const position = positionFromPointer(
+      trackElement.getBoundingClientRect(),
+      pointerY,
+      blockData.direction === "downside",
+    );
 
-    // The draggable area starts after header and ends before bottom padding
-    const trackTop = rect.top + HEADER_HEIGHT + BLOCK_HEIGHT / 2;
-    const trackBottom = rect.bottom - BOTTOM_PADDING - BLOCK_HEIGHT / 2;
-    const availableHeight = trackBottom - trackTop;
-
-    // Calculate relative Y position within the draggable area
-    const relativeY = pointerY - trackTop;
-    const clampedRelativeY = Math.max(0, Math.min(availableHeight, relativeY));
-
-    // Determine if this cell uses descending scale (read from block - set at placement)
-    const isDescending = blockData.direction === "downside";
-
-    // Convert to percentage based on scale direction
-    const { MAX_PERCENT } = SCALE_CONFIG;
-    let percentage: number;
-    if (isDescending) {
-      percentage = (clampedRelativeY / availableHeight) * MAX_PERCENT;
-    } else {
-      percentage =
-        MAX_PERCENT - (clampedRelativeY / availableHeight) * MAX_PERCENT;
-    }
-
-    // Round to 2 decimal places for precision display
-    setBlockPosition(id, Math.round(percentage * 100) / 100);
+    setBlockPosition(id, Math.round(position * 100) / 100);
   };
 
   /**

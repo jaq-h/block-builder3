@@ -178,6 +178,7 @@ const GridCell: FC<GridCellProps> = ({
 
   const renderAxisContent = (
     axisBlocks: BlockData[],
+    axisNumber: 1 | 2,
     isSingleAxis: boolean,
     axisLabel: string,
     showPercentageScale: boolean = true,
@@ -190,7 +191,12 @@ const GridCell: FC<GridCellProps> = ({
     const trackProps = getSliderTrackProps(isDescending, isSingleAxis);
 
     return (
-      <div className={getAxisColumnProps(isSingleAxis)}>
+      <div
+        // The element the block positioner is absolutely laid out within, and
+        // so the one the vertical drag has to measure to invert that layout.
+        data-axis-track={`${colIndex}-${rowIndex}-${axisNumber}`}
+        className={getAxisColumnProps(isSingleAxis)}
+      >
         {showPercentageScale && renderPercentageScale(isDescending)}
         <div className={trackProps.className} style={trackProps.style} />
         <span className={axisLabelProps.className} style={axisLabelProps.style}>
@@ -320,7 +326,7 @@ const GridCell: FC<GridCellProps> = ({
           </div>
           <div className={sliderArea}>
             {renderMarketPrice()}
-            {renderAxisContent(blocks, true, "Limit", true)}
+            {renderAxisContent(blocks, 2, true, "Limit", true)}
           </div>
         </>
       );
@@ -339,10 +345,11 @@ const GridCell: FC<GridCellProps> = ({
         <div className={sliderArea}>
           {renderMarketPrice()}
           {hasAxis1Blocks &&
-            renderAxisContent(axis1Blocks, !hasAxis2Blocks, "Trigger", true)}
+            renderAxisContent(axis1Blocks, 1, !hasAxis2Blocks, "Trigger", true)}
           {hasAxis2Blocks &&
             renderAxisContent(
               axis2Blocks,
+              2,
               !hasAxis1Blocks,
               "Limit",
               !hasAxis1Blocks,

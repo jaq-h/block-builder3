@@ -230,21 +230,32 @@ export const describeCell = (
 };
 
 /**
- * True when this block is one leg of a multi-block order: a dual-axis order
- * type (stop-loss-limit and friends) puts a trigger block and a limit block in
- * the same cell, and they only mean anything together. Moving one on its own
- * would split the order across two cells, which flips one leg from buy to sell.
+ * True when this block is one of the two axes of a single dual-axis order:
+ * `createBlocksFromOrderType` case 4 puts a trigger block (axis 1) and a limit
+ * block (axis 2) of the same order type in one cell, and they only mean
+ * anything together. Moving one on its own would split the order across two
+ * cells, which flips one leg from buy to sell.
  *
  * The pointer drag never offered this - every block on an axis is wired to the
  * vertical drag, so free drag cannot reach it - so the cell-level pick-up must
  * not offer it either.
+ *
+ * Sharing an order type is not enough on its own: the bulk pattern is
+ * "multiple independent orders", so two separate Market or Limit orders can sit
+ * in one cell. Those share an axis rather than splitting one between them, and
+ * a mouse can move them, so the keyboard and a finger must be able to too.
  */
-export const hasPairedLeg = (
+export const hasDualAxisPartner = (
   cellBlocks: BlockData[],
   block: BlockData,
 ): boolean =>
+  block.axes.length > 0 &&
   cellBlocks.some(
-    (other) => other.id !== block.id && other.orderType === block.orderType,
+    (other) =>
+      other.id !== block.id &&
+      other.orderType === block.orderType &&
+      other.axes.length > 0 &&
+      other.axis !== block.axis,
   );
 
 export const describeSource = (source: CommandSource): string =>

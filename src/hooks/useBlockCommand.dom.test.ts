@@ -5,7 +5,7 @@ import { useBlockCommand } from "./useBlockCommand";
 import { clearGrid } from "@utils/grid";
 import { createBlocksFromOrderType } from "@utils/blockFactory";
 import { getOrderType, ORDER_TYPES } from "@data/orderTypes";
-import type { BlockData, GridData } from "@/types/grid";
+import type { BlockData, GridData, StrategyPattern } from "@/types/grid";
 
 // =============================================================================
 // HARNESS
@@ -24,14 +24,17 @@ const limitBlock = (overrides: Partial<BlockData> = {}): BlockData => ({
   ...overrides,
 });
 
-const setup = (grid: GridData = clearGrid(2, 3)) => {
+const setup = (
+  grid: GridData = clearGrid(2, 3),
+  strategyPattern: StrategyPattern = "conditional",
+) => {
   const placeProvider = vi.fn(() => "new-block-id");
   const moveBlock = vi.fn((id: string) => id);
 
   const view = renderHook(() =>
     useBlockCommand({
       grid,
-      strategyPattern: "conditional",
+      strategyPattern,
       providerBlocks: ORDER_TYPES,
       placeProvider,
       moveBlock,
@@ -53,14 +56,14 @@ const gridWithLimit = () => {
  */
 const gridWithOrder = (type: string, col = 0, row = 1) => {
   const grid = clearGrid(2, 3);
+  grid[col][row].push(...blocksFor(type, 0));
+  return { grid, blocks: grid[col][row] };
+};
+
+const blocksFor = (type: string, counter: number) => {
   const definition = getOrderType(type);
   if (!definition) throw new Error(`unknown order type: ${type}`);
-  const { blocks } = createBlocksFromOrderType(definition, {
-    baseId: "t",
-    counter: 0,
-  });
-  grid[col][row].push(...blocks);
-  return { grid, blocks };
+  return createBlocksFromOrderType(definition, { baseId: "t", counter }).blocks;
 };
 
 // =============================================================================
@@ -379,6 +382,51 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying?.source).toMatchObject({
         id: blocks[0].id,
       });
+    });
+
+    it("moves one of two independent same-type orders sharing a bulk cell", () => {
+      // The bulk pattern is "multiple independent orders", so two Market orders
+      // can share a cell. Neither is half of the other, and a mouse can move
+      // them, so the keyboard must be able to as well.
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(...blocksFor("market", 0), ...blocksFor("market", 10));
+      const first = grid[0][1][0];
+      const { result, moveBlock } = setup(grid, "bulk");
+
+      expect(grid[0][1]).toHaveLength(2);
+
+      act(() => result.current.activateBlock(first.id, "keyboard"));
+      expect(result.current.carrying?.source).toMatchObject({ id: first.id });
+
+      act(() => result.current.moveTarget(1, 0));
+      act(() => result.current.place());
+
+      expect(moveBlock).toHaveBeenCalledWith(first.id, { col: 1, row: 1 });
+    });
+
+    it("moves one of two independent same-type limit orders in a bulk cell", () => {
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(...blocksFor("limit", 0), ...blocksFor("limit", 10));
+      const second = grid[0][1][1];
+      const { result, moveBlock } = setup(grid, "bulk");
+
+      act(() => result.current.activateBlock(second.id, "keyboard"));
+      act(() => result.current.moveTarget(0, -1));
+      act(() => result.current.place());
+
+      expect(moveBlock).toHaveBeenCalledWith(second.id, { col: 0, row: 0 });
+    });
+
+    it("still refuses a dual-axis leg sharing a bulk cell", () => {
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(...blocksFor("stop-loss-limit", 0));
+      const trigger = grid[0][1][0];
+      const { result, moveBlock } = setup(grid, "bulk");
+
+      act(() => result.current.activateBlock(trigger.id, "keyboard"));
+
+      expect(result.current.carrying).toBeNull();
+      expect(moveBlock).not.toHaveBeenCalled();
     });
 
     it("does not hand focus back when the carry is abandoned by Tab", () => {
