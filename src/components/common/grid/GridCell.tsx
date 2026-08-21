@@ -1,7 +1,7 @@
 import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
-import { getCellDisplayMode } from "../../../utils";
+import { getCellDisplayMode, isCellDescending } from "../../../utils";
 import { describeCell } from "../../../utils/blockCommand";
 import type { CancelOptions } from "../../../hooks/useBlockCommand";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
@@ -116,7 +116,7 @@ const GridCell: FC<GridCellProps> = ({
   onBlockFocusHandled,
 }) => {
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = blocks[0]?.direction === "downside";
+  const isDescending = isCellDescending(blocks);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
@@ -255,7 +255,7 @@ const GridCell: FC<GridCellProps> = ({
                   axis={block.axis}
                   axes={block.axes}
                   yPosition={block.yPosition}
-                  direction={block.direction}
+                  direction={isDescending ? "downside" : "upside"}
                   priceText={formatCalculatedPrice(calculatedPrice)}
                   onVerticalDrag={onBlockVerticalDrag}
                   onAdjustPrice={onBlockAdjustPrice}

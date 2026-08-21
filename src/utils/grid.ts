@@ -232,6 +232,22 @@ export const getCellDisplayMode = (blocks: BlockData[]): CellDisplayMode => {
   return "dual-axis";
 };
 
+/**
+ * Which way the price scale runs for a whole cell.
+ *
+ * Geometry and direction are the two inputs to the same block-to-price mapping,
+ * and a cell draws one scale: one market line, one percentage ruler, one set of
+ * positioners. In the bulk pattern the blocks sharing a cell can disagree -
+ * `shouldBeDescending` keys off the order type there, so a Limit and a Stop
+ * Loss placed together are stamped "downside" and "upside" - and a consumer
+ * reading its own block rather than the cell would announce a sign the drawn
+ * price contradicts and step the arrow keys the wrong way. Every reader of the
+ * mapping takes this value. The blocks keep their own `direction` in the data;
+ * this decides which one the mapping reads, not what is stored.
+ */
+export const isCellDescending = (blocks: BlockData[]): boolean =>
+  blocks[0]?.direction === "downside";
+
 // =============================================================================
 // PRICE CALCULATIONS
 // =============================================================================

@@ -6,6 +6,7 @@ import {
   findBlockInGrid,
   findCellAtPosition,
   findCellAndPositionData,
+  isCellDescending,
   shouldBeDescending,
   hasConditionalWithoutPrimary,
   createBlocksFromOrderType,
@@ -382,7 +383,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     const position = positionFromPointer(
       trackElement.getBoundingClientRect(),
       pointerY,
-      blockData.direction === "downside",
+      isCellDescending(grid[col][row]),
     );
 
     setBlockPosition(id, Math.round(position * 100) / 100);
@@ -397,8 +398,8 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     const blockInfo = findBlockInGrid(grid, id);
     if (!blockInfo) return;
 
-    const { block } = blockInfo;
-    const towardsMarket = block.direction === "downside" ? -delta : delta;
+    const { col, row, block } = blockInfo;
+    const towardsMarket = isCellDescending(grid[col][row]) ? -delta : delta;
     const next = Math.max(
       SCALE_CONFIG.MIN_PERCENT,
       Math.min(SCALE_CONFIG.MAX_PERCENT, block.yPosition + towardsMarket),

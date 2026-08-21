@@ -5,6 +5,7 @@ import {
   calculatePrice,
   formatPrice,
   getCellDisplayMode,
+  isCellDescending,
 } from "../../../utils";
 import {
   getReadOnlyCellContainerProps,
@@ -49,7 +50,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   onMouseLeave,
 }) => {
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = blocks[0]?.direction === "downside";
+  const isDescending = isCellDescending(blocks);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
@@ -157,7 +158,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                   axis={block.axis}
                   axes={block.axes}
                   yPosition={block.yPosition}
-                  direction={block.direction}
+                  direction={isDescending ? "downside" : "upside"}
                   priceText={formatPrice(calculatedPriceValue)}
                   isReadOnly={true}
                 />

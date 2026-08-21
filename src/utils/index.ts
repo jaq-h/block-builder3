@@ -26,6 +26,7 @@ export {
   hasConditionalWithoutPrimary,
   // Cell display mode
   getCellDisplayMode,
+  isCellDescending,
   // Price calculations
   calculatePrice,
   formatPrice,

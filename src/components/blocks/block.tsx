@@ -66,7 +66,7 @@ interface BlockProps {
   cellDescription?: string;
   /** Rendered price at the current position, e.g. "$95,861.25". */
   priceText?: string;
-  /** "upside" blocks sit above the market price, "downside" below it. */
+  /** Which way the price scale this block is drawn on runs, from its cell. */
   direction?: "upside" | "downside";
   isHighlighted?: boolean;
   isReadOnly?: boolean;

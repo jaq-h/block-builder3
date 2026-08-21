@@ -36,6 +36,26 @@ const TRACK_TOP = 400;
 const TRACK_HEIGHT = 181.5;
 const MARKET_PRICE = 100_000;
 
+/**
+ * A Stop Loss and a Limit are stamped with OPPOSITE directions when they share
+ * a bulk cell: `shouldBeDescending` keys off the order type there, and only
+ * stop-loss families count as the downside zone.
+ */
+const placedStopLoss = (
+  yPosition: number,
+  id: string = "s1",
+): BlockData => ({
+  id,
+  orderType: "stop-loss",
+  label: "Stop Loss",
+  abrv: "SL",
+  allowedRows: [0, 1, 2],
+  axis: 1,
+  yPosition,
+  direction: "upside",
+  axes: ["trigger"],
+});
+
 const placedLimit = (
   yPosition: number,
   id: string = "b1",
@@ -335,5 +355,88 @@ describe("GridArea, tapping a placed block", () => {
 
     expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Limit");
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+  });
+});
+
+// =============================================================================
+// A BULK CELL HOLDING TWO ORDER FAMILIES
+// =============================================================================
+//
+// One cell draws one scale - one market line, one percentage ruler - but in the
+// bulk pattern the blocks sharing it can be stamped with opposite directions.
+// Everything that maps between a block and a price has to read the scale the
+// cell actually drew, or the sign announced contradicts the price shown.
+
+/** A Limit ("downside") placed first, then a Stop Loss ("upside"), in one cell. */
+const renderMixedCell = (limitY: number, stopLossY: number) => {
+  const grid = clearGrid(2, 3);
+  grid[0][1].push(placedLimit(limitY), placedStopLoss(stopLossY));
+  render(<Harness initialGrid={grid} pattern="bulk" />);
+
+  const track = document.querySelector('[data-axis-track="0-1-1"]');
+  if (!track) throw new Error("the trigger axis column was not rendered");
+  stubRect(track, TRACK_TOP, TRACK_HEIGHT);
+
+  // The cell draws descending, from the Limit it took its scale from.
+  const stopLoss = screen.getByRole("slider", { name: /Stop Loss/ });
+  const blockTop = TRACK_TOP + getBlockTopPx(stopLossY, TRACK_HEIGHT, true);
+  stubRect(stopLoss, blockTop, BLOCK_HEIGHT);
+
+  return { stopLoss, centre: blockTop + BLOCK_HEIGHT / 2 };
+};
+
+/** The price the cell renders next to the Stop Loss block. */
+const stopLossPrice = (yPosition: number) =>
+  `$${(MARKET_PRICE * (1 - yPosition / 100)).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+describe("GridArea, a bulk cell holding two order families", () => {
+  it("signs the announced value the way the price and the visible label do", () => {
+    const { stopLoss } = renderMixedCell(25, 7);
+
+    // The block is drawn on the cell's descending scale, so its price is BELOW
+    // the market. Announcing "+7.00%" against a price 7% down is the wrong sign
+    // for the money, and it is all a screen-reader user gets.
+    expect(screen.getByText("-7.00%")).toBeInTheDocument();
+    expect(screen.getByText(stopLossPrice(7))).toBeInTheDocument();
+    expect(stopLoss).toHaveAttribute("aria-valuenow", "-7");
+    expect(stopLoss).toHaveAttribute(
+      "aria-valuetext",
+      `-7.00%, ${stopLossPrice(7)}`,
+    );
+    expect(stopLoss).toHaveAttribute("aria-valuemin", "-50");
+    expect(stopLoss).toHaveAttribute("aria-valuemax", "0");
+  });
+
+  it("steps the arrow keys towards the higher price as drawn", () => {
+    const { stopLoss } = renderMixedCell(25, 7);
+
+    fireEvent.keyDown(stopLoss, { key: "ArrowUp" });
+
+    // Up the descending scale is closer to the market, so a higher price.
+    expect(screen.getByText("-6.00%")).toBeInTheDocument();
+    expect(screen.getByText(stopLossPrice(6))).toBeInTheDocument();
+    expect(stopLoss).toHaveAttribute("aria-valuenow", "-6");
+  });
+
+  it("drags along the axis the cell drew instead of jumping to its far end", () => {
+    const { stopLoss, centre } = renderMixedCell(25, 7);
+
+    fireEvent(stopLoss, pointer("pointerdown", centre));
+    fireEvent(stopLoss, pointer("pointermove", centre + 20));
+    fireEvent(stopLoss, pointer("pointerup", centre + 20));
+
+    // 20px down a descending track is a larger offset below the market, not a
+    // flip to the opposite end of the axis.
+    const moved = Number(stopLoss.getAttribute("aria-valuenow"));
+    expect(moved).toBeLessThan(-7);
+    expect(moved).toBeGreaterThan(-20);
+    expect(
+      TRACK_TOP +
+        getBlockTopPx(Math.abs(moved), TRACK_HEIGHT, true) +
+        BLOCK_HEIGHT / 2,
+    ).toBeCloseTo(centre + 20, 1);
   });
 });
