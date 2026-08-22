@@ -40,6 +40,18 @@ export const MARKET_PADDING = 20; // Space for market axis and price label
 export const BLOCK_HEIGHT = 40; // Height of block element
 export const MARKET_GAP = 10; // Gap between market axis and 0% block position
 
+/**
+ * A cell's own chrome above the axis: its 8px padding top and bottom, its 1px
+ * border top and bottom, and the order-type header (a 16.5px line plus `mb-1`).
+ */
+export const CELL_CHROME = 8 * 2 + 1 * 2 + 20.5;
+
+/**
+ * The shortest track a price axis can be dragged on and still mean anything:
+ * two block heights, so a block has somewhere above and below it to go.
+ */
+export const MIN_TRACK_HEIGHT = BLOCK_HEIGHT * 2;
+
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
@@ -52,6 +64,22 @@ export const getTrackHeight = () => `calc(100% - ${TRACK_INSET}px)`;
 /** `getTrackHeight` in pixels, for a measured track element. */
 export const getTrackHeightPx = (elementHeight: number) =>
   elementHeight - TRACK_INSET;
+
+/**
+ * The floor a grid cell may be drawn at, and the only place that floor is
+ * written. Cells are `flex-1`, so wherever the panel has room they simply share
+ * it and stand taller than this; the floor is what a short viewport falls back
+ * to, and it is the height at which the price axis stops working rather than
+ * the height a cell normally renders at.
+ *
+ * It replaced a flat 220px, which was 30px more than the assembly panel could
+ * give three of them on a 900px-tall window. That is what put a scrollbar on an
+ * empty grid and clipped the last two orders out of the palette - the grid did
+ * not have more content than it had room for, it had a minimum it could not
+ * justify. Deriving it means a change to the block height or to the market
+ * label moves the floor with them instead of leaving it stale.
+ */
+export const CELL_MIN_HEIGHT = CELL_CHROME + TRACK_INSET + MIN_TRACK_HEIGHT;
 
 export const getTrackStart = (isDescending: boolean) =>
   isDescending ? MARKET_PADDING + MARKET_GAP : 0;
@@ -137,7 +165,7 @@ export function getInteractiveCellContainerProps(opts: {
   const { isOver, isValidTarget, isDisabled, tint } = opts;
 
   const className = cn(
-    "flex-1 relative rounded-lg m-2 flex flex-col p-2 min-h-[220px] overflow-visible",
+    "flex-1 relative rounded-lg m-2 flex flex-col p-2 overflow-visible",
     "transition-[border-color,box-shadow,background-image,background-color] duration-200",
     // Border
     isDisabled
@@ -159,7 +187,7 @@ export function getInteractiveCellContainerProps(opts: {
     (isOver || isValidTarget) && !isDisabled ? "animate-breathing" : "",
   );
 
-  const style: CSSProperties = {};
+  const style: CSSProperties = { minHeight: CELL_MIN_HEIGHT };
   if (!isDisabled && tint) {
     style.backgroundColor = tint;
   }
@@ -180,8 +208,8 @@ export function getInteractiveCellContainerProps(opts: {
 
 export function getReadOnlyCellContainerProps(tint?: string) {
   const className =
-    "flex-1 relative border border-border-dimmed rounded-lg m-2 flex flex-col p-2 min-h-55 overflow-visible";
-  const style: CSSProperties = {};
+    "flex-1 relative border border-border-dimmed rounded-lg m-2 flex flex-col p-2 overflow-visible";
+  const style: CSSProperties = { minHeight: CELL_MIN_HEIGHT };
   if (tint) {
     style.backgroundColor = tint;
   } else {
