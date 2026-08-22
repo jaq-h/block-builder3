@@ -508,6 +508,7 @@ src/
 │   ├── blockCommand.ts            # Select-then-place state machine (pure half)
 │   ├── blockFactory.ts            # Factory for creating block data
 │   ├── grid.ts                    # Grid manipulation helpers
+│   ├── price.ts                   # Percentage-offset-from-market price formula
 │   └── index.ts
 │
 └── assets/

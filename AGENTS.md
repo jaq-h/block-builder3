@@ -38,9 +38,12 @@ SVG imports work in tests for the same reason.
   each test.
 - Tests are colocated with the code they cover, named `*.test.ts`/`*.test.tsx`.
 
-Some tests deliberately assert **current, wrong** behaviour. They are commented
-`CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. If you are fixing the
-underlying bug, change the test and the comment together; do not quietly loosen it.
+A test may deliberately assert **current, wrong** behaviour, commented
+`CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. None are live today;
+the last of them, in `src/api/orderMapper.test.ts`, were converted when the bugs they
+pinned were fixed. That is the convention when you fix such a bug: flip the expectation to
+the correct behaviour and keep a `FORMERLY A CHARACTERISATION OF A KNOWN BUG` note
+recording the wrong values, rather than deleting the test or quietly loosening it.
 
 `src/test/pointerCapture.ts` installs a tracking `setPointerCapture` on `Element.prototype`:
 jsdom ships `PointerEvent` but not the capture methods, so without it the assertion that a
@@ -133,8 +136,8 @@ silent data loss. `src/App.test.tsx` fails if that returns.
 
 ## Prices and order types
 
-Two invariants the order path depends on, both of which were previously violated in
-`src/api/orderMapper.ts` and are now pinned by tests:
+The invariants the order path depends on, each of which was previously violated in
+`src/api/orderMapper.ts` and is now pinned by tests:
 
 - **One price formula.** `src/utils/price.ts` `priceAtOffset` is the shared owner of
   "percentage offset from market" for the grid display and the order mapper. The grid cell
@@ -164,10 +167,10 @@ Two invariants the order path depends on, both of which were previously violated
   axis-to-axes mapping, and both hydration paths go through it - `gridFromConfig` in
   `StrategyAssemblyContext.tsx` and the Active Orders panel's grid - rather than reaching for
   `typeDef.axes` or re-deriving `axis === 1 ? trigger : limit`, which has no notion of a
-  single-axis type and relabels a Stop Loss saved at axis 2 as a limit leg. The mapper now refuses a block that claims both axes, on the primary and
-  on a linked conditional alike, so a regression in any construction path fails loudly
-  instead of shipping a trigger price equal to the limit price.
-
+  single-axis type and relabels a Stop Loss saved at axis 2 as a limit leg. The mapper now
+  refuses a block that claims both axes, on the primary and on a linked conditional alike,
+  so a regression in any construction path fails loudly instead of shipping a trigger price
+  equal to the limit price.
 - **Conditional links are flat and one level deep.** A Kraken conditional close hangs off
   exactly one primary order and carries no conditional of its own, so each primary may
   carry one conditional, a conditional may not be shared between two primaries, and a
@@ -193,9 +196,8 @@ Two invariants the order path depends on, both of which were previously violated
 `src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type, a block
 claiming both axes, a link graph that is not flat, an incomplete conditional close, and a
 price that is not a finite number or not a positive static one all throw or fail validation,
-because silently
-substituting a different order is the failure this module exists to prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that
-and surfaces it as `orderError`.
+because silently substituting a different order is the failure this module exists to
+prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that and surfaces it as `orderError`.
 
 `validateOrder`'s price guard is a last line of defence, not the fix for what feeds it:
 prices reach it as strings, so `"0.0"` is truthy and a presence check passed it. It is
@@ -222,9 +224,9 @@ Stop Loss chip reads `-25.00% $37,500` while the payload and the chart line both
 `62,500`. It is not reachable in the conditional pattern, which is the default. It is
 deliberately not fixed here, and has been filed to `bb3-mapping-owner`, which owns
 reconciling the chip, the chart and the payload together; that owner must decide what a bulk
-cell means and apply that one answer to all three in a single change - splitting it across owners is how display
-and payload drifted apart in the first place, which is exactly what decision D3 exists to
-prevent.
+cell means and apply that one answer to all three in a single change - splitting it across
+owners is how display and payload drifted apart in the first place, which is exactly what
+decision D3 exists to prevent.
 
 **Known gap: `axis` is derived two ways, so a live grid and a reloaded one can disagree
 about which leg is the trigger.** Hydration derives `axes` from the saved `axis`, but the
