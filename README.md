@@ -208,7 +208,7 @@ The project enables the **React Compiler** (`babel-plugin-react-compiler`) via V
 
 ### Split Hooks
 
-Drag logic is split into purpose-specific hooks:
+Interaction logic is split into purpose-specific hooks:
 
 - **`usePointerGesture`** - The pointer primitive underneath both drag hooks: capture, tap-versus-drag, cancel
 - **`useFreeDrag`** — Free-form drag for moving blocks between grid cells (integrates with the drag overlay portal)
@@ -237,10 +237,11 @@ Events, so one code path serves all three devices. Two details are load-bearing:
 A release that never travelled more than a few pixels is a **tap**, not a zero-length drop,
 and is handed to the command model instead of the drop handler.
 
-**Command model: keyboard, screen readers and taps.** Focus a block and press Enter to pick
-it up; the arrow keys choose a target cell; Enter places it; Escape returns it. Tab is never
-swallowed - it abandons the carry and moves focus on, so a carried block cannot trap the
-keyboard. On touch the same model is driven by taps: tap a block, tap a cell.
+**Command model: keyboard, screen readers and taps.** Focus a block and press Enter - or
+Space, which a button answers to as well - to pick it up; the arrow keys choose a target
+cell; Enter places it; Escape returns it. Tab is never swallowed - it abandons the carry
+and moves focus on, so a carried block cannot trap the keyboard. On touch the same model
+is driven by taps: tap a block, tap a cell.
 
 The arrow keys step only between cells that were **legal when the carry began**, so the
 target under the arrows is always one the grid has accepted; `commit` re-checks at the
@@ -371,6 +372,10 @@ The conditional pattern cannot reach any of it, because an occupied cell is neve
 target. The real fix is to give the block-to-price mapping one owner instead of several
 consumers that have to agree, and that is filed as its own piece of work.
 
+Each of the three input methods driving the running app is captured in
+[`docs/screenshots/interaction/`](docs/screenshots/interaction/), which records the commit
+every shot was taken against.
+
 ### Error Boundaries
 
 Two `ErrorBoundary` instances stop a single throw from blanking the page:
@@ -487,7 +492,7 @@ src/
 │
 ├── styles/                        # Shared style constants
 │   ├── theme.ts                   # Design tokens / theme values
-│   ├── grid.ts                    # Grid-specific style helpers
+│   ├── grid.ts                    # Grid style helpers & the axis track geometry
 │   ├── shared.ts                  # Shared style strings
 │   └── index.ts
 │

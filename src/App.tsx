@@ -74,7 +74,7 @@ function AppInner() {
   };
 
   // Merge live assembly positions into submitted orders while editing.
-  // orderConfig updates on every drag mousemove via onConfigChange, so
+  // orderConfig updates on every drag pointermove via onConfigChange, so
   // active order cards reflect block positions in real-time.
   const displayOrders = useMemo(() => {
     if (!isEditMode || !editingStrategyId) return submittedOrders;

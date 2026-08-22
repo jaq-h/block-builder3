@@ -19,7 +19,7 @@ const INACTIVE_STATE: DragOverlayState = Object.freeze({
 let currentState: DragOverlayState = INACTIVE_STATE;
 const listeners = new Set<() => void>();
 
-/** Mutable position ref — updated on every mousemove, read by rAF loop. */
+/** Mutable position ref - updated on every pointermove, read by rAF loop. */
 export const pos = { x: 0, y: 0 };
 
 function emitChange() {
