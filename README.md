@@ -9,10 +9,10 @@ Built with **React 19** (with **React Compiler**), **TypeScript**, **Vite 7**, a
 ## Features
 
 - **Strategy Builder** - Grid interface for assembling multi-leg order strategies (conditional orders, bulk orders), driveable with a mouse, a finger or the keyboard alone
-- **Active Orders** — View and manage submitted orders with real-time status tracking
-- **Kraken API Integration** — REST and WebSocket clients for authentication, order placement, and live market data
-- **Simulation Mode** — Test strategies locally without connecting to the Kraken API (always active in development)
-- **9 Order Types** — Limit, Market, Iceberg, Stop Loss, Stop Loss Limit, Take Profit, Take Profit Limit, Trailing Stop, Trailing Stop Limit
+- **Active Orders** - View and manage submitted orders with real-time status tracking
+- **Kraken API Integration** - REST and WebSocket clients for live market data, with all authenticated calls signed server-side
+- **Simulation Mode** - Test strategies locally without connecting to the Kraken API. The default everywhere, and the only mode the public deployment offers
+- **9 Order Types** - Limit, Market, Iceberg, Stop Loss, Stop Loss Limit, Take Profit, Take Profit Limit, Trailing Stop, Trailing Stop Limit
 
 ---
 
@@ -36,7 +36,9 @@ npm install
 npm run dev
 ```
 
-The development server starts at **http://localhost:3002/**. Simulation mode is enabled automatically in development — no API keys required.
+The development server starts at **http://localhost:3002/**. It simulates unless live trading is
+configured server-side in `local.env`, so no Kraken credential is required to run it - see
+[Trading modes](#trading-modes).
 
 ### Production Build
 
@@ -82,18 +84,36 @@ between runs, and no job requires any Kraken credential.
 
 ## Deployment
 
-The app is a static single-page bundle hosted on [Vercel](https://vercel.com/) at
-<https://block-builder3.vercel.app/>. Everything the platform needs is declared in
-`vercel.json`; the build is plain `npm run build` and no environment variable is set on the
-deployment.
+The app is a single-page bundle plus a small set of serverless functions, hosted on
+[Vercel](https://vercel.com/) at <https://block-builder3.vercel.app/>. Everything the platform
+needs is declared in `vercel.json` and `.vercelignore`; the build is plain `npm run build`.
+
+**No environment variable is set on the deployment, and none may be.** The public deployment is
+simulation only, and setting a Kraken credential on it is refused rather than honoured - see
+[Trading modes](#trading-modes).
+
+### Serverless functions
+
+Each file under `api/` is a function. They are written against Node's own
+`IncomingMessage`/`ServerResponse` rather than a framework request object, so the identical
+module runs on Vercel, on the Vite dev server (`vite/krakenApiDevServer.ts`) and under a plain
+stub in the tests. Files prefixed with `_` are shared code, not routes.
+
+That rule is mechanical and it applies to *every* file, which is what `.vercelignore` is for:
+without it a colocated test under `api/kraken/` would be published as an endpoint, so
+`api/kraken/handlers.test.ts` would deploy as `/api/kraken/handlers.test`, importing `vitest`
+and exporting no handler. The single entry `api/**/*.test.ts` covers the next such test too,
+and `api/_lib/deploymentSurface.test.ts` asserts the route list a deploy would actually
+publish, so an accidental endpoint fails the suite rather than the site.
 
 ### SPA rewrite
 
 Vercel checks the filesystem before it applies a rewrite, so real files still win and every
-other path falls through to `/index.html`. `/assets/` is deliberately excluded: those
-filenames are content-hashed, so a request for one that no longer exists is a stale client
-asking for a superseded build. It should get an honest 404 rather than a page of HTML served
-under a JavaScript content type.
+other path falls through to `/index.html`. `/api/` and `/assets/` are excluded explicitly.
+`/api/` because a request that reaches a function must never be answered with the SPA shell,
+and `/assets/` because those filenames are content-hashed: a request for one that no longer
+exists is a stale client asking for a superseded build. It should get an honest 404 rather
+than a page of HTML served under a JavaScript content type.
 
 ### Security headers
 
@@ -117,10 +137,12 @@ connect-src 'self' https://api.kraken.com wss://ws.kraken.com wss://ws-auth.krak
 
 Two entries need explaining:
 
-- **`connect-src` names every host the app talks to**: `api.kraken.com` for the REST ticker and
-  OHLC candles, `ws.kraken.com` for the public feed and `ws-auth.kraken.com` for the private one.
-  A new endpoint has to be added here as well as in the code, or the request is blocked at
-  runtime with nothing in the source to explain why.
+- **`connect-src` names every host the app talks to**: `'self'` for this app's own
+  `/api/kraken/*` endpoints, `api.kraken.com` for the *public* REST ticker and OHLC candles,
+  `ws.kraken.com` for the public feed and `ws-auth.kraken.com` for the private one. Authenticated
+  REST calls no longer appear here because the browser no longer makes any. A new endpoint has to
+  be added here as well as in the code, or the request is blocked at runtime with nothing in the
+  source to explain why.
 - **`style-src` allows `'unsafe-inline'`** because React writes inline `style` attributes and
   `lightweight-charts` injects a stylesheet of its own once the chart mounts. A static deploy has
   no way to issue a per-response nonce, and pinning a hash of a minified third-party stylesheet
@@ -146,21 +168,165 @@ no import can pull it back in by accident.
 
 ---
 
-## Kraken API Setup (Optional)
+## Trading modes
 
-To enable live market data and real order placement:
+The app runs in one of two modes, and **which one it is in is decided on the server, never
+in the browser**. No Kraken credential is compiled into the bundle, and the bundle contains
+no request-signing code at all: an authenticated call is a request to this app's own
+`/api/kraken/*` endpoints, which hold the key, sign, and call the exchange.
 
-1. Log in to your [Kraken](https://www.kraken.com/) account
-2. Go to **Settings → API**
-3. Create a new API key with **"Orders and trades – Create & modify orders"** permission
-4. Copy `local.env.example` to `local.env` and fill in your credentials:
+| | Simulation | Live |
+|---|---|---|
+| Where it runs | Anywhere, including the public deployment | The operator's own machine, on loopback |
+| Credentials | None, and none are accepted | Yours, in your own server-side environment |
+| Orders | Saved locally in the browser | Sent to Kraken |
+| Configuration | The default | `KRAKEN_TRADING_MODE=live`, `KRAKEN_ALLOW_LOCAL_LIVE=1`, and both key variables |
+
+### The public deployment is simulation only
+
+<https://block-builder3.vercel.app/> is reachable by anyone. A credential there would let
+any anonymous visitor trade on the operator's Kraken account, so the split is enforced in
+code rather than left to configuration:
+
+- On a hosted deployment (`VERCEL_ENV` of `production` or `preview`), `KRAKEN_TRADING_MODE=live`
+  is **refused**.
+- On a hosted deployment, merely *setting* `KRAKEN_API_KEY` or `KRAKEN_API_PRIVATE_KEY` puts
+  the deployment into a `misconfigured` state that signs nothing and says why.
+- Any hosting signal at all - `VERCEL`, `AWS_LAMBDA_FUNCTION_NAME`, `LAMBDA_TASK_ROOT`, or any
+  `VERCEL_ENV` - refuses live mode, because `VERCEL_ENV` is a system variable a project can be
+  configured not to expose and its absence therefore proves nothing.
+- Live mode additionally requires `KRAKEN_ALLOW_LOCAL_LIVE=1`, the operator's positive statement
+  that this process is their own machine. An environment that has not said so is never assumed
+  to be local.
+
+Adding a credential to the hosting dashboard therefore cannot switch the public site to live
+trading. It breaks that deployment, loudly, which is the intended behaviour. The rule lives in
+`api/_lib/serverConfig.ts` and is covered by `api/_lib/serverConfig.test.ts`.
+
+### Live mode is loopback only, and unauthenticated
+
+A live server signs Kraken requests for **whoever can reach it**. It authenticates the
+deployment, not the caller, and it deliberately ships no authentication layer: no shared
+secret, no token, nothing. Anyone who can open `POST /api/kraken/ws-token` gets a Kraken
+WebSocket token carrying the key's permissions, and anyone who can open
+`GET /api/kraken/balance` reads the account.
+
+Live mode is therefore confined to loopback, twice over:
+
+- **The bind.** A dev server configured for live trading and bound to anything but
+  `localhost`, `127.0.0.1` or `::1` **fails to start**, with an error naming the bind it
+  refused and the three it serves (`vite/krakenApiDevServer.ts`). An empty `--host` is
+  refused with the rest: it reads like the default but listens on every interface. That
+  list is the same one the per-request `Host` check uses, so a bind that would start a
+  server refusing its own operator is caught at startup rather than becoming a live server
+  that answers every request as though it simulated. Any other hosting must apply the same
+  rule: bind live mode to `127.0.0.1`, never `0.0.0.0`.
+- **The request.** Independently of the bind, `/api/kraken/balance`, `/api/kraken/ws-token`
+  and `/api/kraken/status` serve a caller only when all four of these hold
+  (`api/_lib/loopback.ts`):
+  1. the peer address is in `127.0.0.0/8` or is `::1`;
+  2. the `Host` header is `localhost`, `127.0.0.1` or `[::1]`, with any port. Missing or
+     malformed is refused. Without this a DNS rebind reaches a server bound exactly as
+     instructed: an attacker's page re-resolves its own hostname to `127.0.0.1`, so the peer
+     address is loopback while the page reading the Kraken token is not yours;
+  3. the request carries this app's own header, `X-Block-Builder-App: 1`. It is not a secret
+     and carries no credential; it is the thing a page on another site cannot get permission
+     to send. An `<img src>` or a form post cannot set a header at all, and a cross-origin
+     `fetch` with a header outside the CORS safelist has to win a preflight first. Deployed,
+     the function answers that `OPTIONS` itself with a `405` and no `Access-Control-Allow-*`
+     header. Under `npm run dev`, Vite's own `cors` middleware answers it before ours runs,
+     with a `204`, but its default allowed origins are loopback only, so a foreign origin is
+     sent no `Access-Control-Allow-Origin` and the browser drops the real request. A page on
+     *another loopback origin* does pass that preflight, and is refused by check 4 instead,
+     which is why this is one check of four. The app sends the header on every call, and a
+     script or a `curl` invocation sends it by hand;
+  4. no foreign origin is declared, by `Sec-Fetch-Site` or `Origin`. Without this any site the
+     operator visits while running live can `POST /api/kraken/ws-token` with CORS-safelisted
+     headers only, which sends no preflight. It could not read the reply, but it would have
+     burned a Kraken nonce and a slice of the account's rate limit.
+
+  Checks 1, 2 and 4 all *infer* who the caller is from headers that a request may simply
+  omit, and each was bypassed in turn by a shape that omits them. Check 3 is the affirmative
+  one, and the reason the absence of `Sec-Fetch-Site` and `Origin` is no longer read as
+  "this must be curl": on a browser predating Fetch Metadata (Safari below 16.4) an `<img>`
+  or a form post from an attacker's page sends neither, and looked identical to a script.
+
+  A request that fails any of them is answered exactly as a simulating deployment answers
+  everyone: `503`, `"mode":"simulation"`. `/api/kraken/status` applies the same test and tells
+  such a caller the deployment simulates. The three agree on purpose, so a remote caller cannot
+  learn from one what the others decline to say.
+
+That guard establishes that a request came from this machine and from this app. It does **not**
+establish who is at the keyboard, and it is not authentication.
+
+**Exposing this beyond loopback is the operator's own responsibility.** If you put a live
+instance behind a proxy, on a LAN, or on a tunnel, you must add your own authentication in
+front of it. We provide none, on purpose. A reverse proxy in particular defeats the peer-address
+half of the guard by design, since every request then arrives from the proxy.
+
+### Running live, locally or self-hosted
+
+1. Log in to your [Kraken](https://www.kraken.com/) account and go to **Settings > API**.
+2. Create a key with the narrowest permissions you need. The authenticated calls this app makes
+   today are reads: **Query funds** covers `/api/kraken/balance`, and **Access WebSockets API**
+   is required for `/api/kraken/ws-token`, because Kraken's `GetWebSocketsToken` is gated on it.
+   Without that permission the endpoint answers `502` carrying Kraken's
+   `EGeneral:Permission denied`. Order placement is not wired up, so an order-create permission
+   is not required and should not be granted yet.
+3. Copy `local.env.example` to `local.env` and fill it in:
 
 ```
+KRAKEN_TRADING_MODE=live
+KRAKEN_ALLOW_LOCAL_LIVE=1
 KRAKEN_API_KEY=your_api_key_here
 KRAKEN_API_PRIVATE_KEY=your_api_private_key_here
 ```
 
-> **⚠️ Never commit your `local.env` file.** It is already included in `.gitignore`.
+4. Run `npm run dev`, which mounts the same `api/` handlers Vercel runs (see
+   `vite/krakenApiDevServer.ts`) and binds to loopback. Do not add `--host` unless it names
+   `localhost`, `127.0.0.1` or `::1`: the dev server refuses to start in live mode on any
+   other bind, including the rest of `127.0.0.0/8`. `npx vercel dev` sets `VERCEL`, which
+   is a hosting signal, so it runs in simulation - use it to exercise the deployment's own
+   headers, not to trade.
+
+Check `GET /api/kraken/status` to see what the server decided:
+
+```
+$ curl -s -H 'X-Block-Builder-App: 1' localhost:3002/api/kraken/status
+{"mode":"live","liveAvailable":true,"errors":[]}
+```
+
+Every endpoint needs that header, and every scripted caller has to send it - without it the
+server answers as it answers a stranger, `{"mode":"simulation","liveAvailable":false,...}`:
+
+```
+$ curl -s -H 'X-Block-Builder-App: 1' localhost:3002/api/kraken/balance
+$ curl -s -X POST -H 'X-Block-Builder-App: 1' localhost:3002/api/kraken/ws-token
+```
+
+Anything ambiguous is refused rather than guessed. `KRAKEN_TRADING_MODE=live` with a missing
+or half-supplied credential pair, without `KRAKEN_ALLOW_LOCAL_LIVE=1`, in an environment
+carrying a hosting signal, or with a mode string the server does not recognise, answers
+`503` with `"mode":"misconfigured"` and an explanation; the UI stays in simulation.
+
+> **Never commit your `local.env` file.** It is already in `.gitignore`.
+
+### Server endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/kraken/status` | GET | Which mode the server is in. Carries no credential, ever. Answers `simulation` to any caller the other two would refuse. |
+| `/api/kraken/balance` | GET | Account balances. The authenticated read that exercises the boundary. Operator's own page on loopback only. |
+| `/api/kraken/ws-token` | POST | Mints a Kraken WebSocket token, which is short-lived and scoped, unlike the key that produced it. Operator's own page on loopback only. |
+
+A caller that omits the `X-Block-Builder-App: 1` header described above is never treated as
+the operator by any of the three: `/api/kraken/status` reports `simulation`, and the other two
+refuse exactly as a simulating deployment refuses everyone. A `misconfigured` deployment still
+says so to every caller, header or not.
+
+The private endpoints are an **allowlist, not a proxy** (`api/_lib/krakenClient.ts`). A generic
+"sign whatever the browser asks" endpoint would be a signing oracle, which is the failure this
+boundary exists to prevent. Adding an operation is a deliberate, reviewable change.
 
 ---
 
@@ -193,10 +359,10 @@ This keeps the grid completely decoupled from pointer-move events during a drag.
 
 The Orders Store uses a `useReducer` pattern with a clean separation:
 
-- **`ordersReducer.ts`** — Pure reducer function with typed action discriminated union
-- **`OrdersStoreContext.ts`** — Context definition, types, and initial state factory
-- **`useOrdersStore.ts`** — Hook + memoized selectors (`useActiveOrdersCount`, `useLiveOrdersCount`, etc.)
-- **`OrdersStore.tsx`** — Provider component wiring reducer + side effects
+- **`ordersReducer.ts`** - Pure reducer function with typed action discriminated union
+- **`OrdersStoreContext.ts`** - Context definition, types, and initial state factory
+- **`useOrdersStore.ts`** - Hook + memoized selectors (`useActiveOrdersCount`, `useLiveOrdersCount`, etc.)
+- **`OrdersStore.tsx`** - Provider component wiring reducer + side effects
 
 ### Tailwind CVA Styling
 
@@ -211,10 +377,10 @@ The project enables the **React Compiler** (`babel-plugin-react-compiler`) via V
 Interaction logic is split into purpose-specific hooks:
 
 - **`usePointerGesture`** - The pointer primitive underneath both drag hooks: capture, tap-versus-drag, cancel
-- **`useFreeDrag`** — Free-form drag for moving blocks between grid cells (integrates with the drag overlay portal)
-- **`useVerticalDrag`** — Constrained vertical drag for sliding blocks along the price-scale axis
+- **`useFreeDrag`** - Free-form drag for moving blocks between grid cells (integrates with the drag overlay portal)
+- **`useVerticalDrag`** - Constrained vertical drag for sliding blocks along the price-scale axis
 - **`useBlockCommand`** - The select-then-place command model layered over the drag
-- **`useTradeExecution`** — Order configuration management, submission flow, simulation mode toggle
+- **`useTradeExecution`** - Order configuration management, submission flow, simulation mode toggle
 
 ---
 
@@ -393,16 +559,35 @@ callback for forwarding the error to real error reporting.
 ## Project Structure
 
 ```
+api/                               # Serverless functions - the credential lives here, not in the bundle
+├── _lib/
+│   ├── serverConfig.ts            # Decides simulation vs live; refuses ambiguity
+│   ├── krakenSigning.ts           # HMAC-SHA512 request signing (server only)
+│   ├── krakenClient.ts            # Allowlisted private Kraken calls
+│   ├── loopback.ts                # The per-request operator check (peer, Host, header, origin)
+│   ├── runtime.ts                 # The one path that hands out a credential
+│   └── http.ts                    # JSON + method plumbing
+└── kraken/
+    ├── status.ts                  # GET  - which mode the server is in
+    ├── balance.ts                 # GET  - authenticated read
+    └── ws-token.ts                # POST - mints a WebSocket token
+
+vite/                              # Dev-server tooling (never bundled)
+├── krakenApiDevServer.ts          # Mounts api/ on `npm run dev`
+└── localEnv.ts                    # Reads local.env into the dev server's environment
+
 src/
-├── App.tsx                        # Root component — providers, routing, drag overlay
+├── App.tsx                        # Root component - providers, routing, drag overlay
 ├── App.styles.ts                  # App-level CVA variants & layout classes
 ├── main.tsx                       # Application entry point
 ├── index.css                      # Global styles & Tailwind theme tokens
 │
-├── api/                           # Kraken API integration
-│   ├── config.ts                  # API configuration & credential loading
-│   ├── krakenAuth.ts              # Authentication helpers
-│   ├── krakenRest.ts              # REST API client
+├── api/                           # Kraken API integration (browser side, credential-free)
+│   ├── config.ts                  # Endpoint configuration. Holds no credential
+│   ├── tradingMode.ts             # The server's simulation/live answer, cached for the page
+│   ├── krakenServer.ts            # Calls this app's own /api/kraken/* endpoints
+│   ├── appRequestHeader.ts        # The header those calls carry (server's copy: api/_lib/loopback.ts)
+│   ├── krakenRest.ts              # Public REST API client
 │   ├── krakenWebSocket.ts         # WebSocket client for live data
 │   ├── orderMapper.ts             # Maps internal order config → Kraken API format
 │   ├── tickerUpdate.ts            # Parses & merges v2 ticker WebSocket frames
@@ -476,12 +661,13 @@ src/
 │   ├── useBlockCommand.ts         # Select-then-place command model (keyboard, taps)
 │   ├── useAnnouncer.ts            # Live-region message state
 │   ├── useKrakenAPI.ts            # Kraken API hook (prices, order management)
+│   ├── useTradingMode.ts          # Subscribes the UI to the server's trading mode
 │   ├── useOHLCData.ts             # OHLC candle fetching for the chart
 │   ├── useTradeExecution.ts       # Trade config, submission & simulation flow
 │   └── index.ts
 │
 ├── lib/
-│   └── utils.ts                   # Utility (cn — clsx + tailwind-merge)
+│   └── utils.ts                   # Utility (cn - clsx + tailwind-merge)
 │
 ├── store/                         # Application state
 │   ├── OrdersStore.tsx            # Provider component (reducer + side effects)
@@ -538,7 +724,7 @@ src/
 |---|---|---|
 | [vite](https://vite.dev/) | ^7.2.4 | Build tool & dev server |
 | [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react) | ^5.1.1 | React Fast Refresh for Vite |
-| [babel-plugin-react-compiler](https://react.dev/learn/react-compiler) | ^1.0.0 | React Compiler — automatic memoization |
+| [babel-plugin-react-compiler](https://react.dev/learn/react-compiler) | ^1.0.0 | React Compiler - automatic memoization |
 | [vite-plugin-svgr](https://github.com/pd4d10/vite-plugin-svgr) | ^4.5.0 | Import SVGs as React components |
 | [typescript](https://www.typescriptlang.org/) | ~5.9.3 | Static type checking |
 | [eslint](https://eslint.org/) | ^9.39.1 | Linting |
@@ -575,4 +761,4 @@ Configured in `vite.config.ts` for cleaner imports:
 
 ## License
 
-[MIT](./LICENSE) — Jacques Hebert, 2025
+[MIT](./LICENSE) - Jacques Hebert, 2025

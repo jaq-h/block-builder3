@@ -4,22 +4,22 @@
  */
 
 // Configuration
-export {
-  getKrakenConfig,
-  hasValidCredentials,
-  validateConfig,
-  DEFAULT_SYMBOL,
-  type KrakenConfig,
-} from './config';
+export { getKrakenConfig, DEFAULT_SYMBOL, type KrakenConfig } from './config';
 
-// Authentication
+// Trading mode - the server's answer to "may this deployment trade for real?"
 export {
-  generateNonce,
-  generateSignature,
-  createAuthHeaders,
-  getWebSocketToken,
-  formatPostData,
-} from './krakenAuth';
+  getTradingModeStatus,
+  isLiveTradingAvailable,
+  loadTradingMode,
+  subscribeTradingMode,
+  resetTradingMode,
+  STATUS_ENDPOINT,
+  type TradingMode,
+  type TradingModeStatus,
+} from './tradingMode';
+
+// Server-side Kraken calls (signed by `api/`, never by the browser)
+export { getWebSocketToken, WS_TOKEN_ENDPOINT, type Balances } from './krakenServer';
 
 // REST API
 export {
@@ -93,7 +93,6 @@ export type {
   WebSocketSubscription,
 
   // Authentication types
-  KrakenCredentials,
   AuthToken,
 
   // UI mapping types

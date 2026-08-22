@@ -3,8 +3,8 @@
  * Handles WebSocket connections for real-time data and authenticated order submission
  */
 
-import { hasValidCredentials } from "./config";
-import { getWebSocketToken } from "./krakenAuth";
+import { isLiveTradingAvailable } from "./tradingMode";
+import { getWebSocketToken } from "./krakenServer";
 import type {
   WebSocketStatus,
   WebSocketMessage,
@@ -322,8 +322,10 @@ export class KrakenWebSocketManager {
    * Connect to the private WebSocket for authenticated operations
    */
   connectPrivate(): Promise<void> {
-    if (!hasValidCredentials()) {
-      return Promise.reject(new Error("API credentials are not configured"));
+    if (!isLiveTradingAvailable()) {
+      return Promise.reject(
+        new Error("Live trading is not enabled on this deployment"),
+      );
     }
 
     const state = this.privateSocket;

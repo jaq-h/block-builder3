@@ -20,4 +20,34 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // `api/` is the server-side boundary and `vite/` is dev-server tooling.
+    // Neither runs in a browser, and both need Node's globals.
+    files: ['api/**/*.ts', 'vite/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
+    // The credential and the signing code live server-side. An import from the
+    // client tree would compile them into the bundle, which is exactly the
+    // defect this boundary exists to prevent. This is the source-side guard;
+    // `api/_lib/credentialBoundary.test.ts` covers the built output, which is
+    // what actually ships.
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/api/_lib/**', '**/api/kraken/**'],
+              message:
+                'Server-side only. The browser must never import Kraken signing code or server config.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])

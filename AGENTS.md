@@ -30,13 +30,19 @@ Vitest, configured in the `test` block of `vite.config.ts` so it reuses the app'
 plugins and `resolve.alias` map. There is no second copy of the alias table, and `?react`
 SVG imports work in tests for the same reason.
 
+- The suite covers `src/`, `api/` and `vite/` - see `test.include`. Server-side signing runs on
+  every push, in the same command as the client tests.
 - The default environment is `node`, because most of the suite is pure logic. A test that
   needs a DOM opts in with a `// @vitest-environment jsdom` docblock on its first line.
   See `src/utils/grid.test.ts` (node) and `src/utils/grid.dom.test.ts` (jsdom) for the split.
 - Globals are off. Import `describe`/`it`/`expect` from `vitest` explicitly.
 - `src/test/setup.ts` registers the jest-dom matchers and unmounts React trees after
   each test.
-- Tests are colocated with the code they cover, named `*.test.ts`/`*.test.tsx`.
+- Tests are colocated with the code they cover, named `*.test.ts`/`*.test.tsx`. Two live
+  under `api/_lib/` instead because they are about the whole repository rather than about a
+  neighbouring module: `credentialBoundary.test.ts` builds the client and scans the emitted
+  bundle, and `deploymentSurface.test.ts` checks which routes a deploy would publish. Both
+  are `api/`'s responsibility, because the boundary is.
 
 A test may deliberately assert **current, wrong** behaviour, commented
 `CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. None are live today;
@@ -56,42 +62,110 @@ pass quietly. `src/test/panelStubs.tsx` plus `src/test/mountTracker.ts` count
 component mounts, which is how `src/App.test.tsx` detects a duplicated tree.
 
 Coverage is reported, not enforced. The suite targets the logic where a defect would
-corrupt a real order (`src/api/orderMapper.ts`, `src/api/krakenAuth.ts`, `src/utils/`)
-rather than chasing a repository-wide percentage.
+corrupt a real order or leak a credential (`api/_lib/`, `src/api/orderMapper.ts`,
+`src/utils/`) rather than chasing a repository-wide percentage.
 
 ## Deployment
 
-Vercel, configured entirely by `vercel.json`; the README's **Deployment** section justifies every
-entry in it. Two facts bite during ordinary work:
+Vercel, configured by `vercel.json` plus `.vercelignore`; the README's **Deployment** section
+justifies every entry in them. Four facts bite during ordinary work:
 
 - **A new external endpoint has to be added to the CSP's `connect-src`.** Miss it and the request
   is blocked in production only, with nothing in the source to explain why. `npm run preview` does
   not apply these headers because they live in `vercel.json`, not in the app; `npx vercel dev` does.
 - **The chart panel is code-split.** Import it from the `orderChart` barrel, never from
   `./OrderChart` directly, or `lightweight-charts` lands back in the initial chunk.
+- **`api/` is a set of serverless functions, and the SPA rewrite excludes it.** Handlers take
+  Node's `IncomingMessage`/`ServerResponse` so the same module runs on Vercel, on the Vite dev
+  server and in the tests. Nothing there reads a request body, which is the one place those three
+  environments genuinely differ.
+- **Every non-underscore file under `api/` becomes a public route.** That includes a colocated
+  test, which would deploy as an endpoint that imports `vitest` and exports no handler.
+  `.vercelignore` excludes `api/**/*.test.ts`, and `api/_lib/deploymentSurface.test.ts` asserts which
+  routes the deploy would actually publish.
 
-## Credentials and simulation mode
+## Credentials and the server boundary
 
-`vite.config.ts` injects `KRAKEN_API_KEY` and `KRAKEN_API_PRIVATE_KEY` into the client
-bundle through `define`, which means **the API private key ships in the browser**. This is
-known and is being re-architected separately. Do not build new work on top of it, and never
-commit a real credential: local keys go in `local.env` (gitignored, see `local.env.example`).
+**No Kraken credential may reach the browser, in any build, by any path.** This is the
+project's hardest rule. The private key lives only in the server-side environment that
+`api/` reads; `src/` holds no credential and no signing code, and `vite.config.ts` has no
+`define` (a `define` value is compiled into the bundle as a literal, which is exactly how
+the key used to leak). Never commit a real credential: local keys go in `local.env`
+(gitignored, see `local.env.example`).
 
-Keep the `?? ""` on those two `define` values. Without it `JSON.stringify(undefined)`
-produces no string, and Vitest's transform substitutes the literal `"undefined"` -
-a truthy value that makes `hasValidCredentials()` claim credentials exist when
-none do, in tests only.
+Two automated guards keep it that way, and both are cheap to run:
 
-CI needs no secrets, and no test may hardcode a live credential. `src/api/krakenAuth.test.ts`
-signs against the throwaway example vector Kraken publishes in its own API docs.
+- `api/_lib/credentialBoundary.test.ts` runs a real production build with the credential
+  variables set to sentinels and scans what it emitted. It is the acceptance check, executed,
+  and it costs a build every `npm test`.
+- `no-restricted-imports` in `eslint.config.js` blocks `src/` from importing `api/_lib` or
+  `api/kraken`.
 
-Simulation mode is decided in `src/hooks/useTradeExecution.ts`:
+A change that touches this boundary also carries the acceptance check by hand in its PR
+description: build with the variables set, grep `dist/` for them, and paste the commands and
+their output rather than a summary of them.
 
-- Production always simulates, whatever the toggle says. Orders are saved locally.
-- Development defaults to simulation, and only offers the API-mode toggle when credentials
-  are actually present.
+`api/_lib/serverConfig.ts` is the boundary in one function. Read it before changing anything
+about modes. Its rules: the public deployment (`VERCEL_ENV` of `production` or `preview`) is
+simulation only and *refuses* to hold a credential at all, so no hosting-dashboard variable
+can cross the line; live mode requires all four of an explicit `KRAKEN_TRADING_MODE=live`, a
+complete credential pair, an explicit `KRAKEN_ALLOW_LOCAL_LIVE=1`, and an environment carrying
+no hosting signal (`VERCEL`, `AWS_LAMBDA_FUNCTION_NAME`, `LAMBDA_TASK_ROOT` or any
+`VERCEL_ENV`); anything ambiguous returns `misconfigured` rather than guessing. An
+unrecognised environment is never assumed to be local, because `VERCEL_ENV` is a system
+variable a project can be configured not to expose. `npx vercel dev` sets `VERCEL`, so it
+simulates.
 
-So a dev server with no `local.env` is safe to click through end to end.
+**Live mode is loopback only, and we ship no authentication for it.** A live server signs for
+whoever reaches it, so it is confined twice: `vite/krakenApiDevServer.ts` *fails to start* when
+live mode is configured on a bind other than `localhost`, `127.0.0.1` or `::1` (an empty
+host is refused too, since it listens on every interface), and
+`isOperatorRequest` in `api/_lib/loopback.ts` gates `/api/kraken/balance`,
+`/api/kraken/ws-token` and `/api/kraken/status` per request, regardless of the bind. The bind
+check and the `Host` check share one list of loopback names (`LOOPBACK_HOST_NAMES`), because
+two lists that merely agreed is how a live server on `127.0.0.2` came to start happily and then
+refuse every request it got. It is four checks and each closes a hole the others leave: the
+peer address is loopback, the `Host` header names a loopback host (this is what stops a DNS
+rebind, which produces a loopback peer for a page you never opened), the request carries this
+app's own `X-Block-Builder-App` header, and no foreign origin is declared by `Sec-Fetch-Site`
+or `Origin` (this is what stops any site the operator visits from burning a Kraken nonce
+through the token mint). The header is the only affirmative check: the other three infer a
+caller from headers a request may simply omit, and each was bypassed in turn by a shape that
+omits them, most recently an `<img src>` on a browser predating Fetch Metadata, which sends
+neither `Sec-Fetch-Site` nor `Origin`. A page on another site cannot set a header without a
+preflight neither server grants it (the deployed function answers `OPTIONS` 405; the dev
+server's `cors` middleware answers 204 but allows loopback origins only), so absence of the
+origin headers is no longer read as "this is curl". A page on another loopback origin does
+get through that preflight, and is caught by the origin check instead. The client
+sends it from `API_REQUEST_HEADERS` in `src/api/appRequestHeader.ts`; that name and
+`APP_REQUEST_HEADER` in `api/_lib/loopback.ts` are **two constants that must stay in step**,
+and `api/kraken/handlers.test.ts` builds a request from the client's copy so a drift fails
+there. A caller that fails any check gets the same `503 "mode":"simulation"` a simulating
+deployment gives everybody, and `/api/kraken/status` tells it the same thing: a remote caller
+must not be able to tell a live host from a simulating one, so no refusal may name a
+credential. `misconfigured` stays loud to every caller, because that state signs nothing and a
+key added to a hosting dashboard has to break visibly. Other hosting must bind live mode to
+`127.0.0.1` itself. Exposing a live instance beyond loopback requires the operator to add their
+own protection; we deliberately provide none.
+
+Private Kraken endpoints are an **allowlist** in `api/_lib/krakenClient.ts`, not a proxy.
+A generic signing endpoint would let any visitor have the server sign anything. Adding an
+operation is a deliberate change; order placement is deliberately not on the list.
+
+The browser learns the mode from `GET /api/kraken/status`, cached for the page in
+`src/api/tradingMode.ts` and read through `useTradingMode`. It defaults to "no live
+trading", so an unanswered or malformed response simulates. That flag drives the UI only;
+the refusal that matters is server side, on every credentialed endpoint.
+
+CI needs no secrets, and no test may hardcode a live credential.
+`api/_lib/krakenSigning.test.ts` signs against the throwaway example vector Kraken publishes
+in its own API docs.
+
+A dev server with no `local.env` is simulation only and safe to click through end to end.
+`npm run dev` mounts the `api/` handlers itself (`vite/krakenApiDevServer.ts`), so the
+endpoints behave in dev exactly as they do deployed. That plugin is skipped under Vitest -
+it reads `local.env` into `process.env`, and the suite must never see a developer's real
+credentials.
 
 ## Interaction: pointer, keyboard and touch
 
@@ -252,6 +326,9 @@ to typecheck, or vice versa.
 
 Product code currently imports relatively (`../../../../App.styles`) and does not use the
 aliases; the tests do. Prefer the aliases in new code.
+
+There is deliberately no alias for `api/`. The client tree must not import it, and an alias
+would invite exactly that.
 
 ## Component layout
 

@@ -47,7 +47,7 @@ const StrategyAssembly: FC<StrategyAssemblyProps> = ({
 type InnerProps = Omit<StrategyAssemblyProps, "onConfigChange" | "initialConfig" | "initialPattern">;
 
 /**
- * StrategyAssemblyInner — thin shell that composes extracted sub-components.
+ * StrategyAssemblyInner - thin shell that composes extracted sub-components.
  *
  * Each child subscribes only to the specific context(s) it needs:
  *   - PatternSelector  → GridDataContext only (strategyPattern)

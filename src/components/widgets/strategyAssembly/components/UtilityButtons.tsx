@@ -26,6 +26,7 @@ const UtilityButtons: FC<UtilityButtonsProps> = function UtilityButtons({
 }) {
   const { clearAll, reverseBlocks } = useGridData();
   const showExecute = orderCount != null && orderCount > 0 && onExecute;
+  const orderLabel = orderCount === 1 ? "order" : "orders";
 
   return (
     <div className={utilityRow}>
@@ -54,9 +55,9 @@ const UtilityButtons: FC<UtilityButtonsProps> = function UtilityButtons({
                 Submitting...
               </>
             ) : isEditMode ? (
-              <>Update Order ({orderCount} orders)</>
+              <>Update Order ({orderCount} {orderLabel})</>
             ) : (
-              <>Execute Trade ({orderCount} orders)</>
+              <>Execute Trade ({orderCount} {orderLabel})</>
             )}
           </button>
         )}
