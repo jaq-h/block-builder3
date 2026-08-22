@@ -36,8 +36,11 @@ SVG imports work in tests for the same reason.
   needs a DOM opts in with a `// @vitest-environment jsdom` docblock on its first line.
   See `src/utils/grid.test.ts` (node) and `src/utils/grid.dom.test.ts` (jsdom) for the split.
 - Globals are off. Import `describe`/`it`/`expect` from `vitest` explicitly.
-- `src/test/setup.ts` registers the jest-dom matchers and unmounts React trees after
-  each test.
+- `src/test/setup.ts` registers the jest-dom matchers, unmounts React trees after
+  each test, and replaces `fetch` for the whole suite: Kraken's `AssetPairs` request is
+  answered from `marketFixtures.ts` and every other URL throws, so no test reaches the
+  network. It is the mount that is the trap rather than any one file - anything rendering
+  `MarketProvider` fetches - so a test needing its own response stubs `fetch` itself.
 - Tests are colocated with the code they cover, named `*.test.ts`/`*.test.tsx`. Two live
   under `api/_lib/` instead because they are about the whole repository rather than about a
   neighbouring module: `credentialBoundary.test.ts` builds the client and scans the emitted
@@ -176,7 +179,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Five things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Six things bite in ordinary work:
 
 - **Never add a `window` mouse listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events with `setPointerCapture`, which is what delivers a
