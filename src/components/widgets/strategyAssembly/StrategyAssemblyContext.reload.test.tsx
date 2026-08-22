@@ -109,6 +109,34 @@ describe("a saved strategy reloaded for editing", () => {
     expect(grid[1][1][0].axes).toEqual([]);
   });
 
+  // The discriminating case for the single-axis guard: a Stop Loss is
+  // trigger-only, but the axis it is saved at is whichever half of the cell the
+  // drop landed in, so `axis: 2` is a real saved state. Deriving its axes from
+  // that axis would hand it ["limit"], and the mapper would then send a plain
+  // limit order sitting at the stop price with no trigger at all - the same
+  // relabelling this branch exists to remove. A single-axis type keeps its own
+  // axis whatever the saved axis says.
+  it("keeps a single-axis stop-loss on its trigger axis when saved at axis 2", () => {
+    const savedStopLoss: OrderConfig = {
+      "sa-stop-loss-1": {
+        col: 0,
+        row: 1,
+        type: "stop-loss",
+        axis: 2,
+        yPosition: 15,
+        direction: "downside",
+      },
+    };
+
+    expect(rehydrate(savedStopLoss)[0][1][0].axes).toEqual(["trigger"]);
+
+    const [order] = ordersFrom(savedStopLoss);
+
+    expect(order.order_type).toBe("stop-loss");
+    expect(order.triggers?.price).toBe("66098.4");
+    expect(order.limit_price).toBeUndefined();
+  });
+
   // Rehydration used to rebuild every block with the ORDER TYPE's full axes
   // list, so each leg came back claiming both "trigger" and "limit". The mapper
   // then read that one leg's single slider twice: both legs came out as a

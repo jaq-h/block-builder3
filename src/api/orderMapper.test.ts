@@ -355,41 +355,73 @@ describe("mapBlockToOrderParams", () => {
     });
   });
 
-  it("emits both a limit price and a trigger for a dual-axis block", () => {
-    const params = mapBlockToOrderParams(
-      uiBlock({
-        id: "sa-stop-loss-1",
-        orderType: "stop-loss-limit",
-        axes: ["trigger", "limit"],
-        direction: "downside",
-        position: { col: 0, row: 2, yPosition: 20, axis: 1 },
-      }),
-      context(),
-    );
+  // FORMERLY THIS PINNED THE COLLAPSE AS CORRECT. It asserted that a block
+  // carrying both axes should emit limit_price === triggers.price ===
+  // "40000.0", a payload whose two prices both came from one slider. That is
+  // the mapper guessing a second price, and it passes validateOrder cleanly, so
+  // nothing downstream caught it. A dual-axis order type is placed as two
+  // blocks, one per axis, so such a block has no construction path - the mapper
+  // refuses it rather than inventing the price the block cannot express.
+  it("refuses a block claiming both a trigger and a limit axis", () => {
+    expect(() =>
+      mapBlockToOrderParams(
+        uiBlock({
+          id: "sa-stop-loss-limit-1",
+          orderType: "stop-loss-limit",
+          axes: ["trigger", "limit"],
+          direction: "downside",
+          position: { col: 0, row: 2, yPosition: 20, axis: 1 },
+        }),
+        context(),
+      ),
+    ).toThrow(/sa-stop-loss-limit-1/);
+  });
 
-    expect(params.order_type).toBe("stop-loss-limit");
-    expect(params.limit_price).toBe("40000.0");
-    expect(params.triggers?.price).toBe("40000.0");
+  // A linked conditional collapses in exactly the same way, so it is refused at
+  // the same point rather than only on the primary.
+  it("refuses a linked conditional block claiming both axes", () => {
+    expect(() =>
+      mapBlockToOrderParams(
+        uiBlock({ direction: "downside" }),
+        context(),
+        uiBlock({
+          id: "sa-take-profit-limit-2",
+          orderType: "take-profit-limit",
+          axes: ["trigger", "limit"],
+          direction: "upside",
+          position: { col: 0, row: 0, yPosition: 20, axis: 1 },
+        }),
+      ),
+    ).toThrow(/sa-take-profit-limit-2/);
   });
 
   // FORMERLY A CHARACTERISATION OF A KNOWN INCONSISTENCY. `limit_price` was
   // formatted with the context symbol while the trigger price was formatted by
   // `buildTrigger`, which never received one and fell back to DEFAULT_SYMBOL
-  // ("BTC/USD"). On ETH/USD the same payload carried 2111.11 and 2111.1.
-  it("formats both prices in a payload at the pair's own precision", () => {
-    const params = mapBlockToOrderParams(
+  // ("BTC/USD"). On ETH/USD the same 10% offset came out as "2111.11" through
+  // the limit formatter and "2111.1" through the trigger one.
+  //
+  // The requirement is that no payload mixes precisions on a non-BTC pair. The
+  // two legs of a dual-axis type are separate blocks, so this drives each
+  // formatter with the leg that reaches it and holds them to the same answer
+  // for the same offset.
+  it("formats a trigger price and a limit price at the same pair precision", () => {
+    const ctx = context({ symbol: "ETH/USD", currentPrice: 2_345.6789 });
+    const leg = (axes: UIBlockData["axes"], axis: 1 | 2): UIBlockData =>
       uiBlock({
-        id: "sa-stop-loss-1",
+        id: `sa-stop-loss-limit-${axis}`,
         orderType: "stop-loss-limit",
-        axes: ["trigger", "limit"],
+        axes,
         direction: "downside",
-        position: { col: 0, row: 2, yPosition: 10, axis: 1 },
-      }),
-      context({ symbol: "ETH/USD", currentPrice: 2_345.6789 }),
-    );
+        position: { col: 0, row: 2, yPosition: 10, axis },
+      });
 
-    expect(params.limit_price).toBe("2111.11");
-    expect(params.triggers?.price).toBe("2111.11");
+    const triggerLeg = mapBlockToOrderParams(leg(["trigger"], 1), ctx);
+    const limitLeg = mapBlockToOrderParams(leg(["limit"], 2), ctx);
+
+    expect(triggerLeg.triggers?.price).toBe("2111.11");
+    expect(limitLeg.limit_price).toBe("2111.11");
+    expect(triggerLeg.triggers?.price).toBe(limitLeg.limit_price);
   });
 
   it("formats a conditional's prices at the pair's precision too", () => {

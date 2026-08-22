@@ -155,11 +155,13 @@ Two invariants the order path depends on, both of which were previously violated
   whose `trigger_price` and `limit_price` were the same number - which passes `validateOrder`
   cleanly, so nothing catches it. `axesForBlockAxis` in `src/utils/blockFactory.ts` owns the
   axis-to-axes mapping; hydration paths must go through it rather than reaching for
-  `typeDef.axes`.
+  `typeDef.axes`. The mapper now refuses a block that claims both axes, on the primary and
+  on a linked conditional alike, so a regression in any construction path fails loudly
+  instead of shipping a trigger price equal to the limit price.
 
-`src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type and a cycle
-in the conditional-link graph both throw, because silently substituting a different order is
-the failure this module exists to prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that
+`src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type, a block
+claiming both axes, and a cycle in the conditional-link graph all throw, because silently
+substituting a different order is the failure this module exists to prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that
 and surfaces it as `orderError`.
 
 Still open in the same file, and deliberately not fixed with the above: the two legs of a
@@ -180,6 +182,20 @@ by the mapping-owner lane, which must decide what a bulk cell means and apply th
 answer to the chip, the chart and the payload in a single change - splitting it across
 owners is how display and payload drifted apart in the first place, which is exactly what
 decision D3 exists to prevent.
+
+**Known gap: `axis` is derived two ways, so a live grid and a reloaded one can disagree
+about which leg is the trigger.** Hydration derives `axes` from the saved `axis`, but the
+drop handler rewrites `axis` from the pointer's x-half (`findAxisAtPosition` in
+`src/utils/grid.ts` returns 1 for the left half, 2 for the right; `GridArea.tsx` writes it
+straight into the config) without touching `axes`. Concretely: drag a Stop Loss Limit's
+trigger leg and release just right of the cell midline, and the live session still emits
+`triggers.price = 66098.4` from its in-memory `["trigger"]`, while the same config after an
+Edit reload comes back as `["limit"]` and emits `limit_price = 66098.4`. Same saved
+strategy, two different payloads. Nothing wrong is submitted today, because a split
+dual-axis leg fails `validateOrder` either way - but it becomes a silent wrong payload the
+moment the two legs are merged into one order, which is why it is written down here rather
+than left as folklore. Owned by the mapping-owner lane; `axis` and `axes` should be kept in
+step at the one place `axis` changes, through `axesForBlockAxis`.
 
 ## Path aliases
 

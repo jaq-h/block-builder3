@@ -135,6 +135,29 @@ export const blockDataToUIBlock = (
 };
 
 /**
+ * Refuse a block that claims both a trigger and a limit axis.
+ *
+ * A block carries one `yPosition`, so it can express exactly one price. Giving
+ * both prices that same number is the mapper guessing, and guessing inside an
+ * order payload is the failure this module exists to prevent - the collapse
+ * passes `validateOrder` cleanly, so nothing downstream catches it.
+ *
+ * A dual-axis order type is placed as two blocks, one per axis, and every
+ * construction path gives each leg only its own axis. So this is unreachable
+ * today, and that is the point: should a hydration path ever go back to handing
+ * a leg the order type's whole axes list, it fails loudly here instead of
+ * quietly emitting a trigger price equal to the limit price.
+ */
+const assertSingleAxis = (block: UIBlockData): void => {
+  if (block.axes.includes("trigger") && block.axes.includes("limit")) {
+    throw new Error(
+      `Block "${block.id}" claims both a trigger and a limit axis, but a single ` +
+        "slider position cannot express both a trigger price and a limit price.",
+    );
+  }
+};
+
+/**
  * Build trigger configuration from UI block data
  */
 const buildTrigger = (
@@ -168,6 +191,8 @@ const buildConditional = (
   if (!linkedBlock) {
     return undefined;
   }
+
+  assertSingleAxis(linkedBlock);
 
   const orderType = mapOrderType(linkedBlock.orderType);
 
@@ -218,6 +243,8 @@ export const mapBlockToOrderParams = (
   context: OrderBuildContext,
   linkedBlock?: UIBlockData,
 ): OrderParams => {
+  assertSingleAxis(block);
+
   const orderType = mapOrderType(block.orderType);
   const side = context.side || determineSide(block.position.col);
 
