@@ -487,8 +487,9 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
           available to a screen reader without being repeated nine times. */}
       <p id={BLOCK_INSTRUCTIONS_ID} className="sr-only">
         Press Enter to pick this block up, then use the arrow keys to choose a
-        cell and Enter again to place it. Escape returns it. On a placed block,
-        the arrow keys move it along the price axis.
+        cell and Enter again to place it. Escape returns it. A block drawn on a
+        price axis stays in its cell; there the arrow keys move it along that
+        axis instead.
       </p>
       <div className={contentRow}>
         {/* Provider Column */}

@@ -252,6 +252,27 @@ The pure half of that model - the transitions and the target arithmetic - lives 
 `src/utils/blockCommand.ts` and is directly testable. `useBlockCommand` adds the two things
 a reducer cannot supply: what gets announced, and where focus lands afterwards.
 
+**What moves between cells, and what does not.** A block the cell draws **on a price axis**
+stays in its cell. That is not an accessibility shortfall: a mouse cannot move one either -
+`Block` routes anything rendered on an axis to the vertical drag, so the free drag never
+applies to it - and every input method is held to the same capability. Palette placement,
+moving an **axis-less** block between cells and dragging one out of the grid to delete it
+are offered by pointer, keyboard and tap alike. `activateBlock` decides this from the
+cell's display mode, the same value the renderer uses, so the offer and the drawing can
+never disagree.
+
+Enter or a tap on a priced block is therefore refused rather than silent, and the refusal
+names what that render does wire: the arrow keys, which move the block along its axis. Only
+in a cell that draws **no** axis at all - a bulk cell holding an axis-less block - is the
+separate dual-axis refusal reached, and there it promises no arrow keys, because none are
+wired.
+
+Moving a placed priced block between cells is a real capability worth having for every
+input method, and it is **sequenced rather than abandoned**: a cell's scale is currently
+its first block's `direction`, so moving a block out of a mixed cell would silently re-price
+the ones left behind. It is filed with the lane that gives the block-to-price mapping a
+single owner, because doing it safely needs that authority to exist first.
+
 **The price axis** is a block's most important property, so it is reachable every way too: a
 pointer drags the block up and down its axis, and on the keyboard it behaves as a real
 vertical slider - `role="slider"` with arrow keys (Shift for a larger step, Page Up/Down

@@ -206,22 +206,31 @@ export const useBlockCommand = ({
     if (!found) return;
     const cell = { col: found.col, row: found.row };
 
-    // One leg of a dual-axis order cannot travel on its own: it would leave its
-    // partner behind and the two halves would be submitted as two orders on
-    // opposite sides. Refusing silently would make Enter look broken, so say
-    // what the block can still do instead - but only what it can actually do
-    // *in this render*. A cell holding any axis-less block draws every block in
-    // it without an axis, and then no arrow keys are wired at all, so promising
-    // them would point the listener at an affordance that is not there.
+    // A block drawn on a price axis does not move between cells at all. A mouse
+    // cannot move one either - `Block` routes anything rendered on an axis to
+    // the vertical drag, so the free drag never applies to it - and this model
+    // gives the keyboard and a finger the same capability as the mouse, not a
+    // larger one. The cell's display mode is what decides whether a block is
+    // drawn on an axis, so it is what decides this too: a cell holding any
+    // axis-less block draws *every* block in it without one.
+    //
+    // Refusing silently would make Enter look broken, so each refusal says what
+    // the block can still do - and only what this render actually wires.
     const cellBlocks = grid[cell.col][cell.row];
-    if (hasDualAxisPartner(cellBlocks, found.block)) {
-      const onPriceAxis = getCellDisplayMode(cellBlocks) !== "no-axis";
+    if (getCellDisplayMode(cellBlocks) !== "no-axis") {
       announce(
-        `${found.block.label} cannot be moved on its own: its trigger and limit must stay in the same cell.${
-          onPriceAxis
-            ? " Use the arrow keys to move it along the price axis."
-            : ""
-        }`,
+        `${found.block.label} is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.`,
+      );
+      return;
+    }
+
+    // No axis in this render, so the arrow keys are not wired and cannot be
+    // offered. One leg of a dual-axis order still cannot travel on its own: it
+    // would leave its partner behind and the two halves would be submitted as
+    // two orders on opposite sides of the market.
+    if (hasDualAxisPartner(cellBlocks, found.block)) {
+      announce(
+        `${found.block.label} cannot be moved on its own: its trigger and limit must stay in the same cell.`,
       );
       return;
     }

@@ -44,9 +44,33 @@ const setup = (
   return { ...view, placeProvider, moveBlock };
 };
 
+/**
+ * The only kind of placed block that moves between cells at all: one the cell
+ * draws without a price axis. A mouse cannot move a priced block either, so
+ * the carry mechanics are exercised on this one.
+ */
+const axisLessBlock = (overrides: Partial<BlockData> = {}): BlockData => ({
+  id: "b1",
+  orderType: "market",
+  label: "Market",
+  abrv: "Mkt",
+  allowedRows: [0, 1],
+  axis: 1,
+  yPosition: -1,
+  direction: "upside",
+  axes: [],
+  ...overrides,
+});
+
 const gridWithLimit = () => {
   const grid = clearGrid(2, 3);
   grid[0][1].push(limitBlock());
+  return grid;
+};
+
+const gridWithMovableBlock = () => {
+  const grid = clearGrid(2, 3);
+  grid[0][1].push(axisLessBlock());
   return grid;
 };
 
@@ -275,21 +299,21 @@ describe("useBlockCommand", () => {
 
   describe("carrying a block that is already on the grid", () => {
     it("starts on the block's own cell", () => {
-      const { result } = setup(gridWithLimit());
+      const { result } = setup(gridWithMovableBlock());
 
       act(() => result.current.activateBlock("b1", "keyboard"));
 
       expect(result.current.carrying?.source).toEqual({
         kind: "grid",
         id: "b1",
-        label: "Limit",
+        label: "Market",
         origin: { col: 0, row: 1 },
       });
       expect(result.current.carrying?.target).toEqual({ col: 0, row: 1 });
     });
 
     it("moves it to the diagonal the placement rule allows", () => {
-      const { result, moveBlock } = setup(gridWithLimit());
+      const { result, moveBlock } = setup(gridWithMovableBlock());
 
       act(() => result.current.activateBlock("b1", "keyboard"));
       act(() => result.current.moveTarget(1, 0));
@@ -302,7 +326,7 @@ describe("useBlockCommand", () => {
     });
 
     it("can put the block back in its own cell", () => {
-      const { result, moveBlock } = setup(gridWithLimit());
+      const { result, moveBlock } = setup(gridWithMovableBlock());
 
       act(() => result.current.activateBlock("b1", "keyboard"));
       act(() => result.current.activateBlock("b1", "keyboard"));
@@ -314,7 +338,7 @@ describe("useBlockCommand", () => {
     });
 
     it("says where the block was left when the carry is cancelled", () => {
-      const { result } = setup(gridWithLimit());
+      const { result } = setup(gridWithMovableBlock());
 
       act(() => result.current.activateBlock("b1", "keyboard"));
       act(() => result.current.cancel());
@@ -322,16 +346,19 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(result.current.focusRequest).toBe("b1");
       expect(result.current.announcement.text).toBe(
-        "Cancelled. Limit block left in Entry column, primary row.",
+        "Cancelled. Market block left in Entry column, primary row.",
       );
     });
 
-    it("refuses to move one leg of a dual-axis order, and says why", () => {
+    it("refuses to move a block drawn on a price axis, and says why", () => {
       const { grid, blocks } = gridWithOrder("stop-loss-limit");
       const { result, moveBlock } = setup(grid);
 
       // The trigger and the limit share a cell; moving one alone would submit
-      // them as two orders on opposite sides of the market.
+      // them as two orders on opposite sides of the market. The cell draws
+      // both on an axis, though, so the reason the user is given is the one
+      // that applies to every block in such a cell - and it names the arrow
+      // keys, which this render really does wire.
       expect(blocks).toHaveLength(2);
 
       act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
@@ -339,7 +366,19 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(moveBlock).not.toHaveBeenCalled();
       expect(result.current.announcement.text).toBe(
-        "Stop Loss Limit cannot be moved on its own: its trigger and limit must stay in the same cell. Use the arrow keys to move it along the price axis.",
+        "Stop Loss Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
+      );
+    });
+
+    it("refuses a lone block on a price axis, which has no partner at all", () => {
+      const { result, moveBlock } = setup(gridWithLimit());
+
+      act(() => result.current.activateBlock("b1", "keyboard"));
+
+      expect(result.current.carrying).toBeNull();
+      expect(moveBlock).not.toHaveBeenCalled();
+      expect(result.current.announcement.text).toBe(
+        "Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
       );
     });
 
@@ -362,7 +401,7 @@ describe("useBlockCommand", () => {
       );
     });
 
-    it("refuses the limit leg by tap as well as by keyboard", () => {
+    it("refuses a priced block by tap as well as by keyboard", () => {
       const { grid, blocks } = gridWithOrder("take-profit-limit");
       const { result, moveBlock } = setup(grid);
 
@@ -371,25 +410,23 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(moveBlock).not.toHaveBeenCalled();
       expect(result.current.announcement.text).toContain(
-        "Take Profit Limit cannot be moved on its own",
+        "Take Profit Limit is priced on this axis",
       );
     });
 
-    it("still picks up a single-block order", () => {
+    it("refuses a single-leg axis order, which a mouse cannot move either", () => {
       const { grid, blocks } = gridWithOrder("stop-loss");
       const { result, moveBlock } = setup(grid);
 
       expect(blocks).toHaveLength(1);
 
       act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
-      expect(result.current.carrying?.source).toMatchObject({
-        id: blocks[0].id,
-      });
 
-      act(() => result.current.moveTarget(1, 0));
-      act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
-
-      expect(moveBlock).toHaveBeenCalledWith(blocks[0].id, { col: 1, row: 2 });
+      expect(result.current.carrying).toBeNull();
+      expect(moveBlock).not.toHaveBeenCalled();
+      expect(result.current.announcement.text).toBe(
+        "Stop Loss is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
+      );
     });
 
     it("still picks up a market order, which has no axis at all", () => {
@@ -423,17 +460,39 @@ describe("useBlockCommand", () => {
       expect(moveBlock).toHaveBeenCalledWith(first.id, { col: 1, row: 1 });
     });
 
-    it("moves one of two independent same-type limit orders in a bulk cell", () => {
+    it("refuses two independent limit orders in a bulk cell for the right reason", () => {
+      // Neither is half of the other, so the refusal must not claim a trigger
+      // and a limit they do not have. They are drawn on the cell's axis, and
+      // that is what stops the move.
       const grid = clearGrid(2, 3);
       grid[0][1].push(...blocksFor("limit", 0), ...blocksFor("limit", 10));
       const second = grid[0][1][1];
       const { result, moveBlock } = setup(grid, "bulk");
 
       act(() => result.current.activateBlock(second.id, "keyboard"));
-      act(() => result.current.moveTarget(0, -1));
-      act(() => result.current.activateBlock(second.id, "keyboard"));
 
-      expect(moveBlock).toHaveBeenCalledWith(second.id, { col: 0, row: 0 });
+      expect(result.current.carrying).toBeNull();
+      expect(moveBlock).not.toHaveBeenCalled();
+      expect(result.current.announcement.text).toBe(
+        "Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
+      );
+    });
+
+    it("refuses a priced block sharing a bulk cell with a different family", () => {
+      // The sequence that could silently re-price the block left behind: a
+      // cell's scale is its first block's direction, and these two disagree.
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(...blocksFor("limit", 0), ...blocksFor("stop-loss", 10));
+      const limit = grid[0][1][0];
+      const { result, moveBlock } = setup(grid, "bulk");
+
+      act(() => result.current.activateBlock(limit.id, "keyboard"));
+
+      expect(result.current.carrying).toBeNull();
+      expect(moveBlock).not.toHaveBeenCalled();
+      expect(result.current.announcement.text).toContain(
+        "Limit is priced on this axis",
+      );
     });
 
     it("still refuses a dual-axis leg sharing a bulk cell", () => {
@@ -449,7 +508,7 @@ describe("useBlockCommand", () => {
     });
 
     it("does not hand focus back when the carry is abandoned by Tab", () => {
-      const { result } = setup(gridWithLimit());
+      const { result } = setup(gridWithMovableBlock());
 
       act(() => result.current.activateBlock("b1", "keyboard"));
       act(() => result.current.cancel({ restoreFocus: false }));
@@ -459,13 +518,13 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(result.current.focusRequest).toBeNull();
       expect(result.current.announcement.text).toBe(
-        "Cancelled. Limit block left in Entry column, primary row.",
+        "Cancelled. Market block left in Entry column, primary row.",
       );
     });
 
     it("leaves another block alone while one is being carried", () => {
-      const grid = gridWithLimit();
-      grid[1][0].push(limitBlock({ id: "b2", label: "Take Profit" }));
+      const grid = gridWithMovableBlock();
+      grid[1][0].push(axisLessBlock({ id: "b2", label: "Take Profit" }));
       const { result, moveBlock } = setup(grid);
 
       act(() => result.current.activateBlock("b1", "keyboard"));

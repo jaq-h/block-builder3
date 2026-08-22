@@ -71,6 +71,19 @@ const placedLimit = (
   axes: ["limit"],
 });
 
+/** A Market carries no axis at all, which is what makes the cell axis-less. */
+const placedMarket = (id: string = "m1"): BlockData => ({
+  id,
+  orderType: "market",
+  label: "Market",
+  abrv: "Mkt",
+  allowedRows: [0, 1, 2],
+  axis: 1,
+  yPosition: -1,
+  direction: "upside",
+  axes: [],
+});
+
 const Harness: FC<{
   initialGrid: GridData;
   pattern?: StrategyPattern;
@@ -315,14 +328,20 @@ describe("GridArea, pricing a block on its axis", () => {
 // tests above do, never sees it - which is how a tap that picked a block up
 // and immediately put it back down went unnoticed.
 
-/** The two Limits sit in different cells, so one can be tapped onto the other. */
+/**
+ * Two Market blocks in different cells, so one can be tapped onto the other.
+ * They are axis-less on purpose: a block drawn on a price axis does not move
+ * between cells by any input method, so it can never be carried.
+ */
 const renderTwoBlocks = () => {
   const grid = clearGrid(2, 3);
-  grid[0][1].push(placedLimit(25, "b1"));
-  grid[1][0].push(placedLimit(10, "b2"));
+  grid[0][1].push(placedMarket("b1"));
+  grid[1][0].push(placedMarket("b2"));
   render(<Harness initialGrid={grid} pattern="bulk" />);
 
-  const [first, second] = screen.getAllByRole("slider");
+  const [first, second] = screen.getAllByRole("button", {
+    name: /^Market order,/,
+  });
   return { first, second };
 };
 
@@ -349,7 +368,7 @@ describe("GridArea, tapping a placed block", () => {
 
     tap(first);
 
-    expect(announcement()).toContain("Picked up Limit block");
+    expect(announcement()).toContain("Picked up Market block");
     expect(announcement()).not.toContain("Placed");
     // The cell the block would land in if placed now: proof a carry is live.
     expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
@@ -362,10 +381,10 @@ describe("GridArea, tapping a placed block", () => {
     tap(first);
 
     expect(announcement()).toBe(
-      "Cancelled. Limit block left in Entry column, row 2.",
+      "Cancelled. Market block left in Entry column, row 2.",
     );
     expect(cell(0, 1)).not.toHaveAttribute("aria-current");
-    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Limit");
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
   });
 
   it("places the carried block when a block in another cell is tapped", () => {
@@ -377,11 +396,11 @@ describe("GridArea, tapping a placed block", () => {
     tap(second);
 
     expect(announcement()).toBe(
-      "Placed Limit block in Exit column, row 1.",
+      "Placed Market block in Exit column, row 1.",
     );
     expect(cell(1, 0)).toHaveAttribute(
       "aria-label",
-      "Exit column, row 1, Limit, Limit",
+      "Exit column, row 1, Market, Market",
     );
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
   });
@@ -392,8 +411,28 @@ describe("GridArea, tapping a placed block", () => {
     tap(first);
     fireEvent.click(cell(1, 2));
 
-    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Limit");
+    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Market");
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+  });
+
+  it("refuses to carry a block drawn on a price axis, and still prices it", () => {
+    const { slider, centre } = renderPlacedLimit(25);
+
+    tap(slider);
+
+    // A mouse cannot drag this block to another cell either, so the tap must
+    // not either. The refusal names the affordance this render does wire.
+    expect(announcement()).toContain(
+      "Limit is priced on this axis and cannot be moved to another cell",
+    );
+    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
+    expect(slider).toHaveAttribute("aria-valuenow", "-25");
+
+    fireEvent(slider, pointer("pointerdown", centre));
+    fireEvent(slider, pointer("pointermove", centre + 30));
+    fireEvent(slider, pointer("pointerup", centre + 30));
+
+    expect(renderedCentre()).toBeCloseTo(centre + 30, 1);
   });
 });
 
@@ -460,6 +499,30 @@ describe("GridArea, a bulk cell holding two order families", () => {
     expect(stopLoss).toHaveAttribute("aria-valuenow", "-6");
   });
 
+  it("keeps a block's drawn price when the block beside it is activated", () => {
+    renderMixedCell(25, 15);
+
+    // The cell's scale is its FIRST block's direction, so moving the Limit out
+    // would flip the Stop Loss left behind from -15.00% ($85,000.00) to
+    // +15.00% ($115,000.00) - a $30,000 swing in an order nobody touched.
+    // Nothing drawn on an axis moves between cells, so the sequence stops at
+    // the first Enter.
+    const limit = screen.getByRole("slider", { name: /Limit/ });
+    fireEvent.keyDown(limit, { key: "Enter" });
+    fireEvent.keyDown(limit, { key: "ArrowRight" });
+    fireEvent.keyDown(limit, { key: "Enter" });
+
+    expect(announcement()).toContain(
+      "Limit is priced on this axis and cannot be moved to another cell",
+    );
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Limit, Stop Loss",
+    );
+    expect(screen.getByText("-15.00%")).toBeInTheDocument();
+    expect(screen.getByText(stopLossPrice(15))).toBeInTheDocument();
+  });
+
   it("drags along the axis the cell drew instead of jumping to its far end", () => {
     const { stopLoss, centre } = renderMixedCell(25, 7);
 
@@ -490,19 +553,6 @@ describe("GridArea, a bulk cell holding two order families", () => {
 // block's field and the column it is drawn in then disagree, and the drag has
 // to price it anyway: arrow keys still work there, so an order that cannot be
 // dragged is dead only for the mouse and the finger.
-
-/** A Market carries no axis at all, which is what makes the cell axis-less. */
-const placedMarket = (id: string = "m1"): BlockData => ({
-  id,
-  orderType: "market",
-  label: "Market",
-  abrv: "Mkt",
-  allowedRows: [0, 1, 2],
-  axis: 1,
-  yPosition: -1,
-  direction: "upside",
-  axes: [],
-});
 
 /** The price the cell renders for a block on its ascending scale. */
 const upsidePrice = (yPosition: number) =>
