@@ -37,6 +37,12 @@ export const navLinkVariants = cva(
 // the generic grey button skin instead of green. The real fix is to move that
 // reset into `@layer base`, which changes how every button in the app paints, so
 // it belongs in its own change rather than riding along here.
+//
+// `[data-unstyled]` is now the per-control way out of that reset, and this
+// button could carry it instead and drop every `!` below for the same rendering.
+// It deliberately has not: swapping the mechanism under the app's primary action
+// buys nothing on its own, and it is part of the app-wide change above rather
+// than of whatever bug fix happens to be passing through.
 export const executeButtonVariants = cva(
   [
     "px-5! py-2.5! text-white! border-none! rounded! text-sm! font-medium!",
