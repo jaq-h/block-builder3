@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent, screen } from "@testing-library/react";
+import { PriceScaleMode } from "lightweight-charts";
 import type {
   CandlestickData,
   IChartApi,
@@ -22,6 +23,12 @@ import { withLatestCandle } from "@utils/liveCandles";
 // the live-candle merge, the registry, `useIndicatorSeries` - is the real code,
 // because the defect this file was written for lived in the wiring rather than
 // in any one of them.
+
+/** The slice of the library's price-scale options this panel actually sets. */
+interface PriceScaleOptions {
+  mode?: PriceScaleMode;
+  autoScale?: boolean;
+}
 
 interface FakeLineSeries {
   options: { color: string };
@@ -61,6 +68,8 @@ vi.mock("./useLightweightChart", () => ({
 
 const fakeChart = () => {
   const lineSeries: FakeLineSeries[] = [];
+  /** Every option the panel has applied to the right price scale, in order. */
+  const priceScaleOptions: PriceScaleOptions[] = [];
 
   const chart = {
     addSeries: (_definition: unknown, options: { color: string }) => {
@@ -73,7 +82,11 @@ const fakeChart = () => {
       } as unknown as ISeriesApi<"Line">;
     },
     removeSeries: () => {},
-    priceScale: () => ({ applyOptions: () => {} }),
+    priceScale: () => ({
+      applyOptions: (options: PriceScaleOptions) => {
+        priceScaleOptions.push(options);
+      },
+    }),
   } as unknown as IChartApi;
 
   const candleSeries = {
@@ -84,7 +97,7 @@ const fakeChart = () => {
     applyOptions: vi.fn(),
   } as unknown as ISeriesApi<"Candlestick">;
 
-  return { chart, candleSeries, lineSeries };
+  return { chart, candleSeries, lineSeries, priceScaleOptions };
 };
 
 const PERIOD = 20;
@@ -161,6 +174,36 @@ describe("OrderChart", () => {
     expect(
       screen.getByRole("button", { name: "Linear: Linear price scale" }),
     ).toBeInTheDocument();
+  });
+
+  it("switches the chart's own price scale when the toggle is operated", () => {
+    // What a user sees when they press Log: the axis stops being uniform. The
+    // mode reaching `priceScale("right")` is the whole of that, and the button
+    // reporting its new state is what a screen-reader user hears instead - the
+    // panel deliberately has no live region, so `aria-pressed` is the
+    // announcement. Nothing else may change: the scale is presentation only.
+    const { priceScaleOptions } = mount();
+    const modes = () =>
+      priceScaleOptions
+        .filter((options) => options.mode !== undefined)
+        .map((options) => options.mode);
+
+    expect(modes().at(-1)).toBe(PriceScaleMode.Normal);
+    expect(
+      screen.getByRole("button", { name: /^Linear:/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Log:/ }));
+
+    expect(modes().at(-1)).toBe(PriceScaleMode.Logarithmic);
+    expect(screen.getByRole("button", { name: /^Log:/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Linear:/ }));
+
+    expect(modes().at(-1)).toBe(PriceScaleMode.Normal);
   });
 
   it("advances a moving average as the bar being written moves", () => {

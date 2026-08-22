@@ -251,7 +251,8 @@ content-driven so the tabbed layout still scrolls with the page.
 **Bare element rules in `src/index.css` beat every Tailwind utility.** `button {}`
 and friends there sit outside any cascade layer, and unlayered CSS wins over
 layered CSS regardless of specificity - so `bg-status-green` on a `<button>` does
-nothing. `executeButtonVariants` works around it with `!` modifiers and says why.
+nothing. `executeButtonVariants` and the chart toolbar's `chartToggleButton`
+work around it with `!` modifiers and say why.
 The real fix is to move that reset into `@layer base`, which repaints every button
 in the app and so wants its own change.
 

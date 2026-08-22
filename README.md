@@ -9,6 +9,7 @@ Built with **React 19** (with **React Compiler**), **TypeScript**, **Vite 7**, a
 ## Features
 
 - **Strategy Builder** - Grid interface for assembling multi-leg order strategies (conditional orders, bulk orders), driveable with a mouse, a finger or the keyboard alone
+- **Price Chart** - Live Kraken candles with the grid's order levels drawn on them, a linear/logarithmic price scale and moving-average overlays (SMA 20, SMA 50, EMA 20)
 - **Active Orders** - View and manage submitted orders with real-time status tracking
 - **Kraken API Integration** - REST and WebSocket clients for live market data, with all authenticated calls signed server-side
 - **Simulation Mode** - Test strategies locally without connecting to the Kraken API. The default everywhere, and the only mode the public deployment offers
@@ -715,7 +716,17 @@ src/
 │       ├── orderChart/            # Price chart widget (code-split)
 │       │   ├── LazyOrderChart.tsx     # lazy() boundary + loading fallback
 │       │   ├── OrderChart.tsx         # Chart panel - the only lightweight-charts importer
+│       │   ├── OrderChart.styles.ts   # CVA styles (one variant for every toolbar toggle)
 │       │   ├── useLightweightChart.ts # Chart instance lifecycle
+│       │   ├── useIndicatorSeries.ts  # Line-series lifecycle, derived from the registry
+│       │   ├── priceScale.ts          # Linear/logarithmic choice → PriceScaleMode. Nothing else
+│       │   ├── orderPriceLines.ts     # Grid blocks → price lines, through calculatePrice
+│       │   ├── orderAutoscale.ts      # Keeps the order levels inside the visible range
+│       │   ├── indicators/            # Overlay indicators - a pure compute plus a registry entry
+│       │   │   ├── registry.ts            # The one list the toolbar and the series derive from
+│       │   │   ├── movingAverage.ts       # SMA & EMA (pinned against published vectors)
+│       │   │   ├── types.ts               # The shape every price-pane overlay has
+│       │   │   └── index.ts               # Barrel export
 │       │   └── index.ts               # Barrel export (re-exports the lazy boundary)
 │       │
 │       └── activeOrders/          # Active Orders widget
@@ -773,6 +784,7 @@ src/
 │   ├── blockFactory.ts            # Factory for creating block data
 │   ├── grid.ts                    # Grid manipulation helpers
 │   ├── gridAnnouncements.ts       # Every sentence the grid speaks (pure)
+│   ├── liveCandles.ts             # The one fold of closed bars + the forming bar
 │   ├── price.ts                   # Percentage-offset-from-market price formula
 │   └── index.ts
 │
