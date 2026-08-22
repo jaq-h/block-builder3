@@ -18,7 +18,13 @@ cell's height floor is derived from the axis geometry instead of a flat 220px, a
 Active Orders container no longer draws a scrollbar it can never move. So the header
 alignment, the pattern selector and the scrollbars visible in these shots are the state
 those changes replaced. Re-shooting the set is the job of whoever next needs it to show
-chrome.
+chrome, and it has to wait for the pointer drag to be fixed first: a regular mouse drag
+currently never places, the block stays stuck to the cursor, and that defect is reported.
+`02-mouse-desktop.png` is one of the four gestures in this set, so re-shooting now would
+either fail outright or record the broken behaviour as the reference interaction. That is
+this folder's own rule rather than an exception to it - a screenshot that records a known
+defect as the reference is no more evidence than one that predates the code it claims to
+show.
 
 | Shot | What it shows |
 |---|---|
