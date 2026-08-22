@@ -36,7 +36,9 @@ npm install
 npm run dev
 ```
 
-The development server starts at **http://localhost:3002/**. Simulation mode is enabled automatically in development - no API keys required.
+The development server starts at **http://localhost:3002/**. It simulates unless live trading is
+configured server-side in `local.env`, so no Kraken credential is required to run it - see
+[Trading modes](#trading-modes).
 
 ### Production Build
 
@@ -214,11 +216,11 @@ Live mode is therefore confined to loopback, twice over:
 - **The bind.** A dev server configured for live trading and bound to anything but
   `localhost`, `127.0.0.1` or `::1` **fails to start**, with an error naming the bind it
   refused and the three it serves (`vite/krakenApiDevServer.ts`). An empty `--host` is
-  refused with the rest: it reads like the default but listens on every interface. That list is the same one
-  the per-request `Host` check uses, so a bind that would start a server refusing its own
-  operator is caught at startup rather than becoming a live server that answers every request
-  as though it simulated. Any other hosting must apply the same rule: bind live mode to
-  `127.0.0.1`, never `0.0.0.0`.
+  refused with the rest: it reads like the default but listens on every interface. That
+  list is the same one the per-request `Host` check uses, so a bind that would start a
+  server refusing its own operator is caught at startup rather than becoming a live server
+  that answers every request as though it simulated. Any other hosting must apply the same
+  rule: bind live mode to `127.0.0.1`, never `0.0.0.0`.
 - **The request.** Independently of the bind, `/api/kraken/balance`, `/api/kraken/ws-token`
   and `/api/kraken/status` serve a caller only when all four of these hold
   (`api/_lib/loopback.ts`):
@@ -317,8 +319,10 @@ carrying a hosting signal, or with a mode string the server does not recognise, 
 | `/api/kraken/balance` | GET | Account balances. The authenticated read that exercises the boundary. Operator's own page on loopback only. |
 | `/api/kraken/ws-token` | POST | Mints a Kraken WebSocket token, which is short-lived and scoped, unlike the key that produced it. Operator's own page on loopback only. |
 
-All three require the `X-Block-Builder-App: 1` header described above, whatever mode the
-deployment is in.
+A caller that omits the `X-Block-Builder-App: 1` header described above is never treated as
+the operator by any of the three: `/api/kraken/status` reports `simulation`, and the other two
+refuse exactly as a simulating deployment refuses everyone. A `misconfigured` deployment still
+says so to every caller, header or not.
 
 The private endpoints are an **allowlist, not a proxy** (`api/_lib/krakenClient.ts`). A generic
 "sign whatever the browser asks" endpoint would be a signing oracle, which is the failure this
@@ -560,6 +564,7 @@ api/                               # Serverless functions - the credential lives
 │   ├── serverConfig.ts            # Decides simulation vs live; refuses ambiguity
 │   ├── krakenSigning.ts           # HMAC-SHA512 request signing (server only)
 │   ├── krakenClient.ts            # Allowlisted private Kraken calls
+│   ├── loopback.ts                # The per-request operator check (peer, Host, header, origin)
 │   ├── runtime.ts                 # The one path that hands out a credential
 │   └── http.ts                    # JSON + method plumbing
 └── kraken/
@@ -581,6 +586,7 @@ src/
 │   ├── config.ts                  # Endpoint configuration. Holds no credential
 │   ├── tradingMode.ts             # The server's simulation/live answer, cached for the page
 │   ├── krakenServer.ts            # Calls this app's own /api/kraken/* endpoints
+│   ├── appRequestHeader.ts        # The header those calls carry (server's copy: api/_lib/loopback.ts)
 │   ├── krakenRest.ts              # Public REST API client
 │   ├── krakenWebSocket.ts         # WebSocket client for live data
 │   ├── orderMapper.ts             # Maps internal order config → Kraken API format
