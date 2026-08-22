@@ -38,9 +38,11 @@ SVG imports work in tests for the same reason.
 - Globals are off. Import `describe`/`it`/`expect` from `vitest` explicitly.
 - `src/test/setup.ts` registers the jest-dom matchers and unmounts React trees after
   each test.
-- Tests are colocated with the code they cover, named `*.test.ts`/`*.test.tsx`. The one
-  exception is `api/_lib/credentialBoundary.test.ts`, which inspects `src/` from the server
-  side: keeping the client on the far side of the boundary is `api/`'s responsibility.
+- Tests are colocated with the code they cover, named `*.test.ts`/`*.test.tsx`. Two live
+  under `api/_lib/` instead because they are about the whole repository rather than about a
+  neighbouring module: `credentialBoundary.test.ts` builds the client and scans the emitted
+  bundle, and `deploymentSurface.test.ts` checks which routes a deploy would publish. Both
+  are `api/`'s responsibility, because the boundary is.
 
 A test may deliberately assert **current, wrong** behaviour, commented
 `CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. None are live today;
@@ -91,14 +93,17 @@ project's hardest rule. The private key lives only in the server-side environmen
 the key used to leak). Never commit a real credential: local keys go in `local.env`
 (gitignored, see `local.env.example`).
 
-Three guards keep it that way, and all three are cheap to run:
+Two automated guards keep it that way, and both are cheap to run:
 
 - `api/_lib/credentialBoundary.test.ts` runs a real production build with the credential
   variables set to sentinels and scans what it emitted. It is the acceptance check, executed,
   and it costs a build every `npm test`.
 - `no-restricted-imports` in `eslint.config.js` blocks `src/` from importing `api/_lib` or
   `api/kraken`.
-- The acceptance check itself: build with the variables set and grep `dist/` for them.
+
+A change that touches this boundary also carries the acceptance check by hand in its PR
+description: build with the variables set, grep `dist/` for them, and paste the commands and
+their output rather than a summary of them.
 
 `api/_lib/serverConfig.ts` is the boundary in one function. Read it before changing anything
 about modes. Its rules: the public deployment (`VERCEL_ENV` of `production` or `preview`) is
@@ -113,12 +118,17 @@ simulates.
 
 **Live mode is loopback only, and we ship no authentication for it.** A live server signs for
 whoever reaches it, so it is confined twice: `vite/krakenApiDevServer.ts` *fails to start* when
-live mode is configured on a non-loopback bind, and `api/_lib/loopback.ts` answers 403 to a
-non-loopback request at `/api/kraken/balance` and `/api/kraken/ws-token` regardless of the bind.
-A request counts as loopback only when the peer address *and* the `Host` header both are; the
-`Host` half is what stops a DNS rebind, which produces a loopback peer for a page you never
-opened. `/api/kraken/status` applies the same test and reports simulation to a caller that
-fails it, so the UI never promises live trading a caller cannot use.
+live mode is configured on a non-loopback bind, and `isOperatorRequest` in
+`api/_lib/loopback.ts` gates `/api/kraken/balance` and `/api/kraken/ws-token` per request,
+regardless of the bind. It is three checks and each closes a hole the others leave: the peer
+address is loopback, the `Host` header names a loopback host (this is what stops a DNS rebind,
+which produces a loopback peer for a page you never opened), and the request came from this
+app's own page by `Sec-Fetch-Site` or `Origin` (this is what stops any site the operator visits
+from burning a Kraken nonce through the token mint). A caller that fails any of them gets the
+same `503 "mode":"simulation"` a simulating deployment gives everybody, and `/api/kraken/status`
+tells it the same thing: a remote caller must not be able to tell a live host from a simulating
+one, so no refusal may name a credential. `misconfigured` stays loud to every caller, because
+that state signs nothing and a key added to a hosting dashboard has to break visibly.
 Other hosting must bind live mode to `127.0.0.1` itself. Exposing a live instance beyond
 loopback requires the operator to add their own protection; we deliberately provide none.
 

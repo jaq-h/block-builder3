@@ -15,14 +15,16 @@ import OrdersStoreContext, {
 const isDevelopment = import.meta.env.DEV;
 
 /**
- * Determine if we should use simulation mode:
- * - Always simulate in production (hosted app)
- * - Default to simulation in development (can toggle to API mode if keys found)
+ * Which mode the store starts in, before anything is known.
+ *
+ * Always simulation, in every build. A production build is no longer simulation
+ * by definition - a self-hosted deployment with a credential is live - so this
+ * is not a statement about the build, it is a safe default: the server has not
+ * answered `/api/kraken/status` yet, and until it does the app must not behave
+ * as though it can trade. Whether the toggle out of simulation is offered at
+ * all is `useTradeExecution`'s `canToggle`, which follows the server's answer.
  */
-const getDefaultSimulationMode = (): boolean => {
-  // Always start in simulation - in dev, users can opt into API mode if keys exist
-  return true;
-};
+const getDefaultSimulationMode = (): boolean => true;
 
 // =============================================================================
 // HELPER FUNCTIONS

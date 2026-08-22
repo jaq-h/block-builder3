@@ -13,12 +13,14 @@
  * The answer is per caller, because live mode is loopback only. A caller that
  * `/api/kraken/balance` and `/api/kraken/ws-token` will refuse is told it is
  * simulating: telling it otherwise would label its orders "Live API Mode" while
- * every credentialed call it makes comes back 403, and would disclose to an
- * anonymous visitor that this host holds a Kraken key.
+ * every credentialed call it makes is refused, and would disclose to an
+ * anonymous visitor that this host holds a Kraken key. The credentialed
+ * endpoints answer that caller with the same simulation refusal, so the two
+ * cannot be played off against each other.
  */
 
 import { requireMethod, sendJson, type ApiHandler } from "../_lib/http";
-import { isLoopbackRequest } from "../_lib/loopback";
+import { isOperatorRequest } from "../_lib/loopback";
 import { getServerRuntime } from "../_lib/runtime";
 
 const handler: ApiHandler = (req, res) => {
@@ -37,7 +39,7 @@ const handler: ApiHandler = (req, res) => {
     return;
   }
 
-  const live = runtime.mode === "live" && isLoopbackRequest(req);
+  const live = runtime.mode === "live" && isOperatorRequest(req);
 
   sendJson(res, 200, {
     mode: live ? "live" : "simulation",

@@ -10,23 +10,26 @@
  * on a non-loopback interface) and once per request here, so a permissive bind
  * on some other host cannot expose the endpoints either.
  *
- * A request qualifies as loopback only when *both* halves agree: the peer
- * address is loopback **and** the `Host` header names a loopback host. The peer
- * address alone is not enough, because DNS rebinding produces a loopback peer
- * for a page the operator never opened: an attacker's site re-resolves its own
- * hostname to `127.0.0.1`, and the browser then sends same-origin requests to
- * this server and can read the replies, which is a Kraken WebSocket token. The
- * `Host` header is what the browser will not rewrite, so checking it is what
- * makes "loopback only" actually mean it.
+ * `isOperatorRequest` is the per-request half, and it is three checks, each
+ * closing a hole the others leave open:
+ *
+ * 1. **The peer address** is loopback. The obvious one, and on its own the
+ *    weakest.
+ * 2. **The `Host` header** names a loopback host. DNS rebinding produces a
+ *    loopback peer for a page the operator never opened: an attacker's site
+ *    re-resolves its own hostname to `127.0.0.1`, and the browser then treats
+ *    this server as same-origin and can read the replies. `Host` is what the
+ *    browser will not rewrite.
+ * 3. **The origin** is this app itself. See `isSameOriginRequest`.
  *
  * We deliberately provide no authentication layer. This guard establishes that
- * a request came from this machine, and nothing more: it does not identify who
- * sent it, so exposing a live instance beyond loopback remains the operator's
- * own problem to solve, with their own protection in front of it.
+ * a request came from this machine and from this app, and nothing more: it does
+ * not identify who is at the keyboard, so exposing a live instance beyond
+ * loopback remains the operator's own problem to solve, with their own
+ * protection in front of it.
  */
 
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { sendJson } from "./http";
+import type { IncomingMessage } from "node:http";
 
 /**
  * Loopback is `127.0.0.0/8`, `::1`, and the IPv4-mapped forms of both that a
@@ -101,21 +104,47 @@ export const isLoopbackRequest = (req: IncomingMessage): boolean =>
   isLoopbackHostHeader(req.headers?.host);
 
 /**
- * Guards a credentialed endpoint. Returns false, having already answered with
- * 403, when the request did not come from this machine.
+ * Was this request issued by this app's own page, rather than by some other
+ * page the operator happens to have open?
+ *
+ * Loopback is not enough on its own. While the operator runs live locally, any
+ * site they visit can `fetch("http://localhost:3002/api/kraken/ws-token", {
+ * method: "POST" })` with none but CORS-safelisted headers, which sends no
+ * preflight. That request genuinely comes from the operator's machine and
+ * genuinely names a loopback host, so the two checks above both pass. The
+ * attacker cannot read the reply, but the server has already burned a Kraken
+ * nonce and a slice of the account's rate limit, and in a trading tool that is
+ * the operator's own trading being denied by a page they merely visited.
+ *
+ * `Sec-Fetch-Site` is a forbidden header name, so a page cannot set or suppress
+ * it; when it is absent we fall back to `Origin`, and when neither is present
+ * the caller is not a browser at all (curl, a script) and there is no other
+ * page to be acting on behalf of.
  */
-export const requireLoopbackRequest = (
-  req: IncomingMessage,
-  res: ServerResponse,
-): boolean => {
-  if (isLoopbackRequest(req)) return true;
+export const isSameOriginRequest = (req: IncomingMessage): boolean => {
+  const site = req.headers?.["sec-fetch-site"];
+  if (typeof site === "string") {
+    // `none` is a user-typed address or a bookmark, which is the operator.
+    return site === "same-origin" || site === "none";
+  }
 
-  sendJson(res, 403, {
-    error:
-      "This endpoint holds a Kraken credential and serves loopback requests only, " +
-      "from a loopback peer address and addressed to a loopback host. Live trading " +
-      "is a local configuration; this server provides no authentication for remote " +
-      "callers and must not be exposed beyond localhost.",
-  });
-  return false;
+  const origin = req.headers?.origin;
+  if (origin === undefined) return true;
+  if (typeof origin !== "string" || origin === "null") return false;
+
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return false;
+  }
+
+  const host = typeof req.headers?.host === "string" ? req.headers.host.trim() : "";
+  return originHost.toLowerCase() === host.toLowerCase();
 };
+
+/**
+ * The whole test: this machine, addressed as this machine, by this app.
+ */
+export const isOperatorRequest = (req: IncomingMessage): boolean =>
+  isLoopbackRequest(req) && isSameOriginRequest(req);

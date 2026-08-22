@@ -39,8 +39,17 @@ const request = (
   method: string,
   remoteAddress = "127.0.0.1",
   host: string | undefined = "localhost:3002",
+  headers: Record<string, string> = { "sec-fetch-site": "same-origin" },
 ): IncomingMessage =>
-  ({ method, socket: { remoteAddress }, headers: { host } }) as IncomingMessage;
+  ({
+    method,
+    socket: { remoteAddress },
+    headers: { host, ...headers },
+  }) as IncomingMessage;
+
+/** What the app's own page sends, and what a foreign page sends instead. */
+const SAME_ORIGIN = { "sec-fetch-site": "same-origin" };
+const CROSS_SITE = { "sec-fetch-site": "cross-site" };
 
 // =============================================================================
 // Environment
@@ -112,7 +121,7 @@ describe("GET /api/kraken/status", () => {
 
   it("tells a caller off this machine that it simulates, because that is what it gets", async () => {
     // Live mode is loopback only. Answering `live` to a peer whose every
-    // credentialed call comes back 403 would label its orders "Live API Mode",
+    // credentialed call is refused would label its orders "Live API Mode",
     // and would tell an anonymous visitor that this host holds a Kraken key.
     goLive();
     const res = createResponse();
@@ -126,18 +135,37 @@ describe("GET /api/kraken/status", () => {
     });
   });
 
-  it("agrees with what the credentialed endpoints do for the same caller", async () => {
-    goLive();
+  it("leaves a remote caller unable to tell a live host from a simulating one", async () => {
+    // The disclosure this closes: status saying "simulation" is worth nothing if
+    // the next endpoint answers "this endpoint holds a Kraken credential". Every
+    // reply a stranger can obtain has to be byte-identical on both hosts.
     const remote = () => request("GET", "198.51.100.4");
+    const remotePost = () => request("POST", "198.51.100.4");
 
-    const status = createResponse();
-    await statusHandler(remote(), status);
+    const probe = async () => {
+      const status = createResponse();
+      await statusHandler(remote(), status);
 
-    const balance = createResponse();
-    await balanceHandler(remote(), balance);
+      const balance = createResponse();
+      await balanceHandler(remote(), balance);
 
-    expect(status.json()).toMatchObject({ liveAvailable: false });
-    expect(balance.statusCode).toBe(403);
+      const token = createResponse();
+      await wsTokenHandler(remotePost(), token);
+
+      return [status, balance, token].map((res) => ({
+        statusCode: res.statusCode,
+        body: res.json(),
+      }));
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const simulating = await probe();
+    goLive();
+    const live = await probe();
+
+    expect(live).toEqual(simulating);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("tells a DNS-rebound caller that it simulates, though its peer address is loopback", async () => {
@@ -258,10 +286,7 @@ describe("GET /api/kraken/balance", () => {
     const res = createResponse();
     await balanceHandler(request("GET", "203.0.113.7"), res);
 
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toMatchObject({
-      error: expect.stringContaining("loopback"),
-    });
+    expect(res.statusCode).toBe(503);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -291,6 +316,66 @@ describe("GET /api/kraken/balance", () => {
     }
   });
 
+  it("refuses a cross-origin POST that sends only CORS-safelisted headers", async () => {
+    // The shape that triggers no preflight, so nothing else would have stopped
+    // it: a page on evil.example fetches with Accept alone, from the operator's
+    // own machine, naming the genuine loopback host.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await balanceHandler(
+      request("GET", "127.0.0.1", "localhost:3002", {
+        ...CROSS_SITE,
+        accept: "application/json",
+        origin: "http://evil.example",
+      }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cross-origin caller identified by Origin alone", async () => {
+    // Older browsers send no Sec-Fetch-Site, so Origin is the fallback.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await balanceHandler(
+      request("GET", "127.0.0.1", "localhost:3002", {
+        origin: "http://evil.example",
+      }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("serves the app's own page, and a caller that is no browser at all", async () => {
+    goLive();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      okResponse({ error: [], result: { ZUSD: "1.0" } }),
+    );
+
+    const callers: Record<string, string>[] = [
+      // The app itself, on both header generations.
+      SAME_ORIGIN,
+      { origin: "http://localhost:3002" },
+      // A user-typed address, and curl, which sends neither header.
+      { "sec-fetch-site": "none" },
+      {},
+    ];
+
+    for (const headers of callers) {
+      const res = createResponse();
+      await balanceHandler(request("GET", "127.0.0.1", "localhost:3002", headers), res);
+      expect(res.statusCode).toBe(200);
+    }
+  });
+
   it("refuses a DNS rebind, whose peer address is loopback but whose Host is not", async () => {
     // The attack the peer-address check alone does not stop: an attacker's page
     // re-resolves its own hostname to 127.0.0.1, so the request arrives from
@@ -301,7 +386,7 @@ describe("GET /api/kraken/balance", () => {
     const res = createResponse();
     await balanceHandler(request("GET", "127.0.0.1", "kraken-rebind.example"), res);
 
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(503);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -312,7 +397,7 @@ describe("GET /api/kraken/balance", () => {
     for (const host of ["", "   ", "localhost@evil.example", "evil.example/localhost"]) {
       const res = createResponse();
       await balanceHandler(request("GET", "127.0.0.1", host), res);
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(503);
     }
 
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -328,7 +413,7 @@ describe("GET /api/kraken/balance", () => {
       res,
     );
 
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(503);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -339,7 +424,7 @@ describe("GET /api/kraken/balance", () => {
     const res = createResponse();
     await balanceHandler({ method: "GET" } as IncomingMessage, res);
 
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(503);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -402,7 +487,26 @@ describe("POST /api/kraken/ws-token", () => {
     const res = createResponse();
     await wsTokenHandler(request("POST", "10.0.0.4"), res);
 
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(503);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses to mint a token for a cross-origin page, burning no nonce", async () => {
+    // The finding this closes: a page the operator merely visited could spend
+    // their Kraken nonce and rate limit even though it could not read the token.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await wsTokenHandler(
+      request("POST", "127.0.0.1", "localhost:3002", {
+        ...CROSS_SITE,
+        accept: "application/json",
+      }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(503);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -413,7 +517,7 @@ describe("POST /api/kraken/ws-token", () => {
     const res = createResponse();
     await wsTokenHandler(request("POST", "127.0.0.1", "kraken-rebind.example"), res);
 
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(503);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

@@ -84,7 +84,7 @@ between runs, and no job requires any Kraken credential.
 
 The app is a single-page bundle plus a small set of serverless functions, hosted on
 [Vercel](https://vercel.com/) at <https://block-builder3.vercel.app/>. Everything the platform
-needs is declared in `vercel.json`; the build is plain `npm run build`.
+needs is declared in `vercel.json` and `.vercelignore`; the build is plain `npm run build`.
 
 **No environment variable is set on the deployment, and none may be.** The public deployment is
 simulation only, and setting a Kraken credential on it is refused rather than honoured - see
@@ -96,6 +96,13 @@ Each file under `api/` is a function. They are written against Node's own
 `IncomingMessage`/`ServerResponse` rather than a framework request object, so the identical
 module runs on Vercel, on the Vite dev server (`vite/krakenApiDevServer.ts`) and under a plain
 stub in the tests. Files prefixed with `_` are shared code, not routes.
+
+That rule is mechanical and it applies to *every* file, which is what `.vercelignore` is for:
+without it a colocated test under `api/kraken/` would be published as an endpoint, so
+`api/kraken/handlers.test.ts` would deploy as `/api/kraken/handlers.test`, importing `vitest`
+and exporting no handler. The single entry `api/**/*.test.ts` covers the next such test too,
+and `api/_lib/deploymentSurface.test.ts` asserts the route list a deploy would actually
+publish, so an accidental endpoint fails the suite rather than the site.
 
 ### SPA rewrite
 
@@ -208,17 +215,24 @@ Live mode is therefore confined to loopback, twice over:
   **fails to start** with an error naming the problem (`vite/krakenApiDevServer.ts`). Any other
   hosting must apply the same rule: bind live mode to `127.0.0.1`, never `0.0.0.0`.
 - **The request.** Independently of the bind, `/api/kraken/balance` and `/api/kraken/ws-token`
-  answer `403` unless *both* halves of the request are loopback (`api/_lib/loopback.ts`): the
-  peer address is in `127.0.0.0/8` or is `::1`, **and** the `Host` header is `localhost`,
-  `127.0.0.1` or `[::1]`, with any port. The `Host` half is not redundant. Without it a DNS
-  rebind reaches a server bound exactly as instructed: an attacker's page re-resolves its own
-  hostname to `127.0.0.1`, so the peer address is loopback while the page reading the Kraken
-  token is not yours. A missing or malformed `Host` is refused. `/api/kraken/status` applies
-  the same test and tells a caller that fails it that the deployment simulates, because that
-  is what that caller will get.
+  serve a request only when all three of these hold (`api/_lib/loopback.ts`):
+  1. the peer address is in `127.0.0.0/8` or is `::1`;
+  2. the `Host` header is `localhost`, `127.0.0.1` or `[::1]`, with any port. Missing or
+     malformed is refused. Without this a DNS rebind reaches a server bound exactly as
+     instructed: an attacker's page re-resolves its own hostname to `127.0.0.1`, so the peer
+     address is loopback while the page reading the Kraken token is not yours;
+  3. the request came from this app's own page, by `Sec-Fetch-Site` or `Origin`. Without this
+     any site the operator visits while running live can `POST /api/kraken/ws-token` with
+     CORS-safelisted headers only, which sends no preflight. It could not read the reply, but
+     it would have burned a Kraken nonce and a slice of the account's rate limit.
 
-That guard establishes that a request came from this machine. It does **not** establish who
-sent it, and it is not authentication.
+  A request that fails any of them is answered exactly as a simulating deployment answers
+  everyone: `503`, `"mode":"simulation"`. `/api/kraken/status` applies the same test and tells
+  such a caller the deployment simulates. The two agree on purpose, so a remote caller cannot
+  learn from one what the other declines to say.
+
+That guard establishes that a request came from this machine and from this app. It does **not**
+establish who is at the keyboard, and it is not authentication.
 
 **Exposing this beyond loopback is the operator's own responsibility.** If you put a live
 instance behind a proxy, on a LAN, or on a tunnel, you must add your own authentication in
@@ -268,8 +282,8 @@ carrying a hosting signal, or with a mode string the server does not recognise, 
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/kraken/status` | GET | Which mode the server is in. Carries no credential, ever. |
-| `/api/kraken/balance` | GET | Account balances. The authenticated read that exercises the boundary. Loopback only. |
-| `/api/kraken/ws-token` | POST | Mints a Kraken WebSocket token, which is short-lived and scoped, unlike the key that produced it. Loopback only. |
+| `/api/kraken/balance` | GET | Account balances. The authenticated read that exercises the boundary. Operator's own page on loopback only. |
+| `/api/kraken/ws-token` | POST | Mints a Kraken WebSocket token, which is short-lived and scoped, unlike the key that produced it. Operator's own page on loopback only. |
 
 The private endpoints are an **allowlist, not a proxy** (`api/_lib/krakenClient.ts`). A generic
 "sign whatever the browser asks" endpoint would be a signing oracle, which is the failure this
