@@ -42,6 +42,20 @@ const Probe = () => {
 };
 
 /** The AssetPairs answer, in the shape `fetch` hands back. */
+/**
+ * Kraken answering normally about a catalogue it describes none of: HTTP 200,
+ * no error, and a result that matches no market this app offers. It resolves
+ * through the success path, so it is a settled answer rather than a failure -
+ * and asking again cannot change it.
+ */
+const assetPairsEmpty = () =>
+  ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    json: async () => ({ error: [], result: {} }),
+  }) as Response;
+
 const assetPairsOk = () =>
   ({
     ok: true,
@@ -404,6 +418,78 @@ describe("MarketProvider after a failed request", () => {
     });
 
     expect(fetchSpy.mock.calls.length).toBe(afterLoad);
+  });
+
+  // A successful answer that happens to be empty is still an answer. Gating the
+  // recovery on the map being empty rather than on the request having answered
+  // left the focus and online listeners attached and `selectMarket` asking
+  // again, once per tab switch and once per selection, for the rest of the
+  // session - the unbounded request loop the bounded retry exists to avoid.
+  it("stops asking after a successful answer that describes no market", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(assetPairsEmpty());
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+    await act(async () => {});
+    // Nothing is priceable, and the provider says so honestly rather than
+    // inventing a rule - it just does not keep asking.
+    expect(screen.getByTestId("decimals")).toHaveTextContent("none");
+    expect(screen.getByTestId("error")).toHaveTextContent("none");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("online"));
+      screen.getByRole("button", { name: "pick current" }).click();
+      screen.getByRole("button", { name: "pick arb" }).click();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // The other half of the same rule: a request that FAILED has not answered, so
+  // every one of those moments is still worth a retry.
+  it("keeps asking after a failed answer, on focus, online and on a selection", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("network down"));
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    let seen = fetchSpy.mock.calls.length;
+
+    for (const ask of [
+      () => window.dispatchEvent(new Event("focus")),
+      () => window.dispatchEvent(new Event("online")),
+      () => screen.getByRole("button", { name: "pick current" }).click(),
+    ]) {
+      await act(async () => {
+        ask();
+      });
+      // Each one asks once; the backoff chain it starts is bounded, and the
+      // timers are drained before the next so the counts stay attributable.
+      expect(fetchSpy.mock.calls.length).toBeGreaterThan(seen);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      seen = fetchSpy.mock.calls.length;
+    }
   });
 
   it("sets nothing after it has been unmounted", async () => {

@@ -53,8 +53,10 @@ export interface Market {
  *
  * There is deliberately no default and no fallback value for any of them. A
  * missing `MarketPrecision` is a state the callers handle - the order path
- * refuses to build a payload, the display formatter says the price is still
- * loading - rather than a reason to substitute BTC's numbers.
+ * refuses to build a payload, and `formatMarketPrice` draws `NO_PRECISION`
+ * rather than a number, which it keeps distinct from the `NO_PRICE` it draws
+ * while waiting for a price - rather than a reason to substitute BTC's
+ * numbers.
  */
 export interface MarketPrecision {
   /** The WebSocket v2 symbol this describes, so a record cannot be misapplied. */

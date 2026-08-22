@@ -139,14 +139,24 @@ export const MarketProvider: FC<MarketProviderProps> = ({
     };
   }, []);
 
+  // Whether asking again could still change the answer. Keyed on the request
+  // rather than on the map being empty: Kraken answering 200 for a catalogue it
+  // describes none of resolves normally, so an empty map is a settled answer
+  // too - and gating on its size left the listeners and `selectMarket` asking
+  // once per tab switch and once per selection, for the rest of the session,
+  // for an answer that will not change. It is the same rule `selectMarket`
+  // states below for a single absent pair, applied to the whole batch.
+  const needsMetadata = !metadataSettled || metadataError !== null;
+
   // The two moments the environment has actually changed rather than the user
   // merely waiting: the tab comes back to the front, and the browser regains
   // connectivity. Both are worth spending a request on, and neither is worth
-  // one once the metadata is in hand - so the listeners exist only while there
-  // is nothing at all. Each retry starts its own bounded chain; the in-flight
-  // flag is what stops a burst of events from stampeding the endpoint.
+  // one once the request has answered - so the listeners exist only while it
+  // has not, or answered with a failure. Each retry starts its own bounded
+  // chain; the in-flight flag is what stops a burst of events from stampeding
+  // the endpoint.
   useEffect(() => {
-    if (precisions.size > 0) return;
+    if (needsMetadata === false) return;
 
     const handles = handlesRef.current;
     const retry = () => loadPrecisions(handles);
@@ -157,7 +167,7 @@ export const MarketProvider: FC<MarketProviderProps> = ({
       window.removeEventListener("focus", retry);
       window.removeEventListener("online", retry);
     };
-  }, [precisions.size]);
+  }, [needsMetadata]);
 
   const precision = precisions.get(market.symbol) ?? null;
 
@@ -180,10 +190,11 @@ export const MarketProvider: FC<MarketProviderProps> = ({
       // Asked here rather than from an effect keyed on the selection, because
       // choosing the pair that is *already* selected is a React bail-out - and
       // the user stuck on the pair they actually want is precisely the one with
-      // no other way back. Keyed on having *nothing*, not on this pair being
-      // absent: a batch that answered without a given pair answered - Kraken
-      // does not list it, and asking again returns the same answer.
-      if (precisions.size === 0) loadPrecisions(handlesRef.current);
+      // no other way back. Keyed on the request never having answered, not on
+      // this pair being absent: a batch that answered without a given pair
+      // answered - Kraken does not list it, and asking again returns the same
+      // answer.
+      if (needsMetadata) loadPrecisions(handlesRef.current);
       return true;
     },
     metadataError,

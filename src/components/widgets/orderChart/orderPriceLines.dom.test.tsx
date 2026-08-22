@@ -5,6 +5,9 @@ import { render, screen } from "@testing-library/react";
 import GridCell from "@common/grid/GridCell";
 import { formatPrice } from "@utils/grid";
 import { orderPriceLines } from "./orderPriceLines";
+import { MarketContext, type MarketContextValue } from "@store/MarketContext";
+import { MARKETS, findMarket } from "@data/markets";
+import { BTC_USD } from "@/test/marketFixtures";
 import type { BlockData, OrderConfig } from "@/types/grid";
 
 // =============================================================================
@@ -27,6 +30,25 @@ import type { BlockData, OrderConfig } from "@/types/grid";
 const MARKET_PRICE = 50_000;
 
 const noop = () => {};
+
+// Both sides of the comparison have to be drawn at a real pair's precision.
+// Without this the cell's `useMarket()` falls through to the default context
+// with no precision and every chip reads "n/a", `formatPrice` called with no
+// market returns the same placeholder, and the assertion below compares one
+// placeholder to another - passing for whatever price `orderPriceLines`
+// computes, which is the one thing this file exists to catch.
+const market = findMarket("BTC/USD")!;
+const activeMarket = { market, precision: BTC_USD };
+
+const marketValue: MarketContextValue = {
+  market,
+  precision: BTC_USD,
+  activeMarket,
+  markets: MARKETS,
+  selectMarket: () => false,
+  metadataError: null,
+  metadataSettled: true,
+};
 
 const block = (overrides: Partial<BlockData> = {}): BlockData => ({
   id: "b1",
@@ -55,6 +77,7 @@ const chartConfig = (b: BlockData, col: number, row: number): OrderConfig => ({
 
 const renderCell = (b: BlockData, col = 0, row = 1) =>
   render(
+    <MarketContext.Provider value={marketValue}>
     <GridCell
       colIndex={col}
       rowIndex={row}
@@ -84,7 +107,8 @@ const renderCell = (b: BlockData, col = 0, row = 1) =>
       carryingBlockId={null}
       focusBlockId={null}
       onBlockFocusHandled={noop}
-    />,
+    />
+    </MarketContext.Provider>,
   );
 
 describe("the grid's price chip and the chart's price line", () => {
@@ -116,9 +140,10 @@ describe("the grid's price chip and the chart's price line", () => {
     expect(line).toBeDefined();
     // `formatPrice` is what the cell renders; the assertion is that the chart's
     // number and the cell's number are the same number, not that they round the
-    // same way.
-    expect(screen.getAllByText(formatPrice(line.price)).length).toBeGreaterThan(
-      0,
-    );
+    // same way. Both are drawn against the same pair, so a real formatted price
+    // is compared rather than the "no rules for this pair" placeholder.
+    const drawn = formatPrice(line.price, activeMarket);
+    expect(drawn).toMatch(/^\$[\d,]+\.\d$/);
+    expect(screen.getAllByText(drawn).length).toBeGreaterThan(0);
   });
 });
