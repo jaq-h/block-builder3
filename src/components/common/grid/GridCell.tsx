@@ -72,6 +72,7 @@ interface GridCellProps {
   onBlockDragStart: (id: string) => void;
   onBlockDragEnd: (id: string, x: number, y: number) => void;
   onBlockDragCancel: (id: string) => void;
+  onBlockDragRecognised: (id: string) => void;
   onBlockVerticalDrag: (id: string, pointerY: number) => void;
   onBlockActivate: (id: string, origin: "keyboard" | "pointer") => void;
   onBlockCommandMove: (dCol: number, dRow: number) => void;
@@ -104,6 +105,7 @@ const GridCell: FC<GridCellProps> = ({
   onBlockDragStart,
   onBlockDragEnd,
   onBlockDragCancel,
+  onBlockDragRecognised,
   onBlockVerticalDrag,
   onBlockActivate,
   onBlockCommandMove,
@@ -142,6 +144,7 @@ const GridCell: FC<GridCellProps> = ({
     onDragStart: onBlockDragStart,
     onDragEnd: onBlockDragEnd,
     onDragCancel: onBlockDragCancel,
+    onDragRecognised: onBlockDragRecognised,
     cellDescription,
   });
 

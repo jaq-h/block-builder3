@@ -415,6 +415,51 @@ describe("GridArea, tapping a placed block", () => {
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
   });
 
+  it("releases the carry when a drag starts on another block", () => {
+    const { first, second } = renderTwoBlocks();
+
+    tap(first);
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    // A nudge drag on the OTHER block, released inside its own cell, with the
+    // click a browser appends to every gesture. That click bubbles into a cell
+    // that is a live placement target while anything is carried - so without
+    // the drag releasing the carry, dragging this block moves the other one.
+    stubRect(cell(1, 0), 100, 200);
+    fireEvent(second, pointerAt("pointerdown", 30, 150));
+    fireEvent(second, pointerAt("pointermove", 30, 160));
+    fireEvent(second, pointerAt("pointerup", 30, 160));
+    fireEvent.click(second, { bubbles: true });
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
+    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
+    expect(announcement()).toContain(
+      "Cancelled. Market block left in Entry column, row 2.",
+    );
+  });
+
+  it("releases the carry when the carried block itself is dragged away", () => {
+    const { first } = renderTwoBlocks();
+
+    tap(first);
+
+    stubRect(cell(1, 2), 500, 200);
+    fireEvent(first, pointerAt("pointerdown", 30, 150));
+    fireEvent(first, pointerAt("pointermove", 30, 550));
+    fireEvent(first, pointerAt("pointerup", 30, 550));
+    fireEvent.click(first, { bubbles: true });
+
+    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Market");
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    // A carry left live would still point its target highlight at the cell the
+    // block has just been dragged out of.
+    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
+    expect(announcement()).toContain(
+      "Cancelled. Market block left in Entry column, row 2.",
+    );
+  });
+
   it("refuses to carry a block drawn on a price axis, and still prices it", () => {
     const { slider, centre } = renderPlacedLimit(25);
 

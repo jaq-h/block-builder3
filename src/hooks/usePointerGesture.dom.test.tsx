@@ -14,6 +14,7 @@ import {
 interface Calls {
   down: { x: number; y: number }[];
   move: { x: number; y: number }[];
+  recognised: string[];
   up: { point: { x: number; y: number }; moved: boolean }[];
   cancel: string[];
 }
@@ -23,6 +24,7 @@ const Probe = ({ calls, disabled }: { calls: Calls; disabled?: boolean }) => {
     disabled,
     onDown: (p) => calls.down.push(p),
     onMove: (p) => calls.move.push(p),
+    onDragRecognised: () => calls.recognised.push("recognised"),
     onUp: (point, moved) => calls.up.push({ point, moved }),
     onCancel: () => calls.cancel.push("cancelled"),
   });
@@ -34,7 +36,13 @@ const Probe = ({ calls, disabled }: { calls: Calls; disabled?: boolean }) => {
   );
 };
 
-const emptyCalls = (): Calls => ({ down: [], move: [], up: [], cancel: [] });
+const emptyCalls = (): Calls => ({
+  down: [],
+  move: [],
+  recognised: [],
+  up: [],
+  cancel: [],
+});
 
 /**
  * jsdom's `PointerEvent` constructor ignores the pointer fields, so they are
@@ -204,6 +212,36 @@ describe("usePointerGesture", () => {
       fireEvent(target(), pointer("pointerup", { x: 30, y: 30 }));
 
       expect(calls.up[0].moved).toBe(true);
+    });
+
+    it("announces the drag once, on the move that leaves the slop", () => {
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 30, y: 30 }));
+      fireEvent(target(), pointer("pointermove", { x: 30 + TAP_SLOP_PX, y: 30 }));
+      // Still a tap so far: whatever a drag supersedes must not have happened.
+      expect(calls.recognised).toEqual([]);
+
+      fireEvent(
+        target(),
+        pointer("pointermove", { x: 30 + TAP_SLOP_PX + 1, y: 30 }),
+      );
+      fireEvent(target(), pointer("pointermove", { x: 200, y: 30 }));
+      fireEvent(target(), pointer("pointerup", { x: 200, y: 30 }));
+
+      expect(calls.recognised).toEqual(["recognised"]);
+    });
+
+    it("says nothing about a drag when the gesture stays a tap", () => {
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 30, y: 30 }));
+      fireEvent(target(), pointer("pointermove", { x: 30 + TAP_SLOP_PX, y: 30 }));
+      fireEvent(target(), pointer("pointerup", { x: 30, y: 30 }));
+
+      expect(calls.recognised).toEqual([]);
     });
   });
 

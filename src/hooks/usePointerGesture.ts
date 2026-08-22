@@ -43,6 +43,13 @@ export interface UsePointerGestureOptions {
    */
   onMove?: (point: GesturePoint, moved: boolean) => void;
   /**
+   * Fired once per gesture, on the move that crosses `TAP_SLOP_PX`: the point
+   * at which this is known to be a drag rather than a tap. Anything a drag
+   * supersedes belongs here rather than in `onDown`, which still cannot tell
+   * the two apart.
+   */
+  onDragRecognised?: () => void;
+  /**
    * Fired on release. `moved` is false when the pointer never travelled beyond
    * `TAP_SLOP_PX`, i.e. this was a tap or a click rather than a drag.
    */
@@ -96,6 +103,7 @@ const releaseCapture = (element: HTMLElement, pointerId: number): void => {
 export const usePointerGesture = ({
   onDown,
   onMove,
+  onDragRecognised,
   onUp,
   onCancel,
   disabled = false,
@@ -151,7 +159,10 @@ export const usePointerGesture = ({
     if (!gesture.moved) {
       const dx = e.clientX - gesture.startX;
       const dy = e.clientY - gesture.startY;
-      if (Math.hypot(dx, dy) > TAP_SLOP_PX) gesture.moved = true;
+      if (Math.hypot(dx, dy) > TAP_SLOP_PX) {
+        gesture.moved = true;
+        onDragRecognised?.();
+      }
     }
     onMove?.({ x: e.clientX, y: e.clientY }, gesture.moved);
   };

@@ -18,6 +18,8 @@ interface UseFreeDragOptions {
   onDragEnd?: (id: string, x: number, y: number) => void;
   /** The pointer went down and up without moving: a tap or a click, not a drag. */
   onActivate?: (id: string) => void;
+  /** The gesture has travelled far enough to be a drag rather than a tap. */
+  onDragRecognised?: (id: string) => void;
   /** The browser took the pointer away mid-drag; put the block back. */
   onDragCancel?: (id: string) => void;
   disabled?: boolean;
@@ -41,6 +43,7 @@ export const useFreeDrag = ({
   onDragEnd,
   onActivate,
   onDragCancel,
+  onDragRecognised,
   disabled = false,
 }: UseFreeDragOptions): UseFreeDragReturn => {
   // Track the latest pointer position in a ref so onDragEnd can read it
@@ -58,6 +61,7 @@ export const useFreeDrag = ({
       posRef.current = { x, y };
       updateDragOverlayPosition(x, y);
     },
+    onDragRecognised: () => onDragRecognised?.(id),
     onUp: ({ x, y }, moved) => {
       stopDragOverlay();
       if (moved) {

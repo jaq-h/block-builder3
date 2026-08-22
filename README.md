@@ -255,17 +255,28 @@ a reducer cannot supply: what gets announced, and where focus lands afterwards.
 **What moves between cells, and what does not.** A block the cell draws **on a price axis**
 stays in its cell. That is not an accessibility shortfall: a mouse cannot move one either -
 `Block` routes anything rendered on an axis to the vertical drag, so the free drag never
-applies to it - and every input method is held to the same capability. Palette placement,
-moving an **axis-less** block between cells and dragging one out of the grid to delete it
-are offered by pointer, keyboard and tap alike. `activateBlock` decides this from the
-cell's display mode, the same value the renderer uses, so the offer and the drawing can
-never disagree.
+applies to it - and every input method is held to the same capability. Palette placement and
+moving an **axis-less** block between cells are offered by pointer, keyboard and tap alike.
+`activateBlock` decides this from the cell's display mode, the same value the renderer uses,
+so the offer and the drawing can never disagree.
+
+**Removing a single block is pointer-only today.** It happens by dragging a block out of the
+grid: `removeBlock` is reached from one place, the `else` branch of `handleDragEnd`, which
+only a free drag that released outside every cell can get to. The command model has no
+delete transition at all - `blockCommand.ts` is pickUp, moveTarget, place and cancel - and
+`activateCell` can only name a grid cell, so a keyboard or a tap cannot remove one block.
+A keyboard user's removal path is **Clear All**. That is missing capability rather than a
+defect: a keyboard user can still assemble and price a complete strategy, and a delete
+transition - which needs its own confirmation and announcement design - is filed as its own
+work rather than bolted onto this lane.
 
 Enter or a tap on a priced block is therefore refused rather than silent, and the refusal
-names what that render does wire: the arrow keys, which move the block along its axis. Only
-in a cell that draws **no** axis at all - a bulk cell holding an axis-less block - is the
-separate dual-axis refusal reached, and there it promises no arrow keys, because none are
-wired.
+names what that render does wire: the arrow keys, which move the block along its axis. The
+rule is the whole axis and not just paired legs - a lone Limit, a lone Stop Loss and two
+independent Limits sharing a bulk cell are all drawn on an axis, so all are refused, and all
+are equally immovable with a mouse. Only in a cell that draws **no** axis at all - a bulk
+cell holding an axis-less block - is the separate dual-axis refusal reached, and there it
+promises no arrow keys, because none are wired.
 
 Moving a placed priced block between cells is a real capability worth having for every
 input method, and it is **sequenced rather than abandoned**: a cell's scale is currently
@@ -280,23 +291,36 @@ larger still, Home/End for the ends of the axis). Its `aria-valuenow` is the **s
 from the market price, positive above and negative below, so the value always moves the same
 way the block does on screen whichever direction the cell's scale runs.
 
+**A drag supersedes a carry.** Starting a real pointer drag - the move that crosses the tap
+slop, not the pointer-down that might still be a tap - cancels whatever the command model is
+carrying, and says so. Without that, the click the browser appends to every gesture bubbles
+from the dragged block into its cell, which is a live placement target while anything is
+carried, and the carried block is placed somewhere the user never chose. Cancelling at
+pointer-down instead would break the tap that places a carried block into another block's
+cell, which is why `usePointerGesture` reports drag recognition as its own moment.
+
 Announcements go through `LiveAnnouncer`, which alternates between two live regions: a
 screen reader only reads a region whose content **changed**, so two identical messages in a
 row would otherwise be silent the second time.
 
 **Known gap, bulk pattern only.** A bulk cell holding any axis-less block draws *every*
 block in it without an axis: `getCellDisplayMode` returns `"no-axis"` as soon as one block
-has no axes, and that decides the whole cell. Three things follow, and all are limited to
-that case. They do not share a provenance, so they are listed apart.
+has no axes, and that decides the whole cell. Four things follow, and all are limited to
+that case. They do not share a provenance, so they are listed apart - two inherited, two
+introduced here.
 
-*Inherited, and present before the pointer/keyboard work.* Keyboard and tap pick-up of a
-paired dual-axis leg is refused in such a cell, and the refusal deliberately does not offer
-the arrow keys, because that render wires none. Mouse free drag still reaches those legs and
-can split a paired order across cells.
+*Inherited, and present before the pointer/keyboard work.* Mouse free drag reaches a paired
+dual-axis leg in such a cell and can split the order across cells, because the cell draws
+that leg without an axis and `Block` sends anything drawn without one to the free drag.
 
 *Also inherited.* That same drop path writes `yPosition` through `calculateYPosition`, which
 returns 0-100 against a scale whose maximum is 50, so a block can render pinned at the 50%
 end while its label reads the raw value.
+
+*Introduced by the pointer/keyboard work.* Keyboard and tap pick-up of a paired dual-axis
+leg is refused in such a cell - there was no keyboard or tap pick-up at all before this
+change, so the refusal could not have been inherited - and it deliberately does not offer
+the arrow keys, because that render wires none.
 
 *Introduced by the pointer/keyboard work, and now contained.* Unifying the track geometry
 made the vertical drag resolve its track by the block's own `axis` field, which can disagree

@@ -309,6 +309,18 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     setDraggingId(id);
   };
 
+  /**
+   * A real drag has started, so it takes over from whatever the command model
+   * was carrying: leaving the carry live would let the click the browser
+   * appends to the drag place the carried block in a cell the user never chose.
+   * Focus is not handed back - pointer-down has already moved it to the block
+   * under the pointer, which is where a user reaching for the keyboard expects
+   * to be.
+   */
+  const handleDragRecognised = () => {
+    command.cancel({ restoreFocus: false });
+  };
+
   const endDrag = () => {
     setDraggingId(null);
     setDraggingFromProvider(null);
@@ -502,6 +514,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
           onProviderDragStart={handleProviderDragStart}
           onProviderDragEnd={handleProviderDragEnd}
           onProviderDragCancel={endDrag}
+          onProviderDragRecognised={handleDragRecognised}
           onProviderMouseEnter={handleProviderMouseEnter}
           onProviderMouseLeave={handleProviderMouseLeave}
           onProviderActivate={command.activateProvider}
@@ -573,6 +586,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
                     onBlockDragStart={handleDragStart}
                     onBlockDragEnd={handleDragEnd}
                     onBlockDragCancel={endDrag}
+                    onBlockDragRecognised={handleDragRecognised}
                     onBlockVerticalDrag={handleBlockVerticalDrag}
                     onBlockActivate={command.activateBlock}
                     onBlockCommandMove={command.moveTarget}

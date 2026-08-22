@@ -78,6 +78,13 @@ interface BlockProps {
   onDragStart?: (id: string) => void;
   onDragEnd?: (id: string, x: number, y: number) => void;
   onDragCancel?: (id: string) => void;
+  /**
+   * The gesture crossed the tap slop, so it is a drag. A drag supersedes an
+   * active command carry, which is why this is not the same moment as
+   * `onDragStart`: that one fires on pointer down, when a tap still looks
+   * identical.
+   */
+  onDragRecognised?: (id: string) => void;
   onVerticalDrag?: (id: string, pointerY: number) => void;
   /**
    * Enter, Space, or a tap without movement. `origin` separates the two
@@ -114,6 +121,7 @@ const Block: FC<BlockProps> = ({
   onDragStart,
   onDragEnd,
   onDragCancel,
+  onDragRecognised,
   onVerticalDrag,
   onActivate,
   onCommandMove,
@@ -145,6 +153,7 @@ const Block: FC<BlockProps> = ({
       onDragStart,
       onDragEnd,
       onDragCancel,
+      onDragRecognised,
       onActivate: (blockId) => onActivate?.(blockId, "pointer"),
     },
   );
@@ -154,6 +163,7 @@ const Block: FC<BlockProps> = ({
       id,
       disabled: isReadOnly,
       onVerticalDrag,
+      onDragRecognised,
       onActivate: (blockId) => onActivate?.(blockId, "pointer"),
     });
 

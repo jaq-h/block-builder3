@@ -9,6 +9,8 @@ interface UseVerticalDragOptions {
   onVerticalDrag?: (id: string, pointerY: number) => void;
   /** The pointer went down and up without moving: a tap or a click, not a drag. */
   onActivate?: (id: string) => void;
+  /** The gesture has travelled far enough to be a drag rather than a tap. */
+  onDragRecognised?: (id: string) => void;
   disabled?: boolean;
 }
 
@@ -41,6 +43,7 @@ export const useVerticalDrag = ({
   id,
   onVerticalDrag,
   onActivate,
+  onDragRecognised,
   disabled = false,
 }: UseVerticalDragOptions): UseVerticalDragReturn => {
   // A ref, because the offset has to be readable by the very next pointermove,
@@ -57,6 +60,7 @@ export const useVerticalDrag = ({
       if (!moved) return;
       onVerticalDrag?.(id, y - grabOffsetRef.current);
     },
+    onDragRecognised: () => onDragRecognised?.(id),
     onUp: (_point, moved) => {
       if (!moved) onActivate?.(id);
     },
