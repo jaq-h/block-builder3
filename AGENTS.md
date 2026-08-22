@@ -166,10 +166,27 @@ Two invariants the order path depends on, both of which were previously violated
   on a linked conditional alike, so a regression in any construction path fails loudly
   instead of shipping a trigger price equal to the limit price.
 
+- **Conditional links are flat and one level deep.** A Kraken conditional close hangs off
+  exactly one primary order and carries no conditional of its own, so each primary may
+  carry one conditional, a conditional may not be shared between two primaries, and a
+  conditional may not have a conditional of its own. Every other shape of the
+  `linkedBlockId` graph is refused by `assertLinksAreFlat` in `src/api/orderMapper.ts`,
+  because each one otherwise emits a wrong order set with nothing to explain it: a cycle
+  sends no orders at all, a chain drops its tail, and a shared conditional submits the same
+  close twice.
+
 `src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type, a block
-claiming both axes, and a cycle in the conditional-link graph all throw, because silently
+claiming both axes, a link graph that is not flat, and a price that is not a positive
+finite number all throw or fail validation, because silently
 substituting a different order is the failure this module exists to prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that
 and surfaces it as `orderError`.
+
+`validateOrder`'s positive-and-finite price guard is a last line of defence, not the fix
+for what feeds it: prices reach it as strings, so `"0.0"` is truthy and a presence check
+passed it. It is reachable because `calculateYPosition` works on a 0-100 scale while the
+slider and the axis labels use `SCALE_CONFIG.MAX_PERCENT = 50`, and the drop handler writes
+the unclamped result into the block - a block dragged to the bottom of its cell is a 100%
+offset, which is a price of zero. That root cause is in the drag layer and is owned there.
 
 Still open in the same file, and deliberately not fixed with the above: the two legs of a
 dual-axis order type (`stop-loss-limit` and friends) are emitted as two separate orders
@@ -184,11 +201,12 @@ geometry from it, while the mapper reads each block's own `direction`. A bulk-pa
 can hold blocks with opposite directions, so the two diverge. Concretely: at a $50,000
 market, drop a Limit into Entry/Primary and then a Stop Loss into the same cell, and the
 Stop Loss chip reads `-25.00% $37,500` while the payload and the chart line both say
-`62,500`. It is not reachable in the conditional pattern, which is the default. It is owned
-by the mapping-owner lane, which must decide what a bulk cell means and apply that one
-answer to the chip, the chart and the payload in a single change - splitting it across
-owners is how display and payload drifted apart in the first place, which is exactly what
-decision D3 exists to prevent.
+`62,500`. It is not reachable in the conditional pattern, which is the default. It is
+deliberately not fixed here, and has been filed to the lane that owns reconciling the chip,
+the chart and the payload together; that owner must decide what a bulk cell means and apply
+that one answer to all three in a single change - splitting it across owners is how display
+and payload drifted apart in the first place, which is exactly what decision D3 exists to
+prevent.
 
 **Known gap: `axis` is derived two ways, so a live grid and a reloaded one can disagree
 about which leg is the trigger.** Hydration derives `axes` from the saved `axis`, but the

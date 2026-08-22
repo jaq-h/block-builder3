@@ -672,19 +672,59 @@ describe("mapGridToOrders", () => {
     expect(() => mapGridToOrders(selfLink, ctx)).toThrow(/a -> a/);
   });
 
-  it("still maps a grid whose links form a chain rather than a cycle", () => {
+  it("still maps a single link, where the conditional links onward to nothing", () => {
     const grid = gridWith([
       { col: 0, row: 1, block: blockData({ id: "a", linkedBlockId: "b" }) },
       { col: 1, row: 0, block: blockData({ id: "b" }) },
     ]);
 
-    expect(
+    const orders = mapGridToOrders(grid, {
+      symbol: "BTC/USD",
+      currentPrice: MARKET_PRICE,
+      quantity: "1",
+    });
+
+    expect(orders).toHaveLength(1);
+    expect(orders[0].conditional?.order_type).toBe("limit");
+  });
+
+  // A conditional close hangs off exactly one primary order and carries no
+  // conditional of its own, so a chain is not a strategy that can be built. It
+  // used to emit one order for "a" carrying "b", and drop "c" entirely: "b" is
+  // skipped for being somebody's conditional so its own link is never followed,
+  // and "c" is skipped for being named as one.
+  it("refuses a chain, instead of silently dropping its tail", () => {
+    const grid = gridWith([
+      { col: 0, row: 0, block: blockData({ id: "a", linkedBlockId: "b" }) },
+      { col: 0, row: 1, block: blockData({ id: "b", linkedBlockId: "c" }) },
+      { col: 1, row: 0, block: blockData({ id: "c" }) },
+    ]);
+
+    expect(() =>
       mapGridToOrders(grid, {
         symbol: "BTC/USD",
         currentPrice: MARKET_PRICE,
         quantity: "1",
       }),
-    ).toHaveLength(1);
+    ).toThrow(/"b" is the conditional of "a" and itself links to "c"/);
+  });
+
+  // Two primaries naming the same conditional used to emit two orders that both
+  // carried "c", so the same close was submitted twice.
+  it("refuses a conditional shared between two primaries", () => {
+    const grid = gridWith([
+      { col: 0, row: 0, block: blockData({ id: "a", linkedBlockId: "c" }) },
+      { col: 0, row: 1, block: blockData({ id: "b", linkedBlockId: "c" }) },
+      { col: 1, row: 0, block: blockData({ id: "c" }) },
+    ]);
+
+    expect(() =>
+      mapGridToOrders(grid, {
+        symbol: "BTC/USD",
+        currentPrice: MARKET_PRICE,
+        quantity: "1",
+      }),
+    ).toThrow(/"c" is named as the conditional of more than one primary/);
   });
 
   it("produces no orders for an empty grid", () => {
@@ -863,6 +903,78 @@ describe("validateOrder", () => {
     expect(validateOrder({ ...valid, order_qty: "0.5" })).toEqual([]);
     expect(validateOrder({ ...valid, order_qty: "1" })).toEqual([]);
     expect(validateOrder({ ...valid, order_qty: "1e-3" })).toEqual([]);
+  });
+
+  const LIMIT_PRICE_ERROR = "Limit price must be a positive number";
+
+  it("rejects a limit price that is zero, negative or not a number", () => {
+    ["0", "0.0", "-1", "abc", "", "   ", "NaN", "Infinity"].forEach(
+      (limit_price) => {
+        expect(validateOrder({ ...valid, limit_price })).toContain(
+          LIMIT_PRICE_ERROR,
+        );
+      },
+    );
+  });
+
+  it("names the offending field on every price the payload carries", () => {
+    const errors = validateOrder({
+      order_type: "stop-loss-limit",
+      side: "buy",
+      order_qty: "0.5",
+      symbol: "BTC/USD",
+      limit_price: "0.0",
+      triggers: { reference: "last", price: "0.0", price_type: "static" },
+      conditional: {
+        order_type: "stop-loss-limit",
+        limit_price: "abc",
+        trigger_price: "-1",
+      },
+    });
+
+    expect(errors).toEqual([
+      LIMIT_PRICE_ERROR,
+      "Trigger price must be a positive number",
+      "Conditional limit price must be a positive number",
+      "Conditional trigger price must be a positive number",
+    ]);
+  });
+
+  // A block dragged to the bottom of its cell keeps the unclamped yPosition of
+  // 100 that `calculateYPosition` produces on its 0-100 scale, which decision
+  // D3's undamped maths turns into a 100% offset - a price of zero. The payload
+  // carries it as the string "0.0", which is truthy, so the old presence check
+  // passed it and the order would have gone to Kraken priced at nothing.
+  it("rejects the zero-priced payload a bottom-of-cell drag produces", () => {
+    const grid = gridWith([
+      {
+        col: 0,
+        row: 1,
+        block: blockData({ yPosition: 100, direction: "downside" }),
+      },
+    ]);
+
+    const [order] = mapGridToOrders(grid, {
+      symbol: "BTC/USD",
+      currentPrice: 76_689,
+      quantity: "0.5",
+    });
+
+    expect(order.limit_price).toBe("0.0");
+    expect(validateOrder(order)).toContain(LIMIT_PRICE_ERROR);
+  });
+
+  it("still accepts the prices the grid actually produces", () => {
+    expect(
+      validateOrder({
+        order_type: "stop-loss-limit",
+        side: "buy",
+        order_qty: "0.5",
+        symbol: "BTC/USD",
+        limit_price: "69986.5",
+        triggers: { reference: "last", price: "66098.4", price_type: "static" },
+      }),
+    ).toEqual([]);
   });
 
   it("requires a limit price on every limit-style order type", () => {

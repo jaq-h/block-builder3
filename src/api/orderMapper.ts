@@ -373,6 +373,69 @@ const findLinkCycle = (
 };
 
 /**
+ * Refuse a link graph that is not a flat, one-level set of primary-to-conditional
+ * relationships.
+ *
+ * A Kraken conditional close hangs off exactly one primary order and carries no
+ * conditional of its own, so the only shape the mapper can submit is: each
+ * primary carries at most one conditional, a conditional is not shared between
+ * primaries, and a conditional does not link onward.
+ *
+ * Every other shape is refused rather than guessed at, which is the same ruling
+ * already made for the cycle: the mapper must never quietly invent an answer
+ * when the input is ambiguous. Each of them otherwise produces a wrong order set
+ * with nothing to explain it. A cycle drops every block in it, because each is
+ * somebody's conditional, and Execute sends nothing at all. A chain a -> b -> c
+ * emits one order and drops c, because b is skipped as somebody's conditional so
+ * its own link is never followed while c is skipped for being named as one. A
+ * diamond a -> c, b -> c emits two orders that both carry c, so c's close is
+ * submitted twice.
+ *
+ * Nothing in the app writes `linkedBlockId` today, so none of this is reachable
+ * from the UI. That is the same caveat the cycle guard carries, and it is the
+ * point of both: the construction paths fail loudly here rather than shipping a
+ * silently wrong order set if one of them ever starts writing links.
+ */
+const assertLinksAreFlat = (
+  blocks: UIBlockData[],
+  linkedBlocks: Map<string, UIBlockData>,
+): void => {
+  const cycle = findLinkCycle(blocks, linkedBlocks);
+  if (cycle) {
+    throw new Error(
+      `Conditional order links form a cycle: ${[...cycle, cycle[0]].join(" -> ")}. ` +
+        "A conditional close attaches to exactly one primary order, so this strategy cannot be submitted.",
+    );
+  }
+
+  const primariesByConditional = new Map<string, string[]>();
+  linkedBlocks.forEach((conditional, primaryId) => {
+    const primaries = primariesByConditional.get(conditional.id) ?? [];
+    primaries.push(primaryId);
+    primariesByConditional.set(conditional.id, primaries);
+  });
+
+  primariesByConditional.forEach((primaries, conditionalId) => {
+    if (primaries.length > 1) {
+      throw new Error(
+        `Block "${conditionalId}" is named as the conditional of more than one ` +
+          `primary order (${primaries.join(", ")}). A conditional close attaches ` +
+          "to exactly one primary order, so this strategy cannot be submitted.",
+      );
+    }
+
+    const onward = linkedBlocks.get(conditionalId);
+    if (onward) {
+      throw new Error(
+        `Block "${conditionalId}" is the conditional of "${primaries[0]}" and ` +
+          `itself links to "${onward.id}". A conditional close carries no ` +
+          "conditional of its own, so this strategy cannot be submitted.",
+      );
+    }
+  });
+};
+
+/**
  * Map the entire grid to an array of Kraken OrderParams
  * This is the main function to convert UI state to API-ready orders
  */
@@ -384,21 +447,12 @@ export const mapGridToOrders = (
   const linkedBlocks = findLinkedBlocks(blocks);
   const orders: OrderParams[] = [];
 
-  // A Kraken conditional close hangs off exactly one primary order, so a cycle
-  // of links describes a strategy that cannot be built. Every block in the
-  // cycle is somebody's conditional, so the skip below would drop all of them
-  // and return an empty array - the user presses Execute and nothing is sent,
-  // with nothing to explain it. Refuse the grid instead. Breaking the cycle by
-  // electing one block the primary was the alternative, and it was rejected:
-  // it would send a real pair of orders that the user never asked for, which is
-  // the same silent substitution the rest of this module exists to prevent.
-  const cycle = findLinkCycle(blocks, linkedBlocks);
-  if (cycle) {
-    throw new Error(
-      `Conditional order links form a cycle: ${[...cycle, cycle[0]].join(" -> ")}. ` +
-        "A conditional close attaches to exactly one primary order, so this strategy cannot be submitted.",
-    );
-  }
+  // The skip below drops every block that is somebody's conditional, which is
+  // correct only for a flat one-level link graph. Breaking a bad shape by
+  // electing one block the primary was the alternative, and it was rejected: it
+  // would send a real set of orders that the user never asked for, which is the
+  // same silent substitution the rest of this module exists to prevent.
+  assertLinksAreFlat(blocks, linkedBlocks);
 
   // Process blocks that aren't linked as conditionals to other blocks
   const processedIds = new Set<string>();
@@ -486,6 +540,40 @@ export const validateOrder = (params: OrderParams): string[] => {
       `Trigger configuration is required for ${params.order_type} orders`,
     );
   }
+
+  // Every price the payload carries has to be a positive, finite number. A
+  // presence check is not enough: prices are strings here, so "0.0" is truthy
+  // and an order priced at zero validated cleanly. That became reachable when
+  // decision D3 removed the mapper's 0.1 damping - a yPosition of 100 on a
+  // downside block is a 100% offset, which is a price of 0, where the damped
+  // maths used to land on 45,000.
+  //
+  // This is the last line of defence, not the fix. The real bug is upstream:
+  // `calculateYPosition` works on a 0-100 scale while the slider and the axis
+  // labels use SCALE_CONFIG.MAX_PERCENT = 50, and the drop handler writes the
+  // unclamped result straight into the block. That lives in the drag layer and
+  // is owned elsewhere.
+  const requirePositivePrice = (label: string, value?: string): void => {
+    if (value === undefined) {
+      return;
+    }
+
+    const price = Number(value);
+    if (!Number.isFinite(price) || price <= 0) {
+      errors.push(`${label} must be a positive number`);
+    }
+  };
+
+  requirePositivePrice("Limit price", params.limit_price);
+  requirePositivePrice("Trigger price", params.triggers?.price);
+  requirePositivePrice(
+    "Conditional limit price",
+    params.conditional?.limit_price,
+  );
+  requirePositivePrice(
+    "Conditional trigger price",
+    params.conditional?.trigger_price,
+  );
 
   return errors;
 };
