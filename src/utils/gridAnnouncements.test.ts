@@ -383,3 +383,23 @@ describe("describeOutcome, the pattern it is speaking about", () => {
     ).toBe("Exit column, row 1, ready to place.");
   });
 });
+
+describe("describeOutcome, a market change", () => {
+  // The `<select>` speaks its own new value, so this sentence is deliberately
+  // not about the control. It is about the consequence, which is invisible
+  // without sight of the grid: every price chip on screen just changed.
+  it("says what changed about the grid, not what the control now reads", () => {
+    expect(say({ kind: "marketChanged", name: "Solana", symbol: "SOL/USD" })).toBe(
+      "Market changed to Solana. Every block on the grid is now priced from the SOL/USD market price.",
+    );
+  });
+
+  // It lives in this module, and only this module, for the same reason every
+  // other sentence does: a second announcer next to the selector is exactly the
+  // shape the owner rule exists to prevent.
+  it("is one of the outcomes the announcer owns, not a message a caller wrote", () => {
+    expect(
+      say({ kind: "marketChanged", name: "Arbitrum", symbol: "ARB/USD" }),
+    ).toMatch(/^Market changed to Arbitrum\./);
+  });
+});

@@ -8,6 +8,7 @@ import {
   UtilityButtons,
   ExecuteTradePanel,
 } from "./components";
+import MarketSelector from "../../common/MarketSelector";
 import { container } from "./strategyAssembly.styles";
 
 interface StrategyAssemblyProps {
@@ -68,8 +69,9 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
   onToggleSimulationMode,
   isEditMode,
 }) => {
+  // No symbol here any more: `useKrakenAPI` follows the selected market. Naming
+  // one would let this panel price a pair the selector is not showing.
   const { currentPrice, tickerError } = useKrakenAPI({
-    symbol: "BTC/USD",
     autoConnect: true,
     pollInterval: 30000,
   });
@@ -78,6 +80,10 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
 
   return (
     <div className={container}>
+      {/* Placed above the pattern row rather than inside it: the pattern row is
+          a `role="group"` of pattern buttons, and the panel chrome around it
+          belongs to another lane. This adds a sibling and rebuilds nothing. */}
+      <MarketSelector currentPrice={currentPrice} priceError={tickerError} />
       <PatternSelector />
       <GridArea currentPrice={currentPrice} tickerError={tickerError} />
       <UtilityButtons

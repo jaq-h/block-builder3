@@ -23,3 +23,9 @@ export type {
 // Reducer exports
 export { ordersReducer, createInitialState } from "./ordersReducer";
 export type { OrdersAction } from "./ordersReducer";
+
+// Market – the selected trading pair, app-wide
+export { MarketProvider } from "./MarketProvider";
+export { useMarket } from "./useMarket";
+export { MarketContext } from "./MarketContext";
+export type { MarketContextValue } from "./MarketContext";

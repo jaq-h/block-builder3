@@ -13,6 +13,8 @@ import type { OrderConfig } from "../../../types/grid";
 import { useKrakenAPI } from "../../../hooks/useKrakenAPI";
 import { useOHLCData, TIMEFRAME_MAP } from "../../../hooks/useOHLCData";
 import { useLightweightChart } from "./useLightweightChart";
+import { useMarket } from "../../../store/useMarket";
+import { formatMarketPrice } from "../../../utils/marketFormat";
 import { useIndicatorSeries } from "./useIndicatorSeries";
 import { OVERLAY_INDICATORS } from "./indicators";
 import { withLatestCandle } from "@utils/liveCandles";
@@ -54,8 +56,11 @@ interface OrderChartProps {
 // =============================================================================
 
 const OrderChart: FC<OrderChartProps> = ({ orders }) => {
+  // The selected market is supplied here, at the boundary, and used for the
+  // feed, the candles and the header. Everything below is unchanged.
+  const { market, activeMarket } = useMarket();
+
   const { currentPrice, tickerError, publicStatus } = useKrakenAPI({
-    symbol: "BTC/USD",
     autoConnect: true,
     pollInterval: 30000,
   });
@@ -71,7 +76,7 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const { chart, candleSeries } = useLightweightChart(chartContainerRef);
   const { candles, latestCandle, isLoading } = useOHLCData({
-    symbol: "BTC/USD",
+    symbol: market.symbol,
     interval,
   });
 
@@ -165,8 +170,12 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     debouncedAutoScale();
   }, [candleSeries, orders, currentPrice, priceScale, debouncedAutoScale]);
 
+  // Formatted at the pair's own precision, like every other price on screen. A
+  // flat two decimals reads "$0.34" for an ARB price the grid renders as
+  // "$0.3421", and the header and the grid disagreeing about the same number is
+  // the drift decision D3 exists to prevent.
   const priceLabel = currentPrice
-    ? `$${currentPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    ? formatMarketPrice(currentPrice, activeMarket)
     : tickerError
       ? "Price Error"
       : "Loading…";
@@ -181,7 +190,9 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       <div className={chartHeader}>
         <div className={chartHeaderPrimaryRow}>
           <div className="flex items-center gap-3">
-            <span className={panelHeaderTitle}>BTC / USD</span>
+            <span className={panelHeaderTitle}>
+              {market.base} / {market.quote}
+            </span>
             <span className="text-[11px] text-text-muted">{priceLabel}</span>
             {/* The manager gives up reconnecting after a fixed number of tries.
                 Without this the app just keeps showing the last price it saw. */}

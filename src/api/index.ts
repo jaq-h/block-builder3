@@ -4,7 +4,7 @@
  */
 
 // Configuration
-export { getKrakenConfig, DEFAULT_SYMBOL, type KrakenConfig } from './config';
+export { getKrakenConfig, type KrakenConfig } from './config';
 
 // Trading mode - the server's answer to "may this deployment trade for real?"
 export {
@@ -30,9 +30,14 @@ export {
   parseTickerData,
   convertToKrakenPair,
   convertFromKrakenPair,
-  formatPrice,
   formatPercentChange,
 } from './krakenRest';
+
+// Asset metadata - Kraken's own per-pair precision, tick and minimum-order rules
+export {
+  fetchMarketPrecisions,
+  parseAssetPairs,
+} from './assetMetadata';
 
 // WebSocket
 export {
@@ -60,7 +65,6 @@ export {
   findLinkedBlocks,
   blockDataToUIBlock,
   calculateBlockPrice,
-  formatPriceForAPI,
   validateOrder,
   createOrderPreview,
 } from './orderMapper';

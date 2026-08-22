@@ -27,7 +27,10 @@ const config: KrakenConfig = {
  */
 export const getKrakenConfig = (): KrakenConfig => config;
 
-/**
- * Default trading pair
- */
-export const DEFAULT_SYMBOL = "BTC/USD";
+// There is deliberately no DEFAULT_SYMBOL here any more. A module-level default
+// pair is what let a symbol be *omitted* rather than passed, and an omitted
+// symbol is how `buildTrigger` came to format a trigger price for BTC inside an
+// ETH payload. The market the user chose is now carried explicitly to every
+// caller that needs it; the one place a pair is chosen without the user
+// choosing it is `DEFAULT_MARKET` in `src/data/markets.ts`, which seeds the
+// selector and is read nowhere else.

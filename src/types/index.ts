@@ -21,6 +21,9 @@ export type {
 
 export { COLUMN_CONFIGS, PATTERN_CONFIGS } from "./grid";
 
+// Market types
+export type { Market, MarketPrecision, ActiveMarket } from "./markets";
+
 // Active orders types
 export type {
   OrderStatus,

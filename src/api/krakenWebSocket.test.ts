@@ -369,3 +369,114 @@ describe("KrakenWebSocketManager - teardown", () => {
     expect(FakeWebSocket.instances).toHaveLength(2);
   });
 });
+
+// =============================================================================
+// FOLLOWING THE SELECTED MARKET
+// =============================================================================
+//
+// Nothing unsubscribed from a public channel before the app could trade more
+// than one market, so nothing here could go wrong. With a market selector,
+// leaving the previous pair's channel running means the socket keeps delivering
+// ticks for a pair nobody is looking at - and those ticks reach the same state
+// the grid prices its blocks from.
+
+describe("KrakenWebSocketManager - switching market", () => {
+  /** Every `unsubscribe` frame a socket sent, as `channel:symbol`. */
+  const unsubscribedChannels = (socket: FakeWebSocket): string[] =>
+    socket.sentMessages
+      .filter((m) => m.method === "unsubscribe")
+      .map((m) => {
+        const params = m.params as { channel: string; symbol: string[] };
+        return `${params.channel}:${params.symbol[0]}`;
+      });
+
+  const openWith = async (symbol: string) => {
+    const subscribing = manager.subscribeTicker(symbol);
+    await flush();
+    FakeWebSocket.last.openConnection();
+    await subscribing;
+    return FakeWebSocket.last;
+  };
+
+  it("subscribes the new market and unsubscribes the old one", async () => {
+    const socket = await openWith("BTC/USD");
+
+    manager.unsubscribeTicker("BTC/USD");
+    await manager.subscribeTicker("ETH/USD");
+
+    expect(unsubscribedChannels(socket)).toEqual(["ticker:BTC/USD"]);
+    expect(subscribedChannels(socket)).toEqual([
+      "ticker:BTC/USD",
+      "ticker:ETH/USD",
+    ]);
+  });
+
+  // The channel is dropped from the replay set as well as off the wire.
+  // Otherwise the previous market comes back by itself on the next reconnect,
+  // which is the same silence-and-then-surprise the replay was added to fix.
+  it("does not replay a market it has unsubscribed from", async () => {
+    const original = await openWith("BTC/USD");
+
+    manager.unsubscribeTicker("BTC/USD");
+    await manager.subscribeTicker("ETH/USD");
+
+    original.dropConnection();
+    await vi.advanceTimersByTimeAsync(60000);
+    const reopened = FakeWebSocket.last;
+    reopened.openConnection();
+    await flush();
+
+    expect(subscribedChannels(reopened)).toEqual(["ticker:ETH/USD"]);
+  });
+
+  // Two components call `useKrakenAPI`, and both ask for the same ticker. An
+  // unrefcounted unsubscribe from either would take the feed away from the
+  // other - the chart going quiet because the builder switched market, or the
+  // other way round.
+  it("keeps a channel alive while another consumer still wants it", async () => {
+    const socket = await openWith("BTC/USD");
+    await manager.subscribeTicker("BTC/USD"); // the second consumer
+
+    manager.unsubscribeTicker("BTC/USD"); // the first lets go
+
+    expect(unsubscribedChannels(socket)).toEqual([]);
+
+    manager.unsubscribeTicker("BTC/USD"); // and now the second
+
+    expect(unsubscribedChannels(socket)).toEqual(["ticker:BTC/USD"]);
+  });
+
+  // A repeat subscribe is still a no-op on the wire; only the count moves.
+  it("does not re-send a subscribe frame for a channel it already holds", async () => {
+    const socket = await openWith("BTC/USD");
+    await manager.subscribeTicker("BTC/USD");
+
+    expect(subscribedChannels(socket)).toEqual(["ticker:BTC/USD"]);
+  });
+
+  it("ignores an unsubscribe for a channel nobody ever asked for", async () => {
+    const socket = await openWith("BTC/USD");
+
+    manager.unsubscribeTicker("SOL/USD");
+
+    expect(unsubscribedChannels(socket)).toEqual([]);
+    expect(subscribedChannels(socket)).toEqual(["ticker:BTC/USD"]);
+  });
+
+  // OHLC follows the market too, and it is keyed on the interval as well, so
+  // the two must not collide: releasing one candle channel cannot silence
+  // another.
+  it("refcounts OHLC channels per symbol and interval", async () => {
+    const socket = await openWith("BTC/USD");
+    await manager.subscribeOHLC("ETH/USD", 60);
+    await manager.subscribeOHLC("ETH/USD", 60);
+    await manager.subscribeOHLC("ETH/USD", 240);
+
+    manager.unsubscribeOHLC("ETH/USD", 60);
+    expect(unsubscribedChannels(socket)).toEqual([]);
+
+    manager.unsubscribeOHLC("ETH/USD", 60);
+    manager.unsubscribeOHLC("ETH/USD", 240);
+    expect(unsubscribedChannels(socket)).toEqual(["ohlc:ETH/USD", "ohlc:ETH/USD"]);
+  });
+});

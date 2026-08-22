@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import StrategyAssembly from "./components/widgets/strategyAssembly/strategyAssembly";
 import { ActiveOrders } from "./components/widgets/activeOrders";
 import DragOverlay from "./components/common/DragOverlay";
-import { OrdersStoreProvider, useOrdersStore } from "./store";
+import { MarketProvider, OrdersStoreProvider, useOrdersStore } from "./store";
 import { useLiveOrdersCount } from "./store";
 import { OrderChart } from "./components/widgets/orderChart";
 import { useTradeExecution } from "./hooks";
@@ -225,12 +225,18 @@ function AppInner() {
 
 function App() {
   return (
-    <OrdersStoreProvider>
-      <AppInner />
-      {/* Rendered via portal into #drag-overlay - completely outside the
-          React tree so drag-position updates never cascade through the grid */}
-      <DragOverlay />
-    </OrdersStoreProvider>
+    // One selected market for the whole tree. It wraps the orders store because
+    // everything that renders a price - the builder, the chart, the active
+    // orders - has to agree on which pair it is showing, and the only way to
+    // guarantee that is for there to be exactly one answer.
+    <MarketProvider>
+      <OrdersStoreProvider>
+        <AppInner />
+        {/* Rendered via portal into #drag-overlay - completely outside the
+            React tree so drag-position updates never cascade through the grid */}
+        <DragOverlay />
+      </OrdersStoreProvider>
+    </MarketProvider>
   );
 }
 

@@ -53,6 +53,11 @@ pinned were fixed. That is the convention when you fix such a bug: flip the expe
 the correct behaviour and keep a `FORMERLY A CHARACTERISATION OF A KNOWN BUG` note
 recording the wrong values, rather than deleting the test or quietly loosening it.
 
+`src/test/marketFixtures.ts` holds Kraken's real `MarketPrecision` records for the pairs on
+offer. Use them rather than inventing one: the point of the set is the spread - BTC prices to
+one decimal and ARB to four, BTC's minimum order is 0.00005 and ARB's is 60 - and a test that
+only ever sees one pair cannot catch a formatter that has quietly defaulted to another's.
+
 `src/test/pointerCapture.ts` installs a tracking `setPointerCapture` on `Element.prototype`:
 jsdom ships `PointerEvent` but not the capture methods, so without it the assertion that a
 drag survives a release outside the window has nothing to assert against.
@@ -328,6 +333,39 @@ bar.
 `display: none`. Using a JSX element variable in two branches mounts two
 independent components, and crossing the breakpoint then swaps in an empty one -
 silent data loss. `src/App.test.tsx` fails if that returns.
+
+## Markets
+
+The app trades a **selected** pair, not a fixed one. `src/data/markets.ts` is the catalogue
+(BTC, ETH, SOL, ARB, OP - all USD-quoted) and the only place a pair is chosen without the
+user choosing it, through `DEFAULT_MARKET`. `MarketProvider` / `useMarket` in `src/store/`
+hold the selection for the whole tree; `MarketSelector` is the control.
+
+Three rules, and each replaced a defect that was invisible while the app was BTC-only:
+
+- **No module may default a symbol.** There is no `DEFAULT_SYMBOL` and no
+  `symbol = <something>` parameter default anywhere. An omitted symbol is how `buildTrigger`
+  came to format a trigger price for BTC inside an ETH payload, so the market is passed
+  explicitly or not at all. `useKrakenAPI` takes no `symbol` option at all: it reads the
+  selection, so no caller can price a pair the selector is not showing.
+- **Per-pair rules come from Kraken, never from a guess.** Price decimals, tick size, lot
+  decimals and the minimum order all differ per pair - one decimal for BTC against four for
+  ARB, a 0.00005 minimum against 60 - and none of them is derivable from a symbol string or
+  from the magnitude of a price. `src/api/assetMetadata.ts` reads them from
+  `/0/public/AssetPairs` into a `MarketPrecision`, and `src/utils/marketFormat.ts` is the one
+  owner of every price and quantity format, for the payload and the screen alike. There is
+  **no fallback precision**: without the metadata `mapGridToOrders` refuses to build a payload
+  and says so, because an order rejected by Kraken for bad precision reaches the user as an
+  order that silently never appeared.
+- **The ticker channel follows the selection and releases the previous one.** The effect in
+  `useKrakenAPI` owns it; `connect()` deliberately does not subscribe, because a second
+  subscribe takes a reference nothing releases. `KrakenWebSocketManager` refcounts public
+  subscriptions - two components call `useKrakenAPI` and both want the same ticker, so an
+  unrefcounted unsubscribe from either silences the other.
+
+`ParsedTickerData` is held tagged with the symbol it describes and a frame naming a different
+market is dropped, so the previous pair's price can never be what a block is priced from
+during a switch.
 
 ## Prices and order types
 

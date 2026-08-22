@@ -1,4 +1,4 @@
-import { useRef, type FC, type PointerEvent } from "react";
+import { useEffect, useRef, type FC, type PointerEvent } from "react";
 import {
   isCellValidForPlacement,
   getAlignment,
@@ -31,6 +31,7 @@ import { useGridData } from "../contexts/GridDataContext";
 import { useDrag } from "../contexts/DragContext";
 import { useHover } from "../contexts/HoverContext";
 import { useStatic } from "../contexts/StaticContext";
+import { useMarket } from "../../../../store/useMarket";
 import {
   contentWrapper,
   contentRow,
@@ -293,6 +294,35 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   // Every sentence this grid speaks goes through here, and `report` is the only
   // way to reach it: see `utils/gridAnnouncements.ts` for what that buys.
   const announcer = useGridAnnouncer(strategyPattern);
+
+  // ─── Market changes ──────────────────────────────────────────────
+  //
+  // Switching market re-prices every block on the grid, and nothing says so to
+  // a screen-reader user: the `<select>` speaks its own new value, which is a
+  // fact about the control rather than about the grid. So the grid's own
+  // announcer says it, from here rather than from the selector, because it is
+  // the single owner of everything the grid speaks - the selector has no
+  // `announce` to reach for and that is deliberate.
+  //
+  // Reported from an effect, after the render that actually re-priced the
+  // cells, so the sentence is a fact rather than an intention. The ref starts at
+  // the current market so the first render says nothing: the app has not
+  // "changed" to the market it opened on.
+  const { market } = useMarket();
+  const announcedMarketRef = useRef(market.symbol);
+
+  useEffect(() => {
+    if (announcedMarketRef.current === market.symbol) return;
+    announcedMarketRef.current = market.symbol;
+    announcer.report({
+      kind: "marketChanged",
+      name: market.name,
+      symbol: market.symbol,
+    });
+    // `announcer` is re-created every render; listing it would re-announce on
+    // every one of them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market.symbol, market.name]);
 
   const command = useBlockCommand({
     grid,

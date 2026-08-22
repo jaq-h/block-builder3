@@ -14,6 +14,7 @@ import { useGridData } from "@widgets/strategyAssembly/contexts";
 import { mapGridToOrders } from "@api/orderMapper";
 import type { OrderParams } from "@api/types";
 import type { GridData, OrderConfig } from "@/types/grid";
+import { BTC_USD } from "@/test/marketFixtures";
 
 // =============================================================================
 // HARNESS
@@ -54,7 +55,7 @@ const rehydrate = (config: OrderConfig): GridData => {
 
 const ordersFrom = (config: OrderConfig): OrderParams[] =>
   mapGridToOrders(rehydrate(config), {
-    symbol: "BTC/USD",
+    market: BTC_USD,
     currentPrice: MARKET_PRICE,
     quantity: "0.5",
   });

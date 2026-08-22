@@ -47,6 +47,14 @@ export {
 // Price formula shared by the grid display and the order mapper
 export { priceAtOffset } from "./price";
 
+// Per-pair formatting - the one owner of "how many decimals does this pair use"
+export {
+  roundToTick,
+  formatPriceForAPI,
+  formatQuantityForAPI,
+  formatMarketPrice,
+} from "./marketFormat";
+
 // Block factory utilities
 export {
   createBlocksFromOrderType,

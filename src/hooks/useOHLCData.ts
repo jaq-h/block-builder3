@@ -3,7 +3,7 @@
  * Uses REST API for initial historical backfill, then WebSocket for real-time updates
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   getWebSocketManager,
   convertToKrakenPair,
@@ -113,7 +113,6 @@ export const useOHLCData = ({
 }: UseOHLCDataOptions): UseOHLCDataReturn => {
   const requestKey = `${symbol}:${interval}`;
   const [state, setState] = useState<OHLCState>(INITIAL_STATE);
-  const prevIntervalRef = useRef<number | null>(null);
 
   // Until the fetch for this exact symbol/interval resolves, we are loading and
   // hold nothing for it.
@@ -202,18 +201,18 @@ export const useOHLCData = ({
   useEffect(() => {
     const manager = getWebSocketManager();
 
-    // Unsubscribe from previous interval if it changed
-    if (
-      prevIntervalRef.current !== null &&
-      prevIntervalRef.current !== interval
-    ) {
-      manager.unsubscribeOHLC(symbol, prevIntervalRef.current);
-    }
-    prevIntervalRef.current = interval;
-
     manager.on("ohlc", handleOHLC);
     manager.subscribeOHLC(symbol, interval).catch(console.error);
 
+    // The cleanup releases exactly the channel this run subscribed, so both a
+    // timeframe change and a market change are already covered: React tears
+    // this effect down with the old `symbol` and `interval` still in scope
+    // before running it again with the new ones. A separate "unsubscribe the
+    // previous interval" branch used to sit above, tracking the last interval
+    // in a ref; it fired a *second* release for a channel the cleanup had just
+    // let go of. That was inert while nothing counted references, and is not
+    // once the manager does - it would take a channel away from a consumer
+    // still holding it.
     return () => {
       manager.off("ohlc", handleOHLC);
       manager.unsubscribeOHLC(symbol, interval);

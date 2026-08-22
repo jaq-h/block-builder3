@@ -127,7 +127,19 @@ export type GridOutcome =
       source: CommandSource;
       reason: DragEndReason;
       releasedCarry?: boolean;
-    };
+    }
+  /**
+   * The user picked a different market, and every block on the grid is now
+   * priced against it.
+   *
+   * The `<select>` speaks its own new value, so this is not that. It is the
+   * consequence, which is invisible without sight of the grid: every price chip
+   * on screen changed. It lives here rather than next to the selector for the
+   * reason the whole module exists - one owner for every sentence the grid
+   * speaks - and it is reported by `GridArea` once the grid has actually been
+   * handed the new market, so it states a fact rather than an intention.
+   */
+  | { kind: "marketChanged"; name: string; symbol: string };
 
 // =============================================================================
 // WORDING
@@ -304,5 +316,8 @@ export const describeOutcome = (
       return outcome.reason === "offGrid"
         ? `Released outside the grid. ${wentNowhere(outcome.source, pattern, outcome.releasedCarry)}`
         : `Drag cancelled. ${wentNowhere(outcome.source, pattern, outcome.releasedCarry)}`;
+
+    case "marketChanged":
+      return `Market changed to ${outcome.name}. Every block on the grid is now priced from the ${outcome.symbol} market price.`;
   }
 };

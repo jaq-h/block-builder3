@@ -16,8 +16,12 @@ import type {
   UIBlockData,
   OrderBuildContext,
 } from "./types";
-import { DEFAULT_SYMBOL } from "./config";
 import { priceAtOffset } from "../utils/price";
+import {
+  formatPriceForAPI,
+  formatQuantityForAPI,
+} from "../utils/marketFormat";
+import type { MarketPrecision } from "../types/markets";
 
 // A Map, not an object literal: an object literal also resolves inherited
 // Object.prototype members, so a type of "toString" or "constructor" would look
@@ -124,31 +128,14 @@ export const calculateBlockPrice = (
     block.direction === "downside",
   );
 
-/**
- * Format price for Kraken API (string with appropriate precision)
- */
-export const formatPriceForAPI = (
-  price: number,
-  symbol: string = DEFAULT_SYMBOL,
-): string => {
-  // Precision follows the BASE asset, not any appearance of "BTC" in the pair.
-  // `symbol.includes("BTC")` also matches a BTC-QUOTED pair such as ETH/BTC,
-  // whose prices are fractions - formatting 0.034512 to one decimal sends the
-  // order at "0.0".
-  const [base] = symbol.split("/");
-  if (base === "BTC" || base === "XBT") {
-    return price.toFixed(1); // BTC pairs quote to one decimal place
-  }
-
-  let precision = 2;
-  if (price < 1) {
-    precision = 6;
-  } else if (price < 100) {
-    precision = 4;
-  }
-
-  return price.toFixed(precision);
-};
+// Price and quantity formatting live in `src/utils/marketFormat.ts`, which is
+// handed Kraken's own `MarketPrecision` for the pair. They used to be here, and
+// they chose a precision from the base asset plus the *magnitude* of the number
+// - 6 decimals below 1, 4 below 100, 2 above. Magnitude is not precision:
+// ETH/USD takes 2 decimals at every price, so a $12.34 ETH limit price was
+// formatted to 4 and rejected by the exchange. Every price in a payload now
+// goes through the same record, so no two fields can come out at different
+// precisions.
 
 /**
  * Convert a single BlockData to UIBlockData for easier processing
@@ -206,7 +193,7 @@ const assertSingleAxis = (block: UIBlockData): void => {
 const buildTrigger = (
   block: UIBlockData,
   currentPrice: number,
-  symbol: string,
+  market: MarketPrecision,
   triggerRef: TriggerReference = "last",
 ): OrderTrigger | undefined => {
   if (!block.axes.includes("trigger")) {
@@ -215,10 +202,11 @@ const buildTrigger = (
 
   return {
     reference: triggerRef,
-    // The symbol has to be passed in. Left to the DEFAULT_SYMBOL default, the
-    // trigger price and the limit price in the same payload come out at
-    // different precisions on any non-BTC pair.
-    price: formatPriceForAPI(calculateBlockPrice(block, currentPrice), symbol),
+    // The pair's precision has to be passed in. This used to take a symbol with
+    // a default, so it was called without one and formatted every trigger price
+    // for BTC - the trigger price and the limit price in the same payload then
+    // came out at different precisions on any non-BTC pair.
+    price: formatPriceForAPI(calculateBlockPrice(block, currentPrice), market),
     price_type: "static",
   };
 };
@@ -229,7 +217,7 @@ const buildTrigger = (
 const buildConditional = (
   linkedBlock: UIBlockData | undefined,
   currentPrice: number,
-  symbol: string,
+  market: MarketPrecision,
 ): ConditionalOrder | undefined => {
   if (!linkedBlock) {
     return undefined;
@@ -259,7 +247,7 @@ const buildConditional = (
 
   const price = formatPriceForAPI(
     calculateBlockPrice(linkedBlock, currentPrice),
-    symbol,
+    market,
   );
 
   // Add limit price if the order type uses it
@@ -293,22 +281,27 @@ export const mapBlockToOrderParams = (
   const params: OrderParams = {
     order_type: orderType,
     side,
-    order_qty: context.quantity,
-    symbol: context.symbol,
+    // `lot_decimals` differs per pair too - 8 for BTC, 5 for ARB - and a
+    // quantity carrying more decimals than the pair accepts is rejected exactly
+    // as silently as a bad price. The quantity used to be copied through
+    // unformatted, which is a single-market assumption that happened to hold
+    // only because BTC's 8 decimals are the most permissive of the set.
+    order_qty: formatQuantityForAPI(context.quantity, context.market),
+    symbol: context.market.symbol,
   };
 
   // Add limit price for limit-based orders
   if (block.axes.includes("limit")) {
     params.limit_price = formatPriceForAPI(
       calculateBlockPrice(block, context.currentPrice),
-      context.symbol,
+      context.market,
     );
     params.limit_price_type = "static";
   }
 
   // Add trigger for trigger-based orders
   if (block.axes.includes("trigger")) {
-    params.triggers = buildTrigger(block, context.currentPrice, context.symbol);
+    params.triggers = buildTrigger(block, context.currentPrice, context.market);
   }
 
   // Add conditional order if there's a linked block
@@ -316,7 +309,7 @@ export const mapBlockToOrderParams = (
     params.conditional = buildConditional(
       linkedBlock,
       context.currentPrice,
-      context.symbol,
+      context.market,
     );
   }
 
@@ -566,12 +559,29 @@ export const mapGridToOrders = (
 /**
  * Validate an order before submission
  * Returns an array of validation errors (empty if valid)
+ *
+ * `market` is optional because this is an exported entry point and a caller may
+ * legitimately hold a payload without the pair's metadata. When it is supplied
+ * the per-pair rules are checked too, and a caller building an order for real
+ * always has it - `mapGridToOrders` cannot run without one.
  */
-export const validateOrder = (params: OrderParams): string[] => {
+export const validateOrder = (
+  params: OrderParams,
+  market?: MarketPrecision,
+): string[] => {
   const errors: string[] = [];
 
   if (!params.symbol) {
     errors.push("Symbol is required");
+  }
+
+  // A record describing a different pair is worse than none: it would apply
+  // ARB's 60-token minimum to a BTC order. Say so rather than check the wrong
+  // rules or quietly skip the check.
+  if (market && market.symbol !== params.symbol) {
+    errors.push(
+      `Order is for ${params.symbol} but was checked against ${market.symbol} rules`,
+    );
   }
 
   // `parseFloat` used to do this, which let "abc" through: it parses to NaN,
@@ -689,6 +699,27 @@ export const validateOrder = (params: OrderParams): string[] => {
     params.conditional?.trigger_price,
     params.conditional?.trigger_price_type,
   );
+
+  // The smallest order Kraken accepts differs by three orders of magnitude
+  // across the pairs this app offers - 0.00005 BTC against 60 ARB - so a
+  // quantity that is a perfectly good BTC order is refused outright on ARB.
+  // Kraken refuses it after submission, which reaches the user as an order that
+  // simply never appeared, so it is caught here instead.
+  //
+  // `costMin` is recorded on the record but deliberately not checked: cost is
+  // quantity x price and a market order carries no price, so enforcing it would
+  // reject some order types and wave the others through within one strategy.
+  if (
+    market &&
+    market.symbol === params.symbol &&
+    Number.isFinite(quantity) &&
+    quantity > 0 &&
+    quantity < market.orderMin
+  ) {
+    errors.push(
+      `Order quantity ${params.order_qty} is below the ${params.symbol} minimum of ${market.orderMin}`,
+    );
+  }
 
   return errors;
 };

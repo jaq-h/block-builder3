@@ -22,6 +22,10 @@ import {
   installPointerCapture,
   type PointerCaptureTracker,
 } from "@/test/pointerCapture";
+import { MarketContext } from "@store/MarketContext";
+import { MARKETS, findMarket } from "@data/markets";
+import { ARB_USD, BTC_USD } from "@/test/marketFixtures";
+import type { Market, MarketPrecision } from "@/types/markets";
 
 // =============================================================================
 // HARNESS
@@ -93,7 +97,17 @@ const Harness: FC<{
    * this is how a carry comes to outlive the block it names.
    */
   gridReplacement?: GridData;
-}> = ({ initialGrid, pattern = "conditional", gridReplacement }) => {
+  /**
+   * Renders a control that selects a different market, the way the market
+   * selector does. Switching re-prices every block on the grid, so the grid has
+   * to say so and has to redraw its chips at the new pair's precision.
+   */
+  switchTo?: { market: Market; precision: MarketPrecision };
+}> = ({ initialGrid, pattern = "conditional", gridReplacement, switchTo }) => {
+  const [selected, setSelected] = useState<{
+    market: Market;
+    precision: MarketPrecision;
+  }>({ market: findMarket("BTC/USD")!, precision: BTC_USD });
   const [grid, setGrid] = useState<GridData>(initialGrid);
   const [orderConfig, setOrderConfig] = useState<OrderConfig>({});
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -110,6 +124,19 @@ const Harness: FC<{
   const blockCounterRef = useRef(0);
 
   return (
+    <MarketContext.Provider
+      value={{
+        market: selected.market,
+        precision: selected.precision,
+        activeMarket: {
+          market: selected.market,
+          precision: selected.precision,
+        },
+        markets: MARKETS,
+        selectMarket: vi.fn(),
+        metadataError: null,
+      }}
+    >
     <GridDataContext.Provider
       value={{
         grid,
@@ -153,10 +180,16 @@ const Harness: FC<{
                 replace the grid
               </button>
             )}
+            {switchTo && (
+              <button onClick={() => setSelected(switchTo)}>
+                switch market
+              </button>
+            )}
           </StaticContext.Provider>
         </HoverContext.Provider>
       </DragContext.Provider>
     </GridDataContext.Provider>
+    </MarketContext.Provider>
   );
 };
 
@@ -214,10 +247,14 @@ const renderPlacedLimit = (yPosition: number) => {
 };
 
 /** The price the cell renders for a Limit on its descending scale. */
+// The harness renders on BTC/USD, and Kraken prices that pair to ONE decimal
+// (`pair_decimals: 1`), so the grid draws "$75,000.0" rather than the flat two
+// decimals it used to draw for every market. That is the point: the price on
+// screen is at the precision the payload is sent at.
 const limitPrice = (yPosition: number) =>
   `$${(MARKET_PRICE * (1 - yPosition / 100)).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: BTC_USD.priceDecimals,
+    maximumFractionDigits: BTC_USD.priceDecimals,
   })}`;
 
 /** The block's centre, derived from the percentage the grid now holds. */
@@ -983,10 +1020,14 @@ const renderMixedCell = (limitY: number, stopLossY: number) => {
 };
 
 /** The price the cell renders next to the Stop Loss block. */
+// The harness renders on BTC/USD, and Kraken prices that pair to ONE decimal
+// (`pair_decimals: 1`), so the grid draws "$75,000.0" rather than the flat two
+// decimals it used to draw for every market. That is the point: the price on
+// screen is at the precision the payload is sent at.
 const stopLossPrice = (yPosition: number) =>
   `$${(MARKET_PRICE * (1 - yPosition / 100)).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: BTC_USD.priceDecimals,
+    maximumFractionDigits: BTC_USD.priceDecimals,
   })}`;
 
 describe("GridArea, a bulk cell holding two order families", () => {
@@ -1074,10 +1115,14 @@ describe("GridArea, a bulk cell holding two order families", () => {
 // dragged is dead only for the mouse and the finger.
 
 /** The price the cell renders for a block on its ascending scale. */
+// The harness renders on BTC/USD, and Kraken prices that pair to ONE decimal
+// (`pair_decimals: 1`), so the grid draws "$75,000.0" rather than the flat two
+// decimals it used to draw for every market. That is the point: the price on
+// screen is at the precision the payload is sent at.
 const upsidePrice = (yPosition: number) =>
   `$${(MARKET_PRICE * (1 + yPosition / 100)).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: BTC_USD.priceDecimals,
+    maximumFractionDigits: BTC_USD.priceDecimals,
   })}`;
 
 describe("GridArea, a block drawn in a column its axis field does not name", () => {
@@ -1122,5 +1167,67 @@ describe("GridArea, a block drawn in a column its axis field does not name", () 
     ).toBeCloseTo(centre + 30, 1);
     expect(screen.getByText(`+${after.toFixed(2)}%`)).toBeInTheDocument();
     expect(screen.getByText(upsidePrice(after))).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// FOLLOWING THE SELECTED MARKET
+// =============================================================================
+//
+// Switching market changes two things about the grid that no other input does:
+// every price chip is redrawn at a different precision, and every one of them
+// now means a price in a different market. The first is visible; the second is
+// not, which is why it is announced.
+
+describe("GridArea, when the market changes", () => {
+  const switchMarket = () => {
+    fireEvent.click(screen.getByRole("button", { name: "switch market" }));
+  };
+
+  const arb = { market: findMarket("ARB/USD")!, precision: ARB_USD };
+
+  it("redraws every price chip at the new pair's precision", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedLimit(20));
+    render(<Harness initialGrid={grid} switchTo={arb} />);
+
+    // BTC/USD: one decimal, so 20% below a $100,000 market reads $80,000.0.
+    expect(screen.getByText("$80,000.0")).toBeInTheDocument();
+
+    switchMarket();
+
+    // ARB/USD: four decimals. The market price the harness supplies has not
+    // changed - only the pair's rules for writing one down have - which is
+    // exactly what isolates the formatting from the arithmetic.
+    expect(screen.queryByText("$80,000.0")).not.toBeInTheDocument();
+    expect(screen.getByText("$80,000.0000")).toBeInTheDocument();
+  });
+
+  // The `<select>` speaks its own new value; nothing speaks the consequence.
+  // It goes through the grid's own announcer rather than a second one next to
+  // the selector - see `utils/gridAnnouncements.ts` for why that matters.
+  it("announces that the grid has been re-priced", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedLimit(20));
+    render(<Harness initialGrid={grid} switchTo={arb} />);
+
+    switchMarket();
+
+    expect(
+      screen.getByText(
+        "Market changed to Arbitrum. Every block on the grid is now priced from the ARB/USD market price.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // The app has not "changed" to the market it opened on, so the first render
+  // must say nothing - otherwise a screen reader is told about a change the
+  // user did not make, every time the panel mounts.
+  it("says nothing about the market it started on", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedLimit(20));
+    render(<Harness initialGrid={grid} switchTo={arb} />);
+
+    expect(screen.queryByText(/^Market changed to/)).not.toBeInTheDocument();
   });
 });

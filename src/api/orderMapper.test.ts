@@ -6,7 +6,6 @@ import {
   createOrderPreview,
   extractBlocksFromGrid,
   findLinkedBlocks,
-  formatPriceForAPI,
   mapBlockToOrderParams,
   mapGridToOrders,
   validateOrder,
@@ -16,6 +15,8 @@ import type { BlockData, GridData } from "@/types/grid";
 import { ORDER_TYPES } from "@data/orderTypes";
 import { createBlocksFromOrderType } from "@utils/blockFactory";
 import { calculatePrice, shouldBeDescending } from "@utils/grid";
+import { formatPriceForAPI } from "@utils/marketFormat";
+import { ARB_USD, BTC_USD, ETH_USD } from "@/test/marketFixtures";
 
 // =============================================================================
 // FIXTURES
@@ -26,7 +27,7 @@ const MARKET_PRICE = 50_000;
 const context = (
   overrides: Partial<OrderBuildContext> = {},
 ): OrderBuildContext => ({
-  symbol: "BTC/USD",
+  market: BTC_USD,
   currentPrice: MARKET_PRICE,
   side: "buy",
   quantity: "0.5",
@@ -155,36 +156,20 @@ describe("calculateBlockPrice", () => {
   });
 });
 
-describe("formatPriceForAPI", () => {
-  it("uses one decimal for BTC pairs, under either ticker spelling", () => {
-    expect(formatPriceForAPI(50_123.456, "BTC/USD")).toBe("50123.5");
-    expect(formatPriceForAPI(50_123.456, "XBT/USD")).toBe("50123.5");
-  });
-
-  it("defaults to BTC precision when no symbol is supplied", () => {
-    // The default parameter is DEFAULT_SYMBOL ("BTC/USD"), so an unqualified
-    // call formats to one decimal even for a non-BTC price.
-    expect(formatPriceForAPI(2_345.678)).toBe("2345.7");
-  });
-
-  it("scales precision by magnitude for non-BTC pairs", () => {
-    expect(formatPriceForAPI(2_345.6789, "ETH/USD")).toBe("2345.68");
-    expect(formatPriceForAPI(12.3456789, "ETH/USD")).toBe("12.3457");
-    expect(formatPriceForAPI(0.123456789, "DOGE/USD")).toBe("0.123457");
-  });
-
-  // A BTC-QUOTED pair is not a BTC pair. The precision used to be chosen with
-  // `symbol.includes("BTC")`, checked before the magnitude rules, so ETH/BTC
-  // took BTC precision and a price of 0.034512 was sent as "0.0".
-  it("uses the base asset, not any appearance of BTC in the pair", () => {
-    expect(formatPriceForAPI(0.034512, "ETH/BTC")).toBe("0.034512");
-    expect(formatPriceForAPI(50_123.456, "BTC/USD")).toBe("50123.5");
-  });
-
-  it("always returns a string, never a number", () => {
-    expect(typeof formatPriceForAPI(50_000, "BTC/USD")).toBe("string");
-  });
-});
+// FORMERLY A CHARACTERISATION OF A KNOWN BUG. The precision suite that stood
+// here pinned a magnitude heuristic: BTC by base asset, then 6 decimals below a
+// price of 1, 4 below 100, 2 above. Magnitude is not precision. Kraken's own
+// `pair_decimals` is 2 for ETH/USD at *every* price, so the old expectation
+// `formatPriceForAPI(12.3456789, "ETH/USD") === "12.3457"` was four decimals
+// the exchange rejects, and `formatPriceForAPI(0.123456789, "DOGE/USD") ===
+// "0.123457"` was six. A third case, `formatPriceForAPI(2_345.678) ===
+// "2345.7"`, asserted the default that let a caller omit the pair entirely.
+//
+// Formatting now takes Kraken's `MarketPrecision` and has no default at all, so
+// those expectations are gone rather than loosened. `utils/marketFormat.test.ts`
+// owns the formatters directly, and the payload-level guarantee - every price
+// and quantity in one order formatted for one pair - is pinned below in
+// "per-asset precision across a whole payload".
 
 // =============================================================================
 // ORDER TYPE RECOVERY FROM BLOCK IDS
@@ -430,7 +415,7 @@ describe("mapBlockToOrderParams", () => {
   // formatter with the leg that reaches it and holds them to the same answer
   // for the same offset.
   it("formats a trigger price and a limit price at the same pair precision", () => {
-    const ctx = context({ symbol: "ETH/USD", currentPrice: 2_345.6789 });
+    const ctx = context({ market: ETH_USD, currentPrice: 2_345.6789 });
     const leg = (axes: UIBlockData["axes"], axis: 1 | 2): UIBlockData =>
       uiBlock({
         id: `sa-stop-loss-limit-${axis}`,
@@ -451,7 +436,7 @@ describe("mapBlockToOrderParams", () => {
   it("formats a conditional's prices at the pair's precision too", () => {
     const params = mapBlockToOrderParams(
       uiBlock({ direction: "downside" }),
-      context({ symbol: "ETH/USD", currentPrice: 2_345.6789 }),
+      context({ market: ETH_USD, currentPrice: 2_345.6789 }),
       uiBlock({
         id: "sa-take-profit-2",
         orderType: "take-profit",
@@ -588,7 +573,7 @@ describe("mapGridToOrders", () => {
     ]);
 
     const orders = mapGridToOrders(grid, {
-      symbol: "BTC/USD",
+      market: BTC_USD,
       currentPrice: MARKET_PRICE,
       quantity: "1",
     });
@@ -616,7 +601,7 @@ describe("mapGridToOrders", () => {
     ]);
 
     const orders = mapGridToOrders(grid, {
-      symbol: "BTC/USD",
+      market: BTC_USD,
       currentPrice: MARKET_PRICE,
       quantity: "1",
     });
@@ -652,7 +637,7 @@ describe("mapGridToOrders", () => {
 
     expect(() =>
       mapGridToOrders(grid, {
-        symbol: "BTC/USD",
+        market: BTC_USD,
         currentPrice: MARKET_PRICE,
         quantity: "1",
       }),
@@ -669,7 +654,7 @@ describe("mapGridToOrders", () => {
       { col: 0, row: 1, block: blockData({ id: "a", linkedBlockId: "a" }) },
     ]);
     const ctx = {
-      symbol: "BTC/USD",
+      market: BTC_USD,
       currentPrice: MARKET_PRICE,
       quantity: "1",
     };
@@ -685,7 +670,7 @@ describe("mapGridToOrders", () => {
     ]);
 
     const orders = mapGridToOrders(grid, {
-      symbol: "BTC/USD",
+      market: BTC_USD,
       currentPrice: MARKET_PRICE,
       quantity: "1",
     });
@@ -708,7 +693,7 @@ describe("mapGridToOrders", () => {
 
     expect(() =>
       mapGridToOrders(grid, {
-        symbol: "BTC/USD",
+        market: BTC_USD,
         currentPrice: MARKET_PRICE,
         quantity: "1",
       }),
@@ -726,7 +711,7 @@ describe("mapGridToOrders", () => {
 
     expect(() =>
       mapGridToOrders(grid, {
-        symbol: "BTC/USD",
+        market: BTC_USD,
         currentPrice: MARKET_PRICE,
         quantity: "1",
       }),
@@ -749,7 +734,7 @@ describe("mapGridToOrders", () => {
 
     expect(() =>
       mapGridToOrders(grid, {
-        symbol: "BTC/USD",
+        market: BTC_USD,
         currentPrice: MARKET_PRICE,
         quantity: "1",
       }),
@@ -773,7 +758,7 @@ describe("mapGridToOrders", () => {
 
     expect(() =>
       mapGridToOrders(grid, {
-        symbol: "BTC/USD",
+        market: BTC_USD,
         currentPrice: MARKET_PRICE,
         quantity: "1",
       }),
@@ -785,7 +770,7 @@ describe("mapGridToOrders", () => {
   it("produces no orders for an empty grid", () => {
     expect(
       mapGridToOrders(gridWith([]), {
-        symbol: "BTC/USD",
+        market: BTC_USD,
         currentPrice: MARKET_PRICE,
         quantity: "1",
       }),
@@ -842,7 +827,7 @@ describe("a Stop Loss Limit dragged into Entry / Primary", () => {
     ]);
 
     return mapGridToOrders(gridWith(blocks.map((block) => ({ col: 0, row: 1, block }))), {
-      symbol: "BTC/USD",
+      market: BTC_USD,
       currentPrice: MARKET,
       quantity: "0.5",
     });
@@ -868,7 +853,7 @@ describe("a Stop Loss Limit dragged into Entry / Primary", () => {
   it("sends the prices the grid displayed, derived from the same input", () => {
     const [triggerLeg, limitLeg] = orders();
     const displayed = (position: number) =>
-      formatPriceForAPI(calculatePrice(MARKET, position, true) ?? 0, "BTC/USD");
+      formatPriceForAPI(calculatePrice(MARKET, position, true) ?? 0, BTC_USD);
 
     expect(triggerLeg.triggers?.price).toBe(displayed(TRIGGER_POSITION));
     expect(limitLeg.limit_price).toBe(displayed(LIMIT_POSITION));
@@ -1044,7 +1029,7 @@ describe("validateOrder", () => {
     ]);
 
     const [order] = mapGridToOrders(grid, {
-      symbol: "BTC/USD",
+      market: BTC_USD,
       currentPrice: 76_689,
       quantity: "0.5",
     });
@@ -1257,5 +1242,248 @@ describe("createOrderPreview", () => {
         symbol: "BTC/USD",
       }),
     ).toBe("BUY 2 BTC/USD (market)");
+  });
+});
+
+// =============================================================================
+// PER-ASSET PRECISION ACROSS A WHOLE PAYLOAD
+// =============================================================================
+//
+// This is the suite the multi-market change exists for.
+//
+// While the app was BTC-only, a formatter that quietly fell back to BTC's rules
+// was indistinguishable from a correct one. Adding a market selector makes
+// every such fallback reachable, and each one is invisible when it fires:
+// Kraken rejects a badly-precised order, and the user sees an order that never
+// appeared rather than an error.
+//
+// So these do not check one field. They build a *complete* order for a non-BTC
+// pair - primary limit price, trigger price, conditional limit price,
+// conditional trigger price and the quantity - and assert that every one of
+// them is formatted for that pair. A field that has been left on a default is a
+// field these catch.
+//
+// ARB/USD is the fixture of choice because every one of its rules differs from
+// BTC's: 4 price decimals against 1, a 0.0001 tick against 0.1, 5 lot decimals
+// against 8, and a 60-token minimum order against 0.00005.
+
+describe("per-asset precision across a whole payload", () => {
+  const ARB_MARKET = 0.4567891;
+
+  /** A block on ARB's grid, at `yPosition` percent from market. */
+  const leg = (
+    id: string,
+    orderType: string,
+    axes: UIBlockData["axes"],
+    yPosition: number,
+    direction: "upside" | "downside",
+  ): UIBlockData =>
+    uiBlock({
+      id,
+      orderType,
+      axes,
+      direction,
+      position: { col: 0, row: 1, yPosition, axis: axes[0] === "trigger" ? 1 : 2 },
+    });
+
+  const arbContext = (overrides: Partial<OrderBuildContext> = {}) =>
+    context({ market: ARB_USD, currentPrice: ARB_MARKET, ...overrides });
+
+  it("formats every price in a full payload at the pair's precision", () => {
+    const params = mapBlockToOrderParams(
+      leg("sa-take-profit-limit-2", "take-profit-limit", ["limit"], 20, "upside"),
+      arbContext({ quantity: "125.5" }),
+      leg("sa-stop-loss-limit-1", "stop-loss-limit", ["trigger"], 10, "downside"),
+    );
+
+    // ARB prices to four decimals, and the price fields sit in three different
+    // places in the payload. Every one of them is four decimals - not the one
+    // BTC would give, and not the six the old magnitude rule gave a sub-$1
+    // price.
+    const priced = [params.limit_price, params.conditional?.trigger_price];
+
+    expect(priced).toEqual(["0.5481", "0.4111"]);
+    priced.forEach((price) => {
+      expect(price).toMatch(/^\d+\.\d{4}$/);
+    });
+
+    // ...and the same order on BTC's rules would have produced one decimal, so
+    // the assertion above is really about the pair rather than about the number.
+    expect(
+      mapBlockToOrderParams(
+        leg("sa-limit-1", "limit", ["limit"], 20, "upside"),
+        context({ market: BTC_USD, currentPrice: 50_000 }),
+      ).limit_price,
+    ).toBe("60000.0");
+  });
+
+  it("formats the trigger price and the limit price at the same precision", () => {
+    // The defect this replaces: `limit_price` took the context symbol while
+    // `buildTrigger` never received one and fell back to BTC's. The two legs of
+    // a dual-axis type are separate blocks, so each formatter is driven with
+    // the leg that reaches it and both are held to the same answer.
+    const ctx = arbContext();
+    const at = (yPosition: number) => ({
+      trigger: mapBlockToOrderParams(
+        leg("sa-stop-loss-limit-1", "stop-loss-limit", ["trigger"], yPosition, "downside"),
+        ctx,
+      ).triggers?.price,
+      limit: mapBlockToOrderParams(
+        leg("sa-stop-loss-limit-limit-2", "stop-loss-limit", ["limit"], yPosition, "downside"),
+        ctx,
+      ).limit_price,
+    });
+
+    const { trigger, limit } = at(15);
+    expect(trigger).toBe("0.3883");
+    expect(trigger).toBe(limit);
+  });
+
+  it("formats the quantity to the pair's lot precision, not BTC's", () => {
+    // ARB takes five lot decimals; BTC takes eight. A quantity carrying more
+    // decimals than the pair accepts is rejected exactly as silently as a bad
+    // price, and the quantity used to be copied into the payload untouched.
+    const arb = mapBlockToOrderParams(
+      leg("sa-limit-1", "limit", ["limit"], 10, "downside"),
+      arbContext({ quantity: "125.123456789" }),
+    );
+    expect(arb.order_qty).toBe("125.12346");
+
+    const btc = mapBlockToOrderParams(
+      leg("sa-limit-1", "limit", ["limit"], 10, "downside"),
+      context({ market: BTC_USD, currentPrice: 50_000, quantity: "125.123456789" }),
+    );
+    expect(btc.order_qty).toBe("125.12345679");
+
+    // A quantity the pair can express exactly is left alone: `lot_decimals` is
+    // a maximum, so half a bitcoin stays "0.5" rather than becoming "0.50000000".
+    expect(
+      mapBlockToOrderParams(
+        leg("sa-limit-1", "limit", ["limit"], 10, "downside"),
+        context({ market: BTC_USD, currentPrice: 50_000, quantity: "0.5" }),
+      ).order_qty,
+    ).toBe("0.5");
+  });
+
+  it("names the pair the prices were formatted for", () => {
+    // The symbol and the precision come from one record, so a payload cannot
+    // say ARB/USD while carrying prices formatted for something else.
+    const params = mapBlockToOrderParams(
+      leg("sa-limit-1", "limit", ["limit"], 10, "downside"),
+      arbContext(),
+    );
+    expect(params.symbol).toBe("ARB/USD");
+    expect(validateOrder(params, ARB_USD)).not.toContain(
+      "Order is for ARB/USD but was checked against ARB/USD rules",
+    );
+  });
+
+  it("holds every price in a mapped grid to the same pair", () => {
+    // The grid-level entry point, rather than the single-block one, because
+    // that is the path Execute actually takes.
+    const grid = gridWith([
+      {
+        col: 0,
+        row: 1,
+        block: blockData({ id: "sa-limit-1", yPosition: 12.5, direction: "downside" }),
+      },
+      {
+        col: 1,
+        row: 0,
+        block: blockData({
+          id: "sa-take-profit-2",
+          orderType: "take-profit",
+          axis: 1,
+          axes: ["trigger"],
+          yPosition: 30,
+          direction: "upside",
+        }),
+      },
+    ]);
+
+    const orders = mapGridToOrders(grid, {
+      market: ARB_USD,
+      currentPrice: ARB_MARKET,
+      quantity: "80",
+    });
+
+    const everyPrice = orders.flatMap((order) =>
+      [
+        order.limit_price,
+        order.triggers?.price,
+        order.trigger_price,
+        order.conditional?.limit_price,
+        order.conditional?.trigger_price,
+      ].filter((price): price is string => price !== undefined),
+    );
+
+    expect(everyPrice.length).toBeGreaterThan(0);
+    everyPrice.forEach((price) => {
+      expect(price).toMatch(/^\d+\.\d{4}$/);
+    });
+    expect(orders.every((order) => order.symbol === "ARB/USD")).toBe(true);
+  });
+
+  it("snaps a price to the pair's tick rather than only its decimals", () => {
+    // `tick_size` and `pair_decimals` agree on every pair shipped today, so
+    // this drives the formatter with a record where they do not - which is the
+    // only way to tell a tick check from a `toFixed`.
+    const fiveCentTick = { ...ARB_USD, priceDecimals: 2, tickSize: 0.05 };
+    const params = mapBlockToOrderParams(
+      leg("sa-limit-1", "limit", ["limit"], 0, "downside"),
+      context({ market: fiveCentTick, currentPrice: 10.13 }),
+    );
+
+    expect(params.limit_price).toBe("10.15");
+  });
+});
+
+// =============================================================================
+// PER-ASSET MINIMUM ORDER SIZE
+// =============================================================================
+
+describe("validateOrder against a pair's minimum order size", () => {
+  const arbOrder = (order_qty: string) => ({
+    order_type: "limit" as const,
+    side: "buy" as const,
+    order_qty,
+    symbol: "ARB/USD",
+    limit_price: "0.4567",
+    limit_price_type: "static" as const,
+  });
+
+  // Kraken's minimum spans three orders of magnitude across the pairs on offer:
+  // 0.00005 BTC against 60 ARB. A quantity that is a perfectly good BTC order
+  // is refused outright on ARB, and refused *after* submission unless it is
+  // caught here.
+  it("refuses a quantity below the pair's minimum", () => {
+    expect(validateOrder(arbOrder("10"), ARB_USD)).toContain(
+      "Order quantity 10 is below the ARB/USD minimum of 60",
+    );
+  });
+
+  it("accepts the same quantity on a pair whose minimum is lower", () => {
+    expect(
+      validateOrder({ ...arbOrder("10"), symbol: "BTC/USD" }, BTC_USD),
+    ).toEqual([]);
+  });
+
+  it("accepts a quantity at the minimum", () => {
+    expect(validateOrder(arbOrder("60"), ARB_USD)).toEqual([]);
+  });
+
+  // Without the metadata there is no minimum to check against, and inventing
+  // one would be the guess this whole change removes. The rest of validation
+  // still runs.
+  it("skips the minimum when no precision record is supplied", () => {
+    expect(validateOrder(arbOrder("10"))).toEqual([]);
+  });
+
+  // A record for a different pair is worse than none: it would hold a BTC order
+  // to ARB's 60-token minimum. Saying so is the only safe answer.
+  it("refuses to check an order against another pair's rules", () => {
+    expect(validateOrder(arbOrder("100"), ETH_USD)).toContain(
+      "Order is for ARB/USD but was checked against ETH/USD rules",
+    );
   });
 });

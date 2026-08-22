@@ -371,8 +371,15 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
           {actionableOrders.length > 0 ? (
             <>
               <div className={devControlsRow}>
-                <span className={devLabel}>Select Order:</span>
+                {/* A real label rather than a span beside the control: the
+                    select had no accessible name at all, and Chrome's own
+                    audit flagged it as a form field with neither an id nor a
+                    name. It renders identically. */}
+                <label className={devLabel} htmlFor="dev-order-select">
+                  Select Order:
+                </label>
                 <select
+                  id="dev-order-select"
                   className={orderIdSelect}
                   value={selectedOrderId}
                   onChange={(e) => setSelectedOrderId(e.target.value)}

@@ -12,13 +12,13 @@ import {
   createOrderPreview,
   parseTickerUpdate,
   applyTickerUpdate,
-  DEFAULT_SYMBOL,
   type WebSocketStatus,
   type ParsedTickerData,
   type OrderParams,
   type WebSocketErrorEvent,
 } from "../api";
 import { useTradingMode } from "./useTradingMode";
+import { useMarket } from "../store/useMarket";
 import type { GridData } from "../types/grid";
 
 // ============================================================================
@@ -26,10 +26,19 @@ import type { GridData } from "../types/grid";
 // ============================================================================
 
 export interface UseKrakenAPIOptions {
-  symbol?: string;
   autoConnect?: boolean;
   pollInterval?: number; // Polling interval for ticker data in ms
 }
+
+/**
+ * There is deliberately no `symbol` option.
+ *
+ * There used to be, with `DEFAULT_SYMBOL` behind it, and both callers passed
+ * the literal `"BTC/USD"`. With more than one market that is two components
+ * each naming a pair, and nothing stopping the chart from drawing one market
+ * while the grid prices another. The pair comes from the market context, so a
+ * caller cannot desync from the selection even by accident.
+ */
 
 export interface UseKrakenAPIReturn {
   // Connection status
@@ -77,6 +86,12 @@ export interface ValidationResult {
   errors: Map<number, string[]>; // Map of order index to errors
 }
 
+/** Ticker data plus the market it describes, so the two cannot come apart. */
+interface TickerState {
+  symbol: string;
+  data: ParsedTickerData | null;
+}
+
 // ============================================================================
 // Hook Implementation
 // ============================================================================
@@ -84,11 +99,10 @@ export interface ValidationResult {
 export const useKrakenAPI = (
   options: UseKrakenAPIOptions = {},
 ): UseKrakenAPIReturn => {
-  const {
-    symbol = DEFAULT_SYMBOL,
-    autoConnect = false,
-    pollInterval = 30000, // Default 30 second polling
-  } = options;
+  const { autoConnect = false, pollInterval = 30000 } = options;
+
+  const { market, precision } = useMarket();
+  const symbol = market.symbol;
 
   // Connection state
   const [publicStatus, setPublicStatus] =
@@ -96,10 +110,25 @@ export const useKrakenAPI = (
   const [privateStatus, setPrivateStatus] =
     useState<WebSocketStatus>("disconnected");
 
-  // Ticker state
-  const [tickerData, setTickerData] = useState<ParsedTickerData | null>(null);
+  // Ticker state, tagged with the market it belongs to.
+  //
+  // The tag is what stops the previous market's price surviving a switch. It
+  // used to be a bare `ParsedTickerData`, which was safe only because there was
+  // one market: with a selector, an untagged record leaves BTC's $109,000 on
+  // screen under ETH/USD for as long as the new price takes to arrive, and
+  // every block on the grid is priced from it in the meantime. Deriving the
+  // answer during render, rather than clearing it from an effect, is the same
+  // shape `useOHLCData` uses and means there is no frame in which the state and
+  // the selection disagree.
+  const [tickerState, setTickerState] = useState<TickerState>(() => ({
+    symbol,
+    data: null,
+  }));
   const [isLoadingTicker, setIsLoadingTicker] = useState(false);
   const [tickerError, setTickerError] = useState<string | null>(null);
+
+  const isTickerCurrent = tickerState.symbol === symbol;
+  const tickerData = isTickerCurrent ? tickerState.data : null;
 
   // Order state
   const [pendingOrders, setPendingOrders] = useState<OrderParams[]>([]);
@@ -111,6 +140,10 @@ export const useKrakenAPI = (
   // Refs
   const wsManager = useRef(getWebSocketManager());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // The socket handlers below are registered once, for the life of the hook, so
+  // they cannot close over `symbol`. This is how they read the current one.
+  const symbolRef = useRef(symbol);
+  symbolRef.current = symbol;
 
   // ============================================================================
   // Computed values
@@ -148,7 +181,25 @@ export const useKrakenAPI = (
       // before the first REST poll seeds the record instead of being dropped.
       const update = parseTickerUpdate(data);
       if (!update) return;
-      setTickerData((prev) => applyTickerUpdate(prev, update));
+
+      // A frame that names a *different* market is dropped. Switching market
+      // leaves both channels briefly live - the unsubscribe frame and the
+      // subscribe frame cross on the wire - and without this an in-flight BTC
+      // tick lands on the ETH record and becomes an ETH order price. A frame
+      // naming no symbol is kept: the only ticker channel this app ever asks
+      // for is the selected market's, so there is nothing else it could be.
+      if (update.symbol !== undefined && update.symbol !== symbolRef.current) {
+        return;
+      }
+
+      setTickerState((prev) =>
+        prev.symbol === symbolRef.current
+          ? { symbol: prev.symbol, data: applyTickerUpdate(prev.data, update) }
+          : {
+              symbol: symbolRef.current,
+              data: applyTickerUpdate(null, update),
+            },
+      );
     };
 
     const handleError = (data: unknown) => {
@@ -176,26 +227,46 @@ export const useKrakenAPI = (
   // ============================================================================
 
   useEffect(() => {
-    // Fetch price immediately on mount (don't wait for WebSocket)
+    // Fetch the price immediately, without waiting for the WebSocket. Keyed on
+    // the symbol rather than the mount: switching market has to put a real
+    // price on screen straight away, not 30 seconds later when the poll fires.
     refreshTicker();
-
-    if (autoConnect) {
-      // `connect` reports the failure through the `status` and `error` events
-      // and the manager retries on its own, so there is nothing to do here
-      // beyond keeping the rejection from surfacing as an unhandled promise.
-      connect().catch(() => {});
-    }
 
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
       }
     };
-    // Mount-scoped: this fetches the first price and opens the connection once.
-    // `refreshTicker` and `connect` are re-created every render, so listing them
-    // would tear down and redo that mount work on every render.
+    // `refreshTicker` is re-created every render, so listing it would refetch
+    // on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoConnect]);
+  }, [symbol]);
+
+  // ============================================================================
+  // Ticker channel effect - the subscription follows the selected market
+  // ============================================================================
+
+  useEffect(() => {
+    if (!autoConnect) return;
+
+    const manager = wsManager.current;
+
+    // Subscribing is what opens the public socket, and it registers the intent
+    // before it connects - so a failed first connect still leaves the channel
+    // to be replayed once a socket comes up. That is the manager's contract and
+    // this relies on it rather than connecting first and subscribing after.
+    manager.subscribeTicker(symbol).catch((error: unknown) => {
+      console.error("Failed to subscribe to the ticker channel:", error);
+    });
+
+    // Leaving the previous market's channel running is the leak this exists to
+    // prevent: the socket keeps delivering ticks for a pair nobody is looking
+    // at. The manager refcounts the channel, so this releases only this hook's
+    // interest and the other consumer keeps its feed.
+    return () => {
+      manager.unsubscribeTicker(symbol);
+    };
+  }, [autoConnect, symbol]);
 
   // ============================================================================
   // Private socket effect
@@ -241,13 +312,21 @@ export const useKrakenAPI = (
   // Connection methods
   // ============================================================================
 
+  /**
+   * Open the sockets.
+   *
+   * This deliberately does **not** subscribe the ticker channel. The channel
+   * follows the selected market, and the effect above is its one owner: a
+   * second subscribe from here would take a second reference on the same
+   * channel that nothing releases, so switching market would leave the previous
+   * market's ticks arriving forever. Registering the intent before connecting -
+   * the property that keeps a failed first connect from losing the channel -
+   * is preserved, because that is what `subscribeTicker` does and the effect is
+   * what calls it.
+   */
   const connect = async () => {
     try {
-      // Subscribing connects the public socket itself, and registers the intent
-      // first. Awaiting a separate `connectPublic()` beforehand meant a failed
-      // first connect skipped the subscribe entirely, so the manager's own
-      // reconnect brought the socket back with no ticker channel on it.
-      await wsManager.current.subscribeTicker(symbol);
+      await wsManager.current.connectPublic();
 
       // Connect private if credentials are available
       if (hasCredentials) {
@@ -277,16 +356,23 @@ export const useKrakenAPI = (
   // ============================================================================
 
   const refreshTicker = async () => {
+    // Captured, not read from the ref, so a response that arrives after the
+    // user has switched market is filed under the market it was asked for -
+    // and then simply ignored, because it is no longer the current one.
+    const requested = symbol;
+
     setIsLoadingTicker(true);
     setTickerError(null);
 
     try {
-      const data = await getTickerData(symbol);
-      setTickerData(data);
+      const data = await getTickerData(requested);
+      setTickerState({ symbol: requested, data });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to fetch ticker data";
-      setTickerError(errorMessage);
+      if (symbolRef.current === requested) {
+        setTickerError(errorMessage);
+      }
       console.error("Ticker fetch error:", error);
     } finally {
       setIsLoadingTicker(false);
@@ -312,13 +398,26 @@ export const useKrakenAPI = (
       return [];
     }
 
+    // Without Kraken's rules for this pair there is no way to format a price
+    // or a quantity that the exchange will accept, and every wrong guess is
+    // invisible: Kraken rejects the order and the user sees one that never
+    // appeared. So this refuses, exactly as it refuses a missing market price,
+    // rather than falling back to another pair's precision.
+    if (!precision) {
+      setOrderError(
+        `Cannot prepare orders: Kraken's precision rules for ${symbol} have not loaded yet.`,
+      );
+      setPendingOrders([]);
+      return [];
+    }
+
     // The mapper refuses a grid it cannot express as Kraken orders - a cycle of
     // conditional links, or an order type it does not recognise. Surface that
     // rather than letting it escape as an unhandled error from the click.
     let orders: OrderParams[];
     try {
       orders = mapGridToOrders(grid, {
-        symbol,
+        market: precision,
         currentPrice,
         quantity,
       });
@@ -339,7 +438,12 @@ export const useKrakenAPI = (
     const errors = new Map<number, string[]>();
 
     orders.forEach((order, index) => {
-      const orderErrors = validateOrder(order);
+      // Passing the precision is what brings the per-pair minimum order size
+      // into validation. Kraken's minimum spans three orders of magnitude
+      // across the pairs on offer, so a quantity that is a fine BTC order is
+      // refused outright on ARB - and refused after submission, invisibly,
+      // unless it is caught here.
+      const orderErrors = validateOrder(order, precision ?? undefined);
       if (orderErrors.length > 0) {
         errors.set(index, orderErrors);
       }

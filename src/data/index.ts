@@ -17,3 +17,6 @@ export {
 
 // Re-export types
 export type { AxisType, OrderTypeDefinition } from "./orderTypes";
+
+// Market catalogue
+export { MARKETS, DEFAULT_MARKET, findMarket } from "./markets";
