@@ -15,6 +15,8 @@
 import path from "node:path";
 import type { Plugin } from "vite";
 import type { ApiHandler } from "../api/_lib/http";
+import { isLoopbackHost } from "../api/_lib/loopback";
+import { resolveServerRuntime } from "../api/_lib/serverConfig";
 import { applyLocalEnv } from "./localEnv";
 
 /**
@@ -32,6 +34,20 @@ export const krakenApiDevServer = (rootDir: string): Plugin => ({
   apply: "serve",
   configureServer(server) {
     applyLocalEnv(path.resolve(rootDir, "local.env"));
+
+    // A live dev server holds the operator's Kraken key and signs for whoever
+    // asks, so it may only listen on loopback. Refuse to start rather than warn:
+    // a warning scrolls past, and by then the key is reachable from the network.
+    const host = server.config.server.host;
+    if (resolveServerRuntime(process.env).mode === "live" && !isLoopbackHost(host)) {
+      throw new Error(
+        `Refusing to start: live Kraken trading is configured, but the dev server is bound ` +
+          `to ${host === true ? "every interface" : JSON.stringify(host)} rather than ` +
+          "loopback. This server signs Kraken requests for any caller that can reach it and " +
+          "provides no authentication. Drop the --host flag, or set " +
+          "KRAKEN_TRADING_MODE=simulation.",
+      );
+    }
 
     server.middlewares.use((req, res, next) => {
       const pathname = new URL(req.url ?? "/", "http://localhost").pathname;

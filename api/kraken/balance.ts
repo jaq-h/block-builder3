@@ -13,7 +13,7 @@ import { callPrivate, KrakenRequestError } from "../_lib/krakenClient";
 const handler: ApiHandler = async (req, res) => {
   if (!requireMethod(req, res, ["GET"])) return;
 
-  const credentials = requireLiveRuntime(res);
+  const credentials = requireLiveRuntime(req, res);
   if (!credentials) return;
 
   try {

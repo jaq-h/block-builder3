@@ -198,6 +198,23 @@ export const useKrakenAPI = (
   }, [autoConnect]);
 
   // ============================================================================
+  // Private socket effect
+  // ============================================================================
+
+  useEffect(() => {
+    // Keyed on `hasCredentials`, not mount-scoped, because the answer arrives
+    // from `GET /api/kraken/status` after the first render. A mount-scoped
+    // connect would read `false` every time and never open the private socket.
+    if (!autoConnect || !hasCredentials) return;
+
+    // The manager reports the failure through its own `status` and `error`
+    // events and retries on its own; the public socket is useful regardless.
+    wsManager.current.connectPrivate().catch((error: unknown) => {
+      console.warn("Failed to connect to private WebSocket:", error);
+    });
+  }, [autoConnect, hasCredentials]);
+
+  // ============================================================================
   // Ticker polling effect
   // ============================================================================
 

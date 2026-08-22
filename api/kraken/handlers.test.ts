@@ -35,8 +35,8 @@ const createResponse = (): FakeResponse => {
   return res as unknown as FakeResponse;
 };
 
-const request = (method: string): IncomingMessage =>
-  ({ method }) as IncomingMessage;
+const request = (method: string, remoteAddress = "127.0.0.1"): IncomingMessage =>
+  ({ method, socket: { remoteAddress } }) as IncomingMessage;
 
 // =============================================================================
 // Environment
@@ -46,7 +46,11 @@ const CREDENTIAL_VARS = [
   "KRAKEN_API_KEY",
   "KRAKEN_API_PRIVATE_KEY",
   "KRAKEN_TRADING_MODE",
+  "KRAKEN_ALLOW_LOCAL_LIVE",
   "VERCEL_ENV",
+  "VERCEL",
+  "AWS_LAMBDA_FUNCTION_NAME",
+  "LAMBDA_TASK_ROOT",
 ];
 
 const SECRET =
@@ -54,6 +58,7 @@ const SECRET =
 
 const goLive = () => {
   vi.stubEnv("KRAKEN_TRADING_MODE", "live");
+  vi.stubEnv("KRAKEN_ALLOW_LOCAL_LIVE", "1");
   vi.stubEnv("KRAKEN_API_KEY", "test-api-key");
   vi.stubEnv("KRAKEN_API_PRIVATE_KEY", SECRET);
 };
@@ -192,6 +197,46 @@ describe("GET /api/kraken/balance", () => {
     expect(res.json()).toMatchObject({ mode: "misconfigured" });
   });
 
+  it("refuses a request that did not come from this machine", async () => {
+    // The bind is not the only thing standing between a live server and the
+    // network, because the bind is not always ours to choose.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await balanceHandler(request("GET", "203.0.113.7"), res);
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({
+      error: expect.stringContaining("loopback"),
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("serves the IPv6 loopback and its IPv4-mapped form", async () => {
+    goLive();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      okResponse({ error: [], result: { ZUSD: "1.0" } }),
+    );
+
+    for (const address of ["::1", "::ffff:127.0.0.1"]) {
+      const res = createResponse();
+      await balanceHandler(request("GET", address), res);
+      expect(res.statusCode).toBe(200);
+    }
+  });
+
+  it("refuses when the peer address cannot be read at all", async () => {
+    // A guard that cannot see who is calling has to assume the worst.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const res = createResponse();
+    await balanceHandler({ method: "GET" } as IncomingMessage, res);
+
+    expect(res.statusCode).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("passes a Kraken-side failure through as a 502", async () => {
     goLive();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -242,6 +287,17 @@ describe("POST /api/kraken/ws-token", () => {
     await wsTokenHandler(request("POST"), res);
 
     expect(res.statusCode).toBe(503);
+  });
+
+  it("refuses to mint a token for a request from off this machine", async () => {
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await wsTokenHandler(request("POST", "10.0.0.4"), res);
+
+    expect(res.statusCode).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("is a POST, because every call burns a nonce", async () => {

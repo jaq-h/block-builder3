@@ -26,8 +26,6 @@ export interface UseTradeExecutionReturn {
   error: string | null;
   /** Whether simulation mode is active */
   isSimulationMode: boolean;
-  /** Whether the app is running in development mode */
-  isDev: boolean;
   /** Whether this deployment's server will sign real Kraken requests */
   isLiveAvailable: boolean;
   /** Whether the user is allowed to toggle between simulation and API mode */
@@ -65,8 +63,6 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     isSimulationMode,
     toggleSimulationMode,
   } = useOrdersStore();
-
-  const isDev = import.meta.env.DEV;
 
   // Whether real orders are possible is the server's answer, not the browser's.
   // A build has no credential in it, so `import.meta.env.DEV` no longer tells us
@@ -133,7 +129,6 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     isSubmitting,
     error,
     isSimulationMode,
-    isDev,
     isLiveAvailable,
     canToggle,
     toggleSimulationMode,

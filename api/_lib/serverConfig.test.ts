@@ -9,8 +9,8 @@ import {
 const KEY = "a-key";
 const SECRET = "c2VjcmV0";
 
-// A local or self-hosted process: no Vercel environment at all.
-const local = (extra: Env = {}): Env => ({ ...extra });
+// The operator's own machine: no hosting signal at all, and an explicit opt-in.
+const local = (extra: Env = {}): Env => ({ KRAKEN_ALLOW_LOCAL_LIVE: "1", ...extra });
 
 // The public deployment: hosted, anonymously reachable.
 const hosted = (extra: Env = {}): Env => ({ VERCEL_ENV: "production", ...extra });
@@ -129,15 +129,70 @@ describe("resolveServerRuntime off the public deployment", () => {
     ).toEqual({ mode: "live", credentials: { apiKey: KEY, apiSecret: SECRET } });
   });
 
-  it("accepts `vercel dev`, which is the operator's own machine", () => {
+  it("refuses `vercel dev`, which is indistinguishable here from a deployment", () => {
     expect(
-      resolveServerRuntime({
-        VERCEL_ENV: "development",
-        KRAKEN_TRADING_MODE: "live",
-        KRAKEN_API_KEY: KEY,
-        KRAKEN_API_PRIVATE_KEY: SECRET,
-      }).mode,
-    ).toBe("live");
+      resolveServerRuntime(
+        local({
+          VERCEL_ENV: "development",
+          KRAKEN_TRADING_MODE: "live",
+          KRAKEN_API_KEY: KEY,
+          KRAKEN_API_PRIVATE_KEY: SECRET,
+        }),
+      ).mode,
+    ).toBe("misconfigured");
+  });
+});
+
+// =============================================================================
+// AN UNRECOGNISED ENVIRONMENT IS NOT ASSUMED TO BE LOCAL
+// =============================================================================
+
+describe("resolveServerRuntime when the environment cannot be vouched for", () => {
+  const liveRequest = {
+    KRAKEN_TRADING_MODE: "live",
+    KRAKEN_API_KEY: KEY,
+    KRAKEN_API_PRIVATE_KEY: SECRET,
+  };
+
+  it("refuses live mode when the local opt-in marker is absent", () => {
+    // The gap this closes: `VERCEL_ENV` is a system variable a project can be
+    // configured not to expose, so its absence is not proof of a local machine.
+    const runtime = resolveServerRuntime({ ...liveRequest });
+
+    expect(runtime.mode).toBe("misconfigured");
+    expect(runtime).toMatchObject({
+      errors: [expect.stringContaining("KRAKEN_ALLOW_LOCAL_LIVE")],
+    });
+  });
+
+  it("still refuses live mode when a hosting signal is present and the marker is set", () => {
+    for (const signal of ["VERCEL", "AWS_LAMBDA_FUNCTION_NAME", "LAMBDA_TASK_ROOT"]) {
+      const runtime = resolveServerRuntime({
+        ...liveRequest,
+        KRAKEN_ALLOW_LOCAL_LIVE: "1",
+        [signal]: "1",
+      });
+
+      expect(runtime.mode).toBe("misconfigured");
+      expect(runtime).toMatchObject({
+        errors: [expect.stringContaining(signal)],
+      });
+    }
+  });
+
+  it("ignores the marker entirely unless live was asked for", () => {
+    expect(resolveServerRuntime({ KRAKEN_ALLOW_LOCAL_LIVE: "1" })).toEqual({
+      mode: "simulation",
+    });
+  });
+
+  it("does not accept a marker set to something that is not an opt-in", () => {
+    expect(
+      resolveServerRuntime({ ...liveRequest, KRAKEN_ALLOW_LOCAL_LIVE: "0" }).mode,
+    ).toBe("misconfigured");
+    expect(
+      resolveServerRuntime({ ...liveRequest, KRAKEN_ALLOW_LOCAL_LIVE: "   " }).mode,
+    ).toBe("misconfigured");
   });
 });
 

@@ -31,8 +31,9 @@ export default defineConfig([
   {
     // The credential and the signing code live server-side. An import from the
     // client tree would compile them into the bundle, which is exactly the
-    // defect this boundary exists to prevent. `src/test/credentialBoundary.test.ts`
-    // covers the same ground from the other direction.
+    // defect this boundary exists to prevent. This is the source-side guard;
+    // `api/_lib/credentialBoundary.test.ts` covers the built output, which is
+    // what actually ships.
     files: ['src/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [

@@ -168,10 +168,10 @@ no request-signing code at all: an authenticated call is a request to this app's
 
 | | Simulation | Live |
 |---|---|---|
-| Where it runs | Anywhere, including the public deployment | Local or self-hosted only |
+| Where it runs | Anywhere, including the public deployment | The operator's own machine, on loopback |
 | Credentials | None, and none are accepted | Yours, in your own server-side environment |
 | Orders | Saved locally in the browser | Sent to Kraken |
-| Configuration | The default | `KRAKEN_TRADING_MODE=live` plus both key variables |
+| Configuration | The default | `KRAKEN_TRADING_MODE=live`, `KRAKEN_ALLOW_LOCAL_LIVE=1`, and both key variables |
 
 ### The public deployment is simulation only
 
@@ -183,29 +183,61 @@ code rather than left to configuration:
   is **refused**.
 - On a hosted deployment, merely *setting* `KRAKEN_API_KEY` or `KRAKEN_API_PRIVATE_KEY` puts
   the deployment into a `misconfigured` state that signs nothing and says why.
+- Any hosting signal at all - `VERCEL`, `AWS_LAMBDA_FUNCTION_NAME`, `LAMBDA_TASK_ROOT`, or any
+  `VERCEL_ENV` - refuses live mode, because `VERCEL_ENV` is a system variable a project can be
+  configured not to expose and its absence therefore proves nothing.
+- Live mode additionally requires `KRAKEN_ALLOW_LOCAL_LIVE=1`, the operator's positive statement
+  that this process is their own machine. An environment that has not said so is never assumed
+  to be local.
 
 Adding a credential to the hosting dashboard therefore cannot switch the public site to live
 trading. It breaks that deployment, loudly, which is the intended behaviour. The rule lives in
 `api/_lib/serverConfig.ts` and is covered by `api/_lib/serverConfig.test.ts`.
 
+### Live mode is loopback only, and unauthenticated
+
+A live server signs Kraken requests for **whoever can reach it**. It authenticates the
+deployment, not the caller, and it deliberately ships no authentication layer: no shared
+secret, no token, nothing. Anyone who can open `POST /api/kraken/ws-token` gets a Kraken
+WebSocket token carrying the key's permissions, and anyone who can open
+`GET /api/kraken/balance` reads the account.
+
+Live mode is therefore confined to loopback, twice over:
+
+- **The bind.** A dev server configured for live trading and bound to anything but loopback
+  **fails to start** with an error naming the problem (`vite/krakenApiDevServer.ts`). Any other
+  hosting must apply the same rule: bind live mode to `127.0.0.1`, never `0.0.0.0`.
+- **The request.** Independently of the bind, `/api/kraken/balance` and `/api/kraken/ws-token`
+  answer `403` to any peer that is not `127.0.0.0/8` or `::1` (`api/_lib/loopback.ts`), so a
+  permissive bind cannot expose them either.
+
+**Exposing this beyond loopback is the operator's own responsibility.** If you put a live
+instance behind a proxy, on a LAN, or on a tunnel, you must add your own authentication in
+front of it. We provide none, on purpose.
+
 ### Running live, locally or self-hosted
 
 1. Log in to your [Kraken](https://www.kraken.com/) account and go to **Settings > API**.
 2. Create a key with the narrowest permissions you need. The authenticated calls this app makes
-   today are reads: **Query funds** covers `/api/kraken/balance`, and the WebSocket token
-   endpoint needs no extra permission. Order placement is not wired up, so an order-create
-   permission is not required and should not be granted yet.
+   today are reads: **Query funds** covers `/api/kraken/balance`, and **Access WebSockets API**
+   is required for `/api/kraken/ws-token`, because Kraken's `GetWebSocketsToken` is gated on it.
+   Without that permission the endpoint answers `502` carrying Kraken's
+   `EGeneral:Permission denied`. Order placement is not wired up, so an order-create permission
+   is not required and should not be granted yet.
 3. Copy `local.env.example` to `local.env` and fill it in:
 
 ```
 KRAKEN_TRADING_MODE=live
+KRAKEN_ALLOW_LOCAL_LIVE=1
 KRAKEN_API_KEY=your_api_key_here
 KRAKEN_API_PRIVATE_KEY=your_api_private_key_here
 ```
 
 4. Run `npm run dev`, which mounts the same `api/` handlers Vercel runs (see
-   `vite/krakenApiDevServer.ts`), or `npx vercel dev` to exercise the deployment's own
-   headers as well.
+   `vite/krakenApiDevServer.ts`) and binds to loopback. Do not add `--host`: the dev server
+   refuses to start in live mode on any other interface. `npx vercel dev` sets `VERCEL`, which
+   is a hosting signal, so it runs in simulation - use it to exercise the deployment's own
+   headers, not to trade.
 
 Check `GET /api/kraken/status` to see what the server decided:
 
@@ -215,7 +247,8 @@ $ curl -s localhost:3002/api/kraken/status
 ```
 
 Anything ambiguous is refused rather than guessed. `KRAKEN_TRADING_MODE=live` with a missing
-or half-supplied credential pair, or a mode string the server does not recognise, answers
+or half-supplied credential pair, without `KRAKEN_ALLOW_LOCAL_LIVE=1`, in an environment
+carrying a hosting signal, or with a mode string the server does not recognise, answers
 `503` with `"mode":"misconfigured"` and an explanation; the UI stays in simulation.
 
 > **Never commit your `local.env` file.** It is already in `.gitignore`.
@@ -225,8 +258,8 @@ or half-supplied credential pair, or a mode string the server does not recognise
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/kraken/status` | GET | Which mode the server is in. Carries no credential, ever. |
-| `/api/kraken/balance` | GET | Account balances. The authenticated read that exercises the boundary. |
-| `/api/kraken/ws-token` | POST | Mints a Kraken WebSocket token, which is short-lived and scoped, unlike the key that produced it. |
+| `/api/kraken/balance` | GET | Account balances. The authenticated read that exercises the boundary. Loopback only. |
+| `/api/kraken/ws-token` | POST | Mints a Kraken WebSocket token, which is short-lived and scoped, unlike the key that produced it. Loopback only. |
 
 The private endpoints are an **allowlist, not a proxy** (`api/_lib/krakenClient.ts`). A generic
 "sign whatever the browser asks" endpoint would be a signing oracle, which is the failure this

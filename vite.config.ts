@@ -10,7 +10,7 @@ import { krakenApiDevServer } from "./vite/krakenApiDevServer";
 // never grow a `define` that does. Anything substituted here is compiled into
 // the client bundle and is readable by every visitor; the credentials live in
 // the server-side environment that `api/` reads, and nowhere else. See the
-// "Credentials and simulation mode" section of `AGENTS.md`.
+// "Credentials and the server boundary" section of `AGENTS.md`.
 
 // https://vite.dev/config/
 export default defineConfig({

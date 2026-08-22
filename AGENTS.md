@@ -89,8 +89,9 @@ the key used to leak). Never commit a real credential: local keys go in `local.e
 
 Three guards keep it that way, and all three are cheap to run:
 
-- `api/_lib/credentialBoundary.test.ts` scans `src/` for credential variable names, signing
-  primitives and imports of `api/`.
+- `api/_lib/credentialBoundary.test.ts` runs a real production build with the credential
+  variables set to sentinels and scans what it emitted. It is the acceptance check, executed,
+  and it costs a build every `npm test`.
 - `no-restricted-imports` in `eslint.config.js` blocks `src/` from importing `api/_lib` or
   `api/kraken`.
 - The acceptance check itself: build with the variables set and grep `dist/` for them.
@@ -98,9 +99,20 @@ Three guards keep it that way, and all three are cheap to run:
 `api/_lib/serverConfig.ts` is the boundary in one function. Read it before changing anything
 about modes. Its rules: the public deployment (`VERCEL_ENV` of `production` or `preview`) is
 simulation only and *refuses* to hold a credential at all, so no hosting-dashboard variable
-can cross the line; live mode requires an explicit `KRAKEN_TRADING_MODE=live`, a complete
-credential pair, and a non-hosted environment; anything ambiguous returns `misconfigured`
-rather than guessing. The README's **Trading modes** section is the user-facing version.
+can cross the line; live mode requires all four of an explicit `KRAKEN_TRADING_MODE=live`, a
+complete credential pair, an explicit `KRAKEN_ALLOW_LOCAL_LIVE=1`, and an environment carrying
+no hosting signal (`VERCEL`, `AWS_LAMBDA_FUNCTION_NAME`, `LAMBDA_TASK_ROOT` or any
+`VERCEL_ENV`); anything ambiguous returns `misconfigured` rather than guessing. An
+unrecognised environment is never assumed to be local, because `VERCEL_ENV` is a system
+variable a project can be configured not to expose. `npx vercel dev` sets `VERCEL`, so it
+simulates.
+
+**Live mode is loopback only, and we ship no authentication for it.** A live server signs for
+whoever reaches it, so it is confined twice: `vite/krakenApiDevServer.ts` *fails to start* when
+live mode is configured on a non-loopback bind, and `api/_lib/loopback.ts` answers 403 to a
+non-loopback peer at `/api/kraken/balance` and `/api/kraken/ws-token` regardless of the bind.
+Other hosting must bind live mode to `127.0.0.1` itself. Exposing a live instance beyond
+loopback requires the operator to add their own protection; we deliberately provide none.
 
 Private Kraken endpoints are an **allowlist** in `api/_lib/krakenClient.ts`, not a proxy.
 A generic signing endpoint would let any visitor have the server sign anything. Adding an

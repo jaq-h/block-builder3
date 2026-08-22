@@ -64,12 +64,19 @@ const simulateApiDelay = (ms: number = 500): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-/** Get log prefix based on mode */
+/**
+ * Get log prefix based on mode.
+ *
+ * The label follows what the *server* will do, not what kind of build this is.
+ * A production build is no longer simulation by definition: a self-hosted
+ * deployment with a credential is live, and labelling its order log as a
+ * simulation would be a lie at the worst possible moment. The build flavour is
+ * kept only as a secondary hint about where the log came from.
+ */
 const getLogPrefix = (isSimulation: boolean): string => {
-  if (isDevelopment) {
-    return isSimulation ? "[DEV SIMULATION]" : "[DEV API MODE]";
-  }
-  return "[PROD SIMULATION]";
+  const build = isDevelopment ? "DEV" : "PROD";
+  const simulating = isSimulation || !isLiveTradingAvailable();
+  return simulating ? `[${build} SIMULATION]` : `[${build} API MODE]`;
 };
 
 // =============================================================================

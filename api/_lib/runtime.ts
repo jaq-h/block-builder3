@@ -6,8 +6,9 @@
  * refuses. A handler cannot accidentally reach `process.env` on its own.
  */
 
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { sendJson } from "./http";
+import { requireLoopbackRequest } from "./loopback";
 import {
   resolveServerRuntime,
   type Env,
@@ -20,17 +21,23 @@ export const getServerRuntime = (env: Env = process.env): ServerRuntime =>
 
 /**
  * Returns the credentials when - and only when - this deployment is configured
- * for live trading. Otherwise it answers the request itself and returns null:
- * 503, because the endpoint exists but this deployment will not serve it.
+ * for live trading *and* the request came from this machine. Otherwise it
+ * answers the request itself and returns null: 503 because the endpoint exists
+ * but this deployment will not serve it, or 403 because a live server signs for
+ * whoever asks and so only ever answers loopback.
+ *
+ * The loopback check lives here rather than in each handler so a credentialed
+ * endpoint cannot be written without it.
  */
 export const requireLiveRuntime = (
+  req: IncomingMessage,
   res: ServerResponse,
   env: Env = process.env,
 ): KrakenCredentials | null => {
   const runtime = getServerRuntime(env);
 
   if (runtime.mode === "live") {
-    return runtime.credentials;
+    return requireLoopbackRequest(req, res) ? runtime.credentials : null;
   }
 
   if (runtime.mode === "misconfigured") {
