@@ -242,11 +242,13 @@ it up; the arrow keys choose a target cell; Enter places it; Escape returns it. 
 swallowed - it abandons the carry and moves focus on, so a carried block cannot trap the
 keyboard. On touch the same model is driven by taps: tap a block, tap a cell.
 
-The arrow keys step only between **legal** cells, so Enter is never refused. They prefer a
-cell straight ahead and otherwise take the nearest legal cell in that direction, which is
-what makes the diagonal placement rule reachable at all: with one block placed, the only
-other legal cells are its diagonals, and a strictly orthogonal step could never leave the
-cell it started in.
+The arrow keys step only between cells that were **legal when the carry began**, so the
+target under the arrows is always one the grid has accepted; `commit` re-checks at the
+moment of placing and says the order was not placed if the grid has changed since. They
+prefer a cell straight ahead and otherwise take the nearest legal cell in that direction,
+which is what makes the diagonal placement rule reachable at all: with one block placed, the
+only other legal cells are its diagonals, and a strictly orthogonal step could never leave
+the cell it started in.
 
 The pure half of that model - the transitions and the target arithmetic - lives in
 `src/utils/blockCommand.ts` and is directly testable. `useBlockCommand` adds the two things
@@ -302,13 +304,36 @@ why `usePointerGesture` reports drag recognition as its own moment.
 That release is **silent** (`cancel({ silent: true })`), and the drag announces its own
 outcome when it ends instead. A cancellation message names a resting place - "left in Entry
 column, row 2" - and the very gesture that triggered it is about to move, remove or place
-that block, so the last thing said would contradict the grid. **Every completed drag now
-speaks**: moved to a named cell, stayed where it was, removed from the grid, or placed from
-the palette into a named cell, using `describeCell` and `describeSource` so the pointer path
-and the keyboard path sound like one interaction. A drop the placement rules refuse says the
-block stayed put rather than claiming a move. The vertical price drag is deliberately left
-silent: a placed block is a `role="slider"`, and assistive technology already speaks its
-`aria-valuetext` on every change.
+that block, so the last thing said would contradict the grid. A **free drag that ends on a
+cell or off the grid** therefore says what it did: moved to a named cell, stayed where it
+was, removed from the grid, or placed from the palette into a named cell, using
+`describeCell` and `describeSource` so the pointer path and the keyboard path sound like one
+interaction. The vertical price drag is deliberately left silent: a placed block is a
+`role="slider"`, and assistive technology already speaks its `aria-valuetext` on every
+change.
+
+**Known announcement gap, shipping deliberately.** Not every path through the announcement
+layer is correct yet. These are gaps in this change, not limits of the platform or of
+assistive technology, and each is deterministic rather than occasional:
+
+- A **vertical price drag releases an active carry silently.** It crosses the same tap slop
+  as any other drag, so it supersedes the carry, but it never reaches the drop handler and
+  nothing is announced. The carry is gone with no word said - and the next tap on a cell
+  then does nothing at all, because `GridCell` attaches its click handler only while
+  something is carried. A **`pointercancel`** ends the same way: `endDrag` alone, no message.
+- A **palette drag released outside every cell announces nothing.** `handleProviderDragEnd`
+  speaks only when the release resolves to a cell.
+- On the **conditional pattern - the default - a same-cell release announces a refusal that
+  contradicts where the block is.** The drop supplies a position, so `moveBlockToCell` skips
+  its same-cell no-op branch and asks `isCellValidForPlacement`, which reads the block's own
+  occupied cell as an illegal target. The live region then says "Entry column, primary row
+  cannot take this order. Market block stayed in Entry column, primary row." Nudging a block
+  a few pixels and letting go is enough to hear it. The bulk pattern does not show it,
+  because every cell is a legal target there.
+
+All three are sequenced to the lane that gives the block-to-price mapping and the
+announcement layer a single owner. The plan is that this branch waits for that lane rather
+than merging ahead of it.
 
 Announcements go through `LiveAnnouncer`, which alternates between two live regions: a
 screen reader only reads a region whose content **changed**, so two identical messages in a
