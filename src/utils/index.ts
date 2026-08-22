@@ -26,6 +26,7 @@ export {
   hasConditionalWithoutPrimary,
   // Cell display mode
   getCellDisplayMode,
+  isCellDescending,
   // Price calculations
   calculatePrice,
   formatPrice,
@@ -52,3 +53,20 @@ export {
   type BlockCreationContext,
   type CreatedBlocks,
 } from "./blockFactory";
+
+// Block command model - the pure select-then-place state machine
+export {
+  commandReducer,
+  validTargetsFor,
+  withOriginCell,
+  initialTarget,
+  stepTarget,
+  samePosition,
+  describeCell,
+  describeSource,
+  IDLE_COMMAND_STATE,
+  type CommandState,
+  type CommandAction,
+  type CommandSource,
+  type CarriedBlock,
+} from "./blockCommand";

@@ -20,10 +20,13 @@ const PatternSelector: FC = function PatternSelector() {
   const { strategyPattern, setStrategyPattern } = useGridData();
 
   return (
-    <div className={patternSelectorRow}>
+    <div className={patternSelectorRow} role="group" aria-label="Strategy pattern">
       {(Object.keys(PATTERN_CONFIGS) as StrategyPattern[]).map((pattern) => (
         <button
           key={pattern}
+          type="button"
+          // The selected pattern is otherwise conveyed by colour alone.
+          aria-pressed={strategyPattern === pattern}
           className={patternButton({ isActive: strategyPattern === pattern })}
           onClick={() => setStrategyPattern(pattern)}
         >

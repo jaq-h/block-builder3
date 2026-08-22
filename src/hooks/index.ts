@@ -8,6 +8,15 @@ export { useFreeDrag } from "./useFreeDrag";
 // Vertical drag hook for sliding blocks along the price scale axis
 export { useVerticalDrag } from "./useVerticalDrag";
 
+// Shared pointer primitive underneath both drag hooks (mouse, touch and pen)
+export { usePointerGesture, TAP_SLOP_PX } from "./usePointerGesture";
+
+// Select-then-place command model: the keyboard and tap path onto the grid
+export { useBlockCommand } from "./useBlockCommand";
+
+// Live-region announcements, paired with the LiveAnnouncer component
+export { useAnnouncer, type Announcement } from "./useAnnouncer";
+
 // Kraken API hook for price data and order management
 export { useKrakenAPI, default as useKrakenAPIDefault } from "./useKrakenAPI";
 

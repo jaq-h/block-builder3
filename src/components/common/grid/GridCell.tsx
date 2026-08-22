@@ -1,7 +1,9 @@
 import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
-import { getCellDisplayMode } from "../../../utils";
+import { getCellDisplayMode, isCellDescending } from "../../../utils";
+import { describeCell } from "../../../utils/blockCommand";
+import type { CancelOptions } from "../../../hooks/useBlockCommand";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
 import {
   getInteractiveCellContainerProps,
@@ -56,6 +58,8 @@ interface GridCellProps {
   isOver: boolean;
   isValidTarget: boolean;
   isDisabled: boolean;
+  /** The cell the command model would place the carried block into. */
+  isCommandTarget: boolean;
   align: "left" | "right";
   strategyPattern: StrategyPattern;
   rowLabel: string;
@@ -67,7 +71,19 @@ interface GridCellProps {
   onMouseLeave: () => void;
   onBlockDragStart: (id: string) => void;
   onBlockDragEnd: (id: string, x: number, y: number) => void;
-  onBlockVerticalDrag: (id: string, mouseY: number) => void;
+  onBlockDragCancel: (id: string) => void;
+  onBlockDragRecognised: (id: string) => void;
+  onBlockVerticalDrag: (id: string, pointerY: number) => void;
+  onBlockActivate: (id: string, origin: "keyboard" | "pointer") => void;
+  onBlockCommandMove: (dCol: number, dRow: number) => void;
+  onBlockCommandCancel: (options?: CancelOptions) => void;
+  onBlockAdjustPrice: (id: string, delta: number) => void;
+  onCellActivate: () => void;
+  /** True while the command model is carrying a block; the cell is then a drop target. */
+  isCarryActive: boolean;
+  carryingBlockId: string | null;
+  focusBlockId: string | null;
+  onBlockFocusHandled: () => void;
 }
 
 const GridCell: FC<GridCellProps> = ({
@@ -77,6 +93,7 @@ const GridCell: FC<GridCellProps> = ({
   isOver,
   isValidTarget,
   isDisabled,
+  isCommandTarget,
   strategyPattern,
   rowLabel,
   showPrimaryWarning,
@@ -87,10 +104,21 @@ const GridCell: FC<GridCellProps> = ({
   onMouseLeave,
   onBlockDragStart,
   onBlockDragEnd,
+  onBlockDragCancel,
+  onBlockDragRecognised,
   onBlockVerticalDrag,
+  onBlockActivate,
+  onBlockCommandMove,
+  onBlockCommandCancel,
+  onBlockAdjustPrice,
+  onCellActivate,
+  isCarryActive,
+  carryingBlockId,
+  focusBlockId,
+  onBlockFocusHandled,
 }) => {
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = blocks[0]?.direction === "downside";
+  const isDescending = isCellDescending(blocks);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
@@ -99,6 +127,26 @@ const GridCell: FC<GridCellProps> = ({
 
   const rowLabelType: "primary" | "conditional" =
     rowLabel.toLowerCase() === "primary" ? "primary" : "conditional";
+
+  const cellDescription = describeCell(
+    { col: colIndex, row: rowIndex },
+    strategyPattern,
+  );
+
+  // Every block in the cell shares the same command wiring; only the id differs.
+  const commandProps = (blockId: string) => ({
+    isCarrying: carryingBlockId === blockId,
+    shouldFocus: focusBlockId === blockId,
+    onFocusHandled: onBlockFocusHandled,
+    onActivate: onBlockActivate,
+    onCommandMove: onBlockCommandMove,
+    onCommandCancel: onBlockCommandCancel,
+    onDragStart: onBlockDragStart,
+    onDragEnd: onBlockDragEnd,
+    onDragCancel: onBlockDragCancel,
+    onDragRecognised: onBlockDragRecognised,
+    cellDescription,
+  });
 
   const renderPercentageScale = (isDesc: boolean) => {
     const labels = getScaleLabels(isDesc);
@@ -133,6 +181,7 @@ const GridCell: FC<GridCellProps> = ({
 
   const renderAxisContent = (
     axisBlocks: BlockData[],
+    axisNumber: 1 | 2,
     isSingleAxis: boolean,
     axisLabel: string,
     showPercentageScale: boolean = true,
@@ -145,7 +194,12 @@ const GridCell: FC<GridCellProps> = ({
     const trackProps = getSliderTrackProps(isDescending, isSingleAxis);
 
     return (
-      <div className={getAxisColumnProps(isSingleAxis)}>
+      <div
+        // The element the block positioner is absolutely laid out within, and
+        // so the one the vertical drag has to measure to invert that layout.
+        data-axis-track={`${colIndex}-${rowIndex}-${axisNumber}`}
+        className={getAxisColumnProps(isSingleAxis)}
+      >
         {showPercentageScale && renderPercentageScale(isDescending)}
         <div className={trackProps.className} style={trackProps.style} />
         <span className={axisLabelProps.className} style={axisLabelProps.style}>
@@ -200,11 +254,15 @@ const GridCell: FC<GridCellProps> = ({
                   id={block.id}
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
+                  label={block.label}
                   axis={block.axis}
                   axes={block.axes}
-                  onDragStart={onBlockDragStart}
-                  onDragEnd={onBlockDragEnd}
+                  yPosition={block.yPosition}
+                  direction={isDescending ? "downside" : "upside"}
+                  priceText={formatCalculatedPrice(calculatedPrice)}
                   onVerticalDrag={onBlockVerticalDrag}
+                  onAdjustPrice={onBlockAdjustPrice}
+                  {...commandProps(block.id)}
                 />
               </div>
             </Fragment>
@@ -251,9 +309,9 @@ const GridCell: FC<GridCellProps> = ({
                 id={block.id}
                 icon={block.icon}
                 abrv={block.abrv}
+                label={block.label}
                 axes={block.axes}
-                onDragStart={onBlockDragStart}
-                onDragEnd={onBlockDragEnd}
+                {...commandProps(block.id)}
               />
             ))}
           </div>
@@ -271,7 +329,7 @@ const GridCell: FC<GridCellProps> = ({
           </div>
           <div className={sliderArea}>
             {renderMarketPrice()}
-            {renderAxisContent(blocks, true, "Limit", true)}
+            {renderAxisContent(blocks, 2, true, "Limit", true)}
           </div>
         </>
       );
@@ -290,10 +348,11 @@ const GridCell: FC<GridCellProps> = ({
         <div className={sliderArea}>
           {renderMarketPrice()}
           {hasAxis1Blocks &&
-            renderAxisContent(axis1Blocks, !hasAxis2Blocks, "Trigger", true)}
+            renderAxisContent(axis1Blocks, 1, !hasAxis2Blocks, "Trigger", true)}
           {hasAxis2Blocks &&
             renderAxisContent(
               axis2Blocks,
+              2,
               !hasAxis1Blocks,
               "Limit",
               !hasAxis1Blocks,
@@ -304,20 +363,32 @@ const GridCell: FC<GridCellProps> = ({
   };
 
   const containerProps = getInteractiveCellContainerProps({
-    isOver,
+    isOver: isOver || isCommandTarget,
     isValidTarget,
     isDisabled,
     tint,
   });
 
+  const occupants =
+    blocks.length === 0
+      ? "empty"
+      : blocks.map((block) => block.label).join(", ");
+
   return (
     <div
       data-col={colIndex}
       data-row={rowIndex}
+      // A group rather than a button: the keyboard path is arrows plus Enter on
+      // the carried block, so the click here is a second way to reach the same
+      // command and never the only way.
+      role="group"
+      aria-label={`${cellDescription}, ${occupants}`}
+      aria-current={isCommandTarget ? "location" : undefined}
       className={containerProps.className}
       style={containerProps.style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      onClick={isCarryActive ? onCellActivate : undefined}
     >
       {rowLabel && !isDisabled && (
         <div className={rowLabelBadge({ type: rowLabelType })}>{rowLabel}</div>

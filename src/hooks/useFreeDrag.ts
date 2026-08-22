@@ -1,10 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useRef } from "react";
 import type { SvgIcon } from "../data/orderTypes";
 import {
   startDragOverlay,
   updateDragOverlayPosition,
   stopDragOverlay,
 } from "../components/common/dragOverlayStore";
+import {
+  usePointerGesture,
+  type PointerGestureHandlers,
+} from "./usePointerGesture";
 
 interface UseFreeDragOptions {
   id: string;
@@ -12,57 +16,68 @@ interface UseFreeDragOptions {
   abrv?: string;
   onDragStart?: (id: string) => void;
   onDragEnd?: (id: string, x: number, y: number) => void;
+  /** The pointer went down and up without moving: a tap or a click, not a drag. */
+  onActivate?: (id: string) => void;
+  /** The gesture has travelled far enough to be a drag rather than a tap. */
+  onDragRecognised?: (id: string) => void;
+  /** The browser took the pointer away mid-drag; put the block back. */
+  onDragCancel?: (id: string) => void;
+  disabled?: boolean;
 }
 
 interface UseFreeDragReturn {
   isDragging: boolean;
-  handleMouseDown: (e: React.MouseEvent) => void;
+  handlers: PointerGestureHandlers;
 }
 
+/**
+ * Free-form drag of a block across the grid, on pointer events so that mouse,
+ * touch and pen all take the same path. See `usePointerGesture` for why the
+ * listeners are on the element rather than on `window`.
+ */
 export const useFreeDrag = ({
   id,
   icon,
   abrv,
   onDragStart,
   onDragEnd,
+  onActivate,
+  onDragCancel,
+  onDragRecognised,
+  disabled = false,
 }: UseFreeDragOptions): UseFreeDragReturn => {
-  const [isDragging, setIsDragging] = useState(false);
-
-  // Track the latest mouse position in a ref so onDragEnd can read it
+  // Track the latest pointer position in a ref so onDragEnd can read it
   // without causing any React re-renders during the drag.
   const posRef = useRef({ x: 0, y: 0 });
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    posRef.current = { x: e.clientX, y: e.clientY };
-    setIsDragging(true);
-    startDragOverlay(icon, abrv ?? "", e.clientX, e.clientY);
-    onDragStart?.(id);
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isDragging) return;
-    posRef.current = { x: e.clientX, y: e.clientY };
-    updateDragOverlayPosition(e.clientX, e.clientY);
-  };
-
-  const handleMouseUp = (e: MouseEvent) => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    stopDragOverlay();
-    onDragEnd?.(id, e.clientX, e.clientY);
-  };
-
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
+  const { isActive, handlers } = usePointerGesture({
+    disabled,
+    onDown: ({ x, y }) => {
+      posRef.current = { x, y };
+      startDragOverlay(icon, abrv ?? "", x, y);
+      onDragStart?.(id);
+    },
+    onMove: ({ x, y }) => {
+      posRef.current = { x, y };
+      updateDragOverlayPosition(x, y);
+    },
+    onDragRecognised: () => onDragRecognised?.(id),
+    onUp: ({ x, y }, moved) => {
+      stopDragOverlay();
+      if (moved) {
+        onDragEnd?.(id, x, y);
+        return;
+      }
+      // A tap is the command model's pick-up/place gesture, not a zero-length
+      // drag: close the drag that pointer-down opened, then hand over.
+      onDragCancel?.(id);
+      onActivate?.(id);
+    },
+    onCancel: () => {
+      stopDragOverlay();
+      onDragCancel?.(id);
+    },
   });
 
-  return { isDragging, handleMouseDown };
+  return { isDragging: isActive, handlers };
 };

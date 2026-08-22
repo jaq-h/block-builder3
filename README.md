@@ -8,7 +8,7 @@ Built with **React 19** (with **React Compiler**), **TypeScript**, **Vite 7**, a
 
 ## Features
 
-- **Strategy Builder** — Drag-and-drop grid interface for assembling multi-leg order strategies (conditional orders, bulk orders)
+- **Strategy Builder** - Grid interface for assembling multi-leg order strategies (conditional orders, bulk orders), driveable with a mouse, a finger or the keyboard alone
 - **Active Orders** — View and manage submitted orders with real-time status tracking
 - **Kraken API Integration** — REST and WebSocket clients for authentication, order placement, and live market data
 - **Simulation Mode** — Test strategies locally without connecting to the Kraken API (always active in development)
@@ -208,11 +208,173 @@ The project enables the **React Compiler** (`babel-plugin-react-compiler`) via V
 
 ### Split Hooks
 
-Drag logic is split into purpose-specific hooks:
+Interaction logic is split into purpose-specific hooks:
 
+- **`usePointerGesture`** - The pointer primitive underneath both drag hooks: capture, tap-versus-drag, cancel
 - **`useFreeDrag`** — Free-form drag for moving blocks between grid cells (integrates with the drag overlay portal)
 - **`useVerticalDrag`** — Constrained vertical drag for sliding blocks along the price-scale axis
+- **`useBlockCommand`** - The select-then-place command model layered over the drag
 - **`useTradeExecution`** — Order configuration management, submission flow, simulation mode toggle
+
+---
+
+## Interaction model
+
+The builder has one interaction model, reached three ways. All of them end up calling the
+same two placement functions in `GridArea`, expressed in terms of a target **cell** rather
+than a pointer coordinate, so the input methods cannot drift apart.
+
+**Pointer: mouse, touch and pen.** `usePointerGesture` handles the raw gesture on Pointer
+Events, so one code path serves all three devices. Two details are load-bearing:
+
+- The dragged element takes `setPointerCapture`, which is what delivers `pointerup` even
+  when the button is released **outside the browser window**. The previous
+  `window.addEventListener("mouseup")` implementation never saw that release, and the block
+  stayed glued to the cursor.
+- Blocks carry `touch-action: none`. Without it the browser claims a finger drag for page
+  scrolling before the first `pointermove` arrives.
+
+A release that never travelled more than a few pixels is a **tap**, not a zero-length drop,
+and is handed to the command model instead of the drop handler.
+
+**Command model: keyboard, screen readers and taps.** Focus a block and press Enter - or
+Space, which a button answers to as well - to pick it up; the arrow keys choose a target
+cell; Enter places it; Escape returns it. Tab is never swallowed - it abandons the carry
+and moves focus on, so a carried block cannot trap the keyboard. On touch the same model
+is driven by taps: tap a block, tap a cell.
+
+The arrow keys step only between cells that were **legal when the carry began**, so the
+target under the arrows is always one the grid has accepted; `commit` re-checks at the
+moment of placing and says the order was not placed if the grid has changed since. They
+prefer a cell straight ahead and otherwise take the nearest legal cell in that direction,
+which is what makes the diagonal placement rule reachable at all: with one block placed, the
+only other legal cells are its diagonals, and a strictly orthogonal step could never leave
+the cell it started in.
+
+The pure half of that model - the transitions and the target arithmetic - lives in
+`src/utils/blockCommand.ts` and is directly testable. `useBlockCommand` adds the two things
+a reducer cannot supply: what gets announced, and where focus lands afterwards.
+
+**What moves between cells, and what does not.** A block the cell draws **on a price axis**
+stays in its cell. That is not an accessibility shortfall: a mouse cannot move one either -
+`Block` routes anything rendered on an axis to the vertical drag, so the free drag never
+applies to it - and every input method is held to the same capability. Palette placement and
+moving an **axis-less** block between cells are offered by pointer, keyboard and tap alike.
+`activateBlock` decides this from the cell's display mode, the same value the renderer uses,
+so the offer and the drawing can never disagree.
+
+**Removing a single block is pointer-only today.** It happens by dragging a block out of the
+grid: `removeBlock` is reached from one place, the `else` branch of `handleDragEnd`, which
+only a free drag that released outside every cell can get to. The command model has no
+delete transition at all - `blockCommand.ts` is pickUp, moveTarget, place and cancel - and
+`activateCell` can only name a grid cell, so a keyboard or a tap cannot remove one block.
+A keyboard user's removal path is **Clear All**. That is missing capability rather than a
+defect: a keyboard user can still assemble and price a complete strategy, and a delete
+transition - which needs its own confirmation and announcement design - is filed as its own
+work rather than bolted onto this lane.
+
+Enter or a tap on a priced block is therefore refused rather than silent, and the refusal
+names what that render does wire: the arrow keys, which move the block along its axis. The
+rule is the whole axis and not just paired legs - a lone Limit, a lone Stop Loss and two
+independent Limits sharing a bulk cell are all drawn on an axis, so all are refused, and all
+are equally immovable with a mouse. Only in a cell that draws **no** axis at all - a bulk
+cell holding an axis-less block - is the separate dual-axis refusal reached, and there it
+promises no arrow keys, because none are wired.
+
+Moving a placed priced block between cells is a real capability worth having for every
+input method, and it is **sequenced rather than abandoned**: a cell's scale is currently
+its first block's `direction`, so moving a block out of a mixed cell would silently re-price
+the ones left behind. It is filed with the lane that gives the block-to-price mapping a
+single owner, because doing it safely needs that authority to exist first.
+
+**The price axis** is a block's most important property, so it is reachable every way too: a
+pointer drags the block up and down its axis, and on the keyboard it behaves as a real
+vertical slider - `role="slider"` with arrow keys (Shift for a larger step, Page Up/Down
+larger still, Home/End for the ends of the axis). Its `aria-valuenow` is the **signed** offset
+from the market price, positive above and negative below, so the value always moves the same
+way the block does on screen whichever direction the cell's scale runs.
+
+**A drag supersedes a carry.** Starting a real pointer drag - the move that crosses the tap
+slop, not the pointer-down that might still be a tap - cancels whatever the command model is
+carrying. Without that, the click the browser appends to every gesture bubbles from the
+dragged block into its cell, which is a live placement target while anything is carried, and
+the carried block is placed somewhere the user never chose. Cancelling at pointer-down
+instead would break the tap that places a carried block into another block's cell, which is
+why `usePointerGesture` reports drag recognition as its own moment.
+
+That release is **silent** (`cancel({ silent: true })`), and the drag announces its own
+outcome when it ends instead. A cancellation message names a resting place - "left in Entry
+column, row 2" - and the very gesture that triggered it is about to move, remove or place
+that block, so the last thing said would contradict the grid. A **free drag of a placed block that
+ends on a cell or off the grid**, and a **palette drag that resolves to a cell**, therefore
+say what they did: moved to a named cell, stayed where it was, removed from the grid, or
+placed from the palette into a named cell, using `describeCell` and `describeSource` so the pointer path and the keyboard path sound like one
+interaction. The vertical price drag is deliberately left silent: a placed block is a
+`role="slider"`, and assistive technology already speaks its `aria-valuetext` on every
+change.
+
+**Known announcement gap, shipping deliberately.** Not every path through the announcement
+layer is correct yet. These are gaps in this change, not limits of the platform or of
+assistive technology, and each is deterministic rather than occasional:
+
+- A **vertical price drag releases an active carry silently.** It crosses the same tap slop
+  as any other drag, so it supersedes the carry, but it never reaches the drop handler and
+  nothing is announced. The carry is gone with no word said - and the next tap on a cell
+  then does nothing at all, because `GridCell` attaches its click handler only while
+  something is carried. A **`pointercancel`** ends the same way: `endDrag` alone, no message.
+- A **palette drag released outside every cell announces nothing.** `handleProviderDragEnd`
+  speaks only when the release resolves to a cell.
+- On the **conditional pattern - the default - a same-cell release announces a refusal that
+  contradicts where the block is.** The drop supplies a position, so `moveBlockToCell` skips
+  its same-cell no-op branch and asks `isCellValidForPlacement`, which reads the block's own
+  occupied cell as an illegal target. The live region then says "Entry column, primary row
+  cannot take this order. Market block stayed in Entry column, primary row." Nudging a block
+  a few pixels and letting go is enough to hear it. The bulk pattern does not show it,
+  because every cell is a legal target there.
+
+All three are sequenced to the lane that gives the block-to-price mapping and the
+announcement layer a single owner. The plan is that this branch waits for that lane rather
+than merging ahead of it.
+
+Announcements go through `LiveAnnouncer`, which alternates between two live regions: a
+screen reader only reads a region whose content **changed**, so two identical messages in a
+row would otherwise be silent the second time.
+
+**Known gap, bulk pattern only.** A bulk cell holding any axis-less block draws *every*
+block in it without an axis: `getCellDisplayMode` returns `"no-axis"` as soon as one block
+has no axes, and that decides the whole cell. Four things follow, and all are limited to
+that case. They do not share a provenance, so they are listed apart - two inherited, two
+introduced here.
+
+*Inherited, and present before the pointer/keyboard work.* Mouse free drag reaches a paired
+dual-axis leg in such a cell and can split the order across cells, because the cell draws
+that leg without an axis and `Block` sends anything drawn without one to the free drag.
+
+*Also inherited.* That same drop path writes `yPosition` through `calculateYPosition`, which
+returns 0-100 against a scale whose maximum is 50, so a block can render pinned at the 50%
+end while its label reads the raw value.
+
+*Introduced by the pointer/keyboard work.* Keyboard and tap pick-up of a paired dual-axis
+leg is refused in such a cell - there was no keyboard or tap pick-up at all before this
+change, so the refusal could not have been inherited - and it deliberately does not offer
+the arrow keys, because that render wires none.
+
+*Introduced by the pointer/keyboard work, and now contained.* Unifying the track geometry
+made the vertical drag resolve its track by the block's own `axis` field, which can disagree
+with the axis column the renderer actually drew it in - a Limit stamped `axis: 1` by a drop
+in the left half of a cell is still drawn in that cell's limit column. A miss left the drag
+silently dead, so the order could not be re-priced by mouse or by finger while the arrow
+keys still worked. `handleBlockVerticalDrag` now falls back to whichever axis track the cell
+did render, restoring the property the earlier implementation had of always finding a track.
+The keying disagreement itself remains.
+
+The conditional pattern cannot reach any of it, because an occupied cell is never a valid
+target. The real fix is to give the block-to-price mapping one owner instead of several
+consumers that have to agree, and that is filed as its own piece of work.
+
+Each of the three input methods driving the running app is captured in
+[`docs/screenshots/interaction/`](docs/screenshots/interaction/), which records the commit
+every shot was taken against.
 
 ### Error Boundaries
 
@@ -256,6 +418,7 @@ src/
 │   ├── common/
 │   │   ├── DragOverlay.tsx        # Portal-rendered drag ghost (rAF-driven positioning)
 │   │   ├── dragOverlayStore.ts    # Module-level drag state (useSyncExternalStore)
+│   │   ├── LiveAnnouncer.tsx      # Two alternating live regions for announcements
 │   │   ├── ErrorBoundary.tsx      # Recoverable fallback UI in place of a blank page
 │   │   ├── NavBar.tsx             # Navigation bar with live order badge
 │   │   └── grid/                  # Shared grid components
@@ -307,8 +470,11 @@ src/
 │   └── index.ts
 │
 ├── hooks/                         # Custom React hooks
+│   ├── usePointerGesture.ts       # Pointer primitive (capture, tap vs drag, cancel)
 │   ├── useFreeDrag.ts             # Free-form drag (provider → grid cell)
 │   ├── useVerticalDrag.ts         # Vertical-axis drag (price scale sliding)
+│   ├── useBlockCommand.ts         # Select-then-place command model (keyboard, taps)
+│   ├── useAnnouncer.ts            # Live-region message state
 │   ├── useKrakenAPI.ts            # Kraken API hook (prices, order management)
 │   ├── useOHLCData.ts             # OHLC candle fetching for the chart
 │   ├── useTradeExecution.ts       # Trade config, submission & simulation flow
@@ -326,7 +492,7 @@ src/
 │
 ├── styles/                        # Shared style constants
 │   ├── theme.ts                   # Design tokens / theme values
-│   ├── grid.ts                    # Grid-specific style helpers
+│   ├── grid.ts                    # Grid style helpers & the axis track geometry
 │   ├── shared.ts                  # Shared style strings
 │   └── index.ts
 │
@@ -339,6 +505,7 @@ src/
 │   └── index.ts                   # Barrel export
 │
 ├── utils/                         # Pure utility functions
+│   ├── blockCommand.ts            # Select-then-place state machine (pure half)
 │   ├── blockFactory.ts            # Factory for creating block data
 │   ├── grid.ts                    # Grid manipulation helpers
 │   └── index.ts

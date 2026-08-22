@@ -38,19 +38,21 @@ const DragOverlay: React.FC = () => {
     };
   }, [state.active]);
 
-  // Also wire up a direct mousemove → pos mutation so the rAF loop always
-  // has fresh coordinates.  This listener lives on `window` so it captures
-  // moves even when the pointer is over elements with pointer-events: none.
+  // Also wire up a direct pointermove → pos mutation so the rAF loop always
+  // has fresh coordinates.  Pointer events rather than mouse events, so the
+  // overlay follows a finger as well as a cursor.  This listener lives on
+  // `window` so it captures moves even when the pointer is over elements with
+  // pointer-events: none.
   useEffect(() => {
     if (!state.active) return;
 
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       pos.x = e.clientX;
       pos.y = e.clientY;
     };
 
-    window.addEventListener("mousemove", onMove);
-    return () => window.removeEventListener("mousemove", onMove);
+    window.addEventListener("pointermove", onMove);
+    return () => window.removeEventListener("pointermove", onMove);
   }, [state.active]);
 
   const portalTarget = document.getElementById("drag-overlay");

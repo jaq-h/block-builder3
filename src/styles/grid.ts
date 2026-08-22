@@ -44,8 +44,14 @@ export const MARKET_GAP = 10; // Gap between market axis and 0% block position
 // HELPER FUNCTIONS
 // =============================================================================
 
-export const getTrackHeight = () =>
-  `calc(100% - ${BLOCK_HEIGHT + MARKET_PADDING + MARKET_GAP}px)`;
+/** Vertical space the track gives up to the block itself and the market label. */
+export const TRACK_INSET = BLOCK_HEIGHT + MARKET_PADDING + MARKET_GAP;
+
+export const getTrackHeight = () => `calc(100% - ${TRACK_INSET}px)`;
+
+/** `getTrackHeight` in pixels, for a measured track element. */
+export const getTrackHeightPx = (elementHeight: number) =>
+  elementHeight - TRACK_INSET;
 
 export const getTrackStart = (isDescending: boolean) =>
   isDescending ? MARKET_PADDING + MARKET_GAP : 0;
@@ -64,6 +70,53 @@ export const getPositionPercent = (
   // Convert to 0-1 range based on max percent
   const normalizedPosition = clampedPosition / MAX_PERCENT;
   return isDescending ? normalizedPosition : 1 - normalizedPosition;
+};
+
+// =============================================================================
+// TRACK GEOMETRY - the one mapping between a yPosition and a pixel
+// =============================================================================
+//
+// The renderer and the vertical drag used to derive the track independently:
+// `getBlockPositionerProps` from the axis column, the drag from the containing
+// cell with its own constants. They disagreed in offset and scale, so every drag
+// jumped on its first move: measured in Chrome against the base commit, a block
+// rendered at 25.00% and grabbed exactly on its own centre read back through the
+// drag as 31.98%. That figure is the measurement, not a derivation from assumed
+// pixel values, which is why it is not round - do not recompute it. Both
+// directions now go through this pair.
+
+/**
+ * Where the block's top edge is laid out, in pixels from the top of the axis
+ * column it is positioned within. This is the numeric form of the `top` that
+ * `getBlockPositionerProps` emits as CSS.
+ */
+export const getBlockTopPx = (
+  yPosition: number,
+  elementHeight: number,
+  isDescending: boolean,
+): number =>
+  getTrackHeightPx(elementHeight) * getPositionPercent(yPosition, isDescending) +
+  getTrackStart(isDescending);
+
+/**
+ * The exact inverse: the yPosition that lays the block's centre out at
+ * `pointerY`, given the rect of the axis column it is positioned within.
+ */
+export const positionFromPointer = (
+  trackRect: { top: number; height: number },
+  pointerY: number,
+  isDescending: boolean,
+): number => {
+  const trackHeight = getTrackHeightPx(trackRect.height);
+  if (trackHeight <= 0) return 0;
+
+  const centreOffset = getTrackStart(isDescending) + BLOCK_HEIGHT / 2;
+  const percent = Math.max(
+    0,
+    Math.min(1, (pointerY - trackRect.top - centreOffset) / trackHeight),
+  );
+  const normalized = isDescending ? percent : 1 - percent;
+  return normalized * SCALE_CONFIG.MAX_PERCENT;
 };
 
 // =============================================================================
