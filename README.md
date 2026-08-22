@@ -803,6 +803,7 @@ src/
 | [react](https://react.dev/) | ^19.2.0 | UI framework |
 | [react-dom](https://react.dev/) | ^19.2.0 | React DOM renderer |
 | [react-router-dom](https://reactrouter.com/) | ^7.12.0 | Client-side routing (Strategy Builder ↔ Active Orders) |
+| [lightweight-charts](https://tradingview.github.io/lightweight-charts/) | ^5.1.0 | Price chart rendering (code-split, chart panel only) |
 | [tailwindcss](https://tailwindcss.com/) | ^4.1.18 | Utility-first CSS framework |
 | [@tailwindcss/vite](https://tailwindcss.com/docs/installation/vite) | ^4.1.18 | Tailwind CSS Vite plugin |
 | [class-variance-authority](https://cva.style/) | ^0.7.1 | Variant-driven component styling (CVA) |
