@@ -144,8 +144,20 @@ function AppInner() {
           <OrderChart orders={orderConfig} />
         </ErrorBoundary>
       </div>
-      {/* Active orders - fills remaining height */}
-      <div className="overflow-scroll max-h-200 border-t border-border-neutral">
+      {/* Active orders - fills remaining height.
+          `overflow-auto`, not `overflow-scroll`: this container never has
+          anything to scroll, because `ActiveOrders` is `h-full` inside it and
+          its own card list is the scroller. `scroll` drew and reserved a bar on
+          both axes anyway, permanently and on a container that cannot move -
+          measured empty, scrollHeight 467 against clientHeight 467 and
+          scrollWidth 676 against clientWidth 676. `auto` keeps the bar for the
+          case where there is genuinely something under it.
+          The `max-h-200` that was here was a magic 800px on a container the
+          `1fr` row already bounds. It did nothing at 900px tall and actively
+          took room away above that: at 1440x1400 the row was 968px, the cap
+          held the panel to 800px, and the 168px it gave up sat empty below
+          while the order list inside was still overflowing by 301px. */}
+      <div className="overflow-auto border-t border-border-neutral">
         <ActiveOrders
           initialOrders={displayOrders}
           onEditGroup={handleEditGroup}
