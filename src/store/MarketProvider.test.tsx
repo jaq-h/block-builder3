@@ -546,6 +546,81 @@ describe("MarketProvider after a failed request", () => {
     );
   });
 
+  // The same defect one interleaving deeper, and the shape the test above
+  // cannot reach: TWO failures each arm a retry, so there are two live timers
+  // and only one slot to hold them in.
+  //
+  // Trace, with the backoff at one second. Chain 1 fails at t=0 and arms timer
+  // A for t=1000. A focus at t=500 starts chain 2 - nothing is in flight
+  // between attempts - and it fails too, arming timer B for t=1500 and
+  // overwriting the handle to A without clearing it. A still fires at t=1000,
+  // and the callback nulls the slot, which is now B's handle rather than its
+  // own. From there nothing can clear B: a load that succeeds finds the slot
+  // empty, so B fires against a provider holding a complete set of rules and
+  // asks Kraken for them again.
+  it("supersedes a retry armed by a chain that a later one has replaced", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockRejectedValueOnce(new Error("network still down"))
+      .mockResolvedValueOnce(assetPairsOk())
+      // Only an orphaned timer can reach this. It is the request the provider
+      // no longer needs, and its failure is what lands on the loaded map.
+      .mockRejectedValue(new Error("a request nothing was waiting for"));
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    // Chain 1 fails and arms timer A for t=1000.
+    await act(async () => {});
+    expect(screen.getByTestId("error")).toHaveTextContent("network down");
+
+    // t=500: the tab comes back, starting chain 2 while A is still pending.
+    // It fails as well, arming timer B for t=1500 and orphaning A.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+      window.dispatchEvent(new Event("focus"));
+    });
+    await act(async () => {});
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    // t=1000: A's moment. It belongs to a chain that chain 2 replaced, so it
+    // must not ask again - chain 2 owns the retry from here.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    // t=1500: B's moment. B is the live chain's own retry, so this one does
+    // ask, and it succeeds.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId("decimals")).toHaveTextContent(
+      String(BTC_USD.priceDecimals),
+    );
+    expect(screen.getByTestId("error")).toHaveTextContent("none");
+
+    // Nothing armed by either chain may outlive the answer: no further request,
+    // no failure written over the populated map, and recovery not re-armed.
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("online"));
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(screen.getByTestId("decimals")).toHaveTextContent(
+      String(BTC_USD.priceDecimals),
+    );
+  });
+
   it("sets nothing after it has been unmounted", async () => {
     vi.useFakeTimers();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));

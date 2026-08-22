@@ -48,16 +48,23 @@ interface LoadHandles {
   inFlight: { current: boolean };
   retryTimer: { current: ReturnType<typeof setTimeout> | null };
   /**
-   * Which attempt the provider is still interested in. Every entry point below
-   * takes the next number, and a result carrying an older one is dropped.
+   * Which chain is the live one. Every start below takes the next number, so a
+   * chain can ask whether something newer has replaced it since.
    *
-   * Recovery gives this more than one chain to keep straight: a failure arms a
-   * retry, and a focus or an `online` event can start a fresh chain before that
-   * timer fires. Without this counter the loser of that race still wrote its
-   * answer, so a stale attempt failing *after* the metadata had loaded set
-   * `metadataError` on top of a fully populated map - the selector saying
-   * orders could not be submitted while every chip on screen drew a real price
-   * and the order path built payloads perfectly well.
+   * Its one real job is the armed retry, because that is the only place a
+   * superseded chain can still act. Recovery makes two chains at once ordinary:
+   * a failure arms a backoff, and a focus, an `online` event or a selection can
+   * start a fresh chain before that timer fires. `retryTimer` is a single slot
+   * and cannot hold both, so the second arming overwrites the first handle
+   * without clearing it and neither a success nor an unmount can reach the
+   * orphan. Comparing this number at the moment the timer fires is what retires
+   * it instead - a chain that is no longer current does not ask again, and the
+   * chain that replaced it owns the retry from there.
+   *
+   * Left unretired, that orphan fired against a provider that already held a
+   * complete set of rules, asked Kraken for them again, and on failure wrote
+   * `metadataError` over the populated map - which put recovery back on and had
+   * every later tab switch and selection re-request an answer already in hand.
    */
   generation: { current: number };
   /** The request in flight, so an unmounting provider can abandon it. */
@@ -74,7 +81,12 @@ const loadPrecisions = (handles: LoadHandles, attempt = 1): void => {
   const controller = new AbortController();
   handles.request.current = controller;
 
-  /** Whether this attempt is still the one the provider is waiting on. */
+  /**
+   * Whether this attempt's answer is still wanted. The in-flight guard above
+   * means no other chain can have started while this one was running, so today
+   * only the cancelled flag can be false here; the generation is compared for
+   * the case the settle path ever stops being mutually exclusive with a start.
+   */
   const current = () =>
     !handles.cancelled.current && generation === handles.generation.current;
 
@@ -84,10 +96,10 @@ const loadPrecisions = (handles: LoadHandles, attempt = 1): void => {
       if (!current()) return;
       handles.request.current = null;
 
-      // An answer ends the whole chain, including a retry another attempt of it
-      // already armed. That timer is the other half of the same defect: left
-      // running it fires after the load has succeeded, issues a request nothing
-      // needs, and turns its failure into an error over loaded metadata.
+      // Drop this chain's own pending retry, if it still holds the slot. This
+      // is a tidy-up rather than the guarantee: the slot holds at most one
+      // timer, so an answer cannot reach a retry some other chain armed. What
+      // stops that one is the generation check in the timer itself.
       if (handles.retryTimer.current) {
         clearTimeout(handles.retryTimer.current);
         handles.retryTimer.current = null;
@@ -114,6 +126,10 @@ const loadPrecisions = (handles: LoadHandles, attempt = 1): void => {
 
       handles.retryTimer.current = setTimeout(() => {
         handles.retryTimer.current = null;
+        // Only the live chain may continue. Anything newer - a focus, an
+        // `online` event, a selection - has taken over the job of getting an
+        // answer, and it carries its own bounded backoff.
+        if (generation !== handles.generation.current) return;
         loadPrecisions(handles, attempt + 1);
       }, delay);
     });
