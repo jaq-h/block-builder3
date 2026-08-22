@@ -293,11 +293,22 @@ way the block does on screen whichever direction the cell's scale runs.
 
 **A drag supersedes a carry.** Starting a real pointer drag - the move that crosses the tap
 slop, not the pointer-down that might still be a tap - cancels whatever the command model is
-carrying, and says so. Without that, the click the browser appends to every gesture bubbles
-from the dragged block into its cell, which is a live placement target while anything is
-carried, and the carried block is placed somewhere the user never chose. Cancelling at
-pointer-down instead would break the tap that places a carried block into another block's
-cell, which is why `usePointerGesture` reports drag recognition as its own moment.
+carrying. Without that, the click the browser appends to every gesture bubbles from the
+dragged block into its cell, which is a live placement target while anything is carried, and
+the carried block is placed somewhere the user never chose. Cancelling at pointer-down
+instead would break the tap that places a carried block into another block's cell, which is
+why `usePointerGesture` reports drag recognition as its own moment.
+
+That release is **silent** (`cancel({ silent: true })`), and the drag announces its own
+outcome when it ends instead. A cancellation message names a resting place - "left in Entry
+column, row 2" - and the very gesture that triggered it is about to move, remove or place
+that block, so the last thing said would contradict the grid. **Every completed drag now
+speaks**: moved to a named cell, stayed where it was, removed from the grid, or placed from
+the palette into a named cell, using `describeCell` and `describeSource` so the pointer path
+and the keyboard path sound like one interaction. A drop the placement rules refuse says the
+block stayed put rather than claiming a move. The vertical price drag is deliberately left
+silent: a placed block is a `role="slider"`, and assistive technology already speaks its
+`aria-valuetext` on every change.
 
 Announcements go through `LiveAnnouncer`, which alternates between two live regions: a
 screen reader only reads a region whose content **changed**, so two identical messages in a

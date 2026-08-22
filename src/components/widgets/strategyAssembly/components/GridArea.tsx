@@ -12,7 +12,11 @@ import {
   createBlocksFromOrderType,
   buildOrderConfigEntry,
 } from "../../../../utils";
-import { samePosition } from "../../../../utils/blockCommand";
+import {
+  describeCell,
+  describeSource,
+  samePosition,
+} from "../../../../utils/blockCommand";
 import type { BlockData, CellPosition } from "../../../../types/grid";
 import { COLUMN_HEADERS } from "../../../../data/orderTypes";
 import { PATTERN_CONFIGS } from "../../../../types/grid";
@@ -318,7 +322,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
    * to be.
    */
   const handleDragRecognised = () => {
-    command.cancel({ restoreFocus: false });
+    command.cancel({ restoreFocus: false, silent: true });
   };
 
   const endDrag = () => {
@@ -345,10 +349,15 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   const handleProviderDragEnd = (type: string, x: number, y: number) => {
     const positionData = findCellAndPositionData(x, y);
     if (positionData) {
-      placeProviderInCell(type, {
-        col: positionData.col,
-        row: positionData.row,
-      });
+      const cell = { col: positionData.col, row: positionData.row };
+      const label =
+        providerBlocks.find((b) => b.type === type)?.label ?? type;
+      const source = { kind: "provider" as const, type, label };
+      command.announce(
+        placeProviderInCell(type, cell) === null
+          ? `${describeCell(cell, strategyPattern)} cannot take this order. ${describeSource(source)} was not placed.`
+          : `Placed ${describeSource(source)} in ${describeCell(cell, strategyPattern)}.`,
+      );
     }
     endDrag();
   };
@@ -439,12 +448,33 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
       return;
     }
 
+    // The drag is the only feedback a screen-reader user gets for this gesture,
+    // and it is the gesture a finger reaches for first, so each outcome says
+    // what actually happened - in the command model's own vocabulary, and
+    // never claiming a move, a placement or a removal that did not occur.
+    const origin = { col: blockInfo.col, row: blockInfo.row };
+    const source = {
+      kind: "grid" as const,
+      id,
+      label: blockInfo.block.label,
+      origin,
+    };
+
     if (positionData) {
       const { col, row, axis, yPosition } = positionData;
-      moveBlockToCell(id, { col, row }, { axis, yPosition });
+      const target = { col, row };
+      const placed = moveBlockToCell(id, target, { axis, yPosition }) !== null;
+      command.announce(
+        !placed
+          ? `${describeCell(target, strategyPattern)} cannot take this order. ${describeSource(source)} stayed in ${describeCell(origin, strategyPattern)}.`
+          : samePosition(target, origin)
+            ? `${describeSource(source)} stayed in ${describeCell(origin, strategyPattern)}.`
+            : `Moved ${describeSource(source)} to ${describeCell(target, strategyPattern)}.`,
+      );
     } else {
       // Dropped outside - remove only this block
-      removeBlock(id, { col: blockInfo.col, row: blockInfo.row });
+      removeBlock(id, origin);
+      command.announce(`Removed ${describeSource(source)} from the grid.`);
     }
 
     endDrag();

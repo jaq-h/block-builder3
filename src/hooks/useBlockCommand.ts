@@ -44,6 +44,13 @@ export interface CancelOptions {
    * and restoring it would drag the user back to the block they just left.
    */
   restoreFocus?: boolean;
+  /**
+   * Release the carry without speaking. A pointer drag that supersedes a carry
+   * uses this: the drag is about to move, remove or place the very block a
+   * cancellation message would name as resting somewhere, and the drag
+   * announces its own outcome instead.
+   */
+  silent?: boolean;
 }
 
 export interface UseBlockCommandOptions {
@@ -161,11 +168,12 @@ export const useBlockCommand = ({
     );
   };
 
-  const cancel = ({ restoreFocus = true }: CancelOptions = {}) => {
+  const cancel = ({ restoreFocus = true, silent = false }: CancelOptions = {}) => {
     pointerPickUpRef.current = false;
     if (!carrying) return;
     dispatch({ type: "cancel" });
     if (restoreFocus) setFocusRequest(sourceKey(carrying.source));
+    if (silent) return;
     announce(
       carrying.source.kind === "provider"
         ? `Cancelled. ${describeSource(carrying.source)} returned to the palette.`

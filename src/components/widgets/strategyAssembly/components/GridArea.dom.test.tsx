@@ -434,8 +434,10 @@ describe("GridArea, tapping a placed block", () => {
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
     expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
     expect(cell(0, 1)).not.toHaveAttribute("aria-current");
-    expect(announcement()).toContain(
-      "Cancelled. Market block left in Entry column, row 2.",
+    // The last thing said has to be the outcome of the gesture the user made:
+    // the dragged block went nowhere, and nothing was placed anywhere.
+    expect(announcement()).toBe(
+      "Market block stayed in Exit column, row 1.",
     );
   });
 
@@ -455,9 +457,9 @@ describe("GridArea, tapping a placed block", () => {
     // A carry left live would still point its target highlight at the cell the
     // block has just been dragged out of.
     expect(cell(0, 1)).not.toHaveAttribute("aria-current");
-    expect(announcement()).toContain(
-      "Cancelled. Market block left in Entry column, row 2.",
-    );
+    // And the announcement has to name the cell the block is actually in. This
+    // assertion used to say the block had been left in the cell it just left.
+    expect(announcement()).toBe("Moved Market block to Exit column, row 3.");
   });
 
   it("refuses to carry a block drawn on a price axis, and still prices it", () => {
@@ -478,6 +480,64 @@ describe("GridArea, tapping a placed block", () => {
     fireEvent(slider, pointer("pointerup", centre + 30));
 
     expect(renderedCentre()).toBeCloseTo(centre + 30, 1);
+  });
+});
+
+// =============================================================================
+// WHAT A COMPLETED DRAG SAYS
+// =============================================================================
+//
+// A drag is the gesture a finger reaches for first, and it used to say nothing
+// at all - so a screen-reader user dragging on touch got either silence or, once
+// a drag started releasing an active carry, a cancellation naming a resting
+// place the same gesture was about to invalidate. Each outcome now speaks for
+// itself, in the words the keyboard path uses.
+
+describe("GridArea, what a completed drag says", () => {
+  it("says the block was removed when the drag ends off the grid", () => {
+    const { first } = renderTwoBlocks();
+
+    // No cell rect is stubbed, so every cell measures empty and this release
+    // lands outside all of them - the drop that deletes.
+    fireEvent(first, pointerAt("pointerdown", 30, 150));
+    fireEvent(first, pointerAt("pointermove", 900, 900));
+    fireEvent(first, pointerAt("pointerup", 900, 900));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(announcement()).toBe("Removed Market block from the grid.");
+  });
+
+  it("names the cell a palette drag placed the order in", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+    stubRect(cell(1, 0), 100, 200);
+
+    const palette = screen.getByRole("button", { name: "Add Market order" });
+    fireEvent(palette, pointerAt("pointerdown", 30, 20));
+    fireEvent(palette, pointerAt("pointermove", 30, 150));
+    fireEvent(palette, pointerAt("pointerup", 30, 150));
+
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
+    expect(announcement()).toBe("Placed Market order in Exit column, row 1.");
+  });
+
+  it("does not claim a placement the grid refused", () => {
+    // Conditional pattern: the first block must go in the primary row, so a
+    // drag into an upper conditional cell is refused and nothing is created.
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+    stubRect(cell(0, 0), 100, 200);
+
+    const palette = screen.getByRole("button", { name: "Add Market order" });
+    fireEvent(palette, pointerAt("pointerdown", 30, 20));
+    fireEvent(palette, pointerAt("pointermove", 30, 150));
+    fireEvent(palette, pointerAt("pointerup", 30, 150));
+
+    expect(cell(0, 0)).toHaveAttribute(
+      "aria-label",
+      "Entry column, upper conditional row, empty",
+    );
+    expect(announcement()).toBe(
+      "Entry column, upper conditional row cannot take this order. Market order was not placed.",
+    );
   });
 });
 
