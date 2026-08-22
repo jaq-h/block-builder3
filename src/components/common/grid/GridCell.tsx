@@ -1,7 +1,12 @@
 import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
-import { getCellDisplayMode, isCellDescending } from "../../../utils";
+import {
+  calculatePrice,
+  formatPrice,
+  getCellDisplayMode,
+  isCellDescending,
+} from "../../../utils";
 import { describeCell } from "../../../utils/blockCommand";
 import type { CancelOptions } from "../../../hooks/useBlockCommand";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
@@ -29,26 +34,6 @@ import {
   warningSubtext,
   getScaleLabels,
 } from "./GridCell.styles";
-
-// Helper to calculate price from percentage offset
-const calculatePrice = (
-  marketPrice: number | null,
-  percentage: number,
-  isDescending: boolean,
-): number | null => {
-  if (marketPrice === null) return null;
-  const multiplier = isDescending ? 1 - percentage / 100 : 1 + percentage / 100;
-  return marketPrice * multiplier;
-};
-
-// Helper to format price for display
-const formatCalculatedPrice = (price: number | null): string => {
-  if (price === null) return "—";
-  return `$${price.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-};
 
 // Props interface
 interface GridCellProps {
@@ -247,7 +232,7 @@ const GridCell: FC<GridCellProps> = ({
                 {block.yPosition.toFixed(2)}%
               </div>
               <div className={priceProps.className} style={priceProps.style}>
-                {formatCalculatedPrice(calculatedPrice)}
+                {formatPrice(calculatedPrice)}
               </div>
               <div className={posProps.className} style={posProps.style}>
                 <Block
@@ -259,7 +244,7 @@ const GridCell: FC<GridCellProps> = ({
                   axes={block.axes}
                   yPosition={block.yPosition}
                   direction={isDescending ? "downside" : "upside"}
-                  priceText={formatCalculatedPrice(calculatedPrice)}
+                  priceText={formatPrice(calculatedPrice)}
                   onVerticalDrag={onBlockVerticalDrag}
                   onAdjustPrice={onBlockAdjustPrice}
                   {...commandProps(block.id)}

@@ -286,12 +286,25 @@ export const useKrakenAPI = (
       return [];
     }
 
-    const orders = mapGridToOrders(grid, {
-      symbol,
-      currentPrice,
-      quantity,
-    });
+    // The mapper refuses a grid it cannot express as Kraken orders - a cycle of
+    // conditional links, or an order type it does not recognise. Surface that
+    // rather than letting it escape as an unhandled error from the click.
+    let orders: OrderParams[];
+    try {
+      orders = mapGridToOrders(grid, {
+        symbol,
+        currentPrice,
+        quantity,
+      });
+    } catch (error) {
+      setOrderError(
+        error instanceof Error ? error.message : "Could not build orders",
+      );
+      setPendingOrders([]);
+      return [];
+    }
 
+    setOrderError(null);
     setPendingOrders(orders);
     return orders;
   };

@@ -1,5 +1,7 @@
 // Kraken API Types
 
+import type { BlockDirection } from "../types/grid";
+
 // ============================================================================
 // Order Types (for WebSocket API v2)
 // ============================================================================
@@ -189,6 +191,13 @@ export interface UIBlockData {
   orderType: string;
   abrv: string;
   position: UIBlockPosition;
+  /**
+   * Which side of the market the block sits on, carried straight from the
+   * placed block. This is what the grid cell renders its price chip from, so
+   * the mapper reads it rather than re-deriving a direction from row/column -
+   * the two disagree under the bulk pattern.
+   */
+  direction: BlockDirection;
   axes: ("trigger" | "limit")[];
   linkedBlockId?: string;
 }

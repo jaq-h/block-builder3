@@ -11,6 +11,7 @@ import type {
 } from "../types/grid";
 import type { OrderTypeDefinition } from "../data/orderTypes";
 import { GRID_CONFIG } from "../data/orderTypes";
+import { priceAtOffset } from "./price";
 
 // =============================================================================
 // TYPES
@@ -256,16 +257,19 @@ export const isCellDescending = (blocks: BlockData[]): boolean =>
 // PRICE CALCULATIONS
 // =============================================================================
 
-/** Calculate price from percentage offset */
+/**
+ * Calculate price from percentage offset, tolerating a not-yet-loaded market
+ * price. The formula itself lives in `priceAtOffset` so the order mapper builds
+ * its payloads from the same one.
+ */
 export const calculatePrice = (
   marketPrice: number | null,
   percentage: number,
   isDescending: boolean,
-): number | null => {
-  if (marketPrice === null) return null;
-  const multiplier = isDescending ? 1 - percentage / 100 : 1 + percentage / 100;
-  return marketPrice * multiplier;
-};
+): number | null =>
+  marketPrice === null
+    ? null
+    : priceAtOffset(marketPrice, percentage, isDescending);
 
 /** Format price for display */
 export const formatPrice = (price: number | null): string => {

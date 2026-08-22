@@ -2,10 +2,9 @@ import { describe, it, expect } from "vitest";
 
 import {
   blockDataToUIBlock,
-  calculatePriceFromPosition,
+  calculateBlockPrice,
   createOrderPreview,
   extractBlocksFromGrid,
-  extractOrderTypeFromId,
   findLinkedBlocks,
   formatPriceForAPI,
   mapBlockToOrderParams,
@@ -16,6 +15,7 @@ import type { OrderBuildContext, UIBlockData } from "@api/types";
 import type { BlockData, GridData } from "@/types/grid";
 import { ORDER_TYPES } from "@data/orderTypes";
 import { createBlocksFromOrderType } from "@utils/blockFactory";
+import { calculatePrice, shouldBeDescending } from "@utils/grid";
 
 // =============================================================================
 // FIXTURES
@@ -33,11 +33,14 @@ const context = (
   ...overrides,
 });
 
+// An Entry limit in the primary row: `shouldBeDescending(1, 0, "conditional")`
+// is true, so the grid draws it below market and stamps it "downside".
 const uiBlock = (overrides: Partial<UIBlockData> = {}): UIBlockData => ({
   id: "sa-limit-1",
   orderType: "limit",
   abrv: "Lmt",
   position: { col: 0, row: 1, yPosition: 25, axis: 2 },
+  direction: "downside",
   axes: ["limit"],
   ...overrides,
 });
@@ -50,7 +53,7 @@ const blockData = (overrides: Partial<BlockData> = {}): BlockData => ({
   allowedRows: [0, 1],
   axis: 2,
   yPosition: 25,
-  direction: "upside",
+  direction: "downside",
   axes: ["limit"],
   ...overrides,
 });
@@ -71,33 +74,84 @@ const gridWith = (
 // PRICE MATHS
 // =============================================================================
 
-describe("calculatePriceFromPosition", () => {
-  // The UI position is deliberately damped: scaleFactor 0.1 means a slider at
-  // 25% is a 2.5% move away from market, not 25%.
-  it("damps the UI percentage by 10x", () => {
-    // Float maths leaves a sub-cent residue (51249.99999999999), which
-    // formatPriceForAPI rounds away before the value ever reaches Kraken.
-    expect(calculatePriceFromPosition(25, 50_000, 0, 1)).toBeCloseTo(51_250, 6);
+describe("calculateBlockPrice", () => {
+  // FORMERLY A CHARACTERISATION OF A KNOWN BUG. The mapper applied its own
+  // `scaleFactor` of 0.1, so a block the grid drew at +25% was sent at +2.5%:
+  // against a $50,000 market, $51,250 instead of $62,500. Decision D3 settled
+  // that the interface is right, so the scale factor is gone.
+  it("takes the block position at face value, with no damping", () => {
+    expect(
+      calculateBlockPrice(
+        uiBlock({
+          direction: "upside",
+          position: { col: 1, row: 0, yPosition: 25, axis: 2 },
+        }),
+        50_000,
+      ),
+    ).toBeCloseTo(62_500, 6);
   });
 
-  it("puts the top row above market regardless of column", () => {
-    expect(calculatePriceFromPosition(10, 50_000, 0, 0)).toBe(50_500);
-    expect(calculatePriceFromPosition(10, 50_000, 0, 1)).toBe(50_500);
+  // FORMERLY A SECOND HALF OF THE SAME BUG. The mapper decided the side of the
+  // market from raw row/column while the grid decided it from the block's
+  // `direction`, which also accounts for the strategy pattern and the order
+  // type. Under the bulk pattern the two resolved to opposite sides. There is
+  // now one answer, and it is the block's own.
+  it("reads the side of the market off the block's direction", () => {
+    const at = (direction: "upside" | "downside") =>
+      calculateBlockPrice(uiBlock({ direction }), 50_000);
+
+    expect(at("upside")).toBeCloseTo(62_500, 6);
+    expect(at("downside")).toBeCloseTo(37_500, 6);
   });
 
-  it("puts the bottom row below market regardless of column", () => {
-    expect(calculatePriceFromPosition(10, 50_000, 2, 0)).toBe(49_500);
-    expect(calculatePriceFromPosition(10, 50_000, 2, 1)).toBe(49_500);
-  });
+  it("ignores row and column entirely", () => {
+    const prices = [
+      { col: 0, row: 0 },
+      { col: 0, row: 2 },
+      { col: 1, row: 1 },
+    ].map(({ col, row }) =>
+      calculateBlockPrice(
+        uiBlock({
+          direction: "downside",
+          position: { col, row, yPosition: 10, axis: 2 },
+        }),
+        50_000,
+      ),
+    );
 
-  it("splits the middle row by column: entry below market, exit above", () => {
-    expect(calculatePriceFromPosition(10, 50_000, 1, 0)).toBe(49_500);
-    expect(calculatePriceFromPosition(10, 50_000, 1, 1)).toBe(50_500);
+    expect(prices).toEqual([45_000, 45_000, 45_000]);
   });
 
   it("returns the market price when the slider sits at zero", () => {
-    expect(calculatePriceFromPosition(0, 50_000, 0, 0)).toBe(50_000);
-    expect(calculatePriceFromPosition(0, 50_000, 2, 1)).toBe(50_000);
+    expect(
+      calculateBlockPrice(
+        uiBlock({ position: { col: 0, row: 1, yPosition: 0, axis: 2 } }),
+        50_000,
+      ),
+    ).toBe(50_000);
+  });
+
+  // The point of the whole exercise: the number the user reads off the grid is
+  // the number that reaches Kraken. Both sides are derived from one input here,
+  // through the two functions the app actually calls.
+  it("agrees with the price the grid cell displays, for every direction", () => {
+    const market = 76_689.4;
+
+    ([0, 1] as const).forEach((col) => {
+      [0, 1, 2].forEach((row) => {
+        const isDescending = shouldBeDescending(row, col, "conditional");
+        const displayed = calculatePrice(market, 25, isDescending);
+        const sent = calculateBlockPrice(
+          uiBlock({
+            direction: isDescending ? "downside" : "upside",
+            position: { col, row, yPosition: 25, axis: 2 },
+          }),
+          market,
+        );
+
+        expect(sent).toBe(displayed);
+      });
+    });
   });
 });
 
@@ -119,6 +173,14 @@ describe("formatPriceForAPI", () => {
     expect(formatPriceForAPI(0.123456789, "DOGE/USD")).toBe("0.123457");
   });
 
+  // A BTC-QUOTED pair is not a BTC pair. The precision used to be chosen with
+  // `symbol.includes("BTC")`, checked before the magnitude rules, so ETH/BTC
+  // took BTC precision and a price of 0.034512 was sent as "0.0".
+  it("uses the base asset, not any appearance of BTC in the pair", () => {
+    expect(formatPriceForAPI(0.034512, "ETH/BTC")).toBe("0.034512");
+    expect(formatPriceForAPI(50_123.456, "BTC/USD")).toBe("50123.5");
+  });
+
   it("always returns a string, never a number", () => {
     expect(typeof formatPriceForAPI(50_000, "BTC/USD")).toBe("string");
   });
@@ -128,67 +190,15 @@ describe("formatPriceForAPI", () => {
 // ORDER TYPE RECOVERY FROM BLOCK IDS
 // =============================================================================
 
-describe("extractOrderTypeFromId", () => {
-  it("recovers single-word and hyphenated types", () => {
-    expect(extractOrderTypeFromId("sa-market-1")).toBe("market");
-    expect(extractOrderTypeFromId("sa-iceberg-3")).toBe("iceberg");
-    expect(extractOrderTypeFromId("sa-stop-loss-1")).toBe("stop-loss");
-    expect(extractOrderTypeFromId("sa-take-profit-2")).toBe("take-profit");
-    expect(extractOrderTypeFromId("sa-trailing-stop-7")).toBe("trailing-stop");
-  });
-
-  it("falls back to limit for an unrecognisable id", () => {
-    expect(extractOrderTypeFromId("nonsense")).toBe("limit");
-    expect(extractOrderTypeFromId("")).toBe("limit");
-  });
-
-  // CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation.
-  //
-  // The lookup scans a list whose first entry is "limit" and tests
-  // `id.includes("-limit-")`. Every "-limit" variant therefore matches "limit"
-  // before its own, more specific entry is ever reached, so a protective
-  // stop-loss-limit is reported as a plain limit order. See the note on
-  // `blockDataToUIBlock` below for why this is reachable in production.
-  it("mis-identifies every -limit variant as a plain limit (known bug)", () => {
-    expect(extractOrderTypeFromId("sa-stop-loss-limit-1")).toBe("limit");
-    expect(extractOrderTypeFromId("sa-take-profit-limit-1")).toBe("limit");
-    expect(extractOrderTypeFromId("sa-trailing-stop-limit-1")).toBe("limit");
-  });
-
-  it("does not round-trip the ids that blockFactory actually produces (known bug)", () => {
-    // Feed every real order type through the real block factory and read the
-    // type back out of the id, exactly as blockDataToUIBlock does. Anything not
-    // listed as broken here must round-trip; if this list ever shrinks, the
-    // production bug has been fixed and the expectation should shrink with it.
-    const broken = new Set([
-      "stop-loss-limit",
-      "take-profit-limit",
-      "trailing-stop-limit",
-    ]);
-
-    ORDER_TYPES.forEach((orderType) => {
-      const { blocks } = createBlocksFromOrderType(orderType, {
-        baseId: "sa",
-        counter: 0,
-      });
-
-      blocks.forEach((block) => {
-        const recovered = extractOrderTypeFromId(block.id);
-        if (broken.has(orderType.type)) {
-          expect(recovered).toBe("limit");
-          expect(recovered).not.toBe(orderType.type);
-        } else {
-          expect(recovered).toBe(orderType.type);
-        }
-      });
-    });
-  });
-});
-
 describe("blockDataToUIBlock", () => {
   it("carries the grid coordinates and slider state onto the UI block", () => {
     const ui = blockDataToUIBlock(
-      blockData({ id: "sa-take-profit-4", yPosition: 40, axis: 1 }),
+      blockData({
+        id: "sa-take-profit-4",
+        orderType: "take-profit",
+        yPosition: 40,
+        axis: 1,
+      }),
       1,
       0,
     );
@@ -201,20 +211,42 @@ describe("blockDataToUIBlock", () => {
     });
   });
 
-  // CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation.
-  //
-  // BlockData already carries an authoritative `orderType` field, but the mapper
-  // re-derives it from the id string and so inherits the mis-identification
-  // above. This is the path by which a stop-loss-limit reaches Kraken as a plain
-  // limit order with no trigger.
-  it("prefers the parsed id over the block's own orderType field (known bug)", () => {
+  it("carries the block's direction through, so the price can be rebuilt", () => {
+    expect(blockDataToUIBlock(blockData({ direction: "upside" }), 0, 1))
+      .toMatchObject({ direction: "upside" });
+    expect(blockDataToUIBlock(blockData({ direction: "downside" }), 0, 1))
+      .toMatchObject({ direction: "downside" });
+  });
+
+  // FORMERLY A CHARACTERISATION OF A KNOWN BUG. `BlockData` has always carried
+  // an authoritative `orderType`, but this function re-derived it by scanning
+  // the id for "-<type>-" against a list whose first entry was "limit". Every
+  // "-limit" variant matched "limit" first, so a stop-loss-limit reached Kraken
+  // as a plain limit order with no trigger at all.
+  it("reads the block's own orderType rather than parsing its id", () => {
     const block = blockData({
       id: "sa-stop-loss-limit-1",
       orderType: "stop-loss-limit",
     });
 
-    expect(block.orderType).toBe("stop-loss-limit");
-    expect(blockDataToUIBlock(block, 0, 2).orderType).toBe("limit");
+    expect(blockDataToUIBlock(block, 0, 2).orderType).toBe("stop-loss-limit");
+  });
+
+  // FORMERLY A CHARACTERISATION OF THE SAME BUG, which listed
+  // stop-loss-limit, take-profit-limit and trailing-stop-limit as broken. Every
+  // order type the palette offers now survives the trip through the real block
+  // factory, including the second, "-limit"-suffixed leg of the dual-axis ones.
+  it("round-trips every order type the block factory produces", () => {
+    ORDER_TYPES.forEach((orderType) => {
+      const { blocks } = createBlocksFromOrderType(orderType, {
+        baseId: "sa",
+        counter: 0,
+      });
+
+      blocks.forEach((block) => {
+        expect(blockDataToUIBlock(block, 0, 1).orderType).toBe(orderType.type);
+      });
+    });
   });
 });
 
@@ -231,18 +263,23 @@ describe("mapBlockToOrderParams", () => {
       side: "buy",
       order_qty: "0.5",
       symbol: "BTC/USD",
-      limit_price: "48750.0",
+      // 25% below a $50,000 market, which is what the grid draws. The mapper
+      // used to damp the slider by 10x and send 48750.0, a 2.5% offset.
+      limit_price: "37500.0",
       limit_price_type: "static",
     });
   });
 
-  it("falls back to limit for an order type Kraken does not know", () => {
-    const params = mapBlockToOrderParams(
-      uiBlock({ orderType: "not-a-real-order-type" }),
-      context(),
-    );
-
-    expect(params.order_type).toBe("limit");
+  // Falling back to "limit" was how an unrecognised type used to become a live
+  // order with no trigger. "limit" is the worst available guess, so there is no
+  // guess: an order type the mapper does not recognise is refused outright.
+  it("refuses an order type Kraken does not know", () => {
+    expect(() =>
+      mapBlockToOrderParams(
+        uiBlock({ orderType: "not-a-real-order-type" }),
+        context(),
+      ),
+    ).toThrow(/not-a-real-order-type/);
   });
 
   it("derives the side from the column when the context does not pin one", () => {
@@ -290,6 +327,7 @@ describe("mapBlockToOrderParams", () => {
         id: "sa-stop-loss-1",
         orderType: "stop-loss",
         axes: ["trigger"],
+        direction: "downside",
         position: { col: 0, row: 2, yPosition: 15, axis: 1 },
       }),
       context(),
@@ -298,7 +336,8 @@ describe("mapBlockToOrderParams", () => {
     expect(params.order_type).toBe("stop-loss");
     expect(params.triggers).toEqual({
       reference: "last",
-      price: "49250.0",
+      // 15% below market. Formerly 49250.0, a damped 1.5%.
+      price: "42500.0",
       price_type: "static",
     });
   });
@@ -309,34 +348,51 @@ describe("mapBlockToOrderParams", () => {
         id: "sa-stop-loss-1",
         orderType: "stop-loss-limit",
         axes: ["trigger", "limit"],
+        direction: "downside",
         position: { col: 0, row: 2, yPosition: 20, axis: 1 },
       }),
       context(),
     );
 
-    expect(params.limit_price).toBe("49000.0");
-    expect(params.triggers?.price).toBe("49000.0");
+    expect(params.order_type).toBe("stop-loss-limit");
+    expect(params.limit_price).toBe("40000.0");
+    expect(params.triggers?.price).toBe("40000.0");
   });
 
-  // CHARACTERISATION OF A KNOWN INCONSISTENCY - do not "fix" this expectation.
-  //
-  // limit_price is formatted with the context symbol, but the trigger price is
-  // formatted by buildTrigger, which never receives the symbol and so falls back
-  // to DEFAULT_SYMBOL ("BTC/USD"). On a non-BTC pair the two prices in the same
-  // payload come out at different precisions.
-  it("formats the trigger price at BTC precision on a non-BTC pair (known bug)", () => {
+  // FORMERLY A CHARACTERISATION OF A KNOWN INCONSISTENCY. `limit_price` was
+  // formatted with the context symbol while the trigger price was formatted by
+  // `buildTrigger`, which never received one and fell back to DEFAULT_SYMBOL
+  // ("BTC/USD"). On ETH/USD the same payload carried 2111.11 and 2111.1.
+  it("formats both prices in a payload at the pair's own precision", () => {
     const params = mapBlockToOrderParams(
       uiBlock({
         id: "sa-stop-loss-1",
         orderType: "stop-loss-limit",
         axes: ["trigger", "limit"],
+        direction: "downside",
         position: { col: 0, row: 2, yPosition: 10, axis: 1 },
       }),
       context({ symbol: "ETH/USD", currentPrice: 2_345.6789 }),
     );
 
-    expect(params.limit_price).toBe("2322.22"); // ETH precision, 2 decimals
-    expect(params.triggers?.price).toBe("2322.2"); // BTC precision, 1 decimal
+    expect(params.limit_price).toBe("2111.11");
+    expect(params.triggers?.price).toBe("2111.11");
+  });
+
+  it("formats a conditional's prices at the pair's precision too", () => {
+    const params = mapBlockToOrderParams(
+      uiBlock({ direction: "downside" }),
+      context({ symbol: "ETH/USD", currentPrice: 2_345.6789 }),
+      uiBlock({
+        id: "sa-take-profit-2",
+        orderType: "take-profit",
+        direction: "upside",
+        position: { col: 0, row: 0, yPosition: 10, axis: 1 },
+        axes: ["trigger"],
+      }),
+    );
+
+    expect(params.conditional?.trigger_price).toBe("2580.25");
   });
 
   it("passes optional execution flags through only when the context sets them", () => {
@@ -370,12 +426,14 @@ describe("mapBlockToOrderParams", () => {
       orderType: "take-profit",
       abrv: "TP",
       position: { col: 0, row: 0, yPosition: 30, axis: 1 },
+      direction: "upside",
       axes: ["trigger"],
     });
 
     expect(params.conditional).toEqual({
       order_type: "take-profit",
-      trigger_price: "51500.0",
+      // 30% above market. Formerly 51500.0, a damped 3%.
+      trigger_price: "65000.0",
       trigger_price_type: "static",
     });
   });
@@ -386,6 +444,7 @@ describe("mapBlockToOrderParams", () => {
       orderType: "market",
       abrv: "Mkt",
       position: { col: 0, row: 1, yPosition: 0, axis: 1 },
+      direction: "upside",
       axes: [],
     });
 
@@ -441,8 +500,16 @@ describe("findLinkedBlocks", () => {
 describe("mapGridToOrders", () => {
   it("emits one order per block, sided by column", () => {
     const grid = gridWith([
-      { col: 0, row: 1, block: blockData({ id: "sa-limit-1" }) },
-      { col: 1, row: 1, block: blockData({ id: "sa-limit-2" }) },
+      {
+        col: 0,
+        row: 1,
+        block: blockData({ id: "sa-limit-1", direction: "downside" }),
+      },
+      {
+        col: 1,
+        row: 1,
+        block: blockData({ id: "sa-limit-2", direction: "upside" }),
+      },
     ]);
 
     const orders = mapGridToOrders(grid, {
@@ -453,9 +520,10 @@ describe("mapGridToOrders", () => {
 
     expect(orders).toHaveLength(2);
     expect(orders.map((o) => o.side)).toEqual(["buy", "sell"]);
-    // Entry sits below market, exit above, for the same slider position.
-    expect(orders[0].limit_price).toBe("48750.0");
-    expect(orders[1].limit_price).toBe("51250.0");
+    // Entry sits below market, exit above, for the same slider position, and
+    // both are the full 25% the grid draws rather than a damped 2.5%.
+    expect(orders[0].limit_price).toBe("37500.0");
+    expect(orders[1].limit_price).toBe("62500.0");
   });
 
   it("folds a linked block into its primary instead of emitting it separately", () => {
@@ -465,7 +533,11 @@ describe("mapGridToOrders", () => {
         row: 1,
         block: blockData({ id: "sa-limit-1", linkedBlockId: "sa-limit-2" }),
       },
-      { col: 1, row: 0, block: blockData({ id: "sa-limit-2" }) },
+      {
+        col: 1,
+        row: 0,
+        block: blockData({ id: "sa-limit-2", direction: "upside" }),
+      },
     ]);
 
     const orders = mapGridToOrders(grid, {
@@ -478,17 +550,18 @@ describe("mapGridToOrders", () => {
     expect(orders[0].side).toBe("buy");
     expect(orders[0].conditional).toEqual({
       order_type: "limit",
-      limit_price: "51250.0",
+      limit_price: "62500.0",
       limit_price_type: "static",
     });
   });
 
-  // CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation.
-  //
-  // Every block that is somebody's conditional is skipped at the top level. If
-  // two blocks name each other, both are skipped and the grid silently produces
-  // no orders at all - the user presses Execute and nothing is sent.
-  it("silently drops both blocks of a mutually linked pair (known bug)", () => {
+  // FORMERLY A CHARACTERISATION OF A KNOWN BUG. Every block that is somebody's
+  // conditional is skipped at the top level, so two blocks naming each other
+  // were both skipped: the grid produced no orders at all, the user pressed
+  // Execute, and nothing was sent with nothing to explain it. A Kraken
+  // conditional close attaches to exactly one primary order, so the cycle is
+  // not a strategy that can be built - it is refused rather than half-guessed.
+  it("refuses a mutually linked pair instead of silently sending nothing", () => {
     const grid = gridWith([
       {
         col: 0,
@@ -502,13 +575,47 @@ describe("mapGridToOrders", () => {
       },
     ]);
 
-    const orders = mapGridToOrders(grid, {
+    expect(() =>
+      mapGridToOrders(grid, {
+        symbol: "BTC/USD",
+        currentPrice: MARKET_PRICE,
+        quantity: "1",
+      }),
+    ).toThrow(/a -> b -> a/);
+  });
+
+  it("refuses a longer link cycle, and a block linked to itself", () => {
+    const threeWay = gridWith([
+      { col: 0, row: 0, block: blockData({ id: "a", linkedBlockId: "b" }) },
+      { col: 0, row: 1, block: blockData({ id: "b", linkedBlockId: "c" }) },
+      { col: 1, row: 0, block: blockData({ id: "c", linkedBlockId: "a" }) },
+    ]);
+    const selfLink = gridWith([
+      { col: 0, row: 1, block: blockData({ id: "a", linkedBlockId: "a" }) },
+    ]);
+    const ctx = {
       symbol: "BTC/USD",
       currentPrice: MARKET_PRICE,
       quantity: "1",
-    });
+    };
 
-    expect(orders).toEqual([]);
+    expect(() => mapGridToOrders(threeWay, ctx)).toThrow(/a -> b -> c -> a/);
+    expect(() => mapGridToOrders(selfLink, ctx)).toThrow(/a -> a/);
+  });
+
+  it("still maps a grid whose links form a chain rather than a cycle", () => {
+    const grid = gridWith([
+      { col: 0, row: 1, block: blockData({ id: "a", linkedBlockId: "b" }) },
+      { col: 1, row: 0, block: blockData({ id: "b" }) },
+    ]);
+
+    expect(
+      mapGridToOrders(grid, {
+        symbol: "BTC/USD",
+        currentPrice: MARKET_PRICE,
+        quantity: "1",
+      }),
+    ).toHaveLength(1);
   });
 
   it("produces no orders for an empty grid", () => {
@@ -519,6 +626,108 @@ describe("mapGridToOrders", () => {
         quantity: "1",
       }),
     ).toEqual([]);
+  });
+});
+
+// =============================================================================
+// THE STRATEGY A USER ACTUALLY BUILDS
+// =============================================================================
+
+/**
+ * Places an order type the way the grid does: the real block factory builds the
+ * blocks, and `shouldBeDescending` stamps each one's direction from the cell it
+ * lands in. Nothing here is a re-implementation - these are the same two calls
+ * `GridArea` makes on drop.
+ */
+const placeOrderType = (
+  type: string,
+  col: number,
+  row: number,
+  positions: number[],
+): BlockData[] => {
+  const definition = ORDER_TYPES.find((o) => o.type === type);
+  if (!definition) throw new Error(`no such order type: ${type}`);
+
+  const { blocks } = createBlocksFromOrderType(definition, {
+    baseId: "sa",
+    counter: 0,
+  });
+
+  return blocks.map((block, index) => ({
+    ...block,
+    yPosition: positions[index],
+    direction: shouldBeDescending(row, col, "conditional", block.orderType)
+      ? ("downside" as const)
+      : ("upside" as const),
+  }));
+};
+
+describe("a Stop Loss Limit dragged into Entry / Primary", () => {
+  // Reproduces the strategy built against the running app: Stop Loss Limit
+  // dropped into the Entry column's primary row, trigger slider at 15%, limit
+  // slider at 10%. The grid drew "-15.00% $66,098.38" and "-10.00% $69,986.52";
+  // the mapper used to send 76596.4 and 76985.2, both as plain limit orders.
+  const MARKET = 77_762.8;
+  const TRIGGER_POSITION = 15;
+  const LIMIT_POSITION = 10;
+
+  const orders = () => {
+    const blocks = placeOrderType("stop-loss-limit", 0, 1, [
+      TRIGGER_POSITION,
+      LIMIT_POSITION,
+    ]);
+
+    return mapGridToOrders(gridWith(blocks.map((block) => ({ col: 0, row: 1, block }))), {
+      symbol: "BTC/USD",
+      currentPrice: MARKET,
+      quantity: "0.5",
+    });
+  };
+
+  it("keeps its own order type instead of becoming a plain limit order", () => {
+    expect(orders().map((o) => o.order_type)).toEqual([
+      "stop-loss-limit",
+      "stop-loss-limit",
+    ]);
+  });
+
+  it("carries the trigger the user placed", () => {
+    const trigger = orders()[0].triggers;
+
+    expect(trigger).toEqual({
+      reference: "last",
+      price: "66098.4",
+      price_type: "static",
+    });
+  });
+
+  it("sends the prices the grid displayed, derived from the same input", () => {
+    const [triggerLeg, limitLeg] = orders();
+    const displayed = (position: number) =>
+      formatPriceForAPI(calculatePrice(MARKET, position, true) ?? 0, "BTC/USD");
+
+    expect(triggerLeg.triggers?.price).toBe(displayed(TRIGGER_POSITION));
+    expect(limitLeg.limit_price).toBe(displayed(LIMIT_POSITION));
+
+    // And, spelled out, the numbers the app rendered on screen.
+    expect(triggerLeg.triggers?.price).toBe("66098.4");
+    expect(limitLeg.limit_price).toBe("69986.5");
+  });
+
+  // The two legs of a dual-axis order type are still emitted as two separate
+  // orders, so neither is a complete stop-loss-limit on its own and validation
+  // now says so. That is the honest outcome of fixing the relabelling: the pair
+  // used to pass as two plain limit orders. Merging the legs into one payload
+  // needs a durable pairing identity on the block, which is a separate change.
+  it("is refused by validation while its legs are split across two orders", () => {
+    const [triggerLeg, limitLeg] = orders();
+
+    expect(validateOrder(triggerLeg)).toEqual([
+      "Limit price is required for stop-loss-limit orders",
+    ]);
+    expect(validateOrder(limitLeg)).toEqual([
+      "Trigger configuration is required for stop-loss-limit orders",
+    ]);
   });
 });
 
@@ -545,21 +754,46 @@ describe("validateOrder", () => {
     );
   });
 
+  const QUANTITY_ERROR = "Order quantity must be a positive number";
+
   it("rejects a zero, negative or empty quantity", () => {
-    const message = "Order quantity must be greater than 0";
-    expect(validateOrder({ ...valid, order_qty: "0" })).toContain(message);
-    expect(validateOrder({ ...valid, order_qty: "-1" })).toContain(message);
-    expect(validateOrder({ ...valid, order_qty: "" })).toContain(message);
+    expect(validateOrder({ ...valid, order_qty: "0" })).toContain(
+      QUANTITY_ERROR,
+    );
+    expect(validateOrder({ ...valid, order_qty: "-1" })).toContain(
+      QUANTITY_ERROR,
+    );
+    expect(validateOrder({ ...valid, order_qty: "" })).toContain(
+      QUANTITY_ERROR,
+    );
   });
 
-  // CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation.
-  //
-  // The guard is `!qty || parseFloat(qty) <= 0`. A non-numeric string is truthy
-  // and parses to NaN, and every NaN comparison is false, so garbage passes
-  // validation and is sent to Kraken as the order quantity.
-  it("accepts a non-numeric quantity (known bug)", () => {
-    expect(validateOrder({ ...valid, order_qty: "abc" })).toEqual([]);
-    expect(validateOrder({ ...valid, order_qty: "0.5 BTC" })).toEqual([]);
+  // FORMERLY A CHARACTERISATION OF A KNOWN BUG. The guard was
+  // `!qty || parseFloat(qty) <= 0`: a non-numeric string is truthy and parses
+  // to NaN, and every NaN comparison is false, so "abc" passed validation and
+  // went to Kraken as the order quantity.
+  it("rejects a quantity that is not a number", () => {
+    expect(validateOrder({ ...valid, order_qty: "abc" })).toContain(
+      QUANTITY_ERROR,
+    );
+    expect(validateOrder({ ...valid, order_qty: "0.5 BTC" })).toContain(
+      QUANTITY_ERROR,
+    );
+    expect(validateOrder({ ...valid, order_qty: "   " })).toContain(
+      QUANTITY_ERROR,
+    );
+    expect(validateOrder({ ...valid, order_qty: "Infinity" })).toContain(
+      QUANTITY_ERROR,
+    );
+    expect(validateOrder({ ...valid, order_qty: "NaN" })).toContain(
+      QUANTITY_ERROR,
+    );
+  });
+
+  it("still accepts the quantity formats the app actually produces", () => {
+    expect(validateOrder({ ...valid, order_qty: "0.5" })).toEqual([]);
+    expect(validateOrder({ ...valid, order_qty: "1" })).toEqual([]);
+    expect(validateOrder({ ...valid, order_qty: "1e-3" })).toEqual([]);
   });
 
   it("requires a limit price on every limit-style order type", () => {
@@ -629,19 +863,21 @@ describe("validateOrder", () => {
     expect(errors).toHaveLength(4);
   });
 
-  // CHARACTERISATION OF THE BLAST RADIUS of the id-parsing bug above: because a
-  // stop-loss-limit is relabelled "limit", validation stops asking for the
-  // trigger that made it a protective order, and the payload passes cleanly.
-  it("passes a mislabelled stop-loss-limit that has lost its trigger (known bug)", () => {
+  // FORMERLY A CHARACTERISATION OF THE BLAST RADIUS of the id-parsing bug: a
+  // stop-loss-limit was relabelled "limit", so validation stopped asking for
+  // the trigger that made it a protective order and the payload passed cleanly.
+  // The relabelling is gone, so the order arrives here as what it is and the
+  // missing trigger is caught.
+  it("rejects a stop-loss-limit that has lost its trigger", () => {
     expect(
       validateOrder({
-        order_type: "limit",
+        order_type: "stop-loss-limit",
         side: "buy",
         order_qty: "0.5",
         symbol: "BTC/USD",
         limit_price: "48750.0",
       }),
-    ).toEqual([]);
+    ).toContain("Trigger configuration is required for stop-loss-limit orders");
   });
 });
 

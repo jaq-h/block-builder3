@@ -23,6 +23,7 @@ import {
   reverseColumns,
   shouldBeDescending,
 } from "@utils/grid";
+import { priceAtOffset } from "@utils/price";
 import type { BlockData, GridData } from "@/types/grid";
 import { GRID_CONFIG } from "@data/orderTypes";
 
@@ -366,10 +367,15 @@ describe("calculatePrice", () => {
     expect(calculatePrice(50_000, 0, true)).toBe(50_000);
   });
 
-  // Unlike calculatePriceFromPosition in the order mapper, this helper takes the
-  // percentage at face value with no 10x damping. The two are not interchangeable.
-  it("does not damp the percentage the way the order mapper does", () => {
+  // The percentage is taken at face value, with no damping. The order mapper
+  // used to apply a 0.1 scale factor of its own and send +2.5% for a block the
+  // grid drew at +25%; it now builds on `priceAtOffset`, the same formula this
+  // helper delegates to, so the two cannot diverge again.
+  it("takes the percentage at face value", () => {
     expect(calculatePrice(50_000, 25, false)).toBeCloseTo(62_500, 6);
+    expect(calculatePrice(50_000, 25, false)).toBe(
+      priceAtOffset(50_000, 25, false),
+    );
   });
 });
 
