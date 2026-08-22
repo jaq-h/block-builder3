@@ -152,12 +152,16 @@ function AppInner() {
           measured empty, scrollHeight 467 against clientHeight 467 and
           scrollWidth 676 against clientWidth 676. `auto` keeps the bar for the
           case where there is genuinely something under it.
-          The `max-h-200` that was here was a magic 800px on a container the
-          `1fr` row already bounds. It did nothing at 900px tall and actively
-          took room away above that: at 1440x1400 the row was 968px, the cap
-          held the panel to 800px, and the 168px it gave up sat empty below
-          while the order list inside was still overflowing by 301px. */}
-      <div className="overflow-auto border-t border-border-neutral">
+          The `max-h-200` is dropped above `lg` only, because that is the only
+          place it is wrong: there `lg:h-dvh` makes the `1fr` row definite and
+          the cap is a magic 800px on a container the row already bounds. It did
+          nothing at 900px tall and actively took room away above that: at
+          1440x1400 the row was 968px, the cap held the panel to 800px, and the
+          168px it gave up sat empty below while the order list inside was still
+          overflowing by 301px. Below `lg` the cap stays: body and `#root` are
+          content-sized there, so this whole chain is indefinite and the cap is
+          what makes the card list a scroller at all. */}
+      <div className="max-h-200 lg:max-h-none overflow-auto border-t border-border-neutral">
         <ActiveOrders
           initialOrders={displayOrders}
           onEditGroup={handleEditGroup}

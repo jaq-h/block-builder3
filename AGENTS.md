@@ -308,7 +308,10 @@ its clientHeight and its scrollWidth its clientWidth. A `max-h-*` on a panel the
 grid row already bounds is the same mistake as a magic cell height below - the
 800px one there did nothing at 900px of viewport and, at 1440x1400, held the
 panel to 800px of a 968px row while the list inside was still overflowing by
-301px.
+301px. That holds only where the row is definite, so the cap comes off above
+`lg` alone (`max-h-200 lg:max-h-none`): below it `body`/`#root` are
+content-sized, the chain down to the panel is indefinite, and the cap is the
+only thing making the card list a scroller rather than growing the page.
 
 **Grid cell height has a derived floor, not a magic number.** `CELL_MIN_HEIGHT`
 in `src/styles/grid.ts` is the cell chrome plus `TRACK_INSET` plus a two-block
