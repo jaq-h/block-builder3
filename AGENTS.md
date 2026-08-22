@@ -131,6 +131,33 @@ in the app and so wants its own change.
 independent components, and crossing the breakpoint then swaps in an empty one -
 silent data loss. `src/App.test.tsx` fails if that returns.
 
+## Prices and order types
+
+Two invariants the order path depends on, both of which were previously violated in
+`src/api/orderMapper.ts` and are now pinned by tests:
+
+- **One price formula.** `src/utils/price.ts` `priceAtOffset` is the only implementation of
+  "percentage offset from market". The grid cell renders its price chip through
+  `calculatePrice`, which delegates to it, and the order mapper builds Kraken payloads from
+  it directly, so the price sent is the price shown. Captain's decision D3: a block at
+  yPosition 25 means **25%** from market, not 2.5%. The side of the market comes from the
+  block's own `direction`, never from re-deriving one from row/column - those disagree under
+  the bulk pattern.
+- **A block's order type is `BlockData.orderType`.** Never parse it back out of the block id.
+  Ids look like `sa-stop-loss-limit-limit-2`, and substring matching on them turned every
+  `-limit` variant into a plain limit order with no trigger.
+
+`src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type and a cycle
+in the conditional-link graph both throw, because silently substituting a different order is
+the failure this module exists to prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that
+and surfaces it as `orderError`.
+
+Still open in the same file, and deliberately not fixed with the above: the two legs of a
+dual-axis order type (`stop-loss-limit` and friends) are emitted as two separate orders
+rather than one payload carrying both `limit_price` and `triggers`, so each leg now fails
+`validateOrder`. Merging them needs a durable pairing identity on the block, since either
+leg can be dragged to another cell.
+
 ## Path aliases
 
 `@`, `@components`, `@widgets`, `@common`, `@hooks`, `@utils`, `@store`, `@data`, `@assets`,
