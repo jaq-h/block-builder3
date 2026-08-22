@@ -42,7 +42,9 @@ SVG imports work in tests for the same reason.
   under `api/_lib/` instead because they are about the whole repository rather than about a
   neighbouring module: `credentialBoundary.test.ts` builds the client and scans the emitted
   bundle, and `deploymentSurface.test.ts` checks which routes a deploy would publish. Both
-  are `api/`'s responsibility, because the boundary is.
+  are `api/`'s responsibility, because the boundary is. `vite/buttonResetScope.test.ts` is
+  there for the same reason and one more: it has to read `src/index.css` as text, and `src`
+  is typechecked without node types while `vite/` has them.
 
 A test may deliberately assert **current, wrong** behaviour, commented
 `CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. None are live today;
@@ -186,6 +188,11 @@ The README's **Interaction model** section is authoritative. Four things bite in
   caller was about to attempt. Both defects this structure replaced were a message written
   next to the code that was about to act - one false, one silent - and each point fix created
   the next. A new message means a new outcome in that union, not a new `announce` call.
+- **A control's selected state may never be drawn in colour alone**, and it has to be
+  readable programmatically as well as visually. `PatternSelector` is the worked example:
+  the chosen assembly type carries an accent border, a tick glyph in a slot reserved on
+  every button so nothing shifts, and `aria-pressed`, inside a group named
+  "Order assembly type". `PatternSelector.dom.test.tsx` pins all three.
 - **A block on a price axis is a `role="slider"` whose value is signed** - positive above the
   market price, negative below - so arrow-key direction matches on-screen direction on both
   scale directions. `yPosition` in the data stays an unsigned magnitude plus a `direction`.
@@ -238,7 +245,7 @@ out the abbreviation renames "SMA 20" to something a voice-control user cannot s
 
 ## Layout and the CSS cascade
 
-Three traps live in the layout, and each is easy to reintroduce.
+Seven traps live in the layout, and each is easy to reintroduce.
 
 **The desktop shell only has a height above `lg`.** `body`/`#root` are
 content-sized, so `h-full` resolves to `auto` unless something above it commits to
@@ -248,13 +255,70 @@ grid area scrolls. Remove the `lg:h-dvh` and the action bar - Execute Trade
 included - drops below the fold again. Below `lg` the height is deliberately
 content-driven so the tabbed layout still scrolls with the page.
 
-**Bare element rules in `src/index.css` beat every Tailwind utility.** `button {}`
-and friends there sit outside any cascade layer, and unlayered CSS wins over
-layered CSS regardless of specificity - so `bg-status-green` on a `<button>` does
-nothing. `executeButtonVariants` and the chart toolbar's `chartToggleButton`
-work around it with `!` modifiers and say why.
-The real fix is to move that reset into `@layer base`, which repaints every button
-in the app and so wants its own change.
+**The shell's row template changes with the breakpoint, because what is in the
+grid changes with it.** Below `lg` `appContainer` holds two in-flow items, the tab
+nav and `main`, so it is `grid-rows-[auto_1fr]`. Above `lg` the nav is
+`display: none` and the visually-hidden `h1` is absolutely positioned, so neither
+is a grid item and `main` is alone - which put it in the `auto` row and left the
+`1fr` row standing empty beneath it, measured as tracks of `835.5px 64.5px` at
+1440x900. `lg:grid-rows-[1fr]` is what keeps that band of viewport from being
+thrown away. Adding a child to `appContainer` means checking the template again.
+
+**Bare element rules in `src/index.css` still beat every Tailwind utility, and a
+control opts out one at a time.** `button {}` and friends sit outside any cascade
+layer, and unlayered CSS wins over layered CSS regardless of specificity, so a
+matched button ignores its own `px-*`, `border-2`, `rounded-*` and `bg-*`. Moving
+that block into `@layer base` is the real fix and it repaints every button in the
+app - measured, the chart's timeframe buttons drop from 45.19px tall to 22.5px,
+below the 24px WCAG 2.2 SC 2.5.8 minimum, and the palette's blocks go from quiet
+dark squares to solid accent-purple tiles that outweigh the grid they serve. That
+is a design change and belongs to whoever is deciding the design, not to a bug
+fix passing through.
+
+Until then a control that must paint itself carries `data-unstyled`, which the
+reset's `:not([data-unstyled])` stops matching; every button without it renders
+exactly as it always has. `PatternSelector` is the only user today, because
+without it the selected and unselected assembly type resolved to the *same*
+computed border width, border colour and background and the app said nothing
+about which one was in use. Use it for a real need, never as a blanket.
+`vite/buttonResetScope.test.ts` pins the escape hatch, because jsdom applies no
+author stylesheet and no rendering test can see a cascade.
+`executeButtonVariants` and the chart toolbar's `chartToggleButton` predate it
+and still use `!` modifiers, and say why; both mechanisms come off together when
+the app-wide change lands.
+
+**Every panel title bar takes its geometry from `panelTitleBar` in
+`src/styles/shared.ts`.** The assembly panel's pattern selector, the chart's title
+row and the Active Orders title all use it, so all three titles share one height,
+one 16px rail and one centre line. Two bars that merely agreed is how they came to
+disagree by 11.5px in height and 194.14px on the rail. `panelHeaderBar` is that
+geometry plus the bottom border and the background, for a panel whose header is a
+single bar: the assembly panel and Active Orders. The chart panel is not that
+shape - it carries a toolbar row under its title bar, so its header block is
+taller than the other two and `chartHeader` draws the border and the background
+around both rows. It is the title bars that line up, not the header blocks. A new
+panel takes the constant rather than its own copy.
+
+**A scrolling panel scrolls with `overflow-auto`, and is bounded by its row
+rather than by a number.** `overflow-scroll` reserves and draws a bar on both
+axes whether or not anything overflows, and the Active Orders container did that
+on a container that can never scroll: `ActiveOrders` is `h-full` inside it and
+its own card list is the scroller, so measured empty its scrollHeight equalled
+its clientHeight and its scrollWidth its clientWidth. A `max-h-*` on a panel the
+grid row already bounds is the same mistake as a magic cell height below - the
+800px one there did nothing at 900px of viewport and, at 1440x1400, held the
+panel to 800px of a 968px row while the list inside was still overflowing by
+301px.
+
+**Grid cell height has a derived floor, not a magic number.** `CELL_MIN_HEIGHT`
+in `src/styles/grid.ts` is the cell chrome plus `TRACK_INSET` plus a two-block
+track: the height at which the price axis stops working. Cells are `flex-1`, so
+wherever the panel has room they share it and stand taller. The flat 220px it
+replaced was 30px more than the panel could give three of them at 1440x900, which
+put a scrollbar on an empty grid and clipped the last two orders out of the
+palette. Below roughly 866px of viewport the floor is reached and the panel
+scrolls, which is correct: the fix for an overflowing grid is never to hide the
+bar.
 
 **Render each panel once.** `src/App.tsx` renders `assemblyPanel` and
 `ordersPanel` in a single tree and hides the inactive one below `lg` with
