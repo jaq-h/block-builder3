@@ -174,15 +174,26 @@ Two invariants the order path depends on, both of which were previously violated
   conditional may not have a conditional of its own. Every other shape of the
   `linkedBlockId` graph is refused by `assertLinksAreFlat` in `src/api/orderMapper.ts`,
   because each one otherwise emits a wrong order set with nothing to explain it: a cycle
-  sends no orders at all, a chain drops its tail, and a shared conditional submits the same
-  close twice. A block linked as a conditional must also be an order type Kraken accepts as
-  a conditional close - `CONDITIONAL_ORDER_TYPES` is the one list, shared by that guard and
-  by `buildConditional`, and a block that fails it used to be dropped from the payload
-  without a word, having already been skipped for being somebody's conditional.
+  sends no orders at all, a chain drops its tail, a shared conditional submits the same
+  close twice, and a link naming a block that is not on the grid emits the primary alone
+  with its protective close gone. A block linked as a conditional must also be an order type
+  Kraken accepts as a conditional close - `CONDITIONAL_ORDER_TYPES` is the one list, shared
+  by that guard and by `buildConditional`, and a block that fails it used to be dropped from
+  the payload without a word, having already been skipped for being somebody's conditional.
+  `findLinkedBlocks` still drops a link it cannot resolve, because it is a resolver rather
+  than a validator; the guard reads each block's raw `linkedBlockId` so it sees the dangle
+  the resolver has already discarded.
+
+  **Ordering constraint, a hard prerequisite rather than a nice-to-have:** before anything
+  in the app writes `linkedBlockId`, deleting a block must clear every link pointing at it.
+  Refusing a dangling link is safe only because nothing writes links today; wiring that path
+  up without fixing deletion first turns an ordinary delete into a refused strategy for real
+  users. Owned by `bb3-mapping-owner`.
 
 `src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type, a block
-claiming both axes, a link graph that is not flat, and a price that is not a finite number
-or not a positive static one all throw or fail validation, because silently
+claiming both axes, a link graph that is not flat, an incomplete conditional close, and a
+price that is not a finite number or not a positive static one all throw or fail validation,
+because silently
 substituting a different order is the failure this module exists to prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that
 and surfaces it as `orderError`.
 

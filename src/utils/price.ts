@@ -11,8 +11,7 @@
  * shown. A block at 25% is 25% away from market, not 2.5% (decision D3).
  *
  * OrderChart still inlines an identical copy of the formula to place its price
- * lines. Reconciling that belongs to the mapping-owner lane, which owns that
- * file.
+ * lines. Reconciling that belongs to bb3-mapping-owner, which owns that file.
  */
 export const priceAtOffset = (
   marketPrice: number,

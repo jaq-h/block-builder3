@@ -758,6 +758,30 @@ describe("mapGridToOrders", () => {
     );
   });
 
+  // `findLinkedBlocks` drops a link it cannot resolve, so the flatness walk
+  // never saw this one and the primary was emitted alone with its protective
+  // close silently gone. The error has to name both ends, because clearing the
+  // link is what repairs it.
+  it("refuses a link naming a block that is not on the grid", () => {
+    const grid = gridWith([
+      {
+        col: 0,
+        row: 1,
+        block: blockData({ id: "a", linkedBlockId: "deleted" }),
+      },
+    ]);
+
+    expect(() =>
+      mapGridToOrders(grid, {
+        symbol: "BTC/USD",
+        currentPrice: MARKET_PRICE,
+        quantity: "1",
+      }),
+    ).toThrow(
+      /Block "a" names "deleted" as its conditional close, but no such block is on the grid/,
+    );
+  });
+
   it("produces no orders for an empty grid", () => {
     expect(
       mapGridToOrders(gridWith([]), {
@@ -1085,6 +1109,77 @@ describe("validateOrder", () => {
         `Trigger configuration is required for ${order_type} orders`,
       );
     });
+  });
+
+  // The same incomplete stop-loss-limit has to be rejected wherever it sits in
+  // the payload. As a conditional it used to validate clean, so the guarantee
+  // that a split dual-axis leg fails validation held on the primary half only.
+  it("holds a conditional close to the same required-price rules as a primary", () => {
+    const splitLeg = {
+      order_type: "stop-loss-limit",
+      trigger_price: "66098.4",
+      trigger_price_type: "static",
+    } as const;
+
+    expect(
+      validateOrder({
+        order_type: "stop-loss-limit",
+        side: "buy",
+        order_qty: "0.5",
+        symbol: "BTC/USD",
+        triggers: { reference: "last", price: "66098.4", price_type: "static" },
+      }),
+    ).toContain("Limit price is required for stop-loss-limit orders");
+
+    expect(
+      validateOrder({
+        ...valid,
+        conditional: splitLeg,
+      }),
+    ).toContain(
+      "Conditional limit price is required for stop-loss-limit conditional closes",
+    );
+  });
+
+  it("requires the conditional's trigger price on a trigger-style conditional", () => {
+    expect(
+      validateOrder({
+        ...valid,
+        conditional: { order_type: "take-profit" },
+      }),
+    ).toEqual([
+      "Conditional trigger price is required for take-profit conditional closes",
+    ]);
+  });
+
+  it("accepts a complete conditional close", () => {
+    expect(
+      validateOrder({
+        ...valid,
+        conditional: {
+          order_type: "stop-loss-limit",
+          limit_price: "37000.0",
+          limit_price_type: "static",
+          trigger_price: "37500.0",
+          trigger_price_type: "static",
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("rejects a zero top-level trigger price", () => {
+    expect(
+      validateOrder({
+        order_type: "stop-loss-limit",
+        side: "buy",
+        order_qty: "0.5",
+        symbol: "BTC/USD",
+        limit_price: "69986.5",
+        trigger_price: "0.0",
+        trigger_price_type: "static",
+        triggers: { reference: "last", price: "66098.4", price_type: "static" },
+      }),
+    ).toEqual(["Top-level trigger price must be a positive number"]);
   });
 
   it("does not demand a price on a market order", () => {

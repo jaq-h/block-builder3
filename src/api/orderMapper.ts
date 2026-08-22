@@ -39,8 +39,11 @@ const ORDER_TYPES_BY_UI_TYPE = new Map<string, OrderType>([
 // The order types Kraken accepts as a conditional close. One list, because both
 // the link guard and the conditional builder need this same fact and a second
 // copy is how two lists drift apart - the failure already documented for the
-// order-type table and the ORDER_TYPES palette.
-const CONDITIONAL_ORDER_TYPES = new Set<OrderType>([
+// order-type table and the ORDER_TYPES palette. Built as a Set of
+// ConditionalOrderType so the compiler checks every member against the union the
+// predicate below narrows to, and read as a ReadonlySet<string> so `.has` still
+// takes any OrderType.
+const CONDITIONAL_ORDER_TYPES: ReadonlySet<string> = new Set<ConditionalOrderType>([
   "limit",
   "stop-loss",
   "stop-loss-limit",
@@ -53,6 +56,26 @@ const CONDITIONAL_ORDER_TYPES = new Set<OrderType>([
 const isConditionalOrderType = (
   type: OrderType,
 ): type is ConditionalOrderType => CONDITIONAL_ORDER_TYPES.has(type);
+
+// The order types that must carry a limit price, and those that must carry a
+// trigger. One list each, shared by the primary order and by its conditional
+// close, so the two halves of a payload cannot be held to different rules.
+const LIMIT_PRICE_ORDER_TYPES: ReadonlySet<string> = new Set<OrderType>([
+  "limit",
+  "iceberg",
+  "stop-loss-limit",
+  "take-profit-limit",
+  "trailing-stop-limit",
+]);
+
+const TRIGGER_ORDER_TYPES: ReadonlySet<string> = new Set<OrderType>([
+  "stop-loss",
+  "stop-loss-limit",
+  "take-profit",
+  "take-profit-limit",
+  "trailing-stop",
+  "trailing-stop-limit",
+]);
 
 /**
  * Map UI order type string to Kraken OrderType.
@@ -410,6 +433,14 @@ const findLinkCycle = (
  * diamond a -> c, b -> c emits two orders that both carry c, so c's close is
  * submitted twice.
  *
+ * A link whose target is not on the grid is refused first, because it cannot be
+ * seen further down: `findLinkedBlocks` resolves ids to blocks and drops the
+ * dangling entry, so the walk below only ever sees links that resolved. Left
+ * alone, the primary is emitted on its own with its protective close silently
+ * gone - the same silent loss as the rest, and the shape that deleting a linked
+ * block would produce. The error names the block carrying the link and the id it
+ * points at, because repairing it means knowing exactly which link to clear.
+ *
  * Nothing in the app writes `linkedBlockId` today, so none of this is reachable
  * from the UI. That is the same caveat the cycle guard carries, and it is the
  * point of both: the construction paths fail loudly here rather than shipping a
@@ -419,6 +450,17 @@ const assertLinksAreFlat = (
   blocks: UIBlockData[],
   linkedBlocks: Map<string, UIBlockData>,
 ): void => {
+  const blockIds = new Set(blocks.map((block) => block.id));
+  blocks.forEach((block) => {
+    if (block.linkedBlockId && !blockIds.has(block.linkedBlockId)) {
+      throw new Error(
+        `Block "${block.id}" names "${block.linkedBlockId}" as its conditional ` +
+          "close, but no such block is on the grid. Clear that link or restore " +
+          "the block, because this strategy cannot be submitted as it stands.",
+      );
+    }
+  });
+
   const cycle = findLinkCycle(blocks, linkedBlocks);
   if (cycle) {
     throw new Error(
@@ -549,30 +591,42 @@ export const validateOrder = (params: OrderParams): string[] => {
   }
 
   // Validate limit price for limit orders
-  const limitOrderTypes: OrderType[] = [
-    "limit",
-    "iceberg",
-    "stop-loss-limit",
-    "take-profit-limit",
-    "trailing-stop-limit",
-  ];
-  if (limitOrderTypes.includes(params.order_type) && !params.limit_price) {
+  if (LIMIT_PRICE_ORDER_TYPES.has(params.order_type) && !params.limit_price) {
     errors.push(`Limit price is required for ${params.order_type} orders`);
   }
 
   // Validate trigger for trigger-based orders
-  const triggerOrderTypes: OrderType[] = [
-    "stop-loss",
-    "stop-loss-limit",
-    "take-profit",
-    "take-profit-limit",
-    "trailing-stop",
-    "trailing-stop-limit",
-  ];
-  if (triggerOrderTypes.includes(params.order_type) && !params.triggers) {
+  if (TRIGGER_ORDER_TYPES.has(params.order_type) && !params.triggers) {
     errors.push(
       `Trigger configuration is required for ${params.order_type} orders`,
     );
+  }
+
+  // The conditional close is a whole order too, and the same required-price
+  // rules apply to it. Without this an incomplete conditional validated clean
+  // while the identical shape as a primary was rejected, so the guarantee that a
+  // split dual-axis leg fails validation rather than shipping as a wrong order
+  // held on one half of the payload only. The messages name the conditional so a
+  // reader can tell which half is incomplete.
+  const conditional = params.conditional;
+  if (conditional) {
+    if (
+      LIMIT_PRICE_ORDER_TYPES.has(conditional.order_type) &&
+      !conditional.limit_price
+    ) {
+      errors.push(
+        `Conditional limit price is required for ${conditional.order_type} conditional closes`,
+      );
+    }
+
+    if (
+      TRIGGER_ORDER_TYPES.has(conditional.order_type) &&
+      !conditional.trigger_price
+    ) {
+      errors.push(
+        `Conditional trigger price is required for ${conditional.order_type} conditional closes`,
+      );
+    }
   }
 
   // Every price the payload carries has to be a finite number, and a static one
@@ -619,6 +673,11 @@ export const validateOrder = (params: OrderParams): string[] => {
     "Trigger price",
     params.triggers?.price,
     params.triggers?.price_type,
+  );
+  requirePrice(
+    "Top-level trigger price",
+    params.trigger_price,
+    params.trigger_price_type,
   );
   requirePrice(
     "Conditional limit price",
