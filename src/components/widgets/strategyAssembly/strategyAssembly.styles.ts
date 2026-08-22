@@ -1,6 +1,8 @@
 // Strategy Assembly styled components → Tailwind + CVA
 import { cva } from "class-variance-authority";
 import type { CSSProperties } from "react";
+import { cn } from "../../../lib/utils";
+import { panelHeaderBar } from "../../../styles/shared";
 
 // =============================================================================
 // CONTAINER & LAYOUT
@@ -38,8 +40,11 @@ export const columnsWrapper = "flex flex-1 gap-1.5";
 // PATTERN SELECTOR
 // =============================================================================
 
-export const patternSelectorRow =
-  "shrink-0 flex justify-center gap-2 px-4 py-3 bg-bg-cell-active border-b border-border-neutral";
+// The assembly panel's own panel header. Its geometry - height, rail, border,
+// background - comes from `panelHeaderBar` so that it and the chart panel's
+// header stay one continuous rule across the two columns; only what this bar
+// carries is written here.
+export const patternSelectorRow = cn(panelHeaderBar, "gap-2");
 
 export const patternButton = cva(
   "flex flex-col items-center px-4 py-2 rounded-lg cursor-pointer transition-all duration-200 min-w-[120px] border-2",
@@ -53,6 +58,15 @@ export const patternButton = cva(
     },
   },
 );
+
+// The tick and the label sit on one line, with the tick's slot present on both
+// buttons so choosing a pattern does not nudge its label sideways.
+export const patternLabelRow = "flex items-center gap-1";
+
+// A fixed slot rather than a conditionally rendered icon: `w-3` is the tick's
+// 11px plus its stroke, and reserving it keeps both labels on the same rail.
+export const patternMarker =
+  "inline-flex w-3 shrink-0 items-center justify-center [&>svg]:stroke-current";
 
 export const patternLabel = "text-xs font-semibold";
 

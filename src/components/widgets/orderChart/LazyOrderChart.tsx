@@ -6,6 +6,7 @@ import {
   chartHeaderPrimaryRow,
   chartHeaderSecondaryRow,
 } from "./OrderChart.styles";
+import { panelHeaderTitle } from "../../../styles/shared";
 
 // `lightweight-charts` is only ever reachable from this panel, and it is by far
 // the largest single dependency in the bundle. Loading it behind `lazy()` keeps
@@ -31,9 +32,7 @@ const ChartFallback: FC = () => (
     <div className={chartHeader}>
       <div className={chartHeaderPrimaryRow}>
         <div className="flex items-center gap-3">
-          <span className="text-[13px] font-semibold text-text-primary">
-            BTC / USD
-          </span>
+          <span className={panelHeaderTitle}>BTC / USD</span>
           <span className="text-[11px] text-text-muted">Loading…</span>
         </div>
       </div>

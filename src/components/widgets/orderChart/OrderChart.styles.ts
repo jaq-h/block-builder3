@@ -1,5 +1,7 @@
 // Chart panel styles → Tailwind + CVA, on the tokens in `src/styles/theme.ts`.
 import { cva } from "class-variance-authority";
+import { cn } from "../../../lib/utils";
+import { panelTitleBar } from "../../../styles/shared";
 
 // =============================================================================
 // TOOLBAR BUTTON
@@ -40,20 +42,33 @@ export const chartToggleButton = cva(
 // TOOLBAR LAYOUT
 // =============================================================================
 
-/** The header block, both rows. One bottom border, so it reads as one bar. */
+/**
+ * The header block, both rows. It owns the bottom border and the background so
+ * the two rows read as one bar, which is why neither row draws either itself.
+ * This panel's header block is therefore taller than the other two panels' -
+ * it carries a toolbar under its title bar - and it is only the title bar that
+ * lines up with them.
+ */
 export const chartHeader =
   "border-b border-border-neutral bg-bg-overlay shrink-0";
 
-export const chartHeaderRow = "flex items-center justify-between gap-3 px-4";
+/**
+ * Row one, this panel's title bar: symbol, price, timeframes. Its geometry is
+ * `panelTitleBar`, shared with the assembly and Active Orders panels, so all
+ * three titles sit at one height, on one 16px rail and on one centre line.
+ */
+export const chartHeaderPrimaryRow = cn(panelTitleBar, "justify-between");
 
-/** Row one: symbol, price, timeframes. */
-export const chartHeaderPrimaryRow = `${chartHeaderRow} py-2`;
-
-/** Row two: indicators and price scale. Tighter, and it may wrap when narrow. */
-// `min-h` is what keeps the lazy fallback the same height as the real header:
-// the fallback has captions where this row has buttons, and without a floor the
-// chart body would jump upward the moment the chart chunk lands.
-export const chartHeaderSecondaryRow = `${chartHeaderRow} flex-wrap py-1.5 pb-2 min-h-[35px]`;
+/**
+ * Row two: indicators and price scale. A toolbar strip rather than a title bar,
+ * so it keeps its own tighter geometry and may wrap when narrow.
+ *
+ * `min-h` is what keeps the lazy fallback the same height as the real header:
+ * the fallback has captions where this row has buttons, and without a floor the
+ * chart body would jump upward the moment the chart chunk lands.
+ */
+export const chartHeaderSecondaryRow =
+  "flex flex-wrap items-center justify-between gap-3 px-4 py-1.5 pb-2 min-h-[35px]";
 
 export const chartControlGroup = "flex items-center gap-1";
 

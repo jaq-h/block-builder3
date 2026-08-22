@@ -32,6 +32,7 @@ import {
   chartHeaderSecondaryRow,
   chartToggleButton,
 } from "./OrderChart.styles";
+import { panelHeaderTitle } from "../../../styles/shared";
 
 // =============================================================================
 // CONSTANTS
@@ -172,13 +173,15 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
 
   return (
     <div className="flex flex-col h-full bg-bg-primary border-b border-border-neutral">
-      {/* Header */}
+      {/* Header. It is two rows: a title bar and a toolbar under it. The title
+          bar's geometry is `panelTitleBar`, shared with the assembly and Active
+          Orders panels, so all three panel titles sit on one height, one rail
+          and one centre line. The block, not the rows, carries the rule and the
+          background, so the two rows still read as one bar. */}
       <div className={chartHeader}>
         <div className={chartHeaderPrimaryRow}>
           <div className="flex items-center gap-3">
-            <span className="text-[13px] font-semibold text-text-primary">
-              BTC / USD
-            </span>
+            <span className={panelHeaderTitle}>BTC / USD</span>
             <span className="text-[11px] text-text-muted">{priceLabel}</span>
             {/* The manager gives up reconnecting after a fixed number of tries.
                 Without this the app just keeps showing the last price it saw. */}

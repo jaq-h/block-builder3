@@ -32,6 +32,46 @@ export const headerText = cva("font-semibold text-text-secondary", {
 });
 
 // =============================================================================
+// PANEL HEADER BAR
+// =============================================================================
+
+/**
+ * The geometry every desktop panel's title bar is drawn to, written once
+ * because two bars that merely agreed is how they came to disagree: measured on
+ * the base commit the assembly panel's bar stood 77.69px tall against the chart
+ * panel's 66.19px, their contents sat 194.14px apart on the horizontal rail and
+ * 2px apart vertically, so what should read as one rule drawn across the app
+ * had a step in it. A new panel gets this constant rather than its own copy of
+ * the declarations.
+ *
+ * The height is fixed rather than left to padding so that what a bar happens to
+ * carry cannot change where its neighbour's bottom edge lands. `h-16` clears
+ * the tallest control any of the bars holds - the two-line pattern button,
+ * 51.5px - with room to breathe. `px-4` puts every bar's content on the same
+ * 16px rail from its own panel's edge, and `items-center` on one centre line.
+ *
+ * Geometry only: a panel whose header is a single bar wants `panelHeaderBar`
+ * below, which adds the rule and the background. The chart panel draws those
+ * itself, around a title bar and the toolbar row beneath it, so it takes this.
+ */
+export const panelTitleBar = "shrink-0 flex items-center gap-3 h-16 px-4";
+
+/**
+ * A panel header that is a single bar: the shared title-bar geometry plus the
+ * rule and the background that close it off. The assembly panel and the Active
+ * Orders panel are this shape. The chart panel is not - it carries a toolbar
+ * row below its title bar, so its header block is taller than these two and it
+ * owns the border and the background at the block rather than at the row.
+ */
+export const panelHeaderBar = cn(
+  panelTitleBar,
+  "border-b border-border-neutral bg-bg-overlay",
+);
+
+/** The title a panel header bar names itself with, at one size for all of them. */
+export const panelHeaderTitle = "text-sm font-semibold text-text-primary";
+
+// =============================================================================
 // BADGE
 // =============================================================================
 
