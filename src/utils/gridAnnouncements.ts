@@ -159,10 +159,17 @@ const wentNowhere = (
   source: CommandSource,
   pattern: StrategyPattern,
   releasedCarry?: boolean,
+  /**
+   * Where the grid has just confirmed the block to be. Without it the cell
+   * comes from `source.origin`, which is only current for a drag - a carry
+   * snapshots it at pick-up time, and the grid can move the block out from
+   * under it before the carry is committed.
+   */
+  at?: CellPosition,
 ): string =>
   source.kind === "provider"
     ? `${describeSource(source)} was not placed${carryReleased(releasedCarry)}.`
-    : `${describeSource(source)} stayed in ${describeCell(source.origin, pattern)}${carryReleased(releasedCarry)}.`;
+    : `${describeSource(source)} stayed in ${describeCell(at ?? source.origin, pattern)}${carryReleased(releasedCarry)}.`;
 
 const describePlacement = (
   source: CommandSource,
@@ -193,7 +200,12 @@ const describePlacement = (
       // drag can be released over any cell, and most were never on offer.
       return `${describeCell(cell, pattern)} cannot take this order${
         via === "carry" ? " any more" : ""
-      }. ${wentNowhere(source, pattern, releasedCarry)}`;
+      }. ${wentNowhere(source, pattern, releasedCarry, result.at)}`;
+    // Naming any cell here would be a claim the grid cannot support. When the
+    // carry ends is a separate question, and it belongs to the command model
+    // rather than to the words.
+    case "gone":
+      return `${describeSource(source)} is no longer on the grid${carryReleased(releasedCarry)}.`;
   }
 };
 

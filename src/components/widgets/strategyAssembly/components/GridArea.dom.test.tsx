@@ -87,7 +87,13 @@ const placedMarket = (id: string = "m1"): BlockData => ({
 const Harness: FC<{
   initialGrid: GridData;
   pattern?: StrategyPattern;
-}> = ({ initialGrid, pattern = "conditional" }) => {
+  /**
+   * Renders a control that replaces the grid wholesale, the way Clear All,
+   * Reverse Blocks and a pattern switch do. None of those touch the carry, so
+   * this is how a carry comes to outlive the block it names.
+   */
+  gridReplacement?: GridData;
+}> = ({ initialGrid, pattern = "conditional", gridReplacement }) => {
   const [grid, setGrid] = useState<GridData>(initialGrid);
   const [orderConfig, setOrderConfig] = useState<OrderConfig>({});
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -142,6 +148,11 @@ const Harness: FC<{
             }}
           >
             <GridArea currentPrice={MARKET_PRICE} tickerError={null} />
+            {gridReplacement && (
+              <button onClick={() => setGrid(gridReplacement)}>
+                replace the grid
+              </button>
+            )}
           </StaticContext.Provider>
         </HoverContext.Provider>
       </DragContext.Provider>
@@ -853,6 +864,39 @@ describe("GridArea, a refused pick-up while a block is carried", () => {
       "Take Profit order cannot be placed anywhere in the grid right now. Still carrying Market block.",
     );
     expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+  });
+});
+
+// =============================================================================
+// A CARRY THAT OUTLIVES THE BLOCK IT NAMES
+// =============================================================================
+//
+// Clear All, Reverse Blocks and a pattern switch all replace the grid without
+// ending an active carry, so the cells it offered stay highlighted and the
+// block it names may be gone. When the user then acts on one of those cells,
+// the sentence has to be composed from what the grid can still confirm - which,
+// for a block that has been cleared away, is no cell at all.
+
+describe("GridArea, a carry whose block has been cleared away", () => {
+  it("names no cell for it, and ends the carry", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
+
+    tap(screen.getByRole("button", { name: /^Market order,/ }));
+    // A diagonal of the occupied primary cell, offered at pick-up time.
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, primary row, empty");
+
+    // The stale target is still highlighted, so this is a cell the user was
+    // just told they could drop into.
+    fireEvent.click(cell(1, 0));
+
+    expect(announcement()).toBe("Market block is no longer on the grid.");
+    expect(announcement()).not.toContain("stayed in");
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
   });
 });
 

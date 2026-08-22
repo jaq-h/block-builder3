@@ -174,9 +174,12 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     position?: { axis: 1 | 2; yPosition: number },
   ): PlacementResult => {
     const blockInfo = findBlockInGrid(grid, id);
-    if (!blockInfo) return { status: "refused" };
+    // Not a refusal by any cell: a carry can outlive the grid it was started
+    // against, and there is then no cell to name in either clause.
+    if (!blockInfo) return { status: "gone" };
 
     const { col: sourceCol, row: sourceRow, block: blockData } = blockInfo;
+    const source = { col: sourceCol, row: sourceRow };
     const isSameCell = sourceCol === target.col && sourceRow === target.row;
 
     // Two decisions here, and keeping them apart is the point.
@@ -217,7 +220,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     ) {
       return isSameCell
         ? { status: "unchanged", blockId: id }
-        : { status: "refused" };
+        : { status: "refused", at: source };
     }
 
     const updatedBlock: BlockData = {
@@ -265,11 +268,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
     return isSameCell
       ? { status: "unchanged", blockId: id }
-      : {
-          status: "moved",
-          blockId: id,
-          from: { col: sourceCol, row: sourceRow },
-        };
+      : { status: "moved", blockId: id };
   };
 
   /** Take a block off the grid entirely - a drag that ended outside it. */
@@ -366,9 +365,12 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
    * It is reset at the START of every gesture rather than at the end, and that
    * is deliberate: a `pointercancel` fires `onDragCancel` - which is `endDrag`
    * - BEFORE `onDragAborted`, which is the handler that announces, so clearing
-   * it on end would wipe the flag the abort sentence needs. Resetting on
-   * pointer-down covers every gesture, taps included, so nothing leaks into the
-   * next one either.
+   * it on end would wipe the flag the abort sentence needs. Every gesture that
+   * can READ the flag resets it on its own pointer-down, so nothing leaks into
+   * the next one. That is narrower than every gesture: `useVerticalDrag` takes
+   * no `onDragStart`, so a price drag leaves the flag untouched - harmless
+   * while the price drag announces nothing, and the thing to fix first if it
+   * ever should.
    */
   const carryReleasedByDragRef = useRef(false);
 

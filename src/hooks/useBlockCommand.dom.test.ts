@@ -65,11 +65,7 @@ const setup = (
   // The grid the command model talks to reports what it did; this stands in for
   // a move that really happened, out of the cell the fixtures place blocks in.
   const moveBlock = vi.fn(
-    (id: string): PlacementResult => ({
-      status: "moved",
-      blockId: id,
-      from: { col: 0, row: 1 },
-    }),
+    (id: string): PlacementResult => ({ status: "moved", blockId: id }),
   );
 
   const view = renderCommand(grid, strategyPattern, placeProvider, moveBlock);
@@ -306,6 +302,49 @@ describe("useBlockCommand", () => {
         "Entry column, primary row cannot take this order any more. Limit order was not placed.",
       );
       expect(view.result.current.carrying).toBeNull();
+    });
+
+    it("names the cell the grid just confirmed, not the one picked up from", () => {
+      // Reverse Blocks mirrors a placed block into the other column while it is
+      // being carried. The carry's own `origin` is a snapshot from pick-up
+      // time, so a refusal composed from it names a cell the block left. The
+      // grid knows better, and says so on the result it returns.
+      const view = renderCommand(
+        gridWithMovableBlock(),
+        "conditional",
+        () => ({ status: "refused" }),
+        () => ({ status: "refused", at: { col: 1, row: 1 } }),
+      );
+
+      act(() => view.result.current.activateBlock("b1", "keyboard"));
+      act(() => view.result.current.activateBlock("b1", "keyboard"));
+
+      expect(view.result.current.announcement.text).toBe(
+        "Entry column, primary row cannot take this order any more. Market block stayed in Exit column, primary row.",
+      );
+      expect(view.result.current.carrying).toBeNull();
+    });
+
+    it("names no cell at all when the block is no longer on the grid", () => {
+      // Clear All replaces the grid without ending the carry. The block is in
+      // no cell, so any sentence naming one would be false.
+      const view = renderCommand(
+        gridWithMovableBlock(),
+        "conditional",
+        () => ({ status: "refused" }),
+        () => ({ status: "gone" }),
+      );
+
+      act(() => view.result.current.activateBlock("b1", "keyboard"));
+      act(() => view.result.current.activateBlock("b1", "keyboard"));
+
+      expect(view.result.current.announcement.text).toBe(
+        "Market block is no longer on the grid.",
+      );
+      expect(view.result.current.carrying).toBeNull();
+      // A focus request naming a block that does not exist is never honoured,
+      // and would sit waiting for some later block to answer it.
+      expect(view.result.current.focusRequest).toBeNull();
     });
 
     it("keeps focus somewhere real when the placement is rejected downstream", () => {

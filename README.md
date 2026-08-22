@@ -342,8 +342,8 @@ so there is no way to invent wording next to the code that acts. Two invariants 
 buys, and each had been violated:
 
 - **An outcome is what happened, not what was about to be attempted.** `placeProviderInCell`
-  and `moveBlockToCell` return a `PlacementResult` - `created`, `moved`, `unchanged` or
-  `refused` - produced by the code that actually mutated the grid, so a sentence cannot claim
+  and `moveBlockToCell` return a `PlacementResult` - `created`, `moved`, `unchanged`, `refused`
+  or `gone` - produced by the code that actually mutated the grid, so a sentence cannot claim
   a move, a refusal or a removal that did not occur. Deriving it from a nullable id instead is
   how a release inside a block's own cell came to announce *"Entry column, primary row cannot
   take this order. Market block stayed in Entry column, primary row"*: the drop supplied a
@@ -355,11 +355,31 @@ buys, and each had been violated:
   row."* `refused` is left to a genuinely different target cell and `moved` to a release that
   really did change cells. The bulk pattern never showed the defect, because every cell is a
   legal target there, so `GridArea.dom.test.tsx` pins it on the conditional pattern.
+- **No sentence names a location the grid has not just confirmed.** A carry snapshots the
+  block's cell at pick-up time, and the grid can move that block, or delete it, before the
+  carry is committed. So a refusal carries `at` - where `moveBlockToCell` has just found the
+  block - and the sentence uses that rather than the snapshot, which is what stops a refusal
+  after **Reverse Blocks** naming the column the block was mirrored out of. And "the block is
+  not on the grid" is `gone` rather than `refused`, with a sentence that names no cell at all
+  (*"Market block is no longer on the grid."*), because after **Clear All** there is no cell
+  that would be true. A palette order is unaffected: it has no origin, and its clause is
+  already *"was not placed."*
 - **A sentence has to still be true after the operation that triggered it.** This is the trap
   the three earlier point fixes fell into: cancelling a carry when a drag began made the
   cancellation silent, and announcing the drag's outcome instead made that announcement false.
   It is why `releaseForDrag` turns on the same-block question above rather than on a `silent`
   flag passed in by whoever happened to be calling.
+
+**Known gap, deferred and filed as its own item: a carry can outlive the grid it was started
+against.** Clear All, Reverse Blocks and a pattern switch each replace the grid without ending
+an active carry, so the cells the carry offered stay highlighted - `aria-current="location"` -
+even though the grid beneath them has changed. That is misleading rather than false: the
+highlight says *you could drop here*, which is not an assertion about where any block is, and
+the moment the user acts on one of those cells the announcement is correct and the carry ends.
+Making it *not misleading* means ending the carry when the grid is replaced under it, and that
+is **carry lifecycle** - it belongs to the command model, not to the announcement layer that
+owns the words and not to `bb3-mapping-owner`. `clearAll` and `setStrategyPattern` are plain
+grid lifecycle; only `reverseBlocks` brushes the mapping lane at all.
 
 The same rule decides one thing outside the announcer: `GridCell` wires its click handler
 unconditionally rather than only while something is carried. Whether a click means anything is

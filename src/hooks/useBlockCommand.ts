@@ -153,10 +153,22 @@ export const useBlockCommand = ({
     // The grid can disagree with the targets snapshotted at pick-up time - it
     // may have been emptied or filled since - so what is said comes from what
     // the grid did, never from what this call was hoping for.
-    dispatch({ type: result.status === "refused" ? "cancel" : "place" });
-    setFocusRequest(
-      result.status === "refused" ? sourceKey(block.source) : result.blockId,
-    );
+    switch (result.status) {
+      // The block the carry named is no longer on the grid. The carry ends the
+      // same way a refusal ends it, but focus is left where it is: a request
+      // naming a block that does not exist is never honoured, and sits waiting
+      // for some later block to answer it.
+      case "gone":
+        dispatch({ type: "cancel" });
+        break;
+      case "refused":
+        dispatch({ type: "cancel" });
+        setFocusRequest(sourceKey(block.source));
+        break;
+      default:
+        dispatch({ type: "place" });
+        setFocusRequest(result.blockId);
+    }
     report({
       kind: "placement",
       source: block.source,

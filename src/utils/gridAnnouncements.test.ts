@@ -149,11 +149,7 @@ describe("describeOutcome, what the grid actually did", () => {
   });
 
   it("says an existing block moved, the same way for a tap and for a drag", () => {
-    const moved: PlacementResult = {
-      status: "moved",
-      blockId: "b1",
-      from: { col: 0, row: 1 },
-    };
+    const moved: PlacementResult = { status: "moved", blockId: "b1" };
     expect(placement(moved, "carry")).toBe(
       "Moved Market block to Exit column, upper conditional row.",
     );
@@ -232,11 +228,7 @@ describe("describeOutcome, what the grid actually did", () => {
     // "created", "moved" and "removed" already describe something happening to
     // the very block that was carried, so repeating that it is no longer in
     // hand is noise rather than news.
-    const moved: PlacementResult = {
-      status: "moved",
-      blockId: "b1",
-      from: { col: 0, row: 1 },
-    };
+    const moved: PlacementResult = { status: "moved", blockId: "b1" };
     expect(
       say({
         kind: "placement",
@@ -250,6 +242,40 @@ describe("describeOutcome, what the grid actually did", () => {
     expect(say({ kind: "removed", source: placed, releasedCarry: true })).toBe(
       "Removed Market block from the grid.",
     );
+  });
+
+  it("names the cell the grid confirmed rather than the pick-up snapshot", () => {
+    // `source.origin` is where the block was when it was picked up. Reverse
+    // Blocks can mirror it into the other column while it is carried, and the
+    // refusal must not name the cell it left.
+    expect(placement({ status: "refused", at: { col: 1, row: 1 } }, "carry")).toBe(
+      "Exit column, upper conditional row cannot take this order any more. Market block stayed in Exit column, primary row.",
+    );
+  });
+
+  it("names no cell for a block that is no longer on the grid", () => {
+    // The one case where there is no true cell to give: the grid was replaced
+    // under the carry. Any location here would be a claim nothing supports.
+    const gone = say({
+      kind: "placement",
+      source: placed,
+      cell,
+      result: { status: "gone" },
+      via: "carry",
+    });
+    expect(gone).toBe("Market block is no longer on the grid.");
+    expect(gone).not.toContain("column");
+
+    expect(
+      say({
+        kind: "placement",
+        source: placed,
+        cell,
+        result: { status: "gone" },
+        via: "drag",
+        releasedCarry: true,
+      }),
+    ).toBe("Market block is no longer on the grid, and is no longer picked up.");
   });
 
   it("says 'any more' only for a carry, whose targets were offered", () => {
