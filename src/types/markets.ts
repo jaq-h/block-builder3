@@ -74,8 +74,14 @@ export interface MarketPrecision {
    * none, so checking it would reject some order types and wave the others
    * through on the same strategy. Enforcing it means deciding what a market
    * order's cost is, which is a product question rather than a formatting one.
+   *
+   * Optional for the same reason it is unenforced: nothing reads it, so an
+   * entry Kraken describes without it is still a fully priceable pair. It was
+   * briefly required, which made a missing `costmin` discard the whole record -
+   * no precision, no priceable grid, no orders - over the one field no code
+   * path consults. Absent still means absent: no value is substituted.
    */
-  costMin: number;
+  costMin?: number;
 }
 
 /**

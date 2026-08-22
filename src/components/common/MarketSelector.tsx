@@ -41,8 +41,21 @@ const MarketSelector: FC<MarketSelectorProps> = ({
   currentPrice,
   priceError,
 }) => {
-  const { market, markets, activeMarket, selectMarket, metadataError } =
-    useMarket();
+  const {
+    market,
+    markets,
+    activeMarket,
+    selectMarket,
+    metadataError,
+    metadataSettled,
+  } = useMarket();
+
+  // Keyed on this pair actually having no rules, not only on the whole batch
+  // failing. A batch that answers without one pair clears `metadataError` and
+  // leaves that pair drawing "n/a" everywhere with Execute refusing, which is
+  // the one case that used to happen with nothing on screen to explain it.
+  const precisionUnavailable =
+    metadataSettled && (metadataError !== null || !activeMarket.precision);
 
   return (
     <div className={marketSelectorRow}>
@@ -86,9 +99,10 @@ const MarketSelector: FC<MarketSelectorProps> = ({
           implicit `aria-live`, which would make this a second live region
           talking over the grid's announcer during the very interaction that
           triggers both. */}
-      {metadataError && (
+      {precisionUnavailable && (
         <span className={marketMetadataWarning}>
-          Precision rules unavailable - orders cannot be submitted
+          Precision rules unavailable for {market.symbol} - orders cannot be
+          submitted
         </span>
       )}
     </div>

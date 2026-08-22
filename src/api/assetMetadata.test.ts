@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { parseAssetPairs } from "@api/assetMetadata";
 import { convertToKrakenPair } from "@api/krakenRest";
 import { MARKETS } from "@data/markets";
-import { KRAKEN_ASSET_PAIRS_RESPONSE } from "@/test/marketFixtures";
+import { KRAKEN_ASSET_PAIRS_RESPONSE, SOL_USD } from "@/test/marketFixtures";
 
 // =============================================================================
 // ASSET METADATA
@@ -99,6 +99,35 @@ describe("parseAssetPairs", () => {
 
     expect(precisions.has("ARB/USD")).toBe(false);
     expect(precisions.has("SOL/USD")).toBe(true);
+  });
+
+  // `costmin` is the one field in Kraken's answer nothing here enforces - see
+  // `MarketPrecision.costMin` - so a pair described without it is still fully
+  // priceable. Requiring it discarded the whole record, which disabled the pair
+  // for a rule no code path consults.
+  it("keeps a pair Kraken describes without a cost minimum", () => {
+    const withoutCostMin: Record<string, unknown> = {
+      ...(KRAKEN_RESPONSE.result.SOLUSD as Record<string, unknown>),
+    };
+    delete withoutCostMin.costmin;
+
+    const precisions = parseAssetPairs(
+      { result: { SOLUSD: withoutCostMin } },
+      MARKETS,
+    );
+    const sol = precisions.get("SOL/USD");
+
+    expect(sol).toBeDefined();
+    // Every rule that actually prices an order still comes through.
+    expect(sol).toMatchObject({
+      symbol: "SOL/USD",
+      priceDecimals: SOL_USD.priceDecimals,
+      quantityDecimals: SOL_USD.quantityDecimals,
+      tickSize: SOL_USD.tickSize,
+      orderMin: SOL_USD.orderMin,
+    });
+    // Absent means absent: no value is invented for it.
+    expect(sol?.costMin).toBeUndefined();
   });
 
   it("skips a tick size of zero, which cannot snap anything", () => {

@@ -152,8 +152,9 @@ export const formatQuantityForAPI = (
  * The two unknowns are told apart, because they are different facts and the
  * call sites read differently: `NO_PRICE` means no price has arrived,
  * `NO_PRECISION` means one has but Kraken's rules for the pair have not.
- * `MarketSelector` shows `metadataError` beside the readout, so the second is
- * explained where there is room to explain it.
+ * `MarketSelector` warns beside the readout whenever the selected pair has no
+ * rules - not only when the whole batch failed - so the second is explained
+ * where there is room to explain it.
  */
 
 /** No price to draw yet. */

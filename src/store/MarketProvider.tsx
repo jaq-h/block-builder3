@@ -99,6 +99,7 @@ export const MarketProvider: FC<MarketProviderProps> = ({
     () => new Map(),
   );
   const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [metadataSettled, setMetadataSettled] = useState(false);
 
   // Nothing may set state after unmount, and no second request may start while
   // one is in flight - otherwise switching pair during a slow retry stampedes
@@ -116,8 +117,12 @@ export const MarketProvider: FC<MarketProviderProps> = ({
     onLoaded: (loaded) => {
       setPrecisions(loaded);
       setMetadataError(null);
+      setMetadataSettled(true);
     },
-    onFailed: setMetadataError,
+    onFailed: (message) => {
+      setMetadataError(message);
+      setMetadataSettled(true);
+    },
   });
 
   useEffect(() => {
@@ -182,6 +187,7 @@ export const MarketProvider: FC<MarketProviderProps> = ({
       return true;
     },
     metadataError,
+    metadataSettled,
   };
 
   return (

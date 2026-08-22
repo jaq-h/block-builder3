@@ -58,7 +58,7 @@ interface OrderChartProps {
 const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   // The selected market is supplied here, at the boundary, and used for the
   // feed, the candles and the header. Everything below is unchanged.
-  const { market, activeMarket } = useMarket();
+  const { market, activeMarket, metadataSettled } = useMarket();
 
   const { currentPrice, tickerError, publicStatus } = useKrakenAPI({
     autoConnect: true,
@@ -74,7 +74,8 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   const interval = TIMEFRAME_MAP[activeTimeframe] ?? 60;
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const { chart, candleSeries } = useLightweightChart(chartContainerRef);
+  const { chart, candleSeries, hasPriceFormat } =
+    useLightweightChart(chartContainerRef);
   const {
     candles,
     latestCandle,
@@ -140,9 +141,16 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     candleSeries.update(latestCandle);
   }, [candleSeries, latestCandle]);
 
-  // Draw order level price lines
+  // Draw order level price lines.
+  //
+  // The teardown runs before the price is consulted, because a market switch
+  // drops `currentPrice` to null while the previous pair's lines are still
+  // attached - and lightweight-charts keeps price lines across `setData([])`.
+  // Returning above the removal loop left BTC levels labelled over an ARB axis,
+  // with the range still stretched to reach them, until the new pair's ticker
+  // landed - and for good whenever it never did.
   useEffect(() => {
-    if (!candleSeries || !currentPrice) return;
+    if (!candleSeries) return;
 
     // Remove previous price lines
     for (const line of priceLinesRef.current) {
@@ -151,7 +159,9 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     priceLinesRef.current = [];
 
     // One derivation, shared with the grid's price chip: see `orderPriceLines`.
-    const lines = orderPriceLines(orders, currentPrice);
+    // With no price there are no levels, which is a real answer rather than a
+    // reason to skip the pass: it is what resets the autoscale provider below.
+    const lines = currentPrice ? orderPriceLines(orders, currentPrice) : [];
 
     for (const line of lines) {
       priceLinesRef.current.push(
@@ -168,7 +178,11 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       );
     }
 
-    // Widen the candles' own range so the order levels stay on screen.
+    // Widen the candles' own range so the order levels stay on screen. An empty
+    // list gives back the provider that defers to the candles entirely, which is
+    // the only way to undo this: `applyOptions` skips an undefined source value,
+    // so passing `undefined` would leave the previous market's range installed.
+    // See `orderAutoscale.ts`.
     candleSeries.applyOptions({
       autoscaleInfoProvider: orderAutoscaleProvider(
         lines.map((line) => line.price),
@@ -188,6 +202,11 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     : tickerError
       ? "Price Error"
       : "Loading…";
+
+  // Only once the metadata has answered: before that `hasPriceFormat` is false
+  // simply because nothing has arrived yet, and covering the plot on every page
+  // load would report a missing rule as the ordinary state.
+  const precisionUnavailable = metadataSettled && !hasPriceFormat;
 
   return (
     <div className="flex flex-col h-full bg-bg-primary border-b border-border-neutral">
@@ -297,25 +316,44 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       <div className="flex-1 min-h-0 relative">
         <div ref={chartContainerRef} className="w-full h-full" />
 
-        {/* Loading overlay */}
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <p className="text-[11px] text-text-muted opacity-60">
-              Loading chart…
-            </p>
-          </div>
-        )}
-
-        {/* A failed backfill ends the loading state without ending the empty
-            chart, and the panel used to say nothing at all about it - an empty
-            plot area under a header naming a pair, with no way to tell that
-            from a market that simply has no bars. */}
-        {!isLoading && candleError && (
-          <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+        {precisionUnavailable ? (
+          /* The plot is covered rather than merely captioned. Without this
+             pair's rules the axis, the crosshair and every order label are
+             written at a width this app does not have for it, and there is no
+             neutral one to fall back to - which is exactly why
+             `formatMarketPrice` draws no number at all in the same state. An
+             opaque cover is what stops the panel presenting the drawing as
+             authoritative, and it takes the pointer so the crosshair cannot be
+             read underneath it. */
+          <div className="absolute inset-0 flex items-center justify-center px-4 bg-bg-primary">
             <p className="text-[11px] text-status-yellow text-center">
-              Price history unavailable for {market.symbol}
+              Precision rules unavailable for {market.symbol} - prices cannot be
+              drawn
             </p>
           </div>
+        ) : (
+          <>
+            {/* Loading overlay */}
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <p className="text-[11px] text-text-muted opacity-60">
+                  Loading chart…
+                </p>
+              </div>
+            )}
+
+            {/* A failed backfill ends the loading state without ending the
+                empty chart, and the panel used to say nothing at all about it -
+                an empty plot area under a header naming a pair, with no way to
+                tell that from a market that simply has no bars. */}
+            {!isLoading && candleError && (
+              <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+                <p className="text-[11px] text-status-yellow text-center">
+                  Price history unavailable for {market.symbol}
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

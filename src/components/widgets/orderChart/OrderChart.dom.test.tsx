@@ -44,14 +44,59 @@ const feed = vi.hoisted(() => ({
 
 const chartState = vi.hoisted(() => ({
   instance: null as unknown,
+  hasPriceFormat: true,
+}));
+
+/** The ticker, which goes silent for the moment a market switch takes. */
+const ticker = vi.hoisted(() => ({
+  currentPrice: 50_000 as number | null,
+}));
+
+/** The selected pair, and whether Kraken's rules for it are known. */
+const marketState = vi.hoisted(() => ({
+  symbol: "BTC/USD",
+  base: "BTC",
+  quote: "USD",
+  hasPrecision: true,
+  metadataSettled: true,
 }));
 
 vi.mock("../../../hooks/useKrakenAPI", () => ({
   useKrakenAPI: () => ({
-    currentPrice: 50_000,
+    currentPrice: ticker.currentPrice,
     tickerError: null,
     publicStatus: "connected",
   }),
+}));
+
+vi.mock("../../../store/useMarket", () => ({
+  useMarket: () => {
+    const market = {
+      symbol: marketState.symbol,
+      base: marketState.base,
+      quote: marketState.quote,
+      name: marketState.base,
+      quotePrefix: "$",
+    };
+    const precision = marketState.hasPrecision
+      ? {
+          symbol: marketState.symbol,
+          priceDecimals: 1,
+          quantityDecimals: 8,
+          tickSize: 0.1,
+          orderMin: 0.00005,
+        }
+      : null;
+    return {
+      market,
+      precision,
+      activeMarket: { market, precision },
+      markets: [market],
+      selectMarket: () => false,
+      metadataError: null,
+      metadataSettled: marketState.metadataSettled,
+    };
+  },
 }));
 
 vi.mock("../../../hooks/useOHLCData", () => ({
@@ -65,7 +110,10 @@ vi.mock("../../../hooks/useOHLCData", () => ({
 }));
 
 vi.mock("./useLightweightChart", () => ({
-  useLightweightChart: () => chartState.instance,
+  useLightweightChart: () => ({
+    ...(chartState.instance as object),
+    hasPriceFormat: chartState.hasPriceFormat,
+  }),
 }));
 
 const fakeChart = () => {
@@ -93,16 +141,28 @@ const fakeChart = () => {
 
   /** Every list the panel has handed the candle series, in order. */
   const setData = vi.fn();
+  const createPriceLine = vi.fn((options: unknown) => options);
+  const removePriceLine = vi.fn();
+  const seriesApplyOptions = vi.fn();
 
   const candleSeries = {
     setData,
     update: vi.fn(),
-    createPriceLine: vi.fn((options: unknown) => options),
-    removePriceLine: vi.fn(),
-    applyOptions: vi.fn(),
+    createPriceLine,
+    removePriceLine,
+    applyOptions: seriesApplyOptions,
   } as unknown as ISeriesApi<"Candlestick">;
 
-  return { chart, candleSeries, setData, lineSeries, priceScaleOptions };
+  return {
+    chart,
+    candleSeries,
+    setData,
+    createPriceLine,
+    removePriceLine,
+    seriesApplyOptions,
+    lineSeries,
+    priceScaleOptions,
+  };
 };
 
 const PERIOD = 20;
@@ -136,6 +196,12 @@ describe("OrderChart", () => {
     feed.isLoading = false;
     feed.error = null;
     chartState.instance = fakeChart();
+    chartState.hasPriceFormat = true;
+    ticker.currentPrice = 50_000;
+    marketState.symbol = "BTC/USD";
+    marketState.base = "BTC";
+    marketState.hasPrecision = true;
+    marketState.metadataSettled = true;
   });
 
   /**
@@ -356,6 +422,133 @@ describe("OrderChart", () => {
     switchMarket(rerender, { error: null });
 
     expect(screen.queryByText(/Price history unavailable/)).toBeNull();
+    expect(screen.getByText("Loading chart…")).toBeInTheDocument();
+  });
+
+  // ===========================================================================
+  // THE PREVIOUS MARKET'S ORDER LEVELS
+  // ===========================================================================
+  //
+  // A switch drops `currentPrice` to null until the new pair's ticker lands,
+  // and lightweight-charts keeps price lines across `setData([])`. Skipping the
+  // whole pass while there is no price left BTC levels labelled over an ARB
+  // axis, with the range still stretched to reach them - and permanently so
+  // whenever the new pair's ticker never answers.
+
+  /** An entry limit 25% below the market, so it draws exactly one line. */
+  const oneOrder = { "sa-limit-1": { col: 0, row: 1, type: "limit", yPosition: 25, direction: "downside" as const } };
+
+  it("removes the previous market's price lines when its price goes", () => {
+    const { removePriceLine, createPriceLine } = chartState.instance as ReturnType<
+      typeof fakeChart
+    >;
+    const { rerender } = render(<OrderChart orders={oneOrder} />);
+
+    const drawn = createPriceLine.mock.results.map((result) => result.value);
+    expect(drawn).toHaveLength(1);
+    expect(removePriceLine).not.toHaveBeenCalled();
+
+    ticker.currentPrice = null;
+    marketState.symbol = "ARB/USD";
+    marketState.base = "ARB";
+    rerender(<OrderChart orders={oneOrder} />);
+
+    // Every line the previous market put on the series is taken off it, and no
+    // line takes its place while there is no price to derive one from.
+    expect(removePriceLine.mock.calls.map(([line]) => line)).toEqual(drawn);
+    expect(createPriceLine).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops the previous market's levels stretching the new pair's axis", () => {
+    const { seriesApplyOptions } = chartState.instance as ReturnType<
+      typeof fakeChart
+    >;
+    const { rerender } = render(<OrderChart orders={oneOrder} />);
+
+    /** What the candles alone ask for, before any order level widens it. */
+    const fromCandles = () => () => ({
+      priceRange: { minValue: 0.4, maxValue: 0.45 },
+    });
+    const installed = () =>
+      seriesApplyOptions.mock.calls.at(-1)?.[0]?.autoscaleInfoProvider;
+
+    // While BTC had a price, its 37,500 level was pulled into the range - an
+    // ARB-sized range stretched to four figures.
+    expect(installed()(fromCandles()).priceRange.maxValue).toBeGreaterThan(
+      1_000,
+    );
+
+    ticker.currentPrice = null;
+    marketState.symbol = "ARB/USD";
+    rerender(<OrderChart orders={oneOrder} />);
+
+    // Now it defers to the candles entirely. Passing `undefined` would not have
+    // done this: `applyOptions` skips an undefined value, leaving the previous
+    // market's provider installed and the new pair's candles flattened against
+    // the bottom of a plot scaled for BTC.
+    expect(installed()(fromCandles())).toEqual({
+      priceRange: { minValue: 0.4, maxValue: 0.45 },
+    });
+  });
+
+  // ===========================================================================
+  // A PAIR WHOSE RULES THE APP DOES NOT HAVE
+  // ===========================================================================
+  //
+  // `formatMarketPrice` refuses to draw a single number without a
+  // `MarketPrecision`. The series has no such option: it keeps whatever format
+  // it was last given, so it would draw a whole axis, crosshair and set of
+  // order labels at the previous pair's width. There is no neutral precision to
+  // substitute - so the plot is covered rather than captioned.
+
+  const plotArea = () =>
+    document.querySelector(".flex-1.min-h-0.relative") as HTMLElement;
+
+  it("covers the plot when the selected pair has no precision", () => {
+    chartState.hasPriceFormat = false;
+    marketState.symbol = "ARB/USD";
+    marketState.hasPrecision = false;
+    render(<OrderChart orders={{}} />);
+
+    const message = screen.getByText(/Precision rules unavailable for ARB\/USD/);
+    expect(message).toBeInTheDocument();
+
+    // Opaque and pointer-taking: a cover that let the crosshair through would
+    // still be reading prices off an axis written in another pair's units.
+    const cover = message.closest("div")!;
+    expect(cover.className).toContain("bg-bg-primary");
+    expect(cover.className).not.toContain("pointer-events-none");
+    expect(cover).toHaveClass("absolute", "inset-0");
+    expect(plotArea()).toContainElement(cover);
+  });
+
+  it("says one thing at a time, not this over the loading caption", () => {
+    chartState.hasPriceFormat = false;
+    marketState.hasPrecision = false;
+    feed.isLoading = true;
+    render(<OrderChart orders={{}} />);
+
+    expect(screen.queryByText("Loading chart…")).toBeNull();
+    expect(screen.getByText(/Precision rules unavailable/)).toBeInTheDocument();
+  });
+
+  it("presents the plot as usual once the pair's rules are known", () => {
+    render(<OrderChart orders={{}} />);
+
+    expect(screen.queryByText(/Precision rules unavailable/)).toBeNull();
+  });
+
+  // Before the metadata answers, no precision means "not known yet". Covering
+  // the plot then would report the ordinary first second of every page load as
+  // a missing rule.
+  it("waits for the metadata to answer before covering anything", () => {
+    chartState.hasPriceFormat = false;
+    marketState.hasPrecision = false;
+    marketState.metadataSettled = false;
+    feed.isLoading = true;
+    render(<OrderChart orders={{}} />);
+
+    expect(screen.queryByText(/Precision rules unavailable/)).toBeNull();
     expect(screen.getByText("Loading chart…")).toBeInTheDocument();
   });
 });

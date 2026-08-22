@@ -76,6 +76,11 @@ const marketForEntry = (
  * a half-known pair would price orders from whatever the defaults happened to
  * be, which is the failure this module exists to remove. A market that is
  * skipped simply stays unpriceable and says so.
+ *
+ * `costmin` is not one of those fields. Nothing enforces it - see
+ * `MarketPrecision.costMin` - so an entry without it still prices every order
+ * this app can build, and discarding the pair over it would disable a market
+ * Kraken has fully described.
  */
 export const parseAssetPairs = (
   payload: unknown,
@@ -103,8 +108,7 @@ export const parseAssetPairs = (
       quantityDecimals === undefined ||
       tickSize === undefined ||
       tickSize <= 0 ||
-      orderMin === undefined ||
-      costMin === undefined
+      orderMin === undefined
     ) {
       continue;
     }
@@ -115,7 +119,7 @@ export const parseAssetPairs = (
       quantityDecimals,
       tickSize,
       orderMin,
-      costMin,
+      ...(costMin !== undefined && { costMin }),
     });
   }
 

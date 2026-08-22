@@ -63,6 +63,7 @@ const marketValue: MarketContextValue = {
   markets: MARKETS,
   selectMarket: () => false,
   metadataError: null,
+  metadataSettled: true,
 };
 
 const InMarket: FC<{ children: ReactNode }> = ({ children }) => (

@@ -35,6 +35,7 @@ const harness = (
     markets: MARKETS,
     selectMarket,
     metadataError: null,
+    metadataSettled: true,
     ...overrides,
   };
 
@@ -44,6 +45,9 @@ const harness = (
 
   return { Wrapper, selectMarket };
 };
+
+/** The precision warning, wherever it names the pair it is about. */
+const warning = () => screen.queryByText(/Precision rules unavailable/);
 
 describe("MarketSelector", () => {
   it("has an accessible name from a real label", () => {
@@ -183,11 +187,48 @@ describe("MarketSelector", () => {
       </Wrapper>,
     );
 
-    expect(
-      screen.getByText(
-        "Precision rules unavailable - orders cannot be submitted",
-      ),
-    ).toBeInTheDocument();
+    expect(warning()).not.toBeNull();
+  });
+
+  // The case the warning used to miss entirely. A batch that answers without
+  // one pair sets the precisions it did get and clears `metadataError`, so that
+  // pair drew "n/a" in the readout, "n/a" on every grid chip and refused at
+  // Execute, with nothing on screen saying why.
+  it("warns when the batch answered without this pair", () => {
+    const { Wrapper } = harness({
+      market: findMarket("ARB/USD")!,
+      precision: null,
+      metadataError: null,
+    });
+    render(
+      <Wrapper>
+        <MarketSelector currentPrice={0.4231} />
+      </Wrapper>,
+    );
+
+    const message = warning();
+    expect(message).not.toBeNull();
+    // Named, because it is this pair that cannot be traded rather than all of
+    // them: the others in the same batch are fine.
+    expect(message).toHaveTextContent("ARB/USD");
+  });
+
+  // Before the request answers, a missing precision means "not known yet". A
+  // warning here would fire on every page load and claim orders are blocked
+  // while the request that unblocks them is still in flight.
+  it("is quiet while the rules are still being fetched", () => {
+    const { Wrapper } = harness({
+      precision: null,
+      metadataError: null,
+      metadataSettled: false,
+    });
+    render(
+      <Wrapper>
+        <MarketSelector currentPrice={50_000} />
+      </Wrapper>,
+    );
+
+    expect(warning()).toBeNull();
   });
 
   it("is quiet when the rules loaded fine", () => {
@@ -198,10 +239,6 @@ describe("MarketSelector", () => {
       </Wrapper>,
     );
 
-    expect(
-      screen.queryByText(
-        "Precision rules unavailable - orders cannot be submitted",
-      ),
-    ).not.toBeInTheDocument();
+    expect(warning()).toBeNull();
   });
 });

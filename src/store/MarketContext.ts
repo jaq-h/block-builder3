@@ -36,6 +36,17 @@ export interface MarketContextValue {
   selectMarket: (symbol: string) => boolean;
   /** Why the metadata could not be loaded, if it could not. */
   metadataError: string | null;
+  /**
+   * Whether the metadata request has answered at all, either way.
+   *
+   * `precision` being `null` means two different things before and after this
+   * turns true - "not known yet" and "Kraken did not describe this pair" - and
+   * only the second is something to tell the user about. Without the
+   * distinction the selector's warning and the chart's suppressed plot both
+   * fire on every page load, while the request that would clear them is still
+   * in flight.
+   */
+  metadataSettled: boolean;
 }
 
 /**
@@ -54,6 +65,7 @@ const DEFAULT_CONTEXT: MarketContextValue = {
   markets: MARKETS,
   selectMarket: () => false,
   metadataError: null,
+  metadataSettled: false,
 };
 
 export const MarketContext = createContext<MarketContextValue>(DEFAULT_CONTEXT);

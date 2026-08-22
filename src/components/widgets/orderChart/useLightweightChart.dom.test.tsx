@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { useRef, type FC } from "react";
 
 // =============================================================================
@@ -53,9 +53,19 @@ import type { MarketPrecision } from "@/types/markets";
 
 const Probe = () => {
   const ref = useRef<HTMLDivElement>(null);
-  useLightweightChart(ref);
-  return <div ref={ref} />;
+  // Rendered rather than captured, so what the assertions read is what a
+  // consumer of the hook would actually have to render from.
+  const { hasPriceFormat } = useLightweightChart(ref);
+  return (
+    <div ref={ref} data-testid="has-price-format">
+      {String(hasPriceFormat)}
+    </div>
+  );
 };
+
+/** What the hook reported about the format on the series it handed back. */
+const reportedPriceFormat = () =>
+  screen.getByTestId("has-price-format").textContent;
 
 /**
  * One component for every render, so a rerender updates the tree rather than
@@ -75,6 +85,7 @@ const Harness: FC<{ symbol: string; precision: MarketPrecision | null }> = ({
     markets: MARKETS,
     selectMarket: () => false,
     metadataError: null,
+    metadataSettled: true,
   };
 
   return (
@@ -153,6 +164,50 @@ describe("the candlestick series' price format", () => {
     expect(remove).not.toHaveBeenCalled();
     expect(seriesApplyOptions).toHaveBeenCalledWith({
       priceFormat: { type: "price", precision: 4, minMove: 0.0001 },
+    });
+  });
+});
+
+// =============================================================================
+// SAYING WHEN THE PLOT IS NOT THIS PAIR'S
+// =============================================================================
+//
+// There is no format to apply without a `MarketPrecision`, and a series keeps
+// whatever it was last given - the previous pair's rules, or the library's
+// two-decimal default. Neither can be presented as this pair's prices, and
+// there is no neutral width to substitute, so the hook reports the state and
+// the panel covers the plot rather than captioning a drawing it cannot trust.
+
+describe("what the hook reports about the format it applied", () => {
+  it("reports a format once the pair's own rules are in hand", () => {
+    render(<Harness symbol="ARB/USD" precision={ARB_USD} />);
+
+    expect(reportedPriceFormat()).toBe("true");
+  });
+
+  it("reports none while the pair has no rules", () => {
+    render(<Harness symbol="ARB/USD" precision={null} />);
+
+    expect(reportedPriceFormat()).toBe("false");
+  });
+
+  // The market-switch case: a chart already formatted for BTC, moved to a pair
+  // the metadata does not describe. The series still carries BTC's one decimal,
+  // which is exactly why the answer here has to be false.
+  it("stops reporting one when the selection moves to a pair with no rules", () => {
+    const { rerender } = render(
+      <Harness symbol="BTC/USD" precision={BTC_USD} />,
+    );
+    expect(reportedPriceFormat()).toBe("true");
+
+    rerender(<Harness symbol="ARB/USD" precision={null} />);
+
+    expect(reportedPriceFormat()).toBe("false");
+    // Nothing was invented to fill the gap.
+    expect(priceFormats()).not.toContainEqual({
+      type: "price",
+      precision: 2,
+      minMove: 0.01,
     });
   });
 });

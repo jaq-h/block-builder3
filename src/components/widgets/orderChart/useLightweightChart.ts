@@ -18,12 +18,28 @@ import {
 import { useMarket } from "../../../store/useMarket";
 import type { MarketPrecision } from "../../../types/markets";
 
-interface UseLightweightChartReturn {
+interface ChartInstance {
   chart: IChartApi | null;
   candleSeries: ISeriesApi<"Candlestick"> | null;
 }
 
-const NO_CHART: UseLightweightChartReturn = { chart: null, candleSeries: null };
+interface UseLightweightChartReturn extends ChartInstance {
+  /**
+   * Whether the series is written in the selected pair's own price format.
+   *
+   * False means the plot is not authoritative and must not be presented as
+   * though it were: with no `MarketPrecision` there is no format to apply, and
+   * a series carries whatever it was last given - the previous pair's rules, or
+   * the library's `precision: 2, minMove: 0.01` default. Either draws a whole
+   * axis, crosshair and set of order labels at a width this app does not have
+   * for this pair, which is the thing `formatMarketPrice` refuses to do for a
+   * single number. It is reported here rather than re-derived by the caller so
+   * the format and the judgement about it stay one fact.
+   */
+  hasPriceFormat: boolean;
+}
+
+const NO_CHART: ChartInstance = { chart: null, candleSeries: null };
 
 /**
  * How this pair's prices are written on the price scale, the crosshair label
@@ -51,7 +67,7 @@ export const useLightweightChart = (
   // in state rather than a ref: a ref read during render hands the caller `null`
   // on the first pass and never re-renders them once the chart exists, so their
   // `setData` effects never re-run and the chart stays empty.
-  const [instance, setInstance] = useState<UseLightweightChartReturn>(NO_CHART);
+  const [instance, setInstance] = useState<ChartInstance>(NO_CHART);
 
   const { precision } = useMarket();
   // Read through a ref at creation time so the precision arriving from Kraken
@@ -134,7 +150,7 @@ export const useLightweightChart = (
     series.applyOptions({ priceFormat: priceFormatFor(precision) });
   }, [instance.candleSeries, precision]);
 
-  return instance;
+  return { ...instance, hasPriceFormat: precision !== null };
 };
 
 /**
