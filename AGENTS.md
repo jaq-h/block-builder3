@@ -193,10 +193,15 @@ The README's **Interaction model** section is authoritative. Five things bite in
   caller was about to attempt. Both defects this structure replaced were a message written
   next to the code that was about to act - one false, one silent - and each point fix created
   the next. A new message means a new outcome in that union, not a new `announce` call.
-  A second live region breaks this as surely as a second `announce` does, so no other
-  component may carry `aria-live`, `role="status"` or `role="alert"` - the two would talk
-  over each other during the one interaction that fires both. Ordinary *visible* text is not
-  a live region and is always allowed; `MarketSelector`'s precision warning is one.
+  A second live region breaks this as surely as a second `announce` does, so no component
+  that speaks *about the grid* may carry `aria-live`, `role="status"` or `role="alert"` -
+  the two would talk over each other during the one interaction that fires both. That is
+  what the `role="status"` removal from `MarketSelector`'s precision warning was about.
+  Ordinary *visible* text is not a live region and is always allowed; that warning is one.
+  `ErrorBoundary`'s `role="alert"` fallback is not a violation and must not be "fixed":
+  it *replaces* the subtree it guards and speaks once about that subtree's own failure,
+  so there is no running commentary for it to compete with - by the time it speaks, the
+  announcer it would have talked over is not rendered at all.
 - **`LiveAnnouncer` only speaks from a panel that is on screen.** Below `lg`, `App.tsx`
   hides the inactive panel with `display: none`, and a `display: none` subtree is out of the
   accessibility tree - so a live-region write inside it announces to nobody. Anything the
@@ -377,6 +382,15 @@ Three rules, and each replaced a defect that was invisible while the app was BTC
 `ParsedTickerData` is held tagged with the symbol it describes and a frame naming a different
 market is dropped, so the previous pair's price can never be what a block is priced from
 during a switch.
+
+**Known gap: precision *readiness* has no owner.** "Does this pair have rules yet, are they
+known to be absent, or are they still loading" is currently answered independently by
+`MarketSelector`, `OrderChart`, `useLightweightChart`, `formatMarketPrice` and the order
+path, each from `metadataSettled` plus a precision of its own. Every defect in that class so
+far has been one of those five disagreeing with the other four - most recently the chart
+drawing a whole axis at lightweight-charts' `precision: 2` default while every chip beside
+it read `n/a` for the same pair. Owned by `bb3-price-format-readiness-owner`; a fix belongs
+in one readiness value the five read, not in a sixth `metadataSettled &&` expression.
 
 ## Prices and order types
 

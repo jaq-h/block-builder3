@@ -109,12 +109,24 @@ const Harness: FC<{
    * the catalogue. The grid is what did *not* change, and it has one voice.
    */
   refuseStrategyOn?: string;
+  /**
+   * A strategy that has just been loaded into this grid, the way `App` reports
+   * one. It is a prop rather than something this component notices, because the
+   * real load remounts it - so a fresh mount holding one is the shape under
+   * test, not an edge case.
+   */
+  strategyLoaded?: {
+    symbol: string;
+    name: string;
+    marketChanged: boolean;
+  } | null;
 }> = ({
   initialGrid,
   pattern = "conditional",
   gridReplacement,
   switchTo,
   refuseStrategyOn,
+  strategyLoaded,
 }) => {
   const [selected, setSelected] = useState<{
     market: Market;
@@ -138,6 +150,9 @@ const Harness: FC<{
     symbol: string;
     attempt: number;
   } | null>(null);
+  // Held in state rather than read from the prop, so the grid can clear it the
+  // way `App` does once it has spoken.
+  const [loaded, setLoaded] = useState(strategyLoaded ?? null);
 
   return (
     <MarketContext.Provider
@@ -195,6 +210,8 @@ const Harness: FC<{
               currentPrice={MARKET_PRICE}
               tickerError={null}
               strategyMarketUnavailable={refused}
+              strategyLoaded={loaded}
+              onStrategyLoadAnnounced={() => setLoaded(null)}
             />
             {gridReplacement && (
               <button onClick={() => setGrid(gridReplacement)}>
@@ -1315,5 +1332,58 @@ describe("GridArea, when a strategy could not be loaded", () => {
     // The announcer alternates between two regions precisely so a repeat is a
     // content change rather than a no-op.
     expect(second).not.toBe(first);
+  });
+});
+
+// =============================================================================
+// A STRATEGY THE BUILDER DID LOAD
+// =============================================================================
+//
+// Loading one remounts this component - `loadConfig` bumps the key the panel is
+// rendered with - so the fact has to be readable by a grid that has only just
+// come up. That is why it arrives as a prop and why these mount with it already
+// set: a `GridArea` noticing the change for itself is exactly what could not
+// work, because the market it would compare against is already the new one.
+
+describe("GridArea, when a strategy has just been loaded into it", () => {
+  it("speaks from a mount that has only just come up", () => {
+    render(
+      <Harness
+        initialGrid={clearGrid(2, 3)}
+        strategyLoaded={{
+          symbol: "ARB/USD",
+          name: "Arbitrum",
+          marketChanged: true,
+        }}
+      />,
+    );
+
+    expect(announcement()).toBe(
+      "Saved strategy loaded onto the grid. The market changed to Arbitrum, so every block is now priced from the ARB/USD market price.",
+    );
+  });
+
+  // One sentence, not two: the market change and the load are one press of
+  // Edit, and two live-region writes in quick succession is the shape whose
+  // first write this module's history records being cut off by the second.
+  it("does not also announce the market change on its own", () => {
+    render(
+      <Harness
+        initialGrid={clearGrid(2, 3)}
+        strategyLoaded={{
+          symbol: "ARB/USD",
+          name: "Arbitrum",
+          marketChanged: true,
+        }}
+      />,
+    );
+
+    expect(screen.queryByText(/^Market changed to/)).not.toBeInTheDocument();
+  });
+
+  it("says nothing when no strategy has been loaded", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    expect(announcement()).toBe("");
   });
 });

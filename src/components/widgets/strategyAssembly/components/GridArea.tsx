@@ -50,6 +50,29 @@ interface GridAreaProps {
    * presses of the same Edit button, so the second is announced too.
    */
   strategyMarketUnavailable?: { symbol: string; attempt: number } | null;
+  /**
+   * A saved strategy that has just been loaded into this grid, and the market
+   * it brought with it.
+   *
+   * It arrives as a prop rather than being noticed here, because loading one
+   * remounts this component: `loadConfig` bumps the key the assembly panel is
+   * rendered with, so both the selection and the load land in one commit and
+   * the fresh `GridArea` starts with `announcedMarketRef` already holding the
+   * new symbol. The market-change effect below therefore has nothing to compare
+   * against and says nothing, which is how the edit path came to change the
+   * market silently. `App` is what survives the remount, so `App` carries it.
+   */
+  strategyLoaded?: {
+    symbol: string;
+    name: string;
+    marketChanged: boolean;
+  } | null;
+  /**
+   * Told that the sentence has been spoken. The prop is cleared in response, so
+   * a later remount for some other reason - a submission bumps the same key -
+   * does not announce a load that has already been announced.
+   */
+  onStrategyLoadAnnounced?: () => void;
 }
 
 /**
@@ -71,6 +94,8 @@ const GridArea: FC<GridAreaProps> = ({
   currentPrice,
   tickerError,
   strategyMarketUnavailable,
+  strategyLoaded,
+  onStrategyLoadAnnounced,
 }) => {
   // ─── Context subscriptions ───────────────────────────────────────
   const { grid, strategyPattern, setGrid, setOrderConfig } = useGridData();
@@ -333,6 +358,28 @@ const GridArea: FC<GridAreaProps> = ({
     // every one of them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [market.symbol, market.name]);
+
+  // ─── A strategy the builder did load ─────────────────────────────
+  //
+  // One sentence for one event, from the one announcer. The load and the market
+  // it came back on are two facts about the same press of Edit, and reporting
+  // them as two outcomes is exactly the pair of live-region writes in quick
+  // succession this module's history records the first of being cut off by the
+  // second - so `gridAnnouncements` words them together and this reports one
+  // outcome. The ref is moved on first, so the market-change effect above
+  // cannot say the same thing again on a later render.
+  useEffect(() => {
+    if (!strategyLoaded) return;
+    announcedMarketRef.current = strategyLoaded.symbol;
+    announcer.report({
+      kind: "strategyLoaded",
+      name: strategyLoaded.name,
+      symbol: strategyLoaded.symbol,
+      marketChanged: strategyLoaded.marketChanged,
+    });
+    onStrategyLoadAnnounced?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strategyLoaded]);
 
   // ─── A strategy the builder would not load ───────────────────────
   //

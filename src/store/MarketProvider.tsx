@@ -47,6 +47,21 @@ interface LoadHandles {
   cancelled: { current: boolean };
   inFlight: { current: boolean };
   retryTimer: { current: ReturnType<typeof setTimeout> | null };
+  /**
+   * Which attempt the provider is still interested in. Every entry point below
+   * takes the next number, and a result carrying an older one is dropped.
+   *
+   * Recovery gives this more than one chain to keep straight: a failure arms a
+   * retry, and a focus or an `online` event can start a fresh chain before that
+   * timer fires. Without this counter the loser of that race still wrote its
+   * answer, so a stale attempt failing *after* the metadata had loaded set
+   * `metadataError` on top of a fully populated map - the selector saying
+   * orders could not be submitted while every chip on screen drew a real price
+   * and the order path built payloads perfectly well.
+   */
+  generation: { current: number };
+  /** The request in flight, so an unmounting provider can abandon it. */
+  request: { current: AbortController | null };
   onLoaded: (precisions: Map<string, MarketPrecision>) => void;
   onFailed: (message: string) => void;
 }
@@ -55,15 +70,35 @@ const loadPrecisions = (handles: LoadHandles, attempt = 1): void => {
   if (handles.cancelled.current || handles.inFlight.current) return;
   handles.inFlight.current = true;
 
-  fetchMarketPrecisions(MARKETS)
+  const generation = ++handles.generation.current;
+  const controller = new AbortController();
+  handles.request.current = controller;
+
+  /** Whether this attempt is still the one the provider is waiting on. */
+  const current = () =>
+    !handles.cancelled.current && generation === handles.generation.current;
+
+  fetchMarketPrecisions(MARKETS, controller.signal)
     .then((loaded) => {
       handles.inFlight.current = false;
-      if (handles.cancelled.current) return;
+      if (!current()) return;
+      handles.request.current = null;
+
+      // An answer ends the whole chain, including a retry another attempt of it
+      // already armed. That timer is the other half of the same defect: left
+      // running it fires after the load has succeeded, issues a request nothing
+      // needs, and turns its failure into an error over loaded metadata.
+      if (handles.retryTimer.current) {
+        clearTimeout(handles.retryTimer.current);
+        handles.retryTimer.current = null;
+      }
+
       handles.onLoaded(loaded);
     })
     .catch((error: unknown) => {
       handles.inFlight.current = false;
-      if (handles.cancelled.current) return;
+      if (!current()) return;
+      handles.request.current = null;
 
       handles.onFailed(
         error instanceof Error
@@ -107,6 +142,8 @@ export const MarketProvider: FC<MarketProviderProps> = ({
   const cancelledRef = useRef(false);
   const inFlightRef = useRef(false);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generationRef = useRef(0);
+  const requestRef = useRef<AbortController | null>(null);
 
   // `useState` setters are stable, so these handles are built once and stay
   // valid for the life of the provider.
@@ -114,6 +151,8 @@ export const MarketProvider: FC<MarketProviderProps> = ({
     cancelled: cancelledRef,
     inFlight: inFlightRef,
     retryTimer: retryTimerRef,
+    generation: generationRef,
+    request: requestRef,
     onLoaded: (loaded) => {
       setPrecisions(loaded);
       setMetadataError(null);
@@ -132,6 +171,11 @@ export const MarketProvider: FC<MarketProviderProps> = ({
 
     return () => {
       handles.cancelled.current = true;
+      // The cancelled flag stops the answer being written; this stops the
+      // request being made at all, so an unmounted provider leaves nothing on
+      // the wire waiting out its own timeout.
+      handles.request.current?.abort();
+      handles.request.current = null;
       if (handles.retryTimer.current) {
         clearTimeout(handles.retryTimer.current);
         handles.retryTimer.current = null;

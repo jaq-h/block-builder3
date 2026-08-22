@@ -33,6 +33,18 @@ interface StrategyAssemblyProps {
    * that did not change, and the panel has no voice of its own.
    */
   strategyMarketUnavailable?: { symbol: string; attempt: number } | null;
+  /**
+   * A saved strategy that has just been loaded into this builder, and the
+   * market it brought with it. Passed through to `GridArea` for the same reason
+   * as the refusal above: the grid has the one voice, and this panel has none.
+   */
+  strategyLoaded?: {
+    symbol: string;
+    name: string;
+    marketChanged: boolean;
+  } | null;
+  /** Called once the grid has spoken, so the same load is not announced twice. */
+  onStrategyLoadAnnounced?: () => void;
 }
 
 const StrategyAssembly: FC<StrategyAssemblyProps> = ({
@@ -76,6 +88,8 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
   onToggleSimulationMode,
   isEditMode,
   strategyMarketUnavailable,
+  strategyLoaded,
+  onStrategyLoadAnnounced,
 }) => {
   // No symbol here any more: `useKrakenAPI` follows the selected market. Naming
   // one would let this panel price a pair the selector is not showing.
@@ -97,6 +111,8 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
         currentPrice={currentPrice}
         tickerError={tickerError}
         strategyMarketUnavailable={strategyMarketUnavailable}
+        strategyLoaded={strategyLoaded}
+        onStrategyLoadAnnounced={onStrategyLoadAnnounced}
       />
       <UtilityButtons
         orderCount={orderCount}

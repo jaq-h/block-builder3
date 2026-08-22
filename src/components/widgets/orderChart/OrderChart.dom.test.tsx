@@ -538,10 +538,11 @@ describe("OrderChart", () => {
     expect(screen.queryByText(/Precision rules unavailable/)).toBeNull();
   });
 
-  // Before the metadata answers, no precision means "not known yet". Covering
-  // the plot then would report the ordinary first second of every page load as
-  // a missing rule.
-  it("waits for the metadata to answer before covering anything", () => {
+  // Before the metadata answers, no precision means "not known yet", which is a
+  // different fact from "this pair has no rules" and reads differently: the
+  // first is the ordinary first second of every page load, the second is a pair
+  // that cannot be traded. Only the second is a refusal.
+  it("waits for the metadata to answer before refusing anything", () => {
     chartState.hasPriceFormat = false;
     marketState.hasPrecision = false;
     marketState.metadataSettled = false;
@@ -550,5 +551,50 @@ describe("OrderChart", () => {
 
     expect(screen.queryByText(/Precision rules unavailable/)).toBeNull();
     expect(screen.getByText("Loading chart…")).toBeInTheDocument();
+  });
+
+  // The window this panel used to draw through, and the one surface in the app
+  // that still invented a precision: with no format applied the series carries
+  // lightweight-charts' own precision 2 / minMove 0.01, so a 0.4231 ARB price
+  // gets an axis, a crosshair and order labels reading "0.42" while the header
+  // beside them, the selector readout and every grid chip read "n/a". A
+  // sub-second wrong answer is still a wrong answer, and it is wrong on every
+  // page load - so the window is covered with the loading treatment the panel
+  // already draws rather than presented as authoritative.
+  it("covers the plot while the pair's rules are still on their way", () => {
+    chartState.hasPriceFormat = false;
+    marketState.symbol = "ARB/USD";
+    marketState.hasPrecision = false;
+    marketState.metadataSettled = false;
+    // Nothing to do with the candles: they have arrived, and the plot would be
+    // drawn at a width this app does not have for the pair.
+    feed.isLoading = false;
+    render(<OrderChart orders={{}} />);
+
+    const cover = screen.getByText("Loading chart…").closest("div")!;
+    expect(cover.className).toContain("bg-bg-primary");
+    expect(cover.className).not.toContain("pointer-events-none");
+    expect(cover).toHaveClass("absolute", "inset-0");
+    expect(plotArea()).toContainElement(cover);
+
+    // It is loading, not missing: the rules may still turn up.
+    expect(screen.queryByText(/Precision rules unavailable/)).toBeNull();
+  });
+
+  // The three states are distinct, and the third is the only one that shows the
+  // plot: rules known means the series is written in this pair's own units.
+  it("uncovers the plot as soon as the pair's rules are known", () => {
+    marketState.metadataSettled = false;
+    const { rerender } = render(<OrderChart orders={{}} />);
+    expect(screen.queryByText("Loading chart…")).toBeNull();
+
+    chartState.hasPriceFormat = false;
+    rerender(<OrderChart orders={{}} />);
+    expect(screen.getByText("Loading chart…")).toBeInTheDocument();
+
+    chartState.hasPriceFormat = true;
+    rerender(<OrderChart orders={{}} />);
+    expect(screen.queryByText("Loading chart…")).toBeNull();
+    expect(screen.queryByText(/Precision rules unavailable/)).toBeNull();
   });
 });

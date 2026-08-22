@@ -127,30 +127,81 @@ export const parseAssetPairs = (
 };
 
 /**
+ * How long a request is given before it is treated as having failed.
+ *
+ * `fetch` has no timeout of its own, so a black-holed request - a captive
+ * portal, a dropped TCP connection - hangs for as long as the browser is
+ * willing to wait. That matters more here than the usual amount: until this
+ * request answers, "this pair has no rules yet" and "this pair has no rules"
+ * are indistinguishable, and every surface that draws a price has to choose
+ * between waiting and inventing a width. An unbounded wait is what turns that
+ * transient window into a permanent one.
+ *
+ * Generous rather than tight, because the point is to bound the pathological
+ * case and not to fail a slow-but-working connection.
+ */
+export const METADATA_TIMEOUT_MS = 20_000;
+
+/**
  * Fetch the rules for every market in one request.
  *
  * One request for the whole catalogue rather than one per market: the metadata
  * changes about as often as Kraken lists a pair, and switching market must not
  * wait on a round trip before the grid can be priced.
+ *
+ * A hung request resolves into the ordinary failure path - the caller's retry,
+ * its backoff and its recovery on focus and on `online` - rather than leaving
+ * the app waiting. `signal` lets the caller abandon one it no longer wants, so
+ * an unmounted provider does not leave a request on the wire.
  */
 export const fetchMarketPrecisions = async (
   markets: readonly Market[],
+  signal?: AbortSignal,
 ): Promise<Map<string, MarketPrecision>> => {
   const { restUrl } = getKrakenConfig();
   const pairs = markets.map((market) => convertToKrakenPair(market.symbol));
   const url = `${restUrl}/0/public/AssetPairs?pair=${pairs.join(",")}`;
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch asset metadata: ${response.status} ${response.statusText}`,
-    );
-  }
+  // One controller for both reasons a request can be abandoned - the timeout
+  // below and the caller's own signal - because `fetch` takes exactly one.
+  const controller = new AbortController();
+  const abortForCaller = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  else signal?.addEventListener("abort", abortForCaller);
 
-  const payload = (await response.json()) as AssetPairsResponse;
-  if (payload.error && payload.error.length > 0) {
-    throw new Error(`Kraken API error: ${payload.error.join(", ")}`);
-  }
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, METADATA_TIMEOUT_MS);
 
-  return parseAssetPairs(payload, markets);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch asset metadata: ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const payload = (await response.json()) as AssetPairsResponse;
+    if (payload.error && payload.error.length > 0) {
+      throw new Error(`Kraken API error: ${payload.error.join(", ")}`);
+    }
+
+    return parseAssetPairs(payload, markets);
+  } catch (error) {
+    // The abort itself says only "aborted", which reads as a bug rather than
+    // as the network never answering. Once the timer has fired the request was
+    // already abandoned, so this is the honest headline for anything that
+    // comes back afterwards.
+    if (timedOut) {
+      throw new Error(
+        `Timed out fetching asset metadata after ${METADATA_TIMEOUT_MS / 1000}s`,
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abortForCaller);
+  }
 };

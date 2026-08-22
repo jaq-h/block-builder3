@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 
-import { parseAssetPairs } from "@api/assetMetadata";
+import {
+  METADATA_TIMEOUT_MS,
+  fetchMarketPrecisions,
+  parseAssetPairs,
+} from "@api/assetMetadata";
 import { convertToKrakenPair } from "@api/krakenRest";
 import { MARKETS } from "@data/markets";
 import { KRAKEN_ASSET_PAIRS_RESPONSE, SOL_USD } from "@/test/marketFixtures";
@@ -194,5 +198,76 @@ describe("the market catalogue", () => {
     MARKETS.forEach((market) => {
       expect(precisions.has(market.symbol)).toBe(true);
     });
+  });
+});
+
+// =============================================================================
+// A REQUEST THAT NEVER ANSWERS
+// =============================================================================
+//
+// `fetch` has no timeout of its own. A black-holed request - a captive portal,
+// a dropped TCP connection - therefore hangs for as long as the browser is
+// willing to wait, and until it answers nothing in the app can tell "this pair
+// has no rules yet" from "this pair has no rules". Bounding it is what keeps
+// that window transient.
+
+/** A request that hangs until it is abandoned, reporting the signal it got. */
+const hangingFetch = () => {
+  const signals: AbortSignal[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(((
+    _input: RequestInfo | URL,
+    init?: RequestInit,
+  ) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) return;
+      signals.push(signal);
+      signal.addEventListener("abort", () =>
+        reject(new Error("The request was aborted")),
+      );
+    })) as unknown as typeof fetch);
+  return signals;
+};
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+describe("fetchMarketPrecisions when Kraken never answers", () => {
+  it("fails once the bound is up rather than hanging on", async () => {
+    vi.useFakeTimers();
+    hangingFetch();
+
+    const pending = fetchMarketPrecisions(MARKETS);
+    // Rejection is the contract; without this the assertion below races the
+    // timers and reports an unhandled rejection instead of a failure.
+    const settled = pending.catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(METADATA_TIMEOUT_MS + 1);
+
+    // Named for what happened, because "aborted" reads as a bug in the app
+    // rather than as the network never answering.
+    expect(await settled).toBeInstanceOf(Error);
+    expect(String(await settled)).toContain("Timed out");
+  });
+
+  it("abandons the request when the caller does", async () => {
+    vi.useFakeTimers();
+    const signals = hangingFetch();
+    const controller = new AbortController();
+
+    const settled = fetchMarketPrecisions(MARKETS, controller.signal).catch(
+      (error: unknown) => error,
+    );
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+
+    controller.abort();
+
+    expect(signals[0].aborted).toBe(true);
+    // Not reported as a timeout: the caller walked away, the network did not.
+    expect(String(await settled)).not.toContain("Timed out");
   });
 });

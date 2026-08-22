@@ -26,7 +26,7 @@ import { cn } from "./lib/utils";
 function AppInner() {
   const { submittedOrders } = useOrdersStore();
   const liveOrderCount = useLiveOrdersCount();
-  const { selectMarket } = useMarket();
+  const { market, markets, selectMarket } = useMarket();
   const [activeTab, setActiveTab] = useState<"assembly" | "orders">("assembly");
   const [editedStrategyId, setEditedStrategyId] = useState<string | null>(null);
 
@@ -41,6 +41,19 @@ function AppInner() {
     attempt: number;
   } | null>(null);
   const unavailableAttempt = useRef(0);
+
+  // A strategy that has just been loaded into the builder, held here rather
+  // than in the builder because loading one *remounts* the builder: `loadConfig`
+  // bumps `strategyKey`, which is the assembly panel's `key`, so a fresh
+  // `GridArea` comes up already holding the loaded strategy's market and has
+  // nothing left to notice. `App` is what survives that remount, so `App` is
+  // what carries the fact across it. The grid clears it once it has spoken, so
+  // a later remount - a submission bumps the same key - does not say it twice.
+  const [strategyLoaded, setStrategyLoaded] = useState<{
+    symbol: string;
+    name: string;
+    marketChanged: boolean;
+  } | null>(null);
 
   const {
     orderConfig,
@@ -94,6 +107,18 @@ function AppInner() {
       return;
     }
     setStrategyMarketUnavailable(null);
+
+    // Said as one sentence by the grid's announcer, because it is one event:
+    // the grid now holds a strategy it did not hold, and it may be priced from
+    // a market the user was not looking at. Both halves are invisible without
+    // sight of the grid - a `<select>` whose value is set programmatically
+    // announces nothing - and reporting them separately would be two
+    // live-region writes racing each other.
+    setStrategyLoaded({
+      symbol,
+      name: markets.find((option) => option.symbol === symbol)?.name ?? symbol,
+      marketChanged: symbol !== market.symbol,
+    });
 
     const config: import("./types/grid").OrderConfig = {};
     for (const order of orders) {
@@ -160,6 +185,8 @@ function AppInner() {
         onToggleSimulationMode={toggleSimulationMode}
         isEditMode={isEditMode}
         strategyMarketUnavailable={strategyMarketUnavailable}
+        strategyLoaded={strategyLoaded}
+        onStrategyLoadAnnounced={() => setStrategyLoaded(null)}
       />
     </div>
   );

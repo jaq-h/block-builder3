@@ -156,7 +156,32 @@ export type GridOutcome =
    * carries below `lg`, where the panel this live region sits in is
    * `display: none` and so is out of the accessibility tree entirely.
    */
-  | { kind: "strategyMarketUnavailable"; symbol: string };
+  | { kind: "strategyMarketUnavailable"; symbol: string }
+  /**
+   * A saved strategy has just been loaded back into the grid, on the market it
+   * was placed on.
+   *
+   * One outcome rather than two, because loading one is one event with two
+   * facts in it: the grid now holds a strategy it did not hold, and it may be
+   * priced against a different market than the one the user was looking at.
+   * Reporting a market change and then a load would be two live-region writes
+   * in quick succession, which is the shape this module exists to prevent - the
+   * first is cut off by the second. `marketChanged` says which way the second
+   * fact went, because a strategy reloaded on the market already selected has
+   * not moved the user anywhere.
+   *
+   * It cannot be derived from a market change alone. Loading a strategy
+   * remounts the whole assembly panel - `loadConfig` bumps the key it is
+   * rendered with - so the fresh `GridArea` starts already holding the new
+   * symbol and has nothing to compare against. The fact is carried in by `App`,
+   * which is what survives that remount.
+   */
+  | {
+      kind: "strategyLoaded";
+      name: string;
+      symbol: string;
+      marketChanged: boolean;
+    };
 
 // =============================================================================
 // WORDING
@@ -339,5 +364,10 @@ export const describeOutcome = (
 
     case "strategyMarketUnavailable":
       return `This strategy was placed on ${outcome.symbol}, which is no longer available. It was not loaded, because its prices would mean something different on another market.`;
+
+    case "strategyLoaded":
+      return outcome.marketChanged
+        ? `Saved strategy loaded onto the grid. The market changed to ${outcome.name}, so every block is now priced from the ${outcome.symbol} market price.`
+        : `Saved strategy loaded onto the grid, priced from the ${outcome.symbol} market price.`;
   }
 };

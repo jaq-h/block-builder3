@@ -203,9 +203,22 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       ? "Price Error"
       : "Loading…";
 
-  // Only once the metadata has answered: before that `hasPriceFormat` is false
-  // simply because nothing has arrived yet, and covering the plot on every page
-  // load would report a missing rule as the ordinary state.
+  // Three states, and each is drawn as what it actually is.
+  //
+  // `hasPriceFormat` false has two meanings, and collapsing them left this
+  // panel as the one surface still drawing numbers at a width the app does not
+  // have for the pair: before the metadata answers the series carries
+  // lightweight-charts' own `precision: 2, minMove: 0.01`, so selecting ARB/USD
+  // while AssetPairs is in flight draws an axis, a crosshair and every order
+  // label reading "0.42" for a 0.4231 price - beside a header, a selector
+  // readout and a grid full of chips that all read "n/a" for the same pair.
+  // There is no fallback precision anywhere else, and there is none here.
+  //
+  // So "not known yet" gets the loading treatment this panel already draws,
+  // which invents no surface and states the truth, and only a settled answer
+  // with no rules for this pair gets the refusal. A sub-second wrong answer is
+  // still a wrong answer, and it is wrong on every page load.
+  const precisionPending = !metadataSettled && !hasPriceFormat;
   const precisionUnavailable = metadataSettled && !hasPriceFormat;
 
   return (
@@ -316,7 +329,16 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       <div className="flex-1 min-h-0 relative">
         <div ref={chartContainerRef} className="w-full h-full" />
 
-        {precisionUnavailable ? (
+        {precisionPending ? (
+          /* Covered rather than captioned, for the same reason the refusal
+             below is: an overlay that lets the plot show through still shows
+             an axis written at the library's own default. */
+          <div className="absolute inset-0 flex items-center justify-center px-4 bg-bg-primary">
+            <p className="text-[11px] text-text-muted opacity-60">
+              Loading chart…
+            </p>
+          </div>
+        ) : precisionUnavailable ? (
           /* The plot is covered rather than merely captioned. Without this
              pair's rules the axis, the crosshair and every order label are
              written at a width this app does not have for it, and there is no

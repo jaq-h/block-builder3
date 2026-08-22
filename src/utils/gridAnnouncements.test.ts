@@ -404,6 +404,41 @@ describe("describeOutcome, a market change", () => {
   });
 });
 
+describe("describeOutcome, a strategy that did load", () => {
+  // One sentence for one press of Edit. The strategy came back and it may have
+  // brought a different market with it, and reporting those as two outcomes is
+  // two live-region writes in quick succession - the shape whose first write
+  // this module's own history records being cut off by the second.
+  it("says both facts in one sentence when the market moved with it", () => {
+    const said = say({
+      kind: "strategyLoaded",
+      name: "Arbitrum",
+      symbol: "ARB/USD",
+      marketChanged: true,
+    });
+
+    expect(said).toBe(
+      "Saved strategy loaded onto the grid. The market changed to Arbitrum, so every block is now priced from the ARB/USD market price.",
+    );
+  });
+
+  // A strategy reloaded on the pair already selected has not moved the user
+  // anywhere, and claiming a market change that did not happen is the kind of
+  // sentence-next-to-the-action defect this module replaced.
+  it("claims no market change when the strategy came back on the selected pair", () => {
+    const said = say({
+      kind: "strategyLoaded",
+      name: "Bitcoin",
+      symbol: "BTC/USD",
+      marketChanged: false,
+    });
+
+    expect(said).toContain("Saved strategy loaded onto the grid");
+    expect(said).toContain("BTC/USD");
+    expect(said).not.toContain("changed");
+  });
+});
+
 describe("describeOutcome, a strategy that would not load", () => {
   // A saved strategy holds percentage offsets from *its own* market's price, so
   // loading it against a different pair reprices the whole thing into another

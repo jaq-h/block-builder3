@@ -9,6 +9,7 @@ import {
   BTC_USD,
   KRAKEN_ASSET_PAIRS_RESPONSE,
 } from "@/test/marketFixtures";
+import { METADATA_TIMEOUT_MS } from "@api/assetMetadata";
 
 // =============================================================================
 // THE PROVIDER LOADS KRAKEN'S RULES, WITHOUT REACHING KRAKEN IN A TEST
@@ -492,6 +493,59 @@ describe("MarketProvider after a failed request", () => {
     }
   });
 
+  // The race the retries themselves introduced. A failure arms a backoff; the
+  // tab coming back starts a fresh chain that succeeds; the armed timer was
+  // still standing, fired against a provider that no longer needed it, and its
+  // failure wrote `metadataError` over a fully populated map. The app then said
+  // orders could not be submitted while every chip drew a real price, every
+  // payload built fine, and every later tab switch asked again for an answer
+  // already in hand.
+  it("keeps the rules a later chain loaded when an earlier retry fails", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(assetPairsOk())
+      // Anything after the load is a request nothing is waiting for, and its
+      // failure is what used to be written over the loaded metadata.
+      .mockRejectedValue(new Error("a request nothing was waiting for"));
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    // Attempt 1 fails and arms its retry for one second from now.
+    await act(async () => {});
+    expect(screen.getByTestId("error")).toHaveTextContent("network down");
+
+    // The tab comes back before that second is up, and its chain succeeds.
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await act(async () => {});
+    expect(screen.getByTestId("decimals")).toHaveTextContent(
+      String(BTC_USD.priceDecimals),
+    );
+    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    const afterLoad = fetchSpy.mock.calls.length;
+
+    // The armed retry's moment passes, and every later prompt to ask again with
+    // it. Both are answered, so neither may put a request on the wire.
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("online"));
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(afterLoad);
+    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(screen.getByTestId("decimals")).toHaveTextContent(
+      String(BTC_USD.priceDecimals),
+    );
+  });
+
   it("sets nothing after it has been unmounted", async () => {
     vi.useFakeTimers();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
@@ -512,5 +566,81 @@ describe("MarketProvider after a failed request", () => {
     });
 
     expect(errors).toEqual([]);
+  });
+});
+
+// =============================================================================
+// A REQUEST THAT NEVER ANSWERS
+// =============================================================================
+//
+// `fetch` waits as long as the browser will let it, and until this request
+// answers "this pair has no rules yet" and "this pair has no rules" are the
+// same state on screen. An unbounded wait is what turns that transient window
+// into a permanent one - the selector's warning suppressed, the chart's plot
+// covered and the order path refusing, with nothing saying why.
+
+/**
+ * A request that hangs until it is abandoned, and reports every signal it was
+ * given so a test can see what the provider did with it.
+ */
+const hangingFetch = () => {
+  const signals: AbortSignal[] = [];
+  const spy = vi.spyOn(globalThis, "fetch").mockImplementation(((
+    _input: RequestInfo | URL,
+    init?: RequestInit,
+  ) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) return;
+      signals.push(signal);
+      signal.addEventListener("abort", () =>
+        reject(new Error("The request was aborted")),
+      );
+    })) as unknown as typeof fetch);
+  return { spy, signals };
+};
+
+describe("MarketProvider when Kraken never answers", () => {
+  it("ends in the ordinary failure path rather than waiting", async () => {
+    vi.useFakeTimers();
+    hangingFetch();
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    // Still honestly nothing: not known yet is not the same as known absent.
+    await act(async () => {});
+    expect(screen.getByTestId("error")).toHaveTextContent("none");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(METADATA_TIMEOUT_MS + 1);
+    });
+
+    // The same path a refused or unreachable request takes, so the retries, the
+    // recovery on focus and on `online` and the warning all apply to it too.
+    expect(screen.getByTestId("error")).toHaveTextContent(/Timed out/);
+  });
+
+  it("abandons the request in flight when it is unmounted", async () => {
+    vi.useFakeTimers();
+    const { signals } = hangingFetch();
+
+    const { unmount } = render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+
+    unmount();
+
+    // The cancelled flag only stops the answer being written. This is what
+    // stops the request outliving the tree that asked for it.
+    expect(signals[0].aborted).toBe(true);
   });
 });

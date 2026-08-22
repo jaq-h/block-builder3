@@ -41,21 +41,21 @@ const MarketSelector: FC<MarketSelectorProps> = ({
   currentPrice,
   priceError,
 }) => {
-  const {
-    market,
-    markets,
-    activeMarket,
-    selectMarket,
-    metadataError,
-    metadataSettled,
-  } = useMarket();
+  const { market, markets, activeMarket, selectMarket, metadataSettled } =
+    useMarket();
 
-  // Keyed on this pair actually having no rules, not only on the whole batch
-  // failing. A batch that answers without one pair clears `metadataError` and
-  // leaves that pair drawing "n/a" everywhere with Execute refusing, which is
-  // the one case that used to happen with nothing on screen to explain it.
-  const precisionUnavailable =
-    metadataSettled && (metadataError !== null || !activeMarket.precision);
+  // Keyed on this pair actually having no rules, and on nothing else.
+  //
+  // "Orders cannot be submitted" is exactly true when there is no
+  // `MarketPrecision` for this pair, because that is the condition
+  // `mapGridToOrders` refuses on - so this asks the same question the order
+  // path does rather than a proxy for it. A batch that answers without one pair
+  // reports no error at all and leaves that pair drawing "n/a" everywhere,
+  // which is the case this used to miss; a request that fails after an earlier
+  // one succeeded reports an error over a pair whose rules are in hand, which
+  // is the case it used to get wrong the other way, claiming a block that does
+  // not exist while every chip beside it drew a real price.
+  const precisionUnavailable = metadataSettled && !activeMarket.precision;
 
   return (
     <div className={marketSelectorRow}>

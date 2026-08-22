@@ -231,6 +231,29 @@ describe("MarketSelector", () => {
     expect(warning()).toBeNull();
   });
 
+  // The combination the tests above never built: an error set while a precision
+  // is in hand. It is reachable whenever a later request fails after an earlier
+  // one succeeded, and the warning is a lie in that state - the payload path
+  // prices this pair perfectly well from the record it already has. The
+  // provider closes the race that produces it; this makes sure the message
+  // tracks what the pair actually has rather than the last request's fate.
+  it("does not claim orders are blocked while it holds the pair's rules", () => {
+    const { Wrapper } = harness({
+      precision: ARB_USD,
+      market: findMarket("ARB/USD")!,
+      metadataError: "Failed to fetch asset metadata: 503 Service Unavailable",
+    });
+    render(
+      <Wrapper>
+        <MarketSelector currentPrice={0.4231} />
+      </Wrapper>,
+    );
+
+    expect(warning()).toBeNull();
+    // And it is still drawing that pair's own price, at that pair's precision.
+    expect(screen.getByText("$0.4231")).toBeInTheDocument();
+  });
+
   it("is quiet when the rules loaded fine", () => {
     const { Wrapper } = harness();
     render(
