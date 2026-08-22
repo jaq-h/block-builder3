@@ -95,7 +95,7 @@ So a dev server with no `local.env` is safe to click through end to end.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Three things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Four things bite in ordinary work:
 
 - **Never add a `window` mouse listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events with `setPointerCapture`, which is what delivers a

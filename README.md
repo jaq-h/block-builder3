@@ -373,10 +373,9 @@ buys, and each had been violated:
   `releaseForDrag` each ask the grid where the block is at that moment and pass the answer on
   the outcome, so *"Cancelled. Market block left in Exit column, primary row."* after a reverse,
   and *"Cancelled. Market block is no longer on the grid."* after a clear. `restingPlace` never
-  reads the snapshot at all - the bullet you are reading was written before the module honoured
-  it, and the rule is now enforced by there being nothing stale in that function's scope to
-  reach for. A palette order is unaffected: it has no origin, and its clause is already
-  *"was not placed."*
+  reads the snapshot at all: the rule is enforced by the shape of that function, which has
+  nothing stale in scope to reach for. A palette order is unaffected: it has no origin, and
+  its clause is already *"was not placed."*
 - **A sentence has to still be true after the operation that triggered it.** This is the trap
   the three earlier point fixes fell into: cancelling a carry when a drag began made the
   cancellation silent, and announcing the drag's outcome instead made that announcement false.
@@ -553,6 +552,7 @@ src/
 │   ├── useVerticalDrag.ts         # Vertical-axis drag (price scale sliding)
 │   ├── useBlockCommand.ts         # Select-then-place command model (keyboard, taps)
 │   ├── useAnnouncer.ts            # Live-region message state
+│   ├── useGridAnnouncer.ts        # The grid's one voice: outcomes in, sentences out
 │   ├── useKrakenAPI.ts            # Kraken API hook (prices, order management)
 │   ├── useOHLCData.ts             # OHLC candle fetching for the chart
 │   ├── useTradeExecution.ts       # Trade config, submission & simulation flow
@@ -586,6 +586,7 @@ src/
 │   ├── blockCommand.ts            # Select-then-place state machine (pure half)
 │   ├── blockFactory.ts            # Factory for creating block data
 │   ├── grid.ts                    # Grid manipulation helpers
+│   ├── gridAnnouncements.ts       # Every sentence the grid speaks (pure)
 │   ├── price.ts                   # Percentage-offset-from-market price formula
 │   └── index.ts
 │
