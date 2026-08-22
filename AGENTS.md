@@ -147,15 +147,22 @@ Two invariants the order path depends on, both of which were previously violated
   re-deriving one from row/column - those disagree under the bulk pattern.
 - **A block's order type is `BlockData.orderType`.** Never parse it back out of the block id.
   Ids look like `sa-stop-loss-limit-limit-2`, and substring matching on them turned every
-  `-limit` variant into a plain limit order with no trigger.
+  `-limit` variant into a plain limit order with no trigger. Because `mapOrderType` refuses
+  an unrecognised type rather than guessing, its table in `src/api/orderMapper.ts` and the
+  `ORDER_TYPES` palette in `src/data/orderTypes.ts` are **two lists that must stay in step**,
+  like the path aliases below. Add a type to the palette alone and it drops, renders, saves
+  and reloads fine, then throws at Execute; `orderMapper.test.ts` maps every palette entry
+  so that fails in CI instead.
 - **A block carries only its own axis.** A dual-axis order type is placed as two blocks, one
   per axis, and `BlockData.axes` on each is just that leg's (`["trigger"]` or `["limit"]`),
   never the order type's whole list. Rebuilding a saved block from `typeDef.axes` gave one
   leg both, and the mapper then read that leg's single slider twice and emitted a payload
   whose `trigger_price` and `limit_price` were the same number - which passes `validateOrder`
   cleanly, so nothing catches it. `axesForBlockAxis` in `src/utils/blockFactory.ts` owns the
-  axis-to-axes mapping; hydration paths must go through it rather than reaching for
-  `typeDef.axes`. The mapper now refuses a block that claims both axes, on the primary and
+  axis-to-axes mapping, and both hydration paths go through it - `gridFromConfig` in
+  `StrategyAssemblyContext.tsx` and the Active Orders panel's grid - rather than reaching for
+  `typeDef.axes` or re-deriving `axis === 1 ? trigger : limit`, which has no notion of a
+  single-axis type and relabels a Stop Loss saved at axis 2 as a limit leg. The mapper now refuses a block that claims both axes, on the primary and
   on a linked conditional alike, so a regression in any construction path fails loudly
   instead of shipping a trigger price equal to the limit price.
 

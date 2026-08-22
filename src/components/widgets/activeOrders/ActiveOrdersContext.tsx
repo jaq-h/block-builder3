@@ -5,8 +5,9 @@ import type {
   ActiveOrdersConfig,
 } from "../../../types/activeOrders";
 import type { GridData, CellPosition } from "../../../types/grid";
-import { GRID_CONFIG } from "../../../data/orderTypes";
-import { shouldBeDescending } from "../../../utils";
+import type { AxisType } from "../../../data/orderTypes";
+import { GRID_CONFIG, ORDER_TYPES } from "../../../data/orderTypes";
+import { axesForBlockAxis, shouldBeDescending } from "../../../utils";
 import { ActiveOrdersContext } from "./ActiveOrdersContextDef";
 
 // =============================================================================
@@ -18,6 +19,35 @@ const createEmptyGrid = (): GridData =>
   Array.from({ length: GRID_CONFIG.numColumns }, () =>
     Array.from({ length: GRID_CONFIG.numRows }, () => []),
   );
+
+/**
+ * The axes a submitted order's block owns, through the one owner of the
+ * axis-to-axes rule.
+ *
+ * This panel used to derive the rule itself, as `axis === 1 ? trigger : limit`,
+ * which has no notion of a single-axis order type: a Stop Loss released in the
+ * right half of its cell is saved with `axis: 2` and came back here labelled a
+ * limit leg, while the assembly grid reloaded the same order as a trigger one.
+ * Routing this last consumer through `axesForBlockAxis` leaves one derivation
+ * of the fact rather than two that can disagree.
+ */
+const axesForOrder = (type: string, axis?: 1 | 2): AxisType[] => {
+  if (!axis) {
+    return [];
+  }
+
+  const typeDef = ORDER_TYPES.find((ot) => ot.type === type);
+
+  // An order whose type is not in the catalogue keeps the raw rule rather than
+  // being dropped. `gridFromConfig` skips such an entry because a missing block
+  // in the builder is harmless, but an order that was actually submitted has to
+  // stay visible in the list.
+  if (!typeDef) {
+    return axis === 1 ? ["trigger"] : ["limit"];
+  }
+
+  return axesForBlockAxis(typeDef.axes, axis);
+};
 
 // =============================================================================
 // PROVIDER COMPONENT
@@ -71,12 +101,7 @@ export const ActiveOrdersProvider: FC<ActiveOrdersProviderProps> = ({
           yPosition: order.yPosition || 0,
           direction: order.direction ??
             (shouldBeDescending(order.row, order.col, undefined, order.type) ? "downside" as const : "upside" as const),
-          axes: order.axis
-            ? ((order.axis === 1 ? ["trigger"] : ["limit"]) as (
-                | "trigger"
-                | "limit"
-              )[])
-            : [],
+          axes: axesForOrder(order.type, order.axis),
         };
         newGrid[order.col][order.row].push(block);
       }

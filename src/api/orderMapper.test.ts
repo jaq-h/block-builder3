@@ -273,6 +273,30 @@ describe("mapBlockToOrderParams", () => {
   // Falling back to "limit" was how an unrecognised type used to become a live
   // order with no trigger. "limit" is the worst available guess, so there is no
   // guess: an order type the mapper does not recognise is refused outright.
+  // `mapOrderType` refusing an unrecognised type makes its lookup table and the
+  // ORDER_TYPES palette two lists that have to agree, the way the path aliases
+  // in vite.config.ts and tsconfig.app.json do. Nothing else pins that: add a
+  // type to the palette alone and the block drops, renders, saves and reloads
+  // fine, then Execute throws on a type the product legitimately offers. This
+  // fails in CI instead.
+  it("maps every order type the palette offers", () => {
+    ORDER_TYPES.forEach((orderType) => {
+      const { blocks } = createBlocksFromOrderType(orderType, {
+        baseId: "sa",
+        counter: 0,
+      });
+
+      blocks.forEach((block) => {
+        const params = mapBlockToOrderParams(
+          blockDataToUIBlock(block, 0, 1),
+          context(),
+        );
+
+        expect(params.order_type).toBe(orderType.type);
+      });
+    });
+  });
+
   it("refuses an order type Kraken does not know", () => {
     expect(() =>
       mapBlockToOrderParams(
