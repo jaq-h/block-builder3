@@ -148,9 +148,13 @@ export type GridOutcome =
    * strategy holds is a percentage offset from its own market's price, so
    * loading it against whatever pair happens to be selected reprices the whole
    * thing into a different order set - the corruption the market tag exists to
-   * prevent, one step further out. Refusing is only safe if the refusal is
-   * audible, which is what this is: a fact about a grid that did *not* change,
-   * reported by the same owner that reports one that did.
+   * prevent, one step further out. Refusing is only safe if the refusal
+   * reaches the user, and this is one half of that: a fact about a grid that
+   * did *not* change, reported by the same owner that reports one that did.
+   * The other half is visible, on the strategy's own card in the Active Orders
+   * panel - which is where the press happened, and which is the only half that
+   * carries below `lg`, where the panel this live region sits in is
+   * `display: none` and so is out of the accessibility tree entirely.
    */
   | { kind: "strategyMarketUnavailable"; symbol: string };
 

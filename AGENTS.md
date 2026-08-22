@@ -193,6 +193,16 @@ The README's **Interaction model** section is authoritative. Four things bite in
   caller was about to attempt. Both defects this structure replaced were a message written
   next to the code that was about to act - one false, one silent - and each point fix created
   the next. A new message means a new outcome in that union, not a new `announce` call.
+  A second live region breaks this as surely as a second `announce` does, so no other
+  component may carry `aria-live`, `role="status"` or `role="alert"` - the two would talk
+  over each other during the one interaction that fires both. Ordinary *visible* text is not
+  a live region and is always allowed; `MarketSelector`'s precision warning is one.
+- **`LiveAnnouncer` only speaks from a panel that is on screen.** Below `lg`, `App.tsx`
+  hides the inactive panel with `display: none`, and a `display: none` subtree is out of the
+  accessibility tree - so a live-region write inside it announces to nobody. Anything the
+  grid *refuses* therefore needs a visible half where the user acted, as well as the
+  announcement: a refused strategy load says so on its own card in the Active Orders panel
+  (`refusedStrategy`), because that is where Edit was pressed.
 - **A control's selected state may never be drawn in colour alone**, and it has to be
   readable programmatically as well as visually. `PatternSelector` is the worked example:
   the chosen assembly type carries an accent border, a tick glyph in a slot reserved on
@@ -243,7 +253,8 @@ The README's **Interaction model** section is authoritative. Four things bite in
   bar counts towards an average, pinned in `movingAverage.ts` next to the EMA seed.
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
-must not reach for a live region. `gridAnnouncements.ts` stays the app's only announcer.
+must not reach for a live region (`aria-live` and `role="status"` alike).
+`gridAnnouncements.ts` stays the app's only announcer.
 Their accessible name is `label: description`, so the visible text stays *inside* the name
 rather than being replaced by it (WCAG 2.5.3 Label in Name): a bare `aria-label` spelling
 out the abbreviation renames "SMA 20" to something a voice-control user cannot say.

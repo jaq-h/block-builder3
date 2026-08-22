@@ -80,9 +80,14 @@ const MarketSelector: FC<MarketSelectorProps> = ({
 
       {/* Without Kraken's rules for the pair no order can be priced, and the
           Execute path refuses rather than guessing. Say so here as well, so the
-          refusal is not the first the user hears of it. */}
+          refusal is not the first the user hears of it.
+
+          Ordinary visible text, with no `role="status"`: that role carries an
+          implicit `aria-live`, which would make this a second live region
+          talking over the grid's announcer during the very interaction that
+          triggers both. */}
       {metadataError && (
-        <span className={marketMetadataWarning} role="status">
+        <span className={marketMetadataWarning}>
           Precision rules unavailable - orders cannot be submitted
         </span>
       )}

@@ -93,6 +93,16 @@ export interface ActiveOrdersProps {
   /** Called when user clicks edit on a strategy group — receives all orders in the group */
   onEditGroup?: (orders: ActiveOrderEntry[]) => void;
   editingStrategyId?: string | null;
+  /**
+   * A strategy whose Edit was refused, because the market it was placed on is
+   * not one the catalogue offers any more.
+   *
+   * Shown on the group the press came from. The grid announces the same
+   * refusal, but only into a live region inside the assembly panel, which is
+   * `display: none` below `lg` and so is not in the accessibility tree at all -
+   * and a sighted user on any screen size sees a button that did nothing.
+   */
+  refusedStrategy?: { strategyId: string | null; symbol: string } | null;
 }
 
 // =============================================================================

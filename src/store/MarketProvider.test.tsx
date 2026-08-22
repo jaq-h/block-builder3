@@ -34,6 +34,9 @@ const Probe = () => {
       <button type="button" onClick={() => selectMarket("ARB/USD")}>
         pick arb
       </button>
+      <button type="button" onClick={() => selectMarket(market.symbol)}>
+        pick current
+      </button>
     </div>
   );
 };
@@ -263,6 +266,144 @@ describe("MarketProvider after a failed request", () => {
     expect(screen.getByTestId("decimals")).toHaveTextContent(
       String(ARB_USD.priceDecimals),
     );
+  });
+
+  // The escape that used to require picking a pair you do not want. Choosing
+  // the pair already selected is a React bail-out - `findMarket` hands back the
+  // same frozen object - so an effect watching the selection never fires, and
+  // the user sitting on the pair they actually want had no way back but reload.
+  it("asks again when the user picks the pair that is already selected", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("network down"));
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    const afterRetries = fetchSpy.mock.calls.length;
+    expect(screen.getByTestId("symbol")).toHaveTextContent("BTC/USD");
+
+    fetchSpy.mockResolvedValue(assetPairsOk());
+    await act(async () => {
+      screen.getByRole("button", { name: "pick current" }).click();
+    });
+
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(afterRetries);
+    await act(async () => {});
+    expect(screen.getByTestId("symbol")).toHaveTextContent("BTC/USD");
+    expect(screen.getByTestId("decimals")).toHaveTextContent(
+      String(BTC_USD.priceDecimals),
+    );
+  });
+
+  // The two moments the environment has actually changed rather than the user
+  // merely waiting. A wifi handoff or a captive portal outlasts the four
+  // seconds of backoff easily.
+  it.each(["focus", "online"])(
+    "asks again when the window reports %s",
+    async (eventName) => {
+      vi.useFakeTimers();
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockRejectedValue(new Error("network down"));
+
+      render(
+        <MarketProvider>
+          <Probe />
+        </MarketProvider>,
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      const afterRetries = fetchSpy.mock.calls.length;
+
+      fetchSpy.mockResolvedValue(assetPairsOk());
+      await act(async () => {
+        window.dispatchEvent(new Event(eventName));
+      });
+
+      expect(fetchSpy.mock.calls.length).toBe(afterRetries + 1);
+      await act(async () => {});
+      expect(screen.getByTestId("decimals")).toHaveTextContent(
+        String(BTC_USD.priceDecimals),
+      );
+    },
+  );
+
+  // Every one of those recoveries goes through the same in-flight flag, or a
+  // tab being brought forward while a slow request runs is a second request for
+  // the same answer.
+  it("starts no second request from a focus, an online event or a re-select while one is in flight", async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      (async () => {
+        await gate;
+        return assetPairsOk();
+      }) as typeof fetch,
+    );
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("online"));
+      screen.getByRole("button", { name: "pick current" }).click();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      release();
+    });
+    expect(screen.getByTestId("decimals")).toHaveTextContent(
+      String(BTC_USD.priceDecimals),
+    );
+  });
+
+  // Once the rules are in hand there is nothing to recover, and a request per
+  // tab switch for the rest of the session is a cost with no purpose.
+  it("stops asking once the rules have loaded", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(assetPairsOk());
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("decimals")).toHaveTextContent(
+        String(BTC_USD.priceDecimals),
+      );
+    });
+    const afterLoad = fetchSpy.mock.calls.length;
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("online"));
+      screen.getByRole("button", { name: "pick current" }).click();
+    });
+
+    expect(fetchSpy.mock.calls.length).toBe(afterLoad);
   });
 
   it("sets nothing after it has been unmounted", async () => {

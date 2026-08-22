@@ -48,9 +48,10 @@ const generateStrategyId = (): string => {
 /**
  * Convert OrderConfig entry to ActiveOrderEntry.
  *
- * `symbol` is recorded from the selection at submit time and is not optional
- * here, even though it is on the entry: an order this app writes always knows
- * its market, and only entries persisted before markets existed do not.
+ * `symbol` is recorded from the selection at submit time, and is required on
+ * the entry as well - see the note on `ActiveOrderEntry.symbol` in
+ * `src/types/activeOrders.ts` for why there is no optional case to leave room
+ * for.
  */
 const configToActiveOrder = (
   id: string,

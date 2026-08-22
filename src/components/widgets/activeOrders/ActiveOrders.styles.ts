@@ -145,6 +145,16 @@ export const strategyGroupLabel =
 
 export const strategyGroupTime = "text-[10px] text-text-muted";
 
+/**
+ * The refusal a press of Edit can produce, shown in the group it was pressed
+ * on. The grid's announcer says the same thing, but it says it from a live
+ * region inside the assembly panel - which below `lg` carries `display: none`
+ * and is therefore out of the accessibility tree entirely. This is the half
+ * that reaches the person who pressed the button, on any screen size.
+ */
+export const strategyGroupRefusal =
+  "px-2 text-[11px] leading-snug text-status-yellow";
+
 export const strategyGroupEditButton =
   "flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium cursor-pointer transition-all duration-200 [&>svg]:stroke-current border";
 

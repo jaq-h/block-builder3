@@ -30,11 +30,14 @@ function AppInner() {
   const [activeTab, setActiveTab] = useState<"assembly" | "orders">("assembly");
   const [editedStrategyId, setEditedStrategyId] = useState<string | null>(null);
 
-  // A refused edit, for the grid to announce. `attempt` is what makes pressing
-  // Edit twice on the same strategy two facts rather than one: the value has to
-  // change for the grid's effect to report it again.
+  // A refused edit, shown on the strategy it was pressed on and announced by
+  // the grid. `attempt` is what makes pressing Edit twice on the same strategy
+  // two facts rather than one: the value has to change for the grid's effect to
+  // report it again. `strategyId` is what puts the visible half back where the
+  // press happened.
   const [strategyMarketUnavailable, setStrategyMarketUnavailable] = useState<{
     symbol: string;
+    strategyId: string | null;
     attempt: number;
   } | null>(null);
   const unavailableAttempt = useRef(0);
@@ -74,8 +77,10 @@ function AppInner() {
   // `selectMarket` reports whether it could, and a strategy whose market the
   // catalogue no longer holds is refused rather than loaded: repricing it
   // against whatever is currently selected is the same corruption, one step
-  // further out. The grid's own announcer says so, because a silent refusal is
-  // barely better than a silent repricing.
+  // further out. A silent refusal is barely better than a silent repricing, so
+  // it is said twice: on the strategy's own card, where the press happened, and
+  // by the grid's announcer. The card is the half that carries below `lg`,
+  // where the assembly panel - live region and all - is `display: none`.
   const handleEditGroup = (
     orders: import("./types/activeOrders").ActiveOrderEntry[],
   ) => {
@@ -83,6 +88,7 @@ function AppInner() {
     if (!symbol || !selectMarket(symbol)) {
       setStrategyMarketUnavailable({
         symbol: symbol ?? "an unknown market",
+        strategyId: orders[0]?.strategyId ?? null,
         attempt: unavailableAttempt.current++,
       });
       return;
@@ -198,6 +204,7 @@ function AppInner() {
           initialOrders={displayOrders}
           onEditGroup={handleEditGroup}
           editingStrategyId={editingStrategyId}
+          refusedStrategy={strategyMarketUnavailable}
         />
       </div>
     </div>

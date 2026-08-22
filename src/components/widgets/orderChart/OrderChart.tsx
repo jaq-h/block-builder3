@@ -75,7 +75,12 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const { chart, candleSeries } = useLightweightChart(chartContainerRef);
-  const { candles, latestCandle, isLoading } = useOHLCData({
+  const {
+    candles,
+    latestCandle,
+    isLoading,
+    error: candleError,
+  } = useOHLCData({
     symbol: market.symbol,
     interval,
   });
@@ -119,9 +124,13 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     chart.priceScale("right").applyOptions({ mode: priceScaleMode(priceScale) });
   }, [chart, priceScale]);
 
-  // Set candle data when historical data arrives
+  // Set candle data when historical data arrives.
+  //
+  // An empty list is data too, and it has to reach the series: skipping it left
+  // the previous market's bars drawn under the new market's header, price label
+  // and axis precision - one asset's price history presented as another's.
   useEffect(() => {
-    if (!candleSeries || !candles.length) return;
+    if (!candleSeries) return;
     candleSeries.setData(candles);
   }, [candleSeries, candles]);
 
@@ -293,6 +302,18 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <p className="text-[11px] text-text-muted opacity-60">
               Loading chart…
+            </p>
+          </div>
+        )}
+
+        {/* A failed backfill ends the loading state without ending the empty
+            chart, and the panel used to say nothing at all about it - an empty
+            plot area under a header naming a pair, with no way to tell that
+            from a market that simply has no bars. */}
+        {!isLoading && candleError && (
+          <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+            <p className="text-[11px] text-status-yellow text-center">
+              Price history unavailable for {market.symbol}
             </p>
           </div>
         )}

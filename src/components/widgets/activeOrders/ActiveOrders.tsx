@@ -36,6 +36,7 @@ import {
   strategyGroupLabel,
   strategyGroupTime,
   strategyGroupEditButton,
+  strategyGroupRefusal,
   footer,
   lastUpdated,
   devControlsContainer,
@@ -86,6 +87,7 @@ const ActiveOrders: FC<ActiveOrdersProps> = ({
   initialOrders = {},
   onEditGroup,
   editingStrategyId,
+  refusedStrategy,
 }) => {
   return (
     <ActiveOrdersProvider
@@ -96,6 +98,7 @@ const ActiveOrders: FC<ActiveOrdersProps> = ({
         initialOrders={initialOrders}
         onEditGroup={onEditGroup}
         editingStrategyId={editingStrategyId}
+        refusedStrategy={refusedStrategy}
       />
     </ActiveOrdersProvider>
   );
@@ -109,12 +112,14 @@ interface ActiveOrdersInnerProps {
   initialOrders: ActiveOrdersConfig;
   onEditGroup?: (orders: ActiveOrderEntry[]) => void;
   editingStrategyId?: string | null;
+  refusedStrategy?: { strategyId: string | null; symbol: string } | null;
 }
 
 const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
   initialOrders,
   onEditGroup,
   editingStrategyId,
+  refusedStrategy,
 }) => {
   const isDev = import.meta.env.DEV;
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
@@ -313,6 +318,18 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
                     </button>
                   )}
                 </div>
+
+                {/* Said where the press happened. Every position this strategy
+                    holds is a percentage offset from its own market's price, so
+                    loading it against another pair would reprice the whole set;
+                    without this the refusal is a button that does nothing. */}
+                {refusedStrategy?.strategyId === sid && (
+                  <p className={strategyGroupRefusal}>
+                    Not loaded: this strategy was placed on{" "}
+                    {refusedStrategy.symbol}, which is no longer available. Its
+                    prices would mean something different on another market.
+                  </p>
+                )}
 
                 {/* Entry cards */}
                 {entryOrders.length > 0 && (

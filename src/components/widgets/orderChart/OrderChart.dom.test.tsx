@@ -38,6 +38,8 @@ interface FakeLineSeries {
 const feed = vi.hoisted(() => ({
   candles: [] as CandlestickData<UTCTimestamp>[],
   latestCandle: null as CandlestickData<UTCTimestamp> | null,
+  isLoading: false,
+  error: null as string | null,
 }));
 
 const chartState = vi.hoisted(() => ({
@@ -57,8 +59,8 @@ vi.mock("../../../hooks/useOHLCData", () => ({
   useOHLCData: () => ({
     candles: feed.candles,
     latestCandle: feed.latestCandle,
-    isLoading: false,
-    error: null,
+    isLoading: feed.isLoading,
+    error: feed.error,
   }),
 }));
 
@@ -89,15 +91,18 @@ const fakeChart = () => {
     }),
   } as unknown as IChartApi;
 
+  /** Every list the panel has handed the candle series, in order. */
+  const setData = vi.fn();
+
   const candleSeries = {
-    setData: vi.fn(),
+    setData,
     update: vi.fn(),
     createPriceLine: vi.fn((options: unknown) => options),
     removePriceLine: vi.fn(),
     applyOptions: vi.fn(),
   } as unknown as ISeriesApi<"Candlestick">;
 
-  return { chart, candleSeries, lineSeries, priceScaleOptions };
+  return { chart, candleSeries, setData, lineSeries, priceScaleOptions };
 };
 
 const PERIOD = 20;
@@ -128,6 +133,8 @@ describe("OrderChart", () => {
   beforeEach(() => {
     feed.candles = backfill;
     feed.latestCandle = backfill.at(-1)!;
+    feed.isLoading = false;
+    feed.error = null;
     chartState.instance = fakeChart();
   });
 
@@ -292,5 +299,63 @@ describe("OrderChart", () => {
     expect(lastValue(lineSeries[0])).toBe(
       expectedSMA([...backfill, forming]).value,
     );
+  });
+
+  // ===========================================================================
+  // A MARKET THE PANEL HOLDS NO BARS FOR
+  // ===========================================================================
+  //
+  // Selecting another pair changes `useOHLCData`'s request key, so the hook
+  // holds nothing for the new pair until its own fetch answers. The panel's
+  // header, price label and axis precision have already switched: whatever is
+  // drawn under them is being presented as this pair's price history.
+
+  /** Re-renders the panel after the feed has been pointed at another market. */
+  const switchMarket = (
+    rerender: (ui: React.ReactElement) => void,
+    { error }: { error: string | null },
+  ) => {
+    feed.candles = [];
+    feed.latestCandle = null;
+    feed.isLoading = error === null;
+    feed.error = error;
+    rerender(<OrderChart orders={{}} />);
+  };
+
+  it("clears the candles rather than leaving the previous market's on screen", () => {
+    const { setData } = chartState.instance as ReturnType<typeof fakeChart>;
+    const { rerender } = render(<OrderChart orders={{}} />);
+
+    expect(setData).toHaveBeenLastCalledWith(backfill);
+
+    switchMarket(rerender, { error: null });
+
+    // The regression: the effect used to return early on an empty list, so the
+    // series kept the bars of a market the panel was no longer naming.
+    expect(setData).toHaveBeenLastCalledWith([]);
+  });
+
+  it("says the history is unavailable when the fetch for the new market fails", () => {
+    const { setData } = chartState.instance as ReturnType<typeof fakeChart>;
+    const { rerender } = render(<OrderChart orders={{}} />);
+
+    switchMarket(rerender, { error: "OHLC fetch failed: 500" });
+
+    // A rejected backfill ends the loading state without producing any bars, so
+    // without this the panel is an empty plot area that says nothing - and,
+    // before the clearing above, a full one showing the wrong asset.
+    expect(setData).toHaveBeenLastCalledWith([]);
+    expect(
+      screen.getByText(/Price history unavailable for BTC\/USD/),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about a fetch that is still running", () => {
+    const { rerender } = render(<OrderChart orders={{}} />);
+
+    switchMarket(rerender, { error: null });
+
+    expect(screen.queryByText(/Price history unavailable/)).toBeNull();
+    expect(screen.getByText("Loading chart…")).toBeInTheDocument();
   });
 });

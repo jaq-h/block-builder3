@@ -1370,12 +1370,13 @@ describe("per-asset precision across a whole payload", () => {
     // say ARB/USD while carrying prices formatted for something else.
     const params = mapBlockToOrderParams(
       leg("sa-limit-1", "limit", ["limit"], 10, "downside"),
-      arbContext(),
+      arbContext({ quantity: "125.5" }),
     );
     expect(params.symbol).toBe("ARB/USD");
-    expect(validateOrder(params, ARB_USD)).not.toContain(
-      "Order is for ARB/USD but was checked against ARB/USD rules",
-    );
+    // And ARB's own rules accept it outright: the prices carry ARB's four
+    // decimals and the quantity clears ARB's 60-token minimum, so there is
+    // nothing for the validator to object to.
+    expect(validateOrder(params, ARB_USD)).toEqual([]);
   });
 
   it("holds every price in a mapped grid to the same pair", () => {
