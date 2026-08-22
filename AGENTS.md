@@ -36,8 +36,11 @@ SVG imports work in tests for the same reason.
   needs a DOM opts in with a `// @vitest-environment jsdom` docblock on its first line.
   See `src/utils/grid.test.ts` (node) and `src/utils/grid.dom.test.ts` (jsdom) for the split.
 - Globals are off. Import `describe`/`it`/`expect` from `vitest` explicitly.
-- `src/test/setup.ts` registers the jest-dom matchers and unmounts React trees after
-  each test.
+- `src/test/setup.ts` registers the jest-dom matchers, unmounts React trees after
+  each test, and replaces `fetch` for the whole suite: Kraken's `AssetPairs` request is
+  answered from `marketFixtures.ts` and every other URL throws, so no test reaches the
+  network. It is the mount that is the trap rather than any one file - anything rendering
+  `MarketProvider` fetches - so a test needing its own response stubs `fetch` itself.
 - Tests are colocated with the code they cover, named `*.test.ts`/`*.test.tsx`. Two live
   under `api/_lib/` instead because they are about the whole repository rather than about a
   neighbouring module: `credentialBoundary.test.ts` builds the client and scans the emitted
@@ -52,6 +55,11 @@ the last of them, in `src/api/orderMapper.test.ts`, were converted when the bugs
 pinned were fixed. That is the convention when you fix such a bug: flip the expectation to
 the correct behaviour and keep a `FORMERLY A CHARACTERISATION OF A KNOWN BUG` note
 recording the wrong values, rather than deleting the test or quietly loosening it.
+
+`src/test/marketFixtures.ts` holds Kraken's real `MarketPrecision` records for the pairs on
+offer. Use them rather than inventing one: the point of the set is the spread - BTC prices to
+one decimal and ARB to four, BTC's minimum order is 0.00005 and ARB's is 60 - and a test that
+only ever sees one pair cannot catch a formatter that has quietly defaulted to another's.
 
 `src/test/pointerCapture.ts` installs a tracking `setPointerCapture` on `Element.prototype`:
 jsdom ships `PointerEvent` but not the capture methods, so without it the assertion that a
@@ -171,7 +179,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Four things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Six things bite in ordinary work:
 
 - **Never add a `window` mouse listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events with `setPointerCapture`, which is what delivers a
@@ -188,6 +196,21 @@ The README's **Interaction model** section is authoritative. Four things bite in
   caller was about to attempt. Both defects this structure replaced were a message written
   next to the code that was about to act - one false, one silent - and each point fix created
   the next. A new message means a new outcome in that union, not a new `announce` call.
+  A second live region breaks this as surely as a second `announce` does, so no component
+  that speaks *about the grid* may carry `aria-live`, `role="status"` or `role="alert"` -
+  the two would talk over each other during the one interaction that fires both. That is
+  what the `role="status"` removal from `MarketSelector`'s precision warning was about.
+  Ordinary *visible* text is not a live region and is always allowed; that warning is one.
+  `ErrorBoundary`'s `role="alert"` fallback is not a violation and must not be "fixed":
+  it *replaces* the subtree it guards and speaks once about that subtree's own failure,
+  so there is no running commentary for it to compete with - by the time it speaks, the
+  announcer it would have talked over is not rendered at all.
+- **`LiveAnnouncer` only speaks from a panel that is on screen.** Below `lg`, `App.tsx`
+  hides the inactive panel with `display: none`, and a `display: none` subtree is out of the
+  accessibility tree - so a live-region write inside it announces to nobody. Anything the
+  grid *refuses* therefore needs a visible half where the user acted, as well as the
+  announcement: a refused strategy load says so on its own card in the Active Orders panel
+  (`refusedStrategy`), because that is where Edit was pressed.
 - **A control's selected state may never be drawn in colour alone**, and it has to be
   readable programmatically as well as visually. `PatternSelector` is the worked example:
   the chosen assembly type carries an accent border, a tick glyph in a slot reserved on
@@ -238,7 +261,8 @@ The README's **Interaction model** section is authoritative. Four things bite in
   bar counts towards an average, pinned in `movingAverage.ts` next to the EMA seed.
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
-must not reach for a live region. `gridAnnouncements.ts` stays the app's only announcer.
+must not reach for a live region (`aria-live` and `role="status"` alike).
+`gridAnnouncements.ts` stays the app's only announcer.
 Their accessible name is `label: description`, so the visible text stays *inside* the name
 rather than being replaced by it (WCAG 2.5.3 Label in Name): a bare `aria-label` spelling
 out the abbreviation renames "SMA 20" to something a voice-control user cannot say.
@@ -328,6 +352,48 @@ bar.
 `display: none`. Using a JSX element variable in two branches mounts two
 independent components, and crossing the breakpoint then swaps in an empty one -
 silent data loss. `src/App.test.tsx` fails if that returns.
+
+## Markets
+
+The app trades a **selected** pair, not a fixed one. `src/data/markets.ts` is the catalogue
+(BTC, ETH, SOL, ARB, OP - all USD-quoted) and the only place a pair is chosen without the
+user choosing it, through `DEFAULT_MARKET`. `MarketProvider` / `useMarket` in `src/store/`
+hold the selection for the whole tree; `MarketSelector` is the control.
+
+Three rules, and each replaced a defect that was invisible while the app was BTC-only:
+
+- **No module may default a symbol.** There is no `DEFAULT_SYMBOL` and no
+  `symbol = <something>` parameter default anywhere. An omitted symbol is how `buildTrigger`
+  came to format a trigger price for BTC inside an ETH payload, so the market is passed
+  explicitly or not at all. `useKrakenAPI` takes no `symbol` option at all: it reads the
+  selection, so no caller can price a pair the selector is not showing.
+- **Per-pair rules come from Kraken, never from a guess.** Price decimals, tick size, lot
+  decimals and the minimum order all differ per pair - one decimal for BTC against four for
+  ARB, a 0.00005 minimum against 60 - and none of them is derivable from a symbol string or
+  from the magnitude of a price. `src/api/assetMetadata.ts` reads them from
+  `/0/public/AssetPairs` into a `MarketPrecision`, and `src/utils/marketFormat.ts` is the one
+  owner of every price and quantity format, for the payload and the screen alike. There is
+  **no fallback precision**: without the metadata `mapGridToOrders` refuses to build a payload
+  and says so, because an order rejected by Kraken for bad precision reaches the user as an
+  order that silently never appeared.
+- **The ticker channel follows the selection and releases the previous one.** The effect in
+  `useKrakenAPI` owns it; `connect()` deliberately does not subscribe, because a second
+  subscribe takes a reference nothing releases. `KrakenWebSocketManager` refcounts public
+  subscriptions - two components call `useKrakenAPI` and both want the same ticker, so an
+  unrefcounted unsubscribe from either silences the other.
+
+`ParsedTickerData` is held tagged with the symbol it describes and a frame naming a different
+market is dropped, so the previous pair's price can never be what a block is priced from
+during a switch.
+
+**Known gap: precision *readiness* has no owner.** "Does this pair have rules yet, are they
+known to be absent, or are they still loading" is currently answered independently by
+`MarketSelector`, `OrderChart`, `useLightweightChart`, `formatMarketPrice` and the order
+path, each from `metadataSettled` plus a precision of its own. Every defect in that class so
+far has been one of those five disagreeing with the other four - most recently the chart
+drawing a whole axis at lightweight-charts' `precision: 2` default while every chip beside
+it read `n/a` for the same pair. Owned by `bb3-price-format-readiness-owner`; a fix belongs
+in one readiness value the five read, not in a sixth `metadataSettled &&` expression.
 
 ## Prices and order types
 

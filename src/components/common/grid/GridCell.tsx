@@ -8,6 +8,7 @@ import {
   isCellDescending,
 } from "../../../utils";
 import { describeCell } from "../../../utils/blockCommand";
+import { useMarket } from "../../../store/useMarket";
 import type { CancelOptions } from "../../../hooks/useBlockCommand";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
 import {
@@ -108,6 +109,12 @@ const GridCell: FC<GridCellProps> = ({
   focusBlockId,
   onBlockFocusHandled,
 }) => {
+  // The selected pair decides how many decimals a price is drawn with. It is
+  // read from context rather than drilled: the market is app-wide state, and a
+  // cell that took it as a prop could be handed a different one from the price
+  // it is already being handed.
+  const { activeMarket } = useMarket();
+
   const displayMode = getCellDisplayMode(blocks);
   const isDescending = isCellDescending(blocks);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
@@ -158,13 +165,13 @@ const GridCell: FC<GridCellProps> = ({
     return (
       <div className={lineProps.className} style={lineProps.style}>
         <div className={labelProps.className} style={labelProps.style}>
+          {/* The market price line follows the pair's precision too. Formatting
+              it inline at a flat two decimals made it the one price on screen
+              that disagreed with every block chip above and below it. */}
           {priceError
             ? "Price Error"
             : currentPrice
-              ? `$${currentPrice.toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`
+              ? formatPrice(currentPrice, activeMarket)
               : "Loading price..."}
         </div>
       </div>
@@ -239,7 +246,7 @@ const GridCell: FC<GridCellProps> = ({
                 {block.yPosition.toFixed(2)}%
               </div>
               <div className={priceProps.className} style={priceProps.style}>
-                {formatPrice(calculatedPrice)}
+                {formatPrice(calculatedPrice, activeMarket)}
               </div>
               <div className={posProps.className} style={posProps.style}>
                 <Block
@@ -251,7 +258,7 @@ const GridCell: FC<GridCellProps> = ({
                   axes={block.axes}
                   yPosition={block.yPosition}
                   direction={isDescending ? "downside" : "upside"}
-                  priceText={formatPrice(calculatedPrice)}
+                  priceText={formatPrice(calculatedPrice, activeMarket)}
                   onVerticalDrag={onBlockVerticalDrag}
                   onAdjustPrice={onBlockAdjustPrice}
                   {...commandProps(block.id)}

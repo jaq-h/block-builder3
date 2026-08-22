@@ -36,6 +36,7 @@ import {
   strategyGroupLabel,
   strategyGroupTime,
   strategyGroupEditButton,
+  strategyGroupRefusal,
   footer,
   lastUpdated,
   devControlsContainer,
@@ -86,6 +87,7 @@ const ActiveOrders: FC<ActiveOrdersProps> = ({
   initialOrders = {},
   onEditGroup,
   editingStrategyId,
+  refusedStrategy,
 }) => {
   return (
     <ActiveOrdersProvider
@@ -96,6 +98,7 @@ const ActiveOrders: FC<ActiveOrdersProps> = ({
         initialOrders={initialOrders}
         onEditGroup={onEditGroup}
         editingStrategyId={editingStrategyId}
+        refusedStrategy={refusedStrategy}
       />
     </ActiveOrdersProvider>
   );
@@ -109,12 +112,14 @@ interface ActiveOrdersInnerProps {
   initialOrders: ActiveOrdersConfig;
   onEditGroup?: (orders: ActiveOrderEntry[]) => void;
   editingStrategyId?: string | null;
+  refusedStrategy?: { strategyId: string | null; symbol: string } | null;
 }
 
 const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
   initialOrders,
   onEditGroup,
   editingStrategyId,
+  refusedStrategy,
 }) => {
   const isDev = import.meta.env.DEV;
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
@@ -314,6 +319,18 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
                   )}
                 </div>
 
+                {/* Said where the press happened. Every position this strategy
+                    holds is a percentage offset from its own market's price, so
+                    loading it against another pair would reprice the whole set;
+                    without this the refusal is a button that does nothing. */}
+                {refusedStrategy?.strategyId === sid && (
+                  <p className={strategyGroupRefusal}>
+                    Not loaded: this strategy was placed on{" "}
+                    {refusedStrategy.symbol}, which is no longer available. Its
+                    prices would mean something different on another market.
+                  </p>
+                )}
+
                 {/* Entry cards */}
                 {entryOrders.length > 0 && (
                   <div className="flex flex-col gap-1.5 pl-2">
@@ -371,8 +388,15 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
           {actionableOrders.length > 0 ? (
             <>
               <div className={devControlsRow}>
-                <span className={devLabel}>Select Order:</span>
+                {/* A real label rather than a span beside the control: the
+                    select had no accessible name at all, and Chrome's own
+                    audit flagged it as a form field with neither an id nor a
+                    name. It renders identically. */}
+                <label className={devLabel} htmlFor="dev-order-select">
+                  Select Order:
+                </label>
                 <select
+                  id="dev-order-select"
                   className={orderIdSelect}
                   value={selectedOrderId}
                   onChange={(e) => setSelectedOrderId(e.target.value)}

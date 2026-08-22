@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import StrategyAssembly from "./components/widgets/strategyAssembly/strategyAssembly";
 import { ActiveOrders } from "./components/widgets/activeOrders";
 import DragOverlay from "./components/common/DragOverlay";
-import { OrdersStoreProvider, useOrdersStore } from "./store";
-import { useLiveOrdersCount } from "./store";
+import { MarketProvider, OrdersStoreProvider, useOrdersStore } from "./store";
+import { useLiveOrdersCount, useMarket } from "./store";
 import { OrderChart } from "./components/widgets/orderChart";
 import { useTradeExecution } from "./hooks";
 import {
@@ -26,8 +26,34 @@ import { cn } from "./lib/utils";
 function AppInner() {
   const { submittedOrders } = useOrdersStore();
   const liveOrderCount = useLiveOrdersCount();
+  const { market, markets, selectMarket } = useMarket();
   const [activeTab, setActiveTab] = useState<"assembly" | "orders">("assembly");
   const [editedStrategyId, setEditedStrategyId] = useState<string | null>(null);
+
+  // A refused edit, shown on the strategy it was pressed on and announced by
+  // the grid. `attempt` is what makes pressing Edit twice on the same strategy
+  // two facts rather than one: the value has to change for the grid's effect to
+  // report it again. `strategyId` is what puts the visible half back where the
+  // press happened.
+  const [strategyMarketUnavailable, setStrategyMarketUnavailable] = useState<{
+    symbol: string;
+    strategyId: string | null;
+    attempt: number;
+  } | null>(null);
+  const unavailableAttempt = useRef(0);
+
+  // A strategy that has just been loaded into the builder, held here rather
+  // than in the builder because loading one *remounts* the builder: `loadConfig`
+  // bumps `strategyKey`, which is the assembly panel's `key`, so a fresh
+  // `GridArea` comes up already holding the loaded strategy's market and has
+  // nothing left to notice. `App` is what survives that remount, so `App` is
+  // what carries the fact across it. The grid clears it once it has spoken, so
+  // a later remount - a submission bumps the same key - does not say it twice.
+  const [strategyLoaded, setStrategyLoaded] = useState<{
+    symbol: string;
+    name: string;
+    marketChanged: boolean;
+  } | null>(null);
 
   const {
     orderConfig,
@@ -54,10 +80,46 @@ function AppInner() {
   // highlight on a strategy that was no longer being edited.
   const editingStrategyId = isEditMode ? editedStrategyId : null;
 
-  // Load an entire strategy group into the builder for editing
+  // Load an entire strategy group into the builder for editing.
+  //
+  // The strategy's own market comes back with it. Every position it holds is a
+  // percentage offset from a market price, so reloading an ARB/USD strategy
+  // while BTC/USD is selected would silently reprice the whole thing - the same
+  // numbers describing an entirely different order set.
+  //
+  // `selectMarket` reports whether it could, and a strategy whose market the
+  // catalogue no longer holds is refused rather than loaded: repricing it
+  // against whatever is currently selected is the same corruption, one step
+  // further out. A silent refusal is barely better than a silent repricing, so
+  // it is said twice: on the strategy's own card, where the press happened, and
+  // by the grid's announcer. The card is the half that carries below `lg`,
+  // where the assembly panel - live region and all - is `display: none`.
   const handleEditGroup = (
     orders: import("./types/activeOrders").ActiveOrderEntry[],
   ) => {
+    const symbol = orders[0]?.symbol;
+    if (!symbol || !selectMarket(symbol)) {
+      setStrategyMarketUnavailable({
+        symbol: symbol ?? "an unknown market",
+        strategyId: orders[0]?.strategyId ?? null,
+        attempt: unavailableAttempt.current++,
+      });
+      return;
+    }
+    setStrategyMarketUnavailable(null);
+
+    // Said as one sentence by the grid's announcer, because it is one event:
+    // the grid now holds a strategy it did not hold, and it may be priced from
+    // a market the user was not looking at. Both halves are invisible without
+    // sight of the grid - a `<select>` whose value is set programmatically
+    // announces nothing - and reporting them separately would be two
+    // live-region writes racing each other.
+    setStrategyLoaded({
+      symbol,
+      name: markets.find((option) => option.symbol === symbol)?.name ?? symbol,
+      marketChanged: symbol !== market.symbol,
+    });
+
     const config: import("./types/grid").OrderConfig = {};
     for (const order of orders) {
       config[order.id] = {
@@ -122,6 +184,9 @@ function AppInner() {
         isSimulationMode={isSimulationMode}
         onToggleSimulationMode={toggleSimulationMode}
         isEditMode={isEditMode}
+        strategyMarketUnavailable={strategyMarketUnavailable}
+        strategyLoaded={strategyLoaded}
+        onStrategyLoadAnnounced={() => setStrategyLoaded(null)}
       />
     </div>
   );
@@ -166,6 +231,7 @@ function AppInner() {
           initialOrders={displayOrders}
           onEditGroup={handleEditGroup}
           editingStrategyId={editingStrategyId}
+          refusedStrategy={strategyMarketUnavailable}
         />
       </div>
     </div>
@@ -225,12 +291,18 @@ function AppInner() {
 
 function App() {
   return (
-    <OrdersStoreProvider>
-      <AppInner />
-      {/* Rendered via portal into #drag-overlay - completely outside the
-          React tree so drag-position updates never cascade through the grid */}
-      <DragOverlay />
-    </OrdersStoreProvider>
+    // One selected market for the whole tree. It wraps the orders store because
+    // everything that renders a price - the builder, the chart, the active
+    // orders - has to agree on which pair it is showing, and the only way to
+    // guarantee that is for there to be exactly one answer.
+    <MarketProvider>
+      <OrdersStoreProvider>
+        <AppInner />
+        {/* Rendered via portal into #drag-overlay - completely outside the
+            React tree so drag-position updates never cascade through the grid */}
+        <DragOverlay />
+      </OrdersStoreProvider>
+    </MarketProvider>
   );
 }
 

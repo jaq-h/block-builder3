@@ -1,4 +1,4 @@
-import { useRef, type FC, type PointerEvent } from "react";
+import { useEffect, useRef, type FC, type PointerEvent } from "react";
 import {
   isCellValidForPlacement,
   getAlignment,
@@ -31,6 +31,7 @@ import { useGridData } from "../contexts/GridDataContext";
 import { useDrag } from "../contexts/DragContext";
 import { useHover } from "../contexts/HoverContext";
 import { useStatic } from "../contexts/StaticContext";
+import { useMarket } from "../../../../store/useMarket";
 import {
   contentWrapper,
   contentRow,
@@ -43,6 +44,35 @@ import {
 interface GridAreaProps {
   currentPrice: number | null;
   tickerError?: string | null;
+  /**
+   * A saved strategy the builder refused to load, because the market it was
+   * placed on is not in the catalogue any more. `attempt` distinguishes two
+   * presses of the same Edit button, so the second is announced too.
+   */
+  strategyMarketUnavailable?: { symbol: string; attempt: number } | null;
+  /**
+   * A saved strategy that has just been loaded into this grid, and the market
+   * it brought with it.
+   *
+   * It arrives as a prop rather than being noticed here, because loading one
+   * remounts this component: `loadConfig` bumps the key the assembly panel is
+   * rendered with, so both the selection and the load land in one commit and
+   * the fresh `GridArea` starts with `announcedMarketRef` already holding the
+   * new symbol. The market-change effect below therefore has nothing to compare
+   * against and says nothing, which is how the edit path came to change the
+   * market silently. `App` is what survives the remount, so `App` carries it.
+   */
+  strategyLoaded?: {
+    symbol: string;
+    name: string;
+    marketChanged: boolean;
+  } | null;
+  /**
+   * Told that the sentence has been spoken. The prop is cleared in response, so
+   * a later remount for some other reason - a submission bumps the same key -
+   * does not announce a load that has already been announced.
+   */
+  onStrategyLoadAnnounced?: () => void;
 }
 
 /**
@@ -60,7 +90,13 @@ interface GridAreaProps {
  * cell with the arrow keys and calls the same function. That is what keeps the
  * two input models from drifting apart.
  */
-const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
+const GridArea: FC<GridAreaProps> = ({
+  currentPrice,
+  tickerError,
+  strategyMarketUnavailable,
+  strategyLoaded,
+  onStrategyLoadAnnounced,
+}) => {
   // ─── Context subscriptions ───────────────────────────────────────
   const { grid, strategyPattern, setGrid, setOrderConfig } = useGridData();
 
@@ -293,6 +329,76 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   // Every sentence this grid speaks goes through here, and `report` is the only
   // way to reach it: see `utils/gridAnnouncements.ts` for what that buys.
   const announcer = useGridAnnouncer(strategyPattern);
+
+  // ─── Market changes ──────────────────────────────────────────────
+  //
+  // Switching market re-prices every block on the grid, and nothing says so to
+  // a screen-reader user: the `<select>` speaks its own new value, which is a
+  // fact about the control rather than about the grid. So the grid's own
+  // announcer says it, from here rather than from the selector, because it is
+  // the single owner of everything the grid speaks - the selector has no
+  // `announce` to reach for and that is deliberate.
+  //
+  // Reported from an effect, after the render that actually re-priced the
+  // cells, so the sentence is a fact rather than an intention. The ref starts at
+  // the current market so the first render says nothing: the app has not
+  // "changed" to the market it opened on.
+  const { market } = useMarket();
+  const announcedMarketRef = useRef(market.symbol);
+
+  useEffect(() => {
+    if (announcedMarketRef.current === market.symbol) return;
+    announcedMarketRef.current = market.symbol;
+    announcer.report({
+      kind: "marketChanged",
+      name: market.name,
+      symbol: market.symbol,
+    });
+    // `announcer` is re-created every render; listing it would re-announce on
+    // every one of them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market.symbol, market.name]);
+
+  // ─── A strategy the builder did load ─────────────────────────────
+  //
+  // One sentence for one event, from the one announcer. The load and the market
+  // it came back on are two facts about the same press of Edit, and reporting
+  // them as two outcomes is exactly the pair of live-region writes in quick
+  // succession this module's history records the first of being cut off by the
+  // second - so `gridAnnouncements` words them together and this reports one
+  // outcome. The ref is moved on first, so the market-change effect above
+  // cannot say the same thing again on a later render.
+  useEffect(() => {
+    if (!strategyLoaded) return;
+    announcedMarketRef.current = strategyLoaded.symbol;
+    announcer.report({
+      kind: "strategyLoaded",
+      name: strategyLoaded.name,
+      symbol: strategyLoaded.symbol,
+      marketChanged: strategyLoaded.marketChanged,
+    });
+    onStrategyLoadAnnounced?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strategyLoaded]);
+
+  // ─── A strategy the builder would not load ───────────────────────
+  //
+  // Reported here rather than beside the Edit button for the same reason as
+  // above: this grid is what did not change, and it has one voice. The refusal
+  // itself belongs to `App`, which owns the market and the load; this only says
+  // so, once, after the render in which nothing happened.
+  const refusedAttemptRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!strategyMarketUnavailable) return;
+    if (refusedAttemptRef.current === strategyMarketUnavailable.attempt) return;
+    refusedAttemptRef.current = strategyMarketUnavailable.attempt;
+    announcer.report({
+      kind: "strategyMarketUnavailable",
+      symbol: strategyMarketUnavailable.symbol,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strategyMarketUnavailable]);
 
   const command = useBlockCommand({
     grid,

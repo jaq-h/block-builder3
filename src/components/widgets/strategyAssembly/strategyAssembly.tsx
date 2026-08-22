@@ -8,6 +8,7 @@ import {
   UtilityButtons,
   ExecuteTradePanel,
 } from "./components";
+import MarketSelector from "../../common/MarketSelector";
 import { container } from "./strategyAssembly.styles";
 
 interface StrategyAssemblyProps {
@@ -25,6 +26,25 @@ interface StrategyAssemblyProps {
   isSimulationMode?: boolean;
   onToggleSimulationMode?: () => void;
   isEditMode?: boolean;
+  /**
+   * A strategy the builder refused to load, because the market it was placed on
+   * is not one the app offers any more. Passed through to `GridArea`, which is
+   * where the grid's single announcer lives - the refusal is a fact about a grid
+   * that did not change, and the panel has no voice of its own.
+   */
+  strategyMarketUnavailable?: { symbol: string; attempt: number } | null;
+  /**
+   * A saved strategy that has just been loaded into this builder, and the
+   * market it brought with it. Passed through to `GridArea` for the same reason
+   * as the refusal above: the grid has the one voice, and this panel has none.
+   */
+  strategyLoaded?: {
+    symbol: string;
+    name: string;
+    marketChanged: boolean;
+  } | null;
+  /** Called once the grid has spoken, so the same load is not announced twice. */
+  onStrategyLoadAnnounced?: () => void;
 }
 
 const StrategyAssembly: FC<StrategyAssemblyProps> = ({
@@ -67,9 +87,13 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
   isSimulationMode,
   onToggleSimulationMode,
   isEditMode,
+  strategyMarketUnavailable,
+  strategyLoaded,
+  onStrategyLoadAnnounced,
 }) => {
+  // No symbol here any more: `useKrakenAPI` follows the selected market. Naming
+  // one would let this panel price a pair the selector is not showing.
   const { currentPrice, tickerError } = useKrakenAPI({
-    symbol: "BTC/USD",
     autoConnect: true,
     pollInterval: 30000,
   });
@@ -78,8 +102,18 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
 
   return (
     <div className={container}>
+      {/* Placed above the pattern row rather than inside it: the pattern row is
+          a `role="group"` of pattern buttons, and the panel chrome around it
+          belongs to another lane. This adds a sibling and rebuilds nothing. */}
+      <MarketSelector currentPrice={currentPrice} priceError={tickerError} />
       <PatternSelector />
-      <GridArea currentPrice={currentPrice} tickerError={tickerError} />
+      <GridArea
+        currentPrice={currentPrice}
+        tickerError={tickerError}
+        strategyMarketUnavailable={strategyMarketUnavailable}
+        strategyLoaded={strategyLoaded}
+        onStrategyLoadAnnounced={onStrategyLoadAnnounced}
+      />
       <UtilityButtons
         orderCount={orderCount}
         onExecute={onExecute}

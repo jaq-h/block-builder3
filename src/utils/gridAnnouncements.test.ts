@@ -383,3 +383,75 @@ describe("describeOutcome, the pattern it is speaking about", () => {
     ).toBe("Exit column, row 1, ready to place.");
   });
 });
+
+describe("describeOutcome, a market change", () => {
+  // The `<select>` speaks its own new value, so this sentence is deliberately
+  // not about the control. It is about the consequence, which is invisible
+  // without sight of the grid: every price chip on screen just changed.
+  it("says what changed about the grid, not what the control now reads", () => {
+    expect(say({ kind: "marketChanged", name: "Solana", symbol: "SOL/USD" })).toBe(
+      "Market changed to Solana. Every block on the grid is now priced from the SOL/USD market price.",
+    );
+  });
+
+  // It lives in this module, and only this module, for the same reason every
+  // other sentence does: a second announcer next to the selector is exactly the
+  // shape the owner rule exists to prevent.
+  it("is one of the outcomes the announcer owns, not a message a caller wrote", () => {
+    expect(
+      say({ kind: "marketChanged", name: "Arbitrum", symbol: "ARB/USD" }),
+    ).toMatch(/^Market changed to Arbitrum\./);
+  });
+});
+
+describe("describeOutcome, a strategy that did load", () => {
+  // One sentence for one press of Edit. The strategy came back and it may have
+  // brought a different market with it, and reporting those as two outcomes is
+  // two live-region writes in quick succession - the shape whose first write
+  // this module's own history records being cut off by the second.
+  it("says both facts in one sentence when the market moved with it", () => {
+    const said = say({
+      kind: "strategyLoaded",
+      name: "Arbitrum",
+      symbol: "ARB/USD",
+      marketChanged: true,
+    });
+
+    expect(said).toBe(
+      "Saved strategy loaded onto the grid. The market changed to Arbitrum, so every block is now priced from the ARB/USD market price.",
+    );
+  });
+
+  // A strategy reloaded on the pair already selected has not moved the user
+  // anywhere, and claiming a market change that did not happen is the kind of
+  // sentence-next-to-the-action defect this module replaced.
+  it("claims no market change when the strategy came back on the selected pair", () => {
+    const said = say({
+      kind: "strategyLoaded",
+      name: "Bitcoin",
+      symbol: "BTC/USD",
+      marketChanged: false,
+    });
+
+    expect(said).toContain("Saved strategy loaded onto the grid");
+    expect(said).toContain("BTC/USD");
+    expect(said).not.toContain("changed");
+  });
+});
+
+describe("describeOutcome, a strategy that would not load", () => {
+  // A saved strategy holds percentage offsets from *its own* market's price, so
+  // loading it against a different pair reprices the whole thing into another
+  // order set. The builder refuses, and a refusal nobody hears is barely better
+  // than the silent repricing it replaced - so it names the market and says the
+  // grid was left alone.
+  it("names the market and says the strategy was not loaded", () => {
+    const said = say({
+      kind: "strategyMarketUnavailable",
+      symbol: "ARB/USD",
+    });
+
+    expect(said).toContain("ARB/USD");
+    expect(said).toContain("was not loaded");
+  });
+});

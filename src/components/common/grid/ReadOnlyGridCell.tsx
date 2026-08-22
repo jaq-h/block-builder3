@@ -7,6 +7,7 @@ import {
   getCellDisplayMode,
   isCellDescending,
 } from "../../../utils";
+import { useMarket } from "../../../store/useMarket";
 import {
   getReadOnlyCellContainerProps,
   cellHeader,
@@ -49,6 +50,10 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   onMouseEnter,
   onMouseLeave,
 }) => {
+  // See the note in `GridCell`: the pair's precision comes from context so a
+  // cell can never draw a price at a different precision from its neighbour.
+  const { activeMarket } = useMarket();
+
   const displayMode = getCellDisplayMode(blocks);
   const isDescending = isCellDescending(blocks);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
@@ -78,7 +83,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
           {priceError
             ? "Price Error"
             : currentPrice
-              ? formatPrice(currentPrice)
+              ? formatPrice(currentPrice, activeMarket)
               : "Loading price..."}
         </div>
       </div>
@@ -147,7 +152,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                 {block.yPosition.toFixed(2)}%
               </div>
               <div className={priceProps.className} style={priceProps.style}>
-                {formatPrice(calculatedPriceValue)}
+                {formatPrice(calculatedPriceValue, activeMarket)}
               </div>
               <div className={posProps.className} style={posProps.style}>
                 <Block
@@ -159,7 +164,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                   axes={block.axes}
                   yPosition={block.yPosition}
                   direction={isDescending ? "downside" : "upside"}
-                  priceText={formatPrice(calculatedPriceValue)}
+                  priceText={formatPrice(calculatedPriceValue, activeMarket)}
                   isReadOnly={true}
                 />
               </div>

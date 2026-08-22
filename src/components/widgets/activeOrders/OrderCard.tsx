@@ -95,6 +95,13 @@ const OrderCard: FC<OrderCardProps> = ({ order, isEditing = false }) => {
         {/* Bottom row: position info + y-position */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+            {/* Every number on this card is a percentage offset from *some*
+                market price, so an order whose market is invisible is an order
+                the user cannot check. */}
+            <span className="font-medium text-text-secondary">
+              {order.symbol}
+            </span>
+            <span className="opacity-40">·</span>
             <span>{colLabel}</span>
             <span className="opacity-40">·</span>
             <span>{rowLabel}</span>

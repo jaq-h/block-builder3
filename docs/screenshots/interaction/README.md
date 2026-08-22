@@ -14,8 +14,9 @@ code".
 outcomes below still hold, but the panel chrome around them has since been reworked: all
 three panel titles now share one bar geometry, the selected order assembly type carries an
 accent border and a tick rather than looking identical to the unselected one, the grid
-cell's height floor is derived from the axis geometry instead of a flat 220px, and the
-Active Orders container no longer draws a scrollbar it can never move. So the header
+cell's height floor is derived from the axis geometry instead of a flat 220px, the Active
+Orders container no longer draws a scrollbar it can never move, and a market selector now
+sits in its own row above the pattern selector. So the header
 alignment, the pattern selector and the scrollbars visible in these shots are the state
 those changes replaced. Re-shooting the set is the job of whoever next needs it to show
 chrome, and it has to wait for the pointer drag to be fixed first: a regular mouse drag

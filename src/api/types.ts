@@ -1,6 +1,7 @@
 // Kraken API Types
 
 import type { BlockDirection } from "../types/grid";
+import type { MarketPrecision } from "../types/markets";
 
 // ============================================================================
 // Order Types (for WebSocket API v2)
@@ -201,7 +202,16 @@ export interface UIBlockData {
 }
 
 export interface OrderBuildContext {
-  symbol: string;
+  /**
+   * The pair being traded, and Kraken's own rules for it.
+   *
+   * This carries the symbol as well as the precision, deliberately: they used
+   * to be two independent values, and a payload could name ETH/USD while a
+   * price inside it had been formatted for BTC. One record cannot disagree
+   * with itself. There is no default - a caller without a `MarketPrecision`
+   * has nothing to build an order from and must say so.
+   */
+  market: MarketPrecision;
   currentPrice: number;
   side: OrderSide;
   quantity: string;

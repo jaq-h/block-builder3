@@ -9,6 +9,7 @@ Built with **React 19** (with **React Compiler**), **TypeScript**, **Vite 7**, a
 ## Features
 
 - **Strategy Builder** - Grid interface for assembling multi-leg order strategies (conditional orders, bulk orders), driveable with a mouse, a finger or the keyboard alone
+- **5 Markets** - BTC, ETH, SOL, ARB and OP against USD, picked with a selector above the grid; the price feed, the chart, the grid and the order payload all follow the selection, and each pair's precision, tick size and minimum order come from Kraken's own asset metadata rather than a guess
 - **Price Chart** - Live Kraken candles with the grid's order levels drawn on them, a linear/logarithmic price scale and moving-average overlays (SMA 20, SMA 50, EMA 20)
 - **Active Orders** - View and manage submitted orders with real-time status tracking
 - **Kraken API Integration** - REST and WebSocket clients for live market data, with all authenticated calls signed server-side
@@ -139,11 +140,11 @@ connect-src 'self' https://api.kraken.com wss://ws.kraken.com wss://ws-auth.krak
 Two entries need explaining:
 
 - **`connect-src` names every host the app talks to**: `'self'` for this app's own
-  `/api/kraken/*` endpoints, `api.kraken.com` for the *public* REST ticker and OHLC candles,
-  `ws.kraken.com` for the public feed and `ws-auth.kraken.com` for the private one. Authenticated
-  REST calls no longer appear here because the browser no longer makes any. A new endpoint has to
-  be added here as well as in the code, or the request is blocked at runtime with nothing in the
-  source to explain why.
+  `/api/kraken/*` endpoints, `api.kraken.com` for the *public* REST ticker, OHLC candles and
+  per-pair asset metadata, `ws.kraken.com` for the public feed and `ws-auth.kraken.com` for the
+  private one. Authenticated REST calls no longer appear here because the browser no longer makes
+  any. A new endpoint has to be added here as well as in the code, or the request is blocked at
+  runtime with nothing in the source to explain why.
 - **`style-src` allows `'unsafe-inline'`** because React writes inline `style` attributes and
   `lightweight-charts` injects a stylesheet of its own once the chart mounts. A static deploy has
   no way to issue a per-response nonce, and pinning a hash of a minified third-party stylesheet
@@ -365,6 +366,20 @@ The Orders Store uses a `useReducer` pattern with a clean separation:
 - **`useOrdersStore.ts`** - Hook + memoized selectors (`useActiveOrdersCount`, `useLiveOrdersCount`, etc.)
 - **`OrdersStore.tsx`** - Provider component wiring reducer + side effects
 
+### Market Selection
+
+`MarketProvider` holds the pair the user picked and the rules Kraken publishes for it, and
+every consumer - the grid, the price feed, the chart and the order path - reads it through
+`useMarket` rather than naming a pair of its own. The catalogue (`src/data/markets.ts`) is
+static and shipped in the bundle, so the selector renders before any network call resolves;
+the *rules* - price decimals, tick size, lot decimals and the minimum order - are fetched
+from Kraken's `/0/public/AssetPairs`, because they differ per pair and none of them is
+derivable from a symbol string. `src/utils/marketFormat.ts` turns those rules into every
+price and quantity the app writes, on screen and in the payload alike, so the two cannot
+disagree. Until a pair's rules arrive the app draws no price for it and refuses to build an
+order, rather than guessing a width: the invariants behind that, and the traps around them,
+are in `AGENTS.md` under **Markets**.
+
 ### Tailwind CVA Styling
 
 All component styles use **[CVA (Class Variance Authority)](https://cva.style/)** for variant-driven styling, combined with `clsx` + `tailwind-merge` (via a `cn()` utility). Style definitions are co-located in `*.styles.ts` files next to their components.
@@ -549,6 +564,13 @@ buys, and each had been violated:
   It is why `releaseForDrag` turns on the same-block question above rather than on a `silent`
   flag passed in by whoever happened to be calling.
 
+Not every outcome is a gesture. Changing the market reprices every block on the grid, and the
+`<select>` speaks only its own new value, so `GridArea` reports the consequence once the grid
+holds the new market. Loading a saved strategy is reported the same way, as **one** sentence
+carrying both facts - the strategy is on the grid, and the market did or did not move with it -
+because two live-region writes in quick succession cut the first one off. A strategy saved on a
+pair the catalogue no longer offers is refused rather than repriced, and says so.
+
 **Known gap, deferred and filed as its own item: a carry can outlive the grid it was started
 against.** Clear All, Reverse Blocks and a pattern switch each replace the grid without ending
 an active carry, so the cells the carry offered stay highlighted - `aria-current="location"` -
@@ -666,7 +688,8 @@ src/
 │   ├── krakenServer.ts            # Calls this app's own /api/kraken/* endpoints
 │   ├── appRequestHeader.ts        # The header those calls carry (server's copy: api/_lib/loopback.ts)
 │   ├── krakenRest.ts              # Public REST API client
-│   ├── krakenWebSocket.ts         # WebSocket client for live data
+│   ├── assetMetadata.ts           # Kraken's per-pair rules (precision, tick, lot, minimum)
+│   ├── krakenWebSocket.ts         # WebSocket client for live data (refcounted subscriptions)
 │   ├── orderMapper.ts             # Maps internal order config → Kraken API format
 │   ├── tickerUpdate.ts            # Parses & merges v2 ticker WebSocket frames
 │   ├── types.ts                   # API-specific type definitions
@@ -684,6 +707,8 @@ src/
 │   │   ├── LiveAnnouncer.tsx      # Two alternating live regions for announcements
 │   │   ├── ErrorBoundary.tsx      # Recoverable fallback UI in place of a blank page
 │   │   ├── NavBar.tsx             # Navigation bar with live order badge
+│   │   ├── MarketSelector.tsx     # The pair picker (native <select>) + live price readout
+│   │   ├── MarketSelector.styles.ts # Market selector CVA styling
 │   │   └── grid/                  # Shared grid components
 │   │       ├── GridCell.tsx       # Interactive grid cell (Strategy Builder)
 │   │       ├── GridCell.styles.ts # Grid cell CVA styling
@@ -740,6 +765,7 @@ src/
 │
 ├── data/                          # Static data & configuration
 │   ├── orderTypes.ts              # Order type definitions, grid config, helpers
+│   ├── markets.ts                 # The pair catalogue & DEFAULT_MARKET. No trading rules
 │   └── index.ts
 │
 ├── hooks/                         # Custom React hooks
@@ -763,6 +789,9 @@ src/
 │   ├── OrdersStoreContext.ts      # Context definition & TypeScript types
 │   ├── useOrdersStore.ts          # Hook + derived-data selectors
 │   ├── ordersReducer.ts           # Pure reducer & action types
+│   ├── MarketProvider.tsx         # Selected pair + its Kraken metadata (bounded retry)
+│   ├── MarketContext.ts           # Context definition & TypeScript types
+│   ├── useMarket.ts               # Hook for the selected market
 │   └── index.ts                   # Barrel export
 │
 ├── styles/                        # Shared style constants
@@ -775,6 +804,7 @@ src/
 │   ├── grid.ts                    # Grid, block, cell, order config types
 │   ├── orders.ts                  # Kraken order types & validators
 │   ├── activeOrders.ts            # Active orders state types
+│   ├── markets.ts                 # Market & MarketPrecision (a pair, and Kraken's rules for it)
 │   ├── strategyAssembly.ts        # Strategy assembly state types (split context types)
 │   ├── svg.d.ts                   # SVG import declarations (vite-plugin-svgr)
 │   └── index.ts                   # Barrel export
@@ -785,6 +815,7 @@ src/
 │   ├── grid.ts                    # Grid manipulation helpers
 │   ├── gridAnnouncements.ts       # Every sentence the grid speaks (pure)
 │   ├── liveCandles.ts             # The one fold of closed bars + the forming bar
+│   ├── marketFormat.ts            # The one owner of every price & quantity format
 │   ├── price.ts                   # Percentage-offset-from-market price formula
 │   └── index.ts
 │

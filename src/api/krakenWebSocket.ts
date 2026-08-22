@@ -118,8 +118,17 @@ export class KrakenWebSocketManager {
    * Live public-channel subscriptions, keyed so a repeat subscribe is a no-op,
    * and holding the exact `subscribe` frame so every one can be replayed after
    * a reconnect. Without the replay the app comes back connected but silent.
+   *
+   * `refs` counts the consumers that asked for the channel. Two components call
+   * `useKrakenAPI` today and both subscribe the same ticker, so an unrefcounted
+   * `unsubscribe` from either would take the feed away from the other. That
+   * only became reachable when the ticker channel started following the
+   * selected market: nothing unsubscribed before, so nothing could.
    */
-  private subscriptions: Map<string, Record<string, unknown>> = new Map();
+  private subscriptions: Map<
+    string,
+    { message: Record<string, unknown>; refs: number }
+  > = new Map();
 
   constructor() {
     // Initialize event handler maps
@@ -427,7 +436,7 @@ export class KrakenWebSocketManager {
    * nothing and showing stale prices.
    */
   private replaySubscriptions(): void {
-    for (const message of this.subscriptions.values()) {
+    for (const { message } of this.subscriptions.values()) {
       this.send("public", message);
     }
   }
@@ -502,11 +511,14 @@ export class KrakenWebSocketManager {
     key: string,
     message: Record<string, unknown>,
   ): Promise<void> {
-    const isNew = !this.subscriptions.has(key);
-    if (isNew) {
+    const existing = this.subscriptions.get(key);
+    const isNew = existing === undefined;
+    if (existing) {
+      existing.refs += 1;
+    } else {
       // Reserved before the await, so a second caller racing this one sees the
       // key and returns instead of sending the same frame again.
-      this.subscriptions.set(key, message);
+      this.subscriptions.set(key, { message, refs: 1 });
     }
 
     const wasOpen = this.publicSocket.ws?.readyState === WebSocket.OPEN;
@@ -525,13 +537,24 @@ export class KrakenWebSocketManager {
   }
 
   /**
-   * Unsubscribe from a public channel. The key is dropped whether or not the
-   * frame can go out, so a channel is never replayed after a reconnect.
+   * Release one consumer's interest in a public channel.
+   *
+   * The channel goes away only when the last consumer has let go. The key is
+   * then dropped whether or not the frame can go out, so a channel is never
+   * replayed after a reconnect.
    */
   private unsubscribe(key: string, message: Record<string, unknown>): void {
-    if (!this.subscriptions.delete(key)) {
+    const existing = this.subscriptions.get(key);
+    if (!existing) {
       return; // Not subscribed
     }
+
+    existing.refs -= 1;
+    if (existing.refs > 0) {
+      return; // Somebody else is still listening
+    }
+
+    this.subscriptions.delete(key);
     this.send("public", message);
   }
 

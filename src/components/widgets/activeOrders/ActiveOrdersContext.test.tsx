@@ -85,6 +85,7 @@ const submitted = (
     id: "sa-stop-loss-1",
     orderId: "OQCLML-BW3P3-BUCMWZ",
     strategyId: "strategy-1",
+    symbol: "BTC/USD",
     col: 0,
     row: 1,
     type: "stop-loss",

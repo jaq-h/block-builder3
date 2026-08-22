@@ -3,14 +3,15 @@
  * Handles public API calls like ticker data
  */
 
-import { getKrakenConfig, DEFAULT_SYMBOL } from './config';
+import { getKrakenConfig } from './config';
+import { MARKETS } from '../data/markets';
 import type { TickerResponse, ParsedTickerData, AssetTickerInfo } from './types';
 
 /**
  * Fetch ticker data for a trading pair
  * This is a public endpoint and does not require authentication
  */
-export const fetchTicker = async (symbol: string = DEFAULT_SYMBOL): Promise<TickerResponse> => {
+export const fetchTicker = async (symbol: string): Promise<TickerResponse> => {
   const config = getKrakenConfig();
   // Convert symbol format: "BTC/USD" -> "XBTUSD" for Kraken API
   const krakenPair = convertToKrakenPair(symbol);
@@ -45,11 +46,24 @@ export const convertToKrakenPair = (symbol: string): string => {
 };
 
 /**
- * Convert Kraken pair format back to standard symbol
- * e.g., "XXBTZUSD" -> "BTC/USD", "XETHZUSD" -> "ETH/USD"
+ * Convert a Kraken pair name back to this app's symbol.
+ * e.g., "XXBTZUSD" -> "BTC/USD", "SOLUSD" -> "SOL/USD"
+ *
+ * The catalogue is asked first, and it answers for every market the app
+ * offers. The string surgery below is only reached for a pair we do not ship,
+ * and it is a heuristic rather than a rule: stripping the *first* `Z` mangles
+ * any base asset that contains one (`XZECZUSD` becomes `ECZUSD`), and there is
+ * no spelling rule that would let it not. Kraken's own `wsname` is the correct
+ * answer for an unknown pair, and it arrives with the asset metadata rather
+ * than from a symbol string - so a caller that needs one should ask
+ * `assetMetadata` rather than extend this.
  */
 export const convertFromKrakenPair = (krakenPair: string): string => {
-  // Handle Kraken's extended format (e.g., XXBTZUSD, XETHZUSD)
+  const known = MARKETS.find(
+    (market) => convertToKrakenPair(market.symbol) === krakenPair,
+  );
+  if (known) return known.symbol;
+
   let pair = krakenPair;
 
   // Remove leading X and Z prefixes if present
@@ -115,7 +129,7 @@ export const parseTickerData = (
  * Fetch and parse ticker data for a trading pair
  * Returns parsed data ready for UI consumption
  */
-export const getTickerData = async (symbol: string = DEFAULT_SYMBOL): Promise<ParsedTickerData> => {
+export const getTickerData = async (symbol: string): Promise<ParsedTickerData> => {
   const response = await fetchTicker(symbol);
 
   // Get the first (and usually only) result
@@ -133,7 +147,7 @@ export const getTickerData = async (symbol: string = DEFAULT_SYMBOL): Promise<Pa
 /**
  * Get the current market price (last traded price) for a symbol
  */
-export const getCurrentPrice = async (symbol: string = DEFAULT_SYMBOL): Promise<number> => {
+export const getCurrentPrice = async (symbol: string): Promise<number> => {
   const tickerData = await getTickerData(symbol);
   return tickerData.last;
 };
@@ -141,7 +155,7 @@ export const getCurrentPrice = async (symbol: string = DEFAULT_SYMBOL): Promise<
 /**
  * Get bid/ask spread for a symbol
  */
-export const getSpread = async (symbol: string = DEFAULT_SYMBOL): Promise<{ bid: number; ask: number; spread: number; spreadPercent: number }> => {
+export const getSpread = async (symbol: string): Promise<{ bid: number; ask: number; spread: number; spreadPercent: number }> => {
   const tickerData = await getTickerData(symbol);
   const spread = tickerData.ask - tickerData.bid;
   const spreadPercent = (spread / tickerData.ask) * 100;
@@ -152,21 +166,6 @@ export const getSpread = async (symbol: string = DEFAULT_SYMBOL): Promise<{ bid:
     spread,
     spreadPercent,
   };
-};
-
-/**
- * Format price for display with appropriate decimal places
- */
-export const formatPrice = (price: number, symbol: string = DEFAULT_SYMBOL): string => {
-  // Determine decimal places based on the asset
-  const decimals = symbol.includes('BTC') || symbol.includes('XBT') ? 2 :
-                   symbol.includes('ETH') ? 2 :
-                   price < 1 ? 6 : 2;
-
-  return price.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
 };
 
 /**

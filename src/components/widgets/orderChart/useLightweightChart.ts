@@ -3,7 +3,7 @@
  * Creates a chart instance with candlestick series attached to a container ref
  */
 
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -12,15 +12,53 @@ import {
   type IChartApi,
   type ISeriesApi,
   type CandlestickData,
+  type PriceFormatBuiltIn,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { useMarket } from "../../../store/useMarket";
+import type { MarketPrecision } from "../../../types/markets";
 
-interface UseLightweightChartReturn {
+interface ChartInstance {
   chart: IChartApi | null;
   candleSeries: ISeriesApi<"Candlestick"> | null;
 }
 
-const NO_CHART: UseLightweightChartReturn = { chart: null, candleSeries: null };
+interface UseLightweightChartReturn extends ChartInstance {
+  /**
+   * Whether the series is written in the selected pair's own price format.
+   *
+   * False means the plot is not authoritative and must not be presented as
+   * though it were: with no `MarketPrecision` there is no format to apply, and
+   * a series carries whatever it was last given - the previous pair's rules, or
+   * the library's `precision: 2, minMove: 0.01` default. Either draws a whole
+   * axis, crosshair and set of order labels at a width this app does not have
+   * for this pair, which is the thing `formatMarketPrice` refuses to do for a
+   * single number. It is reported here rather than re-derived by the caller so
+   * the format and the judgement about it stay one fact.
+   */
+  hasPriceFormat: boolean;
+}
+
+const NO_CHART: ChartInstance = { chart: null, candleSeries: null };
+
+/**
+ * How this pair's prices are written on the price scale, the crosshair label
+ * and every order price line.
+ *
+ * Lightweight-charts defaults a series to `precision: 2, minMove: 0.01`, which
+ * was indistinguishable from correct while the only market was BTC. It is wrong
+ * the moment a sub-dollar pair is selected: ARB/USD and OP/USD both price to
+ * four decimals, so the default draws a 0.4231 candle as "0.42", puts the axis
+ * gridlines 2.4% apart, and collapses two order lines a whole percent apart
+ * onto one label - while the panel's own header and every grid chip read
+ * "$0.4231". The precision is Kraken's per-pair fact, so it comes from the same
+ * `MarketPrecision` every other price on screen is drawn from.
+ */
+const priceFormatFor = (precision: MarketPrecision): PriceFormatBuiltIn => ({
+  type: "price",
+  precision: precision.priceDecimals,
+  minMove: precision.tickSize,
+});
 
 export const useLightweightChart = (
   containerRef: RefObject<HTMLDivElement | null>,
@@ -29,7 +67,17 @@ export const useLightweightChart = (
   // in state rather than a ref: a ref read during render hands the caller `null`
   // on the first pass and never re-renders them once the chart exists, so their
   // `setData` effects never re-run and the chart stays empty.
-  const [instance, setInstance] = useState<UseLightweightChartReturn>(NO_CHART);
+  const [instance, setInstance] = useState<ChartInstance>(NO_CHART);
+
+  const { precision } = useMarket();
+  // Read through a ref at creation time so the precision arriving from Kraken
+  // does not tear down and rebuild the chart. Kept current by this effect,
+  // which is declared first so it has already run when the chart below is
+  // built; the format effect at the bottom is what applies a later change.
+  const precisionRef = useRef(precision);
+  useEffect(() => {
+    precisionRef.current = precision;
+  });
 
   useEffect(() => {
     const container = containerRef.current;
@@ -70,6 +118,9 @@ export const useLightweightChart = (
       wickUpColor: "rgba(100,200,100,0.85)",
       wickDownColor: "rgba(200,100,100,0.85)",
       borderVisible: false,
+      ...(precisionRef.current
+        ? { priceFormat: priceFormatFor(precisionRef.current) }
+        : {}),
     });
 
     setInstance({ chart, candleSeries: series });
@@ -90,7 +141,16 @@ export const useLightweightChart = (
     };
   }, [containerRef]);
 
-  return instance;
+  // Kraken's rules land after the chart is built, and the pair can change under
+  // a chart that is already running, so the format follows the selection rather
+  // than being fixed at creation.
+  useEffect(() => {
+    const series = instance.candleSeries;
+    if (!series || !precision) return;
+    series.applyOptions({ priceFormat: priceFormatFor(precision) });
+  }, [instance.candleSeries, precision]);
+
+  return { ...instance, hasPriceFormat: precision !== null };
 };
 
 /**

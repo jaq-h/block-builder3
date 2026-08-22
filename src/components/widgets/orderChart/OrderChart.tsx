@@ -13,6 +13,8 @@ import type { OrderConfig } from "../../../types/grid";
 import { useKrakenAPI } from "../../../hooks/useKrakenAPI";
 import { useOHLCData, TIMEFRAME_MAP } from "../../../hooks/useOHLCData";
 import { useLightweightChart } from "./useLightweightChart";
+import { useMarket } from "../../../store/useMarket";
+import { formatMarketPrice } from "../../../utils/marketFormat";
 import { useIndicatorSeries } from "./useIndicatorSeries";
 import { OVERLAY_INDICATORS } from "./indicators";
 import { withLatestCandle } from "@utils/liveCandles";
@@ -54,8 +56,11 @@ interface OrderChartProps {
 // =============================================================================
 
 const OrderChart: FC<OrderChartProps> = ({ orders }) => {
+  // The selected market is supplied here, at the boundary, and used for the
+  // feed, the candles and the header. Everything below is unchanged.
+  const { market, activeMarket, metadataSettled } = useMarket();
+
   const { currentPrice, tickerError, publicStatus } = useKrakenAPI({
-    symbol: "BTC/USD",
     autoConnect: true,
     pollInterval: 30000,
   });
@@ -69,9 +74,15 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   const interval = TIMEFRAME_MAP[activeTimeframe] ?? 60;
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const { chart, candleSeries } = useLightweightChart(chartContainerRef);
-  const { candles, latestCandle, isLoading } = useOHLCData({
-    symbol: "BTC/USD",
+  const { chart, candleSeries, hasPriceFormat } =
+    useLightweightChart(chartContainerRef);
+  const {
+    candles,
+    latestCandle,
+    isLoading,
+    error: candleError,
+  } = useOHLCData({
+    symbol: market.symbol,
     interval,
   });
 
@@ -114,9 +125,13 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     chart.priceScale("right").applyOptions({ mode: priceScaleMode(priceScale) });
   }, [chart, priceScale]);
 
-  // Set candle data when historical data arrives
+  // Set candle data when historical data arrives.
+  //
+  // An empty list is data too, and it has to reach the series: skipping it left
+  // the previous market's bars drawn under the new market's header, price label
+  // and axis precision - one asset's price history presented as another's.
   useEffect(() => {
-    if (!candleSeries || !candles.length) return;
+    if (!candleSeries) return;
     candleSeries.setData(candles);
   }, [candleSeries, candles]);
 
@@ -126,9 +141,16 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     candleSeries.update(latestCandle);
   }, [candleSeries, latestCandle]);
 
-  // Draw order level price lines
+  // Draw order level price lines.
+  //
+  // The teardown runs before the price is consulted, because a market switch
+  // drops `currentPrice` to null while the previous pair's lines are still
+  // attached - and lightweight-charts keeps price lines across `setData([])`.
+  // Returning above the removal loop left BTC levels labelled over an ARB axis,
+  // with the range still stretched to reach them, until the new pair's ticker
+  // landed - and for good whenever it never did.
   useEffect(() => {
-    if (!candleSeries || !currentPrice) return;
+    if (!candleSeries) return;
 
     // Remove previous price lines
     for (const line of priceLinesRef.current) {
@@ -137,7 +159,9 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     priceLinesRef.current = [];
 
     // One derivation, shared with the grid's price chip: see `orderPriceLines`.
-    const lines = orderPriceLines(orders, currentPrice);
+    // With no price there are no levels, which is a real answer rather than a
+    // reason to skip the pass: it is what resets the autoscale provider below.
+    const lines = currentPrice ? orderPriceLines(orders, currentPrice) : [];
 
     for (const line of lines) {
       priceLinesRef.current.push(
@@ -154,7 +178,11 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       );
     }
 
-    // Widen the candles' own range so the order levels stay on screen.
+    // Widen the candles' own range so the order levels stay on screen. An empty
+    // list gives back the provider that defers to the candles entirely, which is
+    // the only way to undo this: `applyOptions` skips an undefined source value,
+    // so passing `undefined` would leave the previous market's range installed.
+    // See `orderAutoscale.ts`.
     candleSeries.applyOptions({
       autoscaleInfoProvider: orderAutoscaleProvider(
         lines.map((line) => line.price),
@@ -165,11 +193,33 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     debouncedAutoScale();
   }, [candleSeries, orders, currentPrice, priceScale, debouncedAutoScale]);
 
+  // Formatted at the pair's own precision, like every other price on screen. A
+  // flat two decimals reads "$0.34" for an ARB price the grid renders as
+  // "$0.3421", and the header and the grid disagreeing about the same number is
+  // the drift decision D3 exists to prevent.
   const priceLabel = currentPrice
-    ? `$${currentPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    ? formatMarketPrice(currentPrice, activeMarket)
     : tickerError
       ? "Price Error"
       : "Loading…";
+
+  // Three states, and each is drawn as what it actually is.
+  //
+  // `hasPriceFormat` false has two meanings, and collapsing them left this
+  // panel as the one surface still drawing numbers at a width the app does not
+  // have for the pair: before the metadata answers the series carries
+  // lightweight-charts' own `precision: 2, minMove: 0.01`, so selecting ARB/USD
+  // while AssetPairs is in flight draws an axis, a crosshair and every order
+  // label reading "0.42" for a 0.4231 price - beside a header, a selector
+  // readout and a grid full of chips that all read "n/a" for the same pair.
+  // There is no fallback precision anywhere else, and there is none here.
+  //
+  // So "not known yet" gets the loading treatment this panel already draws,
+  // which invents no surface and states the truth, and only a settled answer
+  // with no rules for this pair gets the refusal. A sub-second wrong answer is
+  // still a wrong answer, and it is wrong on every page load.
+  const precisionPending = !metadataSettled && !hasPriceFormat;
+  const precisionUnavailable = metadataSettled && !hasPriceFormat;
 
   return (
     <div className="flex flex-col h-full bg-bg-primary border-b border-border-neutral">
@@ -181,7 +231,9 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       <div className={chartHeader}>
         <div className={chartHeaderPrimaryRow}>
           <div className="flex items-center gap-3">
-            <span className={panelHeaderTitle}>BTC / USD</span>
+            <span className={panelHeaderTitle}>
+              {market.base} / {market.quote}
+            </span>
             <span className="text-[11px] text-text-muted">{priceLabel}</span>
             {/* The manager gives up reconnecting after a fixed number of tries.
                 Without this the app just keeps showing the last price it saw. */}
@@ -277,13 +329,53 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       <div className="flex-1 min-h-0 relative">
         <div ref={chartContainerRef} className="w-full h-full" />
 
-        {/* Loading overlay */}
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        {precisionPending ? (
+          /* Covered rather than captioned, for the same reason the refusal
+             below is: an overlay that lets the plot show through still shows
+             an axis written at the library's own default. */
+          <div className="absolute inset-0 flex items-center justify-center px-4 bg-bg-primary">
             <p className="text-[11px] text-text-muted opacity-60">
               Loading chart…
             </p>
           </div>
+        ) : precisionUnavailable ? (
+          /* The plot is covered rather than merely captioned. Without this
+             pair's rules the axis, the crosshair and every order label are
+             written at a width this app does not have for it, and there is no
+             neutral one to fall back to - which is exactly why
+             `formatMarketPrice` draws no number at all in the same state. An
+             opaque cover is what stops the panel presenting the drawing as
+             authoritative, and it takes the pointer so the crosshair cannot be
+             read underneath it. */
+          <div className="absolute inset-0 flex items-center justify-center px-4 bg-bg-primary">
+            <p className="text-[11px] text-status-yellow text-center">
+              Precision rules unavailable for {market.symbol} - prices cannot be
+              drawn
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Loading overlay */}
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <p className="text-[11px] text-text-muted opacity-60">
+                  Loading chart…
+                </p>
+              </div>
+            )}
+
+            {/* A failed backfill ends the loading state without ending the
+                empty chart, and the panel used to say nothing at all about it -
+                an empty plot area under a header naming a pair, with no way to
+                tell that from a market that simply has no bars. */}
+            {!isLoading && candleError && (
+              <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+                <p className="text-[11px] text-status-yellow text-center">
+                  Price history unavailable for {market.symbol}
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

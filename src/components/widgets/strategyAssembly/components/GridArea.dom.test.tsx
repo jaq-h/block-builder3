@@ -22,6 +22,10 @@ import {
   installPointerCapture,
   type PointerCaptureTracker,
 } from "@/test/pointerCapture";
+import { MarketContext } from "@store/MarketContext";
+import { MARKETS, findMarket } from "@data/markets";
+import { ARB_USD, BTC_USD } from "@/test/marketFixtures";
+import type { Market, MarketPrecision } from "@/types/markets";
 
 // =============================================================================
 // HARNESS
@@ -93,7 +97,41 @@ const Harness: FC<{
    * this is how a carry comes to outlive the block it names.
    */
   gridReplacement?: GridData;
-}> = ({ initialGrid, pattern = "conditional", gridReplacement }) => {
+  /**
+   * Renders a control that selects a different market, the way the market
+   * selector does. Switching re-prices every block on the grid, so the grid has
+   * to say so and has to redraw its chips at the new pair's precision.
+   */
+  switchTo?: { market: Market; precision: MarketPrecision };
+  /**
+   * Renders a control that reports a strategy the builder refused to load,
+   * the way `App` does when the market an order was placed on is no longer in
+   * the catalogue. The grid is what did *not* change, and it has one voice.
+   */
+  refuseStrategyOn?: string;
+  /**
+   * A strategy that has just been loaded into this grid, the way `App` reports
+   * one. It is a prop rather than something this component notices, because the
+   * real load remounts it - so a fresh mount holding one is the shape under
+   * test, not an edge case.
+   */
+  strategyLoaded?: {
+    symbol: string;
+    name: string;
+    marketChanged: boolean;
+  } | null;
+}> = ({
+  initialGrid,
+  pattern = "conditional",
+  gridReplacement,
+  switchTo,
+  refuseStrategyOn,
+  strategyLoaded,
+}) => {
+  const [selected, setSelected] = useState<{
+    market: Market;
+    precision: MarketPrecision;
+  }>({ market: findMarket("BTC/USD")!, precision: BTC_USD });
   const [grid, setGrid] = useState<GridData>(initialGrid);
   const [orderConfig, setOrderConfig] = useState<OrderConfig>({});
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -108,8 +146,29 @@ const Harness: FC<{
     null,
   );
   const blockCounterRef = useRef(0);
+  const [refused, setRefused] = useState<{
+    symbol: string;
+    attempt: number;
+  } | null>(null);
+  // Held in state rather than read from the prop, so the grid can clear it the
+  // way `App` does once it has spoken.
+  const [loaded, setLoaded] = useState(strategyLoaded ?? null);
 
   return (
+    <MarketContext.Provider
+      value={{
+        market: selected.market,
+        precision: selected.precision,
+        activeMarket: {
+          market: selected.market,
+          precision: selected.precision,
+        },
+        markets: MARKETS,
+        selectMarket: vi.fn(),
+        metadataError: null,
+        metadataSettled: true,
+      }}
+    >
     <GridDataContext.Provider
       value={{
         grid,
@@ -147,16 +206,40 @@ const Harness: FC<{
               blockCounterRef,
             }}
           >
-            <GridArea currentPrice={MARKET_PRICE} tickerError={null} />
+            <GridArea
+              currentPrice={MARKET_PRICE}
+              tickerError={null}
+              strategyMarketUnavailable={refused}
+              strategyLoaded={loaded}
+              onStrategyLoadAnnounced={() => setLoaded(null)}
+            />
             {gridReplacement && (
               <button onClick={() => setGrid(gridReplacement)}>
                 replace the grid
+              </button>
+            )}
+            {switchTo && (
+              <button onClick={() => setSelected(switchTo)}>
+                switch market
+              </button>
+            )}
+            {refuseStrategyOn && (
+              <button
+                onClick={() =>
+                  setRefused((prev) => ({
+                    symbol: refuseStrategyOn,
+                    attempt: (prev?.attempt ?? 0) + 1,
+                  }))
+                }
+              >
+                refuse a strategy
               </button>
             )}
           </StaticContext.Provider>
         </HoverContext.Provider>
       </DragContext.Provider>
     </GridDataContext.Provider>
+    </MarketContext.Provider>
   );
 };
 
@@ -214,10 +297,14 @@ const renderPlacedLimit = (yPosition: number) => {
 };
 
 /** The price the cell renders for a Limit on its descending scale. */
+// The harness renders on BTC/USD, and Kraken prices that pair to ONE decimal
+// (`pair_decimals: 1`), so the grid draws "$75,000.0" rather than the flat two
+// decimals it used to draw for every market. That is the point: the price on
+// screen is at the precision the payload is sent at.
 const limitPrice = (yPosition: number) =>
   `$${(MARKET_PRICE * (1 - yPosition / 100)).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: BTC_USD.priceDecimals,
+    maximumFractionDigits: BTC_USD.priceDecimals,
   })}`;
 
 /** The block's centre, derived from the percentage the grid now holds. */
@@ -983,10 +1070,14 @@ const renderMixedCell = (limitY: number, stopLossY: number) => {
 };
 
 /** The price the cell renders next to the Stop Loss block. */
+// The harness renders on BTC/USD, and Kraken prices that pair to ONE decimal
+// (`pair_decimals: 1`), so the grid draws "$75,000.0" rather than the flat two
+// decimals it used to draw for every market. That is the point: the price on
+// screen is at the precision the payload is sent at.
 const stopLossPrice = (yPosition: number) =>
   `$${(MARKET_PRICE * (1 - yPosition / 100)).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: BTC_USD.priceDecimals,
+    maximumFractionDigits: BTC_USD.priceDecimals,
   })}`;
 
 describe("GridArea, a bulk cell holding two order families", () => {
@@ -1074,10 +1165,14 @@ describe("GridArea, a bulk cell holding two order families", () => {
 // dragged is dead only for the mouse and the finger.
 
 /** The price the cell renders for a block on its ascending scale. */
+// The harness renders on BTC/USD, and Kraken prices that pair to ONE decimal
+// (`pair_decimals: 1`), so the grid draws "$75,000.0" rather than the flat two
+// decimals it used to draw for every market. That is the point: the price on
+// screen is at the precision the payload is sent at.
 const upsidePrice = (yPosition: number) =>
   `$${(MARKET_PRICE * (1 + yPosition / 100)).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: BTC_USD.priceDecimals,
+    maximumFractionDigits: BTC_USD.priceDecimals,
   })}`;
 
 describe("GridArea, a block drawn in a column its axis field does not name", () => {
@@ -1122,5 +1217,173 @@ describe("GridArea, a block drawn in a column its axis field does not name", () 
     ).toBeCloseTo(centre + 30, 1);
     expect(screen.getByText(`+${after.toFixed(2)}%`)).toBeInTheDocument();
     expect(screen.getByText(upsidePrice(after))).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// FOLLOWING THE SELECTED MARKET
+// =============================================================================
+//
+// Switching market changes two things about the grid that no other input does:
+// every price chip is redrawn at a different precision, and every one of them
+// now means a price in a different market. The first is visible; the second is
+// not, which is why it is announced.
+
+describe("GridArea, when the market changes", () => {
+  const switchMarket = () => {
+    fireEvent.click(screen.getByRole("button", { name: "switch market" }));
+  };
+
+  const arb = { market: findMarket("ARB/USD")!, precision: ARB_USD };
+
+  it("redraws every price chip at the new pair's precision", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedLimit(20));
+    render(<Harness initialGrid={grid} switchTo={arb} />);
+
+    // BTC/USD: one decimal, so 20% below a $100,000 market reads $80,000.0.
+    expect(screen.getByText("$80,000.0")).toBeInTheDocument();
+
+    switchMarket();
+
+    // ARB/USD: four decimals. The market price the harness supplies has not
+    // changed - only the pair's rules for writing one down have - which is
+    // exactly what isolates the formatting from the arithmetic.
+    expect(screen.queryByText("$80,000.0")).not.toBeInTheDocument();
+    expect(screen.getByText("$80,000.0000")).toBeInTheDocument();
+  });
+
+  // The `<select>` speaks its own new value; nothing speaks the consequence.
+  // It goes through the grid's own announcer rather than a second one next to
+  // the selector - see `utils/gridAnnouncements.ts` for why that matters.
+  it("announces that the grid has been re-priced", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedLimit(20));
+    render(<Harness initialGrid={grid} switchTo={arb} />);
+
+    switchMarket();
+
+    expect(
+      screen.getByText(
+        "Market changed to Arbitrum. Every block on the grid is now priced from the ARB/USD market price.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // The app has not "changed" to the market it opened on, so the first render
+  // must say nothing - otherwise a screen reader is told about a change the
+  // user did not make, every time the panel mounts.
+  it("says nothing about the market it started on", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedLimit(20));
+    render(<Harness initialGrid={grid} switchTo={arb} />);
+
+    expect(screen.queryByText(/^Market changed to/)).not.toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// A STRATEGY THE BUILDER WOULD NOT LOAD
+// =============================================================================
+//
+// A saved strategy holds percentage offsets from its own market's price, so one
+// placed on a pair the app no longer offers cannot be loaded without repricing
+// it into a different order set. `App` refuses; this grid is what did not
+// change, and it has the one voice that can say so.
+
+describe("GridArea, when a strategy could not be loaded", () => {
+  const refuse = () => {
+    fireEvent.click(screen.getByRole("button", { name: "refuse a strategy" }));
+  };
+
+  it("says which market it was, and that nothing was loaded", () => {
+    render(
+      <Harness initialGrid={clearGrid(2, 3)} refuseStrategyOn="ARB/USD" />,
+    );
+
+    refuse();
+
+    const said = screen.getByText(/ARB\/USD/);
+    expect(said).toBeInTheDocument();
+    expect(said.textContent).toContain("was not loaded");
+  });
+
+  it("stays quiet until a strategy is actually refused", () => {
+    render(
+      <Harness initialGrid={clearGrid(2, 3)} refuseStrategyOn="ARB/USD" />,
+    );
+
+    expect(screen.queryByText(/was not loaded/)).not.toBeInTheDocument();
+  });
+
+  // Pressing Edit twice on the same strategy is two refusals, and a live region
+  // only speaks when its content changes - so the second must not be silent.
+  it("says so again when the user tries the same strategy again", () => {
+    render(
+      <Harness initialGrid={clearGrid(2, 3)} refuseStrategyOn="ARB/USD" />,
+    );
+
+    refuse();
+    const first = screen.getByText(/was not loaded/).closest("[role=status]");
+
+    refuse();
+    const second = screen.getByText(/was not loaded/).closest("[role=status]");
+
+    // The announcer alternates between two regions precisely so a repeat is a
+    // content change rather than a no-op.
+    expect(second).not.toBe(first);
+  });
+});
+
+// =============================================================================
+// A STRATEGY THE BUILDER DID LOAD
+// =============================================================================
+//
+// Loading one remounts this component - `loadConfig` bumps the key the panel is
+// rendered with - so the fact has to be readable by a grid that has only just
+// come up. That is why it arrives as a prop and why these mount with it already
+// set: a `GridArea` noticing the change for itself is exactly what could not
+// work, because the market it would compare against is already the new one.
+
+describe("GridArea, when a strategy has just been loaded into it", () => {
+  it("speaks from a mount that has only just come up", () => {
+    render(
+      <Harness
+        initialGrid={clearGrid(2, 3)}
+        strategyLoaded={{
+          symbol: "ARB/USD",
+          name: "Arbitrum",
+          marketChanged: true,
+        }}
+      />,
+    );
+
+    expect(announcement()).toBe(
+      "Saved strategy loaded onto the grid. The market changed to Arbitrum, so every block is now priced from the ARB/USD market price.",
+    );
+  });
+
+  // One sentence, not two: the market change and the load are one press of
+  // Edit, and two live-region writes in quick succession is the shape whose
+  // first write this module's history records being cut off by the second.
+  it("does not also announce the market change on its own", () => {
+    render(
+      <Harness
+        initialGrid={clearGrid(2, 3)}
+        strategyLoaded={{
+          symbol: "ARB/USD",
+          name: "Arbitrum",
+          marketChanged: true,
+        }}
+      />,
+    );
+
+    expect(screen.queryByText(/^Market changed to/)).not.toBeInTheDocument();
+  });
+
+  it("says nothing when no strategy has been loaded", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    expect(announcement()).toBe("");
   });
 });

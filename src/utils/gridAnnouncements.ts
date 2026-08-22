@@ -127,6 +127,60 @@ export type GridOutcome =
       source: CommandSource;
       reason: DragEndReason;
       releasedCarry?: boolean;
+    }
+  /**
+   * The user picked a different market, and every block on the grid is now
+   * priced against it.
+   *
+   * The `<select>` speaks its own new value, so this is not that. It is the
+   * consequence, which is invisible without sight of the grid: every price chip
+   * on screen changed. It lives here rather than next to the selector for the
+   * reason the whole module exists - one owner for every sentence the grid
+   * speaks - and it is reported by `GridArea` once the grid has actually been
+   * handed the new market, so it states a fact rather than an intention.
+   */
+  | { kind: "marketChanged"; name: string; symbol: string }
+  /**
+   * A saved strategy could not be loaded back into the grid, because the market
+   * it was placed on is not one this app offers any more.
+   *
+   * The grid is deliberately left alone in that case. Every position the saved
+   * strategy holds is a percentage offset from its own market's price, so
+   * loading it against whatever pair happens to be selected reprices the whole
+   * thing into a different order set - the corruption the market tag exists to
+   * prevent, one step further out. Refusing is only safe if the refusal
+   * reaches the user, and this is one half of that: a fact about a grid that
+   * did *not* change, reported by the same owner that reports one that did.
+   * The other half is visible, on the strategy's own card in the Active Orders
+   * panel - which is where the press happened, and which is the only half that
+   * carries below `lg`, where the panel this live region sits in is
+   * `display: none` and so is out of the accessibility tree entirely.
+   */
+  | { kind: "strategyMarketUnavailable"; symbol: string }
+  /**
+   * A saved strategy has just been loaded back into the grid, on the market it
+   * was placed on.
+   *
+   * One outcome rather than two, because loading one is one event with two
+   * facts in it: the grid now holds a strategy it did not hold, and it may be
+   * priced against a different market than the one the user was looking at.
+   * Reporting a market change and then a load would be two live-region writes
+   * in quick succession, which is the shape this module exists to prevent - the
+   * first is cut off by the second. `marketChanged` says which way the second
+   * fact went, because a strategy reloaded on the market already selected has
+   * not moved the user anywhere.
+   *
+   * It cannot be derived from a market change alone. Loading a strategy
+   * remounts the whole assembly panel - `loadConfig` bumps the key it is
+   * rendered with - so the fresh `GridArea` starts already holding the new
+   * symbol and has nothing to compare against. The fact is carried in by `App`,
+   * which is what survives that remount.
+   */
+  | {
+      kind: "strategyLoaded";
+      name: string;
+      symbol: string;
+      marketChanged: boolean;
     };
 
 // =============================================================================
@@ -304,5 +358,16 @@ export const describeOutcome = (
       return outcome.reason === "offGrid"
         ? `Released outside the grid. ${wentNowhere(outcome.source, pattern, outcome.releasedCarry)}`
         : `Drag cancelled. ${wentNowhere(outcome.source, pattern, outcome.releasedCarry)}`;
+
+    case "marketChanged":
+      return `Market changed to ${outcome.name}. Every block on the grid is now priced from the ${outcome.symbol} market price.`;
+
+    case "strategyMarketUnavailable":
+      return `This strategy was placed on ${outcome.symbol}, which is no longer available. It was not loaded, because its prices would mean something different on another market.`;
+
+    case "strategyLoaded":
+      return outcome.marketChanged
+        ? `Saved strategy loaded onto the grid. The market changed to ${outcome.name}, so every block is now priced from the ${outcome.symbol} market price.`
+        : `Saved strategy loaded onto the grid, priced from the ${outcome.symbol} market price.`;
   }
 };
