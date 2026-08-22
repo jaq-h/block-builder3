@@ -18,16 +18,35 @@ export interface PointerCaptureTracker {
   restore: () => void;
 }
 
+const CAPTURE_METHODS = [
+  "setPointerCapture",
+  "hasPointerCapture",
+  "releasePointerCapture",
+] as const;
+
 export const installPointerCapture = (): PointerCaptureTracker => {
   const captured = new Map<Element, Set<number>>();
+
+  const previous = new Map(
+    CAPTURE_METHODS.map((method) => [
+      method,
+      Object.getOwnPropertyDescriptor(Element.prototype, method),
+    ]),
+  );
+
   const tracker: PointerCaptureTracker = {
     captured,
     captureCalls: 0,
     releaseCalls: 0,
     restore: () => {
-      Reflect.deleteProperty(Element.prototype, "setPointerCapture");
-      Reflect.deleteProperty(Element.prototype, "hasPointerCapture");
-      Reflect.deleteProperty(Element.prototype, "releasePointerCapture");
+      for (const method of CAPTURE_METHODS) {
+        const descriptor = previous.get(method);
+        if (descriptor) {
+          Object.defineProperty(Element.prototype, method, descriptor);
+        } else {
+          Reflect.deleteProperty(Element.prototype, method);
+        }
+      }
     },
   };
 

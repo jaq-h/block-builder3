@@ -78,9 +78,12 @@ export const getPositionPercent = (
 //
 // The renderer and the vertical drag used to derive the track independently:
 // `getBlockPositionerProps` from the axis column, the drag from the containing
-// cell with its own constants. They disagreed in offset and scale, so a block
-// rendered at 25.00% read back through the drag as 31.96% and every drag jumped
-// on its first move. Both directions now go through this pair.
+// cell with its own constants. They disagreed in offset and scale, so every drag
+// jumped on its first move: measured in Chrome against the base commit, a block
+// rendered at 25.00% and grabbed exactly on its own centre read back through the
+// drag as 31.98%. That figure is the measurement, not a derivation from assumed
+// pixel values, which is why it is not round - do not recompute it. Both
+// directions now go through this pair.
 
 /**
  * Where the block's top edge is laid out, in pixels from the top of the axis

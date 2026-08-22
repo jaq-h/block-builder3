@@ -61,7 +61,9 @@ describe("track geometry", () => {
           );
 
           // Before the two sides shared this mapping, a block drawn at 25.00%
-          // read back as 31.96%, so every drag jumped on its first move.
+          // and grabbed on its own centre was measured in Chrome reading back as
+          // 31.98%, so every drag jumped on its first move. That number is the
+          // measurement, not a derivation - do not recompute it.
           expect(readBack).toBeCloseTo(yPosition, 6);
         }
       });

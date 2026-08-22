@@ -304,10 +304,10 @@ why `usePointerGesture` reports drag recognition as its own moment.
 That release is **silent** (`cancel({ silent: true })`), and the drag announces its own
 outcome when it ends instead. A cancellation message names a resting place - "left in Entry
 column, row 2" - and the very gesture that triggered it is about to move, remove or place
-that block, so the last thing said would contradict the grid. A **free drag that ends on a
-cell or off the grid** therefore says what it did: moved to a named cell, stayed where it
-was, removed from the grid, or placed from the palette into a named cell, using
-`describeCell` and `describeSource` so the pointer path and the keyboard path sound like one
+that block, so the last thing said would contradict the grid. A **free drag of a placed block that
+ends on a cell or off the grid**, and a **palette drag that resolves to a cell**, therefore
+say what they did: moved to a named cell, stayed where it was, removed from the grid, or
+placed from the palette into a named cell, using `describeCell` and `describeSource` so the pointer path and the keyboard path sound like one
 interaction. The vertical price drag is deliberately left silent: a placed block is a
 `role="slider"`, and assistive technology already speaks its `aria-valuetext` on every
 change.
