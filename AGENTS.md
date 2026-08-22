@@ -190,6 +190,30 @@ The README's **Interaction model** section is authoritative. Four things bite in
   market price, negative below - so arrow-key direction matches on-screen direction on both
   scale directions. `yPosition` in the data stays an unsigned magnitude plus a `direction`.
 
+## The chart panel
+
+`src/components/widgets/orderChart/` owns the price chart. Two rules keep it honest:
+
+- **The price scale is presentation and nothing else.** `priceScale.ts` maps the
+  linear/logarithmic choice onto the library's `PriceScaleMode` and stops there. No price,
+  no order and no grid position is derived from it, which is the whole reason the
+  logarithmic option is safe here: the grid and the chart share exactly one fact, the price,
+  and both take it from `calculatePrice`. They share no coordinate space - the grid's axis
+  is a 0-50% control track in a cell, the chart's is a price axis in a separate panel - so
+  there is no second derivation for a logarithmic mapping to break. A scale argument
+  appearing in `orderPriceLines` would be that second derivation; a test asserts its arity.
+  `orderAutoscale.ts` carries the one thing a logarithmic axis genuinely cannot do: show a
+  zero or negative price, which the drag layer's 0-100 vs 50 percent mismatch can still
+  produce.
+- **An indicator is a pure `compute` plus a registry entry.** `indicators/registry.ts` is
+  the one list; the toolbar, the line series and their lifecycle in `useIndicatorSeries.ts`
+  are all derived from it, so adding one needs no wiring. Averages are pinned against a
+  published vector in `indicators/movingAverage.test.ts` rather than eyeballed. An
+  oscillator needing its own pane is not covered by this shape and would have to add one.
+
+Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
+must not reach for a live region. `gridAnnouncements.ts` stays the app's only announcer.
+
 ## Layout and the CSS cascade
 
 Three traps live in the layout, and each is easy to reintroduce.
@@ -224,9 +248,10 @@ The invariants the order path depends on, each of which was previously violated 
   "percentage offset from market" for the grid display and the order mapper. The grid cell
   renders its price chip through `calculatePrice`, which delegates to it, and the order
   mapper builds Kraken payloads from it directly, so the price sent is the price shown.
-  `src/components/widgets/orderChart/OrderChart.tsx` still inlines an identical copy of the
-  formula for its price lines; reconciling that belongs to `bb3-mapping-owner`, which
-  owns that file. Captain's decision D3: a block at yPosition 25 means **25%** from market,
+  The chart's order lines join them: `orderPriceLines.ts` calls the same `calculatePrice`,
+  and `orderPriceLines.dom.test.tsx` reads the chip a real `GridCell` renders and asserts
+  it is the number the chart draws, so the copy the chart used to inline cannot come back.
+  Captain's decision D3: a block at yPosition 25 means **25%** from market,
   not 2.5%. The side of the market comes from the block's own `direction`, never from
   re-deriving one from row/column - those disagree under the bulk pattern. That settles the
   direction question **for single-block cells**; it is still **open for bulk cells holding

@@ -1,5 +1,11 @@
 import { lazy, Suspense, type FC } from "react";
 import type { OrderConfig } from "../../../types/grid";
+import {
+  chartControlGroupLabel,
+  chartHeader,
+  chartHeaderPrimaryRow,
+  chartHeaderSecondaryRow,
+} from "./OrderChart.styles";
 
 // `lightweight-charts` is only ever reachable from this panel, and it is by far
 // the largest single dependency in the bundle. Loading it behind `lazy()` keeps
@@ -8,7 +14,7 @@ import type { OrderConfig } from "../../../types/grid";
 const OrderChartImpl = lazy(() => import("./OrderChart"));
 
 interface LazyOrderChartProps {
-  /** Live assembly config — only orders currently in the grid are shown */
+  /** Live assembly config - only orders currently in the grid are shown */
   orders: OrderConfig;
 }
 
@@ -19,12 +25,21 @@ interface LazyOrderChartProps {
  */
 const ChartFallback: FC = () => (
   <div className="flex flex-col h-full bg-bg-primary border-b border-border-neutral">
-    <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-neutral bg-bg-overlay shrink-0">
-      <div className="flex items-center gap-3">
-        <span className="text-[13px] font-semibold text-text-primary">
-          BTC / USD
-        </span>
-        <span className="text-[11px] text-text-muted">Loading…</span>
+    {/* Both header rows are reproduced, empty. The real header is two rows
+        tall, and a one-row placeholder would jump the chart body upward the
+        moment the chunk lands. */}
+    <div className={chartHeader}>
+      <div className={chartHeaderPrimaryRow}>
+        <div className="flex items-center gap-3">
+          <span className="text-[13px] font-semibold text-text-primary">
+            BTC / USD
+          </span>
+          <span className="text-[11px] text-text-muted">Loading…</span>
+        </div>
+      </div>
+      <div className={chartHeaderSecondaryRow} aria-hidden="true">
+        <span className={chartControlGroupLabel}>Indicators</span>
+        <span className={chartControlGroupLabel}>Scale</span>
       </div>
     </div>
     <div className="flex-1 min-h-0 flex items-center justify-center">

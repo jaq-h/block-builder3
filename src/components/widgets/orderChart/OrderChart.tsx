@@ -1,11 +1,29 @@
 import { useState, useRef, useEffect, useCallback, type FC } from "react";
 import { LineStyle } from "lightweight-charts";
+import type { IPriceLine } from "lightweight-charts";
+
 import type { OrderConfig } from "../../../types/grid";
-import { ORDER_TYPES, COLUMN_HEADERS } from "../../../data/orderTypes";
 import { useKrakenAPI } from "../../../hooks/useKrakenAPI";
 import { useOHLCData, TIMEFRAME_MAP } from "../../../hooks/useOHLCData";
 import { useLightweightChart } from "./useLightweightChart";
-import type { IPriceLine, AutoscaleInfo } from "lightweight-charts";
+import { useIndicatorSeries } from "./useIndicatorSeries";
+import { OVERLAY_INDICATORS } from "./indicators";
+import { orderPriceLines } from "./orderPriceLines";
+import { orderAutoscaleProvider } from "./orderAutoscale";
+import {
+  DEFAULT_PRICE_SCALE,
+  PRICE_SCALE_OPTIONS,
+  priceScaleMode,
+  type PriceScaleKind,
+} from "./priceScale";
+import {
+  chartControlGroup,
+  chartControlGroupLabel,
+  chartHeader,
+  chartHeaderPrimaryRow,
+  chartHeaderSecondaryRow,
+  chartToggleButton,
+} from "./OrderChart.styles";
 
 // =============================================================================
 // CONSTANTS
@@ -34,6 +52,11 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   });
 
   const [activeTimeframe, setActiveTimeframe] = useState("1W");
+  const [priceScale, setPriceScale] =
+    useState<PriceScaleKind>(DEFAULT_PRICE_SCALE);
+  const [enabledIndicators, setEnabledIndicators] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const interval = TIMEFRAME_MAP[activeTimeframe] ?? 60;
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -43,9 +66,10 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     interval,
   });
 
+  useIndicatorSeries(chart, candles, enabledIndicators);
+
   // Track price lines so we can remove them on re-render
   const priceLinesRef = useRef<IPriceLine[]>([]);
-  const orderPricesRef = useRef<number[]>([]);
   const autoScaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounced auto-scale: refit the price scale to include order lines
@@ -57,6 +81,20 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       }
     }, 150);
   }, [chart]);
+
+  const toggleIndicator = (id: string) =>
+    setEnabledIndicators((previous) => {
+      const next = new Set(previous);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+
+  // The scale is the chart's own price-to-pixel mapping and nothing else: no
+  // price, no order and no grid position is derived from it. See `priceScale.ts`.
+  useEffect(() => {
+    if (!chart) return;
+    chart.priceScale("right").applyOptions({ mode: priceScaleMode(priceScale) });
+  }, [chart, priceScale]);
 
   // Set candle data when historical data arrives
   useEffect(() => {
@@ -80,73 +118,34 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     }
     priceLinesRef.current = [];
 
-    const orderEntries = Object.entries(orders).filter(
-      ([, o]) => o.yPosition !== undefined,
-    );
+    // One derivation, shared with the grid's price chip: see `orderPriceLines`.
+    const lines = orderPriceLines(orders, currentPrice);
 
-    const prices: number[] = [];
-
-    for (const [, o] of orderEntries) {
-      const desc = o.direction === "downside";
-      const typeDef = ORDER_TYPES.find((t) => t.type === o.type);
-      const colLabel = COLUMN_HEADERS[o.col] ?? "";
-      // Determine axis label: map axis index (1-based) to the axes array
-      const axisIndex = (o.axis ?? 1) - 1;
-      const axisType = typeDef?.axes[axisIndex] ?? "limit";
-      const axisSuffix =
-        typeDef && typeDef.axes.length > 1 ? `-${axisType}` : "";
-      const label = `${colLabel} ${typeDef?.abrv ?? o.type}${axisSuffix}`;
-      const isEntry = o.col === 0;
-
-      // Calculate absolute price from percentage offset
-      const pctOffset = o.yPosition! / 100;
-      const price = desc
-        ? currentPrice * (1 - pctOffset)
-        : currentPrice * (1 + pctOffset);
-
-      prices.push(price);
-
-      const color = isEntry
-        ? "rgba(100,200,100,0.75)"
-        : "rgba(200,100,100,0.75)";
-
-      const priceLine = candleSeries.createPriceLine({
-        price,
-        color,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: label,
-      });
-      priceLinesRef.current.push(priceLine);
+    for (const line of lines) {
+      priceLinesRef.current.push(
+        candleSeries.createPriceLine({
+          price: line.price,
+          color: line.isEntry
+            ? "rgba(100,200,100,0.75)"
+            : "rgba(200,100,100,0.75)",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: line.title,
+        }),
+      );
     }
 
-    // Update autoscale provider so the chart range includes order price levels
-    orderPricesRef.current = prices;
+    // Widen the candles' own range so the order levels stay on screen.
     candleSeries.applyOptions({
-      autoscaleInfoProvider: prices.length
-        ? (original: () => AutoscaleInfo | null) => {
-            const res = original();
-            if (res !== null && res.priceRange !== null) {
-              const min = Math.min(...prices);
-              const max = Math.max(...prices);
-              const padding = (max - min) * 0.05 || max * 0.01;
-              res.priceRange.minValue = Math.min(
-                res.priceRange.minValue,
-                min - padding,
-              );
-              res.priceRange.maxValue = Math.max(
-                res.priceRange.maxValue,
-                max + padding,
-              );
-            }
-            return res;
-          }
-        : undefined,
+      autoscaleInfoProvider: orderAutoscaleProvider(
+        lines.map((line) => line.price),
+        priceScale === "logarithmic",
+      ),
     });
 
     debouncedAutoScale();
-  }, [candleSeries, orders, currentPrice, debouncedAutoScale]);
+  }, [candleSeries, orders, currentPrice, priceScale, debouncedAutoScale]);
 
   const priceLabel = currentPrice
     ? `$${currentPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -157,47 +156,97 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   return (
     <div className="flex flex-col h-full bg-bg-primary border-b border-border-neutral">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-neutral bg-bg-overlay shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-[13px] font-semibold text-text-primary">
-            BTC / USD
-          </span>
-          <span className="text-[11px] text-text-muted">{priceLabel}</span>
-          {/* The manager gives up reconnecting after a fixed number of tries.
-              Without this the app just keeps showing the last price it saw. */}
-          {publicStatus === "error" && (
-            <span
-              className="text-[11px] text-status-yellow"
-              title="Reconnection was abandoned. Prices now come from the 30s poll only."
-            >
-              Live feed offline
+      <div className={chartHeader}>
+        <div className={chartHeaderPrimaryRow}>
+          <div className="flex items-center gap-3">
+            <span className="text-[13px] font-semibold text-text-primary">
+              BTC / USD
             </span>
-          )}
+            <span className="text-[11px] text-text-muted">{priceLabel}</span>
+            {/* The manager gives up reconnecting after a fixed number of tries.
+                Without this the app just keeps showing the last price it saw. */}
+            {publicStatus === "error" && (
+              <span
+                className="text-[11px] text-status-yellow"
+                title="Reconnection was abandoned. Prices now come from the 30s poll only."
+              >
+                Live feed offline
+              </span>
+            )}
+          </div>
+          <div className={chartControlGroup} role="group" aria-label="Timeframe">
+            {TIMEFRAMES.map((tf) => (
+              <button
+                key={tf}
+                type="button"
+                // Without this the active timeframe is a colour and nothing else.
+                aria-pressed={tf === activeTimeframe}
+                onClick={() => setActiveTimeframe(tf)}
+                className={chartToggleButton({
+                  isActive: tf === activeTimeframe,
+                })}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          {TIMEFRAMES.map((tf) => (
-            <button
-              key={tf}
-              type="button"
-              // Active state is inline colour only without this.
-              aria-pressed={tf === activeTimeframe}
-              onClick={() => setActiveTimeframe(tf)}
-              className="px-2 py-0.5 rounded text-[11px] font-medium transition-colors duration-150 cursor-pointer"
-              style={
-                tf === activeTimeframe
-                  ? {
-                      color: "rgba(120,160,255,0.9)",
-                      backgroundColor: "rgba(100,140,255,0.15)",
-                    }
-                  : {
-                      color: "rgba(255,255,255,0.4)",
-                      backgroundColor: "transparent",
-                    }
-              }
-            >
-              {tf}
-            </button>
-          ))}
+
+        <div className={chartHeaderSecondaryRow}>
+          {/* Every control here is a toggle button carrying `aria-pressed`, so
+              its own state change is what a screen reader reads back. Nothing
+              in this panel writes to a live region: the grid's announcer in
+              `src/utils/gridAnnouncements.ts` is the app's single owner of
+              spoken sentences, and a second one here would talk over it. */}
+          <div className={chartControlGroup} role="group" aria-label="Indicators">
+            <span className={chartControlGroupLabel} aria-hidden="true">
+              Indicators
+            </span>
+            {OVERLAY_INDICATORS.map((indicator) => (
+              <button
+                key={indicator.id}
+                type="button"
+                aria-pressed={enabledIndicators.has(indicator.id)}
+                aria-label={indicator.description}
+                onClick={() => toggleIndicator(indicator.id)}
+                className={chartToggleButton({
+                  isActive: enabledIndicators.has(indicator.id),
+                })}
+              >
+                {/* The swatch is the only thing tying a button to its line. */}
+                <span
+                  aria-hidden="true"
+                  className="inline-block w-2 h-0.5 mr-1.5 align-middle rounded-full"
+                  style={{ backgroundColor: indicator.color }}
+                />
+                {indicator.label}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className={chartControlGroup}
+            role="group"
+            aria-label="Price scale"
+          >
+            <span className={chartControlGroupLabel} aria-hidden="true">
+              Scale
+            </span>
+            {PRICE_SCALE_OPTIONS.map((option) => (
+              <button
+                key={option.kind}
+                type="button"
+                aria-pressed={priceScale === option.kind}
+                aria-label={option.description}
+                onClick={() => setPriceScale(option.kind)}
+                className={chartToggleButton({
+                  isActive: priceScale === option.kind,
+                })}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
