@@ -169,7 +169,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Three things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Four things bite in ordinary work:
 
 - **Never add a `window` mouse listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events with `setPointerCapture`, which is what delivers a
@@ -179,6 +179,13 @@ The README's **Interaction model** section is authoritative. Three things bite i
   handler. Placement is expressed in terms of a target cell in `GridArea`
   (`placeProviderInCell` / `moveBlockToCell`); the pointer drag and the command model both
   call it. Anything that bypasses those two functions will work for one input method only.
+- **Never compose an announcement string at a call site.** `src/utils/gridAnnouncements.ts`
+  writes every sentence the grid speaks and `useGridAnnouncer` is the only thing that reaches
+  the live region; callers report an *outcome*, and the placement primitives return a
+  `PlacementResult` so the sentence comes from what the grid did rather than from what the
+  caller was about to attempt. Both defects this structure replaced were a message written
+  next to the code that was about to act - one false, one silent - and each point fix created
+  the next. A new message means a new outcome in that union, not a new `announce` call.
 - **A block on a price axis is a `role="slider"` whose value is signed** - positive above the
   market price, negative below - so arrow-key direction matches on-screen direction on both
   scale directions. `yPosition` in the data stays an unsigned magnitude plus a `direction`.

@@ -74,3 +74,12 @@ export {
   type CommandSource,
   type CarriedBlock,
 } from "./blockCommand";
+
+// Grid announcements - the single owner of every sentence the grid speaks
+export {
+  describeOutcome,
+  type PlacementVia,
+  type DragEndReason,
+  type PickUpRefusal,
+  type GridOutcome,
+} from "./gridAnnouncements";

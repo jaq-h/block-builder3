@@ -40,6 +40,34 @@ export interface CellPosition {
   row: number;
 }
 
+/**
+ * What a placement primitive actually did, reported by the code that did it
+ * rather than inferred by the caller from a nullable id. `gridAnnouncements`
+ * turns this into the words the user hears, so the sentence and the grid can
+ * never disagree: a same-cell release is `unchanged`, not a refusal.
+ */
+export type PlacementResult =
+  /** A new block was created in the target cell, from the palette. */
+  | { status: "created"; blockId: string }
+  /** An existing block left one cell and arrived in another. */
+  | { status: "moved"; blockId: string }
+  /** The block was already in the target cell, so nothing changed. */
+  | { status: "unchanged"; blockId: string }
+  /**
+   * The grid would not take the order; nothing on the grid changed. `at` is
+   * where the block still is, read from the grid at the moment of the call, so
+   * the sentence names a cell the grid has just confirmed rather than one
+   * snapshotted when the block was picked up. A palette order has no `at`,
+   * because it is nowhere.
+   */
+  | { status: "refused"; at?: CellPosition }
+  /**
+   * The block named is not on the grid at all - a carry can outlive the grid
+   * it was started against, and the block may have been cleared away since.
+   * There is no cell to name, so the sentence for this must name none.
+   */
+  | { status: "gone" };
+
 // =============================================================================
 // DISPLAY MODE TYPES
 // =============================================================================

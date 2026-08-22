@@ -57,15 +57,21 @@ interface GridCellProps {
   onBlockDragStart: (id: string) => void;
   onBlockDragEnd: (id: string, x: number, y: number) => void;
   onBlockDragCancel: (id: string) => void;
+  onBlockDragAborted: (id: string) => void;
   onBlockDragRecognised: (id: string) => void;
   onBlockVerticalDrag: (id: string, pointerY: number) => void;
   onBlockActivate: (id: string, origin: "keyboard" | "pointer") => void;
   onBlockCommandMove: (dCol: number, dRow: number) => void;
   onBlockCommandCancel: (options?: CancelOptions) => void;
   onBlockAdjustPrice: (id: string, delta: number) => void;
+  /**
+   * A click landed on this cell. It is wired unconditionally: whether a click
+   * means anything is the command model's decision, and a cell that silently
+   * drops the click when it believes nothing is carried is a second opinion on
+   * the same question - which is how a lost carry came to leave a dead tap
+   * behind with nothing said about either.
+   */
   onCellActivate: () => void;
-  /** True while the command model is carrying a block; the cell is then a drop target. */
-  isCarryActive: boolean;
   carryingBlockId: string | null;
   focusBlockId: string | null;
   onBlockFocusHandled: () => void;
@@ -90,6 +96,7 @@ const GridCell: FC<GridCellProps> = ({
   onBlockDragStart,
   onBlockDragEnd,
   onBlockDragCancel,
+  onBlockDragAborted,
   onBlockDragRecognised,
   onBlockVerticalDrag,
   onBlockActivate,
@@ -97,7 +104,6 @@ const GridCell: FC<GridCellProps> = ({
   onBlockCommandCancel,
   onBlockAdjustPrice,
   onCellActivate,
-  isCarryActive,
   carryingBlockId,
   focusBlockId,
   onBlockFocusHandled,
@@ -129,6 +135,7 @@ const GridCell: FC<GridCellProps> = ({
     onDragStart: onBlockDragStart,
     onDragEnd: onBlockDragEnd,
     onDragCancel: onBlockDragCancel,
+    onDragAborted: onBlockDragAborted,
     onDragRecognised: onBlockDragRecognised,
     cellDescription,
   });
@@ -373,7 +380,7 @@ const GridCell: FC<GridCellProps> = ({
       style={containerProps.style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      onClick={isCarryActive ? onCellActivate : undefined}
+      onClick={onCellActivate}
     >
       {rowLabel && !isDisabled && (
         <div className={rowLabelBadge({ type: rowLabelType })}>{rowLabel}</div>

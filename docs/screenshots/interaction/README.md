@@ -4,12 +4,12 @@ Captured from the running app over the DevTools protocol, so every gesture below
 browser input rather than a synthesised DOM event. Chrome at 1440x900 for the desktop shots
 and 390x844 with touch emulation for the phone ones.
 
-All four were captured against `ad7a372`, the last commit in this branch that changes
-behaviour; every commit after it is documentation. Two earlier sets had to be thrown away -
-the first recorded prices produced by the vertical-drag mapping this change replaced, and
-the second predated three further behavioural commits. A screenshot that predates the code
-it claims to show is not evidence, so provenance here is stated as a commit rather than as
-"the final code".
+All four were captured against `ad7a372`. Later commits do change behaviour, but only what
+the grid announces - nothing these shots render - so each is still accurate for what it
+depicts. Two earlier sets had to be thrown away - the first recorded prices produced by the
+vertical-drag mapping this change replaced, and the second predated three further
+behavioural commits. A screenshot that predates the code it claims to show is not evidence,
+so provenance here is stated as a commit rather than as "the final code".
 
 | Shot | What it shows |
 |---|---|

@@ -79,10 +79,22 @@ interface BlockProps {
   onDragEnd?: (id: string, x: number, y: number) => void;
   onDragCancel?: (id: string) => void;
   /**
+   * A free drag was interrupted by the browser (`pointercancel`) after it had
+   * really begun. Nothing moved, and unlike `onDragCancel` this never fires for
+   * a tap, so it is the outcome the user is told about.
+   */
+  onDragAborted?: (id: string) => void;
+  /**
    * The gesture crossed the tap slop, so it is a drag. A drag supersedes an
    * active command carry, which is why this is not the same moment as
    * `onDragStart`: that one fires on pointer down, when a tap still looks
    * identical.
+   *
+   * Both drag hooks report it, the vertical price drag included: a price drag
+   * appends the same click to the same cell and would place the carried block
+   * just as surely. What the carried block's owner does about it depends on
+   * whether the drag is about that same block, which is `releaseForDrag`'s
+   * decision to make - not this component's.
    */
   onDragRecognised?: (id: string) => void;
   onVerticalDrag?: (id: string, pointerY: number) => void;
@@ -121,6 +133,7 @@ const Block: FC<BlockProps> = ({
   onDragStart,
   onDragEnd,
   onDragCancel,
+  onDragAborted,
   onDragRecognised,
   onVerticalDrag,
   onActivate,
@@ -153,6 +166,7 @@ const Block: FC<BlockProps> = ({
       onDragStart,
       onDragEnd,
       onDragCancel,
+      onDragAborted,
       onDragRecognised,
       onActivate: (blockId) => onActivate?.(blockId, "pointer"),
     },

@@ -49,6 +49,20 @@ export interface CommandState {
   carrying: CarriedBlock | null;
 }
 
+/**
+ * Which affordance activated a block. They diverge in exactly one place: Enter
+ * on a carried block places it, because the keyboard has Escape to cancel with;
+ * a second tap on it puts it back down, because a finger does not.
+ */
+export type ActivationOrigin = "keyboard" | "pointer";
+
+/** Why a carry ended without the block being placed. */
+export type CarryEndReason =
+  /** The user asked for it: Escape, Tab, or a second tap on the carried block. */
+  | "cancelled"
+  /** A pointer drag started and took the interaction over. */
+  | "superseded";
+
 export const IDLE_COMMAND_STATE: CommandState = { carrying: null };
 
 export type CommandAction =
@@ -212,7 +226,7 @@ export const commandReducer = (
 };
 
 // =============================================================================
-// ANNOUNCEMENTS
+// NAMING - shared by accessible labels and by `utils/gridAnnouncements.ts`
 // =============================================================================
 
 const COLUMN_NAMES = ["Entry", "Exit"];
