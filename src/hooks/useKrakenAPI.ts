@@ -366,7 +366,16 @@ export const useKrakenAPI = (
 
     try {
       const data = await getTickerData(requested);
-      setTickerState({ symbol: requested, data });
+      // Every write below is guarded the same way, because the request the user
+      // is waiting on is not necessarily this one. The 30-second poll can be in
+      // flight for the previous pair when the selection changes, and it can
+      // resolve *after* the new pair's request: writing it back would retag the
+      // state with a market nobody is looking at, `isTickerCurrent` would go
+      // false, and every chip on the grid would fall back to "Loading price..."
+      // with the order path refusing until the next tick.
+      if (symbolRef.current === requested) {
+        setTickerState({ symbol: requested, data });
+      }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to fetch ticker data";
@@ -375,7 +384,9 @@ export const useKrakenAPI = (
       }
       console.error("Ticker fetch error:", error);
     } finally {
-      setIsLoadingTicker(false);
+      if (symbolRef.current === requested) {
+        setIsLoadingTicker(false);
+      }
     }
   };
 

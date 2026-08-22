@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { parseAssetPairs } from "@api/assetMetadata";
 import { convertToKrakenPair } from "@api/krakenRest";
 import { MARKETS } from "@data/markets";
+import { KRAKEN_ASSET_PAIRS_RESPONSE } from "@/test/marketFixtures";
 
 // =============================================================================
 // ASSET METADATA
@@ -14,61 +15,14 @@ import { MARKETS } from "@data/markets";
 // legacy names, spells BTC as XBT in some fields and not others, and sends
 // every number as a string.
 //
-// The payload below is a verbatim excerpt of
+// The payload this reads is a verbatim excerpt of
 // `GET https://api.kraken.com/0/public/AssetPairs?pair=XBTUSD,ETHUSD,SOLUSD,ARBUSD,OPUSD`,
 // trimmed to the fields this app reads. It is a fixture rather than a live call
-// because CI must not depend on the exchange being reachable.
+// because CI must not depend on the exchange being reachable, and it lives in
+// `src/test/marketFixtures.ts` beside the parsed records so the suite holds one
+// set of Kraken numbers rather than two that can drift.
 
-const KRAKEN_RESPONSE = {
-  error: [],
-  result: {
-    XXBTZUSD: {
-      altname: "XBTUSD",
-      wsname: "XBT/USD",
-      pair_decimals: 1,
-      lot_decimals: 8,
-      tick_size: "0.1",
-      ordermin: "0.00005",
-      costmin: "0.5",
-    },
-    XETHZUSD: {
-      altname: "ETHUSD",
-      wsname: "ETH/USD",
-      pair_decimals: 2,
-      lot_decimals: 8,
-      tick_size: "0.01",
-      ordermin: "0.001",
-      costmin: "0.5",
-    },
-    SOLUSD: {
-      altname: "SOLUSD",
-      wsname: "SOL/USD",
-      pair_decimals: 2,
-      lot_decimals: 8,
-      tick_size: "0.01",
-      ordermin: "0.06",
-      costmin: "0.5",
-    },
-    ARBUSD: {
-      altname: "ARBUSD",
-      wsname: "ARB/USD",
-      pair_decimals: 4,
-      lot_decimals: 5,
-      tick_size: "0.0001",
-      ordermin: "60",
-      costmin: "0.5",
-    },
-    OPUSD: {
-      altname: "OPUSD",
-      wsname: "OP/USD",
-      pair_decimals: 4,
-      lot_decimals: 5,
-      tick_size: "0.0001",
-      ordermin: "60",
-      costmin: "0.5",
-    },
-  },
-};
+const KRAKEN_RESPONSE = KRAKEN_ASSET_PAIRS_RESPONSE;
 
 describe("parseAssetPairs", () => {
   it("reads a record for every market the app offers", () => {

@@ -73,3 +73,70 @@ export const ALL_MARKET_PRECISIONS: readonly MarketPrecision[] = [
   ARB_USD,
   OP_USD,
 ];
+
+// =============================================================================
+// THE RESPONSE THOSE RECORDS ARE READ FROM
+// =============================================================================
+//
+// A verbatim excerpt of
+// `GET https://api.kraken.com/0/public/AssetPairs?pair=XBTUSD,ETHUSD,SOLUSD,ARBUSD,OPUSD`,
+// trimmed to the fields this app reads. It lives beside the parsed records
+// above so there is exactly one set of Kraken numbers in the suite: the parser
+// test reads it directly, and `src/test/setup.ts` serves it to anything that
+// mounts `MarketProvider`, so no test has to guess what Kraken would answer and
+// none of them has to reach the exchange to find out.
+//
+// Note the spellings, which are the whole reason the parse is worth testing:
+// Kraken keys BTC as `XXBTZUSD` and calls it `XBT/USD`, while SOL is plain
+// `SOLUSD`. Neither is the `BTC/USD` this app uses.
+
+export const KRAKEN_ASSET_PAIRS_RESPONSE = {
+  error: [],
+  result: {
+    XXBTZUSD: {
+      altname: "XBTUSD",
+      wsname: "XBT/USD",
+      pair_decimals: 1,
+      lot_decimals: 8,
+      tick_size: "0.1",
+      ordermin: "0.00005",
+      costmin: "0.5",
+    },
+    XETHZUSD: {
+      altname: "ETHUSD",
+      wsname: "ETH/USD",
+      pair_decimals: 2,
+      lot_decimals: 8,
+      tick_size: "0.01",
+      ordermin: "0.001",
+      costmin: "0.5",
+    },
+    SOLUSD: {
+      altname: "SOLUSD",
+      wsname: "SOL/USD",
+      pair_decimals: 2,
+      lot_decimals: 8,
+      tick_size: "0.01",
+      ordermin: "0.06",
+      costmin: "0.5",
+    },
+    ARBUSD: {
+      altname: "ARBUSD",
+      wsname: "ARB/USD",
+      pair_decimals: 4,
+      lot_decimals: 5,
+      tick_size: "0.0001",
+      ordermin: "60",
+      costmin: "0.5",
+    },
+    OPUSD: {
+      altname: "OPUSD",
+      wsname: "OP/USD",
+      pair_decimals: 4,
+      lot_decimals: 5,
+      tick_size: "0.0001",
+      ordermin: "60",
+      costmin: "0.5",
+    },
+  },
+};

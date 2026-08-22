@@ -3,7 +3,7 @@ import StrategyAssembly from "./components/widgets/strategyAssembly/strategyAsse
 import { ActiveOrders } from "./components/widgets/activeOrders";
 import DragOverlay from "./components/common/DragOverlay";
 import { MarketProvider, OrdersStoreProvider, useOrdersStore } from "./store";
-import { useLiveOrdersCount } from "./store";
+import { useLiveOrdersCount, useMarket } from "./store";
 import { OrderChart } from "./components/widgets/orderChart";
 import { useTradeExecution } from "./hooks";
 import {
@@ -26,6 +26,7 @@ import { cn } from "./lib/utils";
 function AppInner() {
   const { submittedOrders } = useOrdersStore();
   const liveOrderCount = useLiveOrdersCount();
+  const { selectMarket } = useMarket();
   const [activeTab, setActiveTab] = useState<"assembly" | "orders">("assembly");
   const [editedStrategyId, setEditedStrategyId] = useState<string | null>(null);
 
@@ -54,10 +55,20 @@ function AppInner() {
   // highlight on a strategy that was no longer being edited.
   const editingStrategyId = isEditMode ? editedStrategyId : null;
 
-  // Load an entire strategy group into the builder for editing
+  // Load an entire strategy group into the builder for editing.
+  //
+  // The strategy's own market comes back with it. Every position it holds is a
+  // percentage offset from a market price, so reloading an ARB/USD strategy
+  // while BTC/USD is selected would silently reprice the whole thing - the same
+  // numbers describing an entirely different order set. Orders submitted before
+  // entries carried a symbol leave the selection alone rather than guessing one;
+  // their cards say the market is unknown.
   const handleEditGroup = (
     orders: import("./types/activeOrders").ActiveOrderEntry[],
   ) => {
+    const symbol = orders[0]?.symbol;
+    if (symbol) selectMarket(symbol);
+
     const config: import("./types/grid").OrderConfig = {};
     for (const order of orders) {
       config[order.id] = {

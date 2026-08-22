@@ -109,12 +109,31 @@ export const formatQuantityForAPI = (
  * Format a price for the screen.
  *
  * Display follows the same per-pair precision the payload does, because
- * decision D3 is that the price shown is the price sent. Until Kraken's
- * metadata arrives there is no precision to follow, and rather than guess one
- * this falls back to two decimals - the behaviour the app has always had. That
- * window is safe because it is display only: `mapGridToOrders` refuses to build
- * a payload at all without a `MarketPrecision`, so no order can be priced from
- * a fallback the chip was drawn with.
+ * decision D3 is that the price shown is the price sent - so this snaps to the
+ * tick first, exactly as `formatPriceForAPI` does, rather than only rounding to
+ * the pair's decimals.
+ *
+ * That step is not redundant. Rounding to `pair_decimals` and snapping to
+ * `tick_size` give the same answer only while `tick_size` equals
+ * `10^-pair_decimals`, which is true of all five pairs shipped today and is an
+ * invariant held by data that happens to line up, not by anything structural.
+ * `tick_size` is read from Kraken at runtime, so the sixth pair added - by a
+ * lane whose whole purpose is adding pairs - can break it with no code change
+ * and nothing failing: at `pair_decimals` 4 with a `tick_size` of 0.0005 the
+ * chip would read $0.4567 while the payload carried 0.4565. A silent divergence
+ * between the price shown and the price sent is the exact thing D3 exists to
+ * prevent, so both go through the same snap.
+ *
+ * Snapping is verified to be a no-op for every pair on offer: the live readout
+ * for BTC, ETH, SOL, ARB and OP draws exactly what it drew before, which
+ * `marketFormat.test.ts` pins against real Kraken values.
+ *
+ * Until Kraken's metadata arrives there is no precision to follow and no tick
+ * to snap to, and rather than guess one this falls back to two decimals - the
+ * behaviour the app has always had. That window is safe because it is display
+ * only: `mapGridToOrders` refuses to build a payload at all without a
+ * `MarketPrecision`, so no order can be priced from a fallback the chip was
+ * drawn with.
  */
 export const formatMarketPrice = (
   price: number | null,
@@ -122,10 +141,12 @@ export const formatMarketPrice = (
 ): string => {
   if (price === null || !Number.isFinite(price)) return "—";
 
-  const decimals = market?.precision?.priceDecimals ?? 2;
+  const precision = market?.precision ?? null;
+  const decimals = precision?.priceDecimals ?? 2;
   const prefix = market?.market.quotePrefix ?? "$";
+  const shown = precision ? roundToTick(price, precision.tickSize) : price;
 
-  return `${prefix}${price.toLocaleString("en-US", {
+  return `${prefix}${shown.toLocaleString("en-US", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   })}`;

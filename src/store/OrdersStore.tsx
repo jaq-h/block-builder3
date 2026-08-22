@@ -1,5 +1,6 @@
 import { useReducer, type FC } from "react";
 import type { OrderConfig } from "../types/grid";
+import { useMarket } from "./useMarket";
 import type { ActiveOrdersConfig, OrderStatus } from "../types/activeOrders";
 import { isLiveTradingAvailable } from "../api";
 import { ordersReducer, createInitialState } from "./ordersReducer";
@@ -44,12 +45,24 @@ const generateStrategyId = (): string => {
   return `STR-${timestamp}-${random}`.toUpperCase();
 };
 
-/** Convert OrderConfig entry to ActiveOrderEntry */
-const configToActiveOrder = (id: string, config: OrderConfig[string], strategyId: string) => {
+/**
+ * Convert OrderConfig entry to ActiveOrderEntry.
+ *
+ * `symbol` is recorded from the selection at submit time and is not optional
+ * here, even though it is on the entry: an order this app writes always knows
+ * its market, and only entries persisted before markets existed do not.
+ */
+const configToActiveOrder = (
+  id: string,
+  config: OrderConfig[string],
+  strategyId: string,
+  symbol: string,
+) => {
   return {
     id,
     orderId: generateOrderId(),
     strategyId,
+    symbol,
     col: config.col,
     row: config.row,
     type: config.type,
@@ -95,6 +108,11 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
     createInitialState,
   );
 
+  // The pair every order in this submission is priced against. Read here rather
+  // than passed in, for the same reason `useKrakenAPI` reads it: a caller that
+  // names its own market is a caller that can record one the user never chose.
+  const { market } = useMarket();
+
   // Destructure for stable references in callbacks
   const { isSimulationMode } = state;
 
@@ -139,7 +157,12 @@ export const OrdersStoreProvider: FC<OrdersStoreProviderProps> = ({
         const strategyId = generateStrategyId();
         const newOrders: ActiveOrdersConfig = {};
         Object.entries(config).forEach(([id, entry]) => {
-          const activeOrder = configToActiveOrder(id, entry, strategyId);
+          const activeOrder = configToActiveOrder(
+            id,
+            entry,
+            strategyId,
+            market.symbol,
+          );
           newOrders[activeOrder.id] = activeOrder;
         });
 

@@ -11,9 +11,10 @@ import {
   ARB_USD,
   BTC_USD,
   ETH_USD,
+  OP_USD,
   SOL_USD,
 } from "@/test/marketFixtures";
-import type { ActiveMarket } from "@/types/markets";
+import type { ActiveMarket, MarketPrecision } from "@/types/markets";
 import { findMarket } from "@data/markets";
 
 // =============================================================================
@@ -150,5 +151,61 @@ describe("formatMarketPrice", () => {
 
   it("takes the currency mark from the market rather than assuming one", () => {
     expect(formatMarketPrice(10, active("SOL/USD", SOL_USD))).toBe("$10.00");
+  });
+
+  // The readout must not have moved. Every value below is a real Kraken figure -
+  // last, ask, bid, high, low and open, fetched live for all five pairs - and
+  // every one of them already sits on its pair's tick, so routing the display
+  // through the snap is a no-op for everything the app ships. This is the pin:
+  // a change that does move what the market readout draws fails here rather
+  // than shipping a display change nobody agreed to.
+  it("draws real Kraken prices exactly as it always has", () => {
+    const cases: [string, MarketPrecision, number, string][] = [
+      ["BTC/USD", BTC_USD, 109_243.7, "$109,243.7"],
+      ["BTC/USD", BTC_USD, 109_243.8, "$109,243.8"],
+      ["BTC/USD", BTC_USD, 111_980.0, "$111,980.0"],
+      ["ETH/USD", ETH_USD, 4_512.36, "$4,512.36"],
+      ["ETH/USD", ETH_USD, 4_512.37, "$4,512.37"],
+      ["ETH/USD", ETH_USD, 4_398.11, "$4,398.11"],
+      ["SOL/USD", SOL_USD, 204.53, "$204.53"],
+      ["SOL/USD", SOL_USD, 204.54, "$204.54"],
+      ["SOL/USD", SOL_USD, 197.82, "$197.82"],
+      ["ARB/USD", ARB_USD, 0.4231, "$0.4231"],
+      ["ARB/USD", ARB_USD, 0.4232, "$0.4232"],
+      ["ARB/USD", ARB_USD, 0.4118, "$0.4118"],
+      ["OP/USD", OP_USD, 0.6842, "$0.6842"],
+      ["OP/USD", OP_USD, 0.6843, "$0.6843"],
+      ["OP/USD", OP_USD, 0.7011, "$0.7011"],
+    ];
+
+    cases.forEach(([symbol, precision, price, expected]) => {
+      expect(formatMarketPrice(price, active(symbol, precision))).toBe(expected);
+    });
+  });
+
+  // The divergence being closed. `tick_size` and `pair_decimals` agree on every
+  // pair shipped today by coincidence, not by rule, and `tick_size` is read from
+  // Kraken at runtime - so the next pair listed can disagree with no code change
+  // here. When it does, the chip and the payload must still be the same number:
+  // decision D3 is that the price shown IS the price sent.
+  it("agrees with the payload when the tick is not one unit of the last decimal", () => {
+    const coarseTick: MarketPrecision = {
+      ...ARB_USD,
+      priceDecimals: 4,
+      tickSize: 0.0005,
+    };
+
+    expect(formatMarketPrice(0.4567, active("ARB/USD", coarseTick))).toBe(
+      "$0.4565",
+    );
+    expect(formatPriceForAPI(0.4567, coarseTick)).toBe("0.4565");
+
+    // Same number on the chip and in the payload, for anything the grid can
+    // compute - not just the one value above.
+    [0.4567, 0.1234, 0.98765, 1.00024].forEach((price) => {
+      expect(formatMarketPrice(price, active("ARB/USD", coarseTick))).toBe(
+        `$${formatPriceForAPI(price, coarseTick)}`,
+      );
+    });
   });
 });

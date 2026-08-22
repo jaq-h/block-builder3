@@ -18,6 +18,21 @@ export interface ActiveOrderEntry {
   id: string;
   orderId: string; // External order ID from the exchange
   strategyId: string; // Groups orders submitted together as one strategy
+  /**
+   * The market this order was submitted for, in the WebSocket v2 spelling.
+   *
+   * Every position an entry records - `yPosition`, `direction`, the cell - is a
+   * percentage offset from *a* market price, so without the pair it names, an
+   * entry means whatever pair happens to be selected when it is read back. That
+   * was harmless while the app traded one market and is data corruption now: a
+   * strategy built on ARB/USD reloads into a builder priced against BTC/USD and
+   * the same numbers describe a completely different order set.
+   *
+   * Optional because entries persisted before markets existed carry no symbol.
+   * A missing one is reported as unknown, never assumed to be BTC/USD - that
+   * assumption is the whole class of bug the market work removed.
+   */
+  symbol?: string;
   col: number;
   row: number;
   type: string;

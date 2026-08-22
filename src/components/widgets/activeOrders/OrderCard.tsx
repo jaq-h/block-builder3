@@ -36,6 +36,12 @@ const OrderCard: FC<OrderCardProps> = ({ order, isEditing = false }) => {
   const statusLabel = getStatusLabel(order.status);
   const axisLabel = order.axis ? AXIS_LABELS[order.axis] : null;
   const sign = order.direction === "downside" ? "-" : "+";
+  // An order whose market is invisible is an order the user cannot check: every
+  // number on this card is a percentage offset from *some* market price. An
+  // entry saved before markets existed carries no symbol, and says so rather
+  // than being drawn as BTC/USD - naming the wrong pair is worse than naming
+  // none.
+  const marketLabel = order.symbol ?? "Unknown market";
 
   const editingBlue = "rgba(100, 140, 255, 0.9)";
 
@@ -95,6 +101,10 @@ const OrderCard: FC<OrderCardProps> = ({ order, isEditing = false }) => {
         {/* Bottom row: position info + y-position */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+            <span className="font-medium text-text-secondary">
+              {marketLabel}
+            </span>
+            <span className="opacity-40">·</span>
             <span>{colLabel}</span>
             <span className="opacity-40">·</span>
             <span>{rowLabel}</span>
