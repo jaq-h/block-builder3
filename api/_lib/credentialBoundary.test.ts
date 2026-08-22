@@ -33,6 +33,7 @@ const SENTINEL_SECRET =
   "U0VOVElORUxLUkFLRU5QUklWQVRFS0VZL0RPTk9UU0hJUC9BQUFBQUFBQUFBQUE9PQ==";
 
 let emitted: { file: string; contents: string }[] = [];
+let resolved: { isProduction: boolean; mode: string };
 
 const walk = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -40,27 +41,61 @@ const walk = (dir: string): string[] =>
     return entry.isDirectory() ? walk(full) : [full];
   });
 
+/**
+ * The environment the artifact under test is built in. The credential variables
+ * are deliberately present: a build that never sees them proves nothing, and the
+ * defect being guarded against was a build that saw them and compiled them in.
+ */
+const buildEnvironment = (): NodeJS.ProcessEnv => {
+  const env = { ...process.env };
+
+  // Vitest sets this, and the config reads it to skip the dev-server plugin.
+  // The child is a build, not a test run.
+  delete env.VITEST;
+
+  return {
+    ...env,
+    // Vitest also sets NODE_ENV=test, and Vite only defaults it to production
+    // when it is unset. Left alone, the child would emit a development-flavoured
+    // artifact - `import.meta.env.PROD` false - which is not what ships.
+    NODE_ENV: "production",
+    KRAKEN_TRADING_MODE: "live",
+    KRAKEN_API_KEY: SENTINEL_KEY,
+    KRAKEN_API_PRIVATE_KEY: SENTINEL_SECRET,
+    KRAKEN_ALLOW_LOCAL_LIVE: "1",
+  };
+};
+
+/**
+ * Asks Vite itself what it makes of that environment, rather than assuming.
+ *
+ * `build` is the command and `production` the default mode, exactly as the CLI
+ * invokes it. The default *NODE_ENV* is deliberately left alone, so
+ * `isProduction` comes back true only because the environment really carries
+ * `NODE_ENV=production` and not because Vite filled in a default.
+ */
+const RESOLVE_CONFIG =
+  "import { resolveConfig } from 'vite';" +
+  "const config = await resolveConfig({}, 'build', 'production');" +
+  "process.stdout.write(JSON.stringify({ isProduction: config.isProduction, mode: config.mode }));";
+
 beforeAll(() => {
   fs.rmSync(OUT_DIR, { recursive: true, force: true });
 
-  // The credential variables are deliberately present for this build. A build
-  // that never sees them proves nothing; the defect being guarded against was a
-  // build that saw them and compiled them in.
-  const buildEnv = { ...process.env };
-  // Vitest sets this, and the config reads it to skip the dev-server plugin.
-  // The child is a build, not a test run.
-  delete buildEnv.VITEST;
+  const env = buildEnvironment();
+
+  resolved = JSON.parse(
+    execFileSync(process.execPath, ["--input-type=module", "-e", RESOLVE_CONFIG], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env,
+    }),
+  ) as typeof resolved;
 
   execFileSync("npx", ["vite", "build", "--outDir", OUT_DIR, "--emptyOutDir"], {
     cwd: ROOT,
     stdio: "pipe",
-    env: {
-      ...buildEnv,
-      KRAKEN_TRADING_MODE: "live",
-      KRAKEN_API_KEY: SENTINEL_KEY,
-      KRAKEN_API_PRIVATE_KEY: SENTINEL_SECRET,
-      KRAKEN_ALLOW_LOCAL_LIVE: "1",
-    },
+    env,
   });
 
   emitted = walk(OUT_DIR).map((file) => ({
@@ -77,6 +112,14 @@ const filesContaining = (pattern: RegExp): string[] =>
   emitted.filter(({ contents }) => pattern.test(contents)).map(({ file }) => file);
 
 describe("the shipped bundle's credential boundary", () => {
+  it("scans the artifact that ships, built as a production build", () => {
+    // Not an assumption: this is Vite's own resolved config for the exact
+    // environment the build ran in. A build resolving `isProduction` false
+    // strips anything guarded by `import.meta.env.PROD`, so the scan below
+    // would be reading a different artifact from the one a deploy publishes.
+    expect(resolved).toEqual({ isProduction: true, mode: "production" });
+  });
+
   it("emitted a real build, so an empty scan cannot pass silently", () => {
     expect(emitted.some(({ file }) => file.endsWith(".js"))).toBe(true);
     expect(emitted.some(({ file }) => file.endsWith(".html"))).toBe(true);

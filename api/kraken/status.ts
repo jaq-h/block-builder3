@@ -9,9 +9,16 @@
  * The response carries no credential, and never will - only the mode, and the
  * configuration errors when there are any, so a misconfigured deployment says
  * so instead of failing mysteriously.
+ *
+ * The answer is per caller, because live mode is loopback only. A caller that
+ * `/api/kraken/balance` and `/api/kraken/ws-token` will refuse is told it is
+ * simulating: telling it otherwise would label its orders "Live API Mode" while
+ * every credentialed call it makes comes back 403, and would disclose to an
+ * anonymous visitor that this host holds a Kraken key.
  */
 
 import { requireMethod, sendJson, type ApiHandler } from "../_lib/http";
+import { isLoopbackAddress } from "../_lib/loopback";
 import { getServerRuntime } from "../_lib/runtime";
 
 const handler: ApiHandler = (req, res) => {
@@ -30,9 +37,12 @@ const handler: ApiHandler = (req, res) => {
     return;
   }
 
+  const live =
+    runtime.mode === "live" && isLoopbackAddress(req.socket?.remoteAddress);
+
   sendJson(res, 200, {
-    mode: runtime.mode,
-    liveAvailable: runtime.mode === "live",
+    mode: live ? "live" : "simulation",
+    liveAvailable: live,
     errors: [],
   });
 };

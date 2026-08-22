@@ -209,7 +209,8 @@ Live mode is therefore confined to loopback, twice over:
   hosting must apply the same rule: bind live mode to `127.0.0.1`, never `0.0.0.0`.
 - **The request.** Independently of the bind, `/api/kraken/balance` and `/api/kraken/ws-token`
   answer `403` to any peer that is not `127.0.0.0/8` or `::1` (`api/_lib/loopback.ts`), so a
-  permissive bind cannot expose them either.
+  permissive bind cannot expose them either. `/api/kraken/status` answers the same way round:
+  a non-loopback caller is told the deployment simulates, because that is what it will get.
 
 **Exposing this beyond loopback is the operator's own responsibility.** If you put a live
 instance behind a proxy, on a LAN, or on a tunnel, you must add your own authentication in

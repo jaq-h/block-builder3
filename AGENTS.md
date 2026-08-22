@@ -111,6 +111,8 @@ simulates.
 whoever reaches it, so it is confined twice: `vite/krakenApiDevServer.ts` *fails to start* when
 live mode is configured on a non-loopback bind, and `api/_lib/loopback.ts` answers 403 to a
 non-loopback peer at `/api/kraken/balance` and `/api/kraken/ws-token` regardless of the bind.
+`/api/kraken/status` follows the same rule and reports simulation to a non-loopback caller, so
+the UI never promises live trading a caller cannot use.
 Other hosting must bind live mode to `127.0.0.1` itself. Exposing a live instance beyond
 loopback requires the operator to add their own protection; we deliberately provide none.
 

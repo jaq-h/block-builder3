@@ -98,12 +98,50 @@ describe("GET /api/kraken/status", () => {
     });
   });
 
-  it("reports live when the server is configured to sign", async () => {
+  it("reports live to a caller on this machine when the server is configured to sign", async () => {
     goLive();
     const res = createResponse();
-    await statusHandler(request("GET"), res);
+    await statusHandler(request("GET", "127.0.0.1"), res);
 
     expect(res.json()).toMatchObject({ mode: "live", liveAvailable: true });
+  });
+
+  it("tells a caller off this machine that it simulates, because that is what it gets", async () => {
+    // Live mode is loopback only. Answering `live` to a peer whose every
+    // credentialed call comes back 403 would label its orders "Live API Mode",
+    // and would tell an anonymous visitor that this host holds a Kraken key.
+    goLive();
+    const res = createResponse();
+    await statusHandler(request("GET", "203.0.113.7"), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      mode: "simulation",
+      liveAvailable: false,
+      errors: [],
+    });
+  });
+
+  it("agrees with what the credentialed endpoints do for the same caller", async () => {
+    goLive();
+    const remote = () => request("GET", "198.51.100.4");
+
+    const status = createResponse();
+    await statusHandler(remote(), status);
+
+    const balance = createResponse();
+    await balanceHandler(remote(), balance);
+
+    expect(status.json()).toMatchObject({ liveAvailable: false });
+    expect(balance.statusCode).toBe(403);
+  });
+
+  it("simulates when the peer address cannot be read at all", async () => {
+    goLive();
+    const res = createResponse();
+    await statusHandler({ method: "GET" } as IncomingMessage, res);
+
+    expect(res.json()).toMatchObject({ mode: "simulation", liveAvailable: false });
   });
 
   it("never puts a credential in the response", async () => {
