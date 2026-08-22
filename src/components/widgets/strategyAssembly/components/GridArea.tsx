@@ -375,9 +375,11 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
     const { col, row, block: blockData } = blockInfo;
 
-    const trackElement = document.querySelector(
-      `[data-axis-track="${col}-${row}-${blockData.axis}"]`,
-    );
+    const cellSelector = `[data-col="${col}"][data-row="${row}"]`;
+    const trackElement =
+      document.querySelector(
+        `${cellSelector} [data-axis-track="${col}-${row}-${blockData.axis}"]`,
+      ) ?? document.querySelector(`${cellSelector} [data-axis-track]`);
     if (!trackElement) return;
 
     const position = positionFromPointer(

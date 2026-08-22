@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { useRef, useState, type FC } from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 
 import GridArea from "./GridArea";
 import { GridDataContext } from "../contexts/GridDataContext";
@@ -150,7 +150,7 @@ const stubRect = (element: Element, top: number, height: number) => {
   } as DOMRect);
 };
 
-const pointer = (type: string, y: number) => {
+const pointerAt = (type: string, x: number, y: number) => {
   const event = new PointerEvent(type, {
     bubbles: true,
     cancelable: true,
@@ -160,11 +160,13 @@ const pointer = (type: string, y: number) => {
     pointerId: { value: 1 },
     isPrimary: { value: true },
     pointerType: { value: "touch" },
-    clientX: { value: 30 },
+    clientX: { value: x },
     clientY: { value: y },
   });
   return event;
 };
+
+const pointer = (type: string, y: number) => pointerAt(type, 30, y);
 
 /**
  * Render a grid holding one Limit at `yPosition` and give the axis column and
@@ -475,5 +477,81 @@ describe("GridArea, a bulk cell holding two order families", () => {
         getBlockTopPx(Math.abs(moved), TRACK_HEIGHT, true) +
         BLOCK_HEIGHT / 2,
     ).toBeCloseTo(centre + 20, 1);
+  });
+});
+
+// =============================================================================
+// A BLOCK DRAWN IN AN AXIS COLUMN ITS OWN `axis` FIELD DOES NOT NAME
+// =============================================================================
+//
+// A bulk cell holding a Market renders without an axis, so the Limit sharing it
+// free-drags. Dropping it in the left half of an empty cell stamps `axis: 1`,
+// and a cell holding only a Limit draws its blocks in the limit column. The
+// block's field and the column it is drawn in then disagree, and the drag has
+// to price it anyway: arrow keys still work there, so an order that cannot be
+// dragged is dead only for the mouse and the finger.
+
+/** A Market carries no axis at all, which is what makes the cell axis-less. */
+const placedMarket = (id: string = "m1"): BlockData => ({
+  id,
+  orderType: "market",
+  label: "Market",
+  abrv: "Mkt",
+  allowedRows: [0, 1, 2],
+  axis: 1,
+  yPosition: -1,
+  direction: "upside",
+  axes: [],
+});
+
+/** The price the cell renders for a block on its ascending scale. */
+const upsidePrice = (yPosition: number) =>
+  `$${(MARKET_PRICE * (1 + yPosition / 100)).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+describe("GridArea, a block drawn in a column its axis field does not name", () => {
+  it("still prices the order on a pointer drag", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket(), placedLimit(25, "b1"));
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+
+    // Free-drag the Limit into empty cell (1,1), releasing in the LEFT half:
+    // that is what writes `axis: 1` onto a block the cell draws as a Limit.
+    stubRect(cell(1, 1), 400, 300);
+    const limit = within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: /Limit/,
+    });
+    fireEvent(limit, pointerAt("pointerdown", 30, 100));
+    fireEvent(limit, pointerAt("pointermove", 10, 572));
+    fireEvent(limit, pointerAt("pointerup", 10, 572));
+
+    // The state under test: the cell drew a limit column, and nothing is keyed
+    // to the axis the block itself now claims.
+    const track = document.querySelector('[data-axis-track="1-1-2"]');
+    expect(track).not.toBeNull();
+    expect(document.querySelector('[data-axis-track="1-1-1"]')).toBeNull();
+
+    stubRect(track!, TRACK_TOP, TRACK_HEIGHT);
+    const slider = screen.getByRole("slider");
+    const before = Number(slider.getAttribute("aria-valuenow"));
+    const blockTop = TRACK_TOP + getBlockTopPx(before, TRACK_HEIGHT, false);
+    stubRect(slider, blockTop, BLOCK_HEIGHT);
+    const centre = blockTop + BLOCK_HEIGHT / 2;
+
+    fireEvent(slider, pointer("pointerdown", centre));
+    fireEvent(slider, pointer("pointermove", centre + 30));
+    fireEvent(slider, pointer("pointerup", centre + 30));
+
+    // Dragged 30px down an ascending track: a smaller offset above the market,
+    // read back through the same mapping the cell drew it with.
+    const after = Number(slider.getAttribute("aria-valuenow"));
+    expect(after).toBeLessThan(before);
+    expect(
+      TRACK_TOP + getBlockTopPx(after, TRACK_HEIGHT, false) + BLOCK_HEIGHT / 2,
+    ).toBeCloseTo(centre + 30, 1);
+    expect(screen.getByText(`+${after.toFixed(2)}%`)).toBeInTheDocument();
+    expect(screen.getByText(upsidePrice(after))).toBeInTheDocument();
   });
 });

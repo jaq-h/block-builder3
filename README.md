@@ -265,11 +265,27 @@ row would otherwise be silent the second time.
 
 **Known gap, bulk pattern only.** A bulk cell holding any axis-less block draws *every*
 block in it without an axis: `getCellDisplayMode` returns `"no-axis"` as soon as one block
-has no axes, and that decides the whole cell. Two things follow, and both are limited to
-that case. Keyboard and tap pick-up of a paired dual-axis leg is refused there, and the
-refusal deliberately does not offer the arrow keys, because that render wires none. Mouse
-free drag, on the other hand, still reaches those legs and can split a paired order across
-cells - which is pre-existing behaviour rather than something this interaction introduced.
+has no axes, and that decides the whole cell. Three things follow, and all are limited to
+that case. They do not share a provenance, so they are listed apart.
+
+*Inherited, and present before the pointer/keyboard work.* Keyboard and tap pick-up of a
+paired dual-axis leg is refused in such a cell, and the refusal deliberately does not offer
+the arrow keys, because that render wires none. Mouse free drag still reaches those legs and
+can split a paired order across cells.
+
+*Also inherited.* That same drop path writes `yPosition` through `calculateYPosition`, which
+returns 0-100 against a scale whose maximum is 50, so a block can render pinned at the 50%
+end while its label reads the raw value.
+
+*Introduced by the pointer/keyboard work, and now contained.* Unifying the track geometry
+made the vertical drag resolve its track by the block's own `axis` field, which can disagree
+with the axis column the renderer actually drew it in - a Limit stamped `axis: 1` by a drop
+in the left half of a cell is still drawn in that cell's limit column. A miss left the drag
+silently dead, so the order could not be re-priced by mouse or by finger while the arrow
+keys still worked. `handleBlockVerticalDrag` now falls back to whichever axis track the cell
+did render, restoring the property the earlier implementation had of always finding a track.
+The keying disagreement itself remains.
+
 The conditional pattern cannot reach any of it, because an occupied cell is never a valid
 target. The real fix is to give the block-to-price mapping one owner instead of several
 consumers that have to agree, and that is filed as its own piece of work.
