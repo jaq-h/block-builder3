@@ -22,9 +22,10 @@
 //     can never claim a move, a refusal or a removal that did not happen.
 //  2. **A sentence must still be true after the operation that triggered it.**
 //     Anything said as a gesture *begins* has to survive that gesture. This is
-//     why a carry released by a drag is announced only when the drag is about a
-//     different block: when it is the same block, the drag's own outcome is the
-//     whole story and is announced when it lands.
+//     why a carry released by a drag is never announced as the drag begins: a
+//     drag on a different block gets its own sentence, and a drag on the very
+//     block being carried folds the news into the outcome that gesture reaches
+//     - one sentence, said once the fact is settled.
 
 import {
   describeCell,
@@ -78,7 +79,17 @@ export type GridOutcome =
       /** Decides which follow-up instructions are read out. */
       origin: ActivationOrigin;
     }
-  | { kind: "pickUpRefused"; source: CommandSource; reason: "noTargets" }
+  | {
+      kind: "pickUpRefused";
+      source: CommandSource;
+      reason: "noTargets";
+      /**
+       * What is still in the user's hand, when a refused pick-up was an
+       * attempt to swap. `pickUp` refuses without dispatching, so the previous
+       * carry outlives the refusal and the sentence has to say so.
+       */
+      carrying?: CommandSource;
+    }
   | {
       kind: "moveRefused";
       label: string;
@@ -95,13 +106,32 @@ export type GridOutcome =
       cell: CellPosition;
       result: PlacementResult;
       via: PlacementVia;
+      releasedCarry?: boolean;
     }
-  | { kind: "removed"; source: CommandSource }
-  | { kind: "dragEnded"; source: CommandSource; reason: DragEndReason };
+  | { kind: "removed"; source: CommandSource; releasedCarry?: boolean }
+  | {
+      kind: "dragEnded";
+      source: CommandSource;
+      reason: DragEndReason;
+      releasedCarry?: boolean;
+    };
 
 // =============================================================================
 // WORDING
 // =============================================================================
+
+/**
+ * The clause that tells a user their block left their hand. A drag on the very
+ * block being carried releases that carry without a word of its own - anything
+ * said as the gesture began would be falsified by the same gesture - so the
+ * drag's own outcome has to carry the news, as one sentence rather than a
+ * second live-region write that could cut the first one off.
+ *
+ * It is only ever appended to a sentence that does not already describe
+ * something happening to that block: see `describeOutcome`.
+ */
+const carryReleased = (releasedCarry?: boolean): string =>
+  releasedCarry ? ", and is no longer picked up" : "";
 
 const CARRY_HELP: Record<ActivationOrigin, string> = {
   keyboard:
@@ -128,10 +158,11 @@ const restingPlace = (
 const wentNowhere = (
   source: CommandSource,
   pattern: StrategyPattern,
+  releasedCarry?: boolean,
 ): string =>
   source.kind === "provider"
-    ? `${describeSource(source)} was not placed.`
-    : `${describeSource(source)} stayed in ${describeCell(source.origin, pattern)}.`;
+    ? `${describeSource(source)} was not placed${carryReleased(releasedCarry)}.`
+    : `${describeSource(source)} stayed in ${describeCell(source.origin, pattern)}${carryReleased(releasedCarry)}.`;
 
 const describePlacement = (
   source: CommandSource,
@@ -139,6 +170,7 @@ const describePlacement = (
   result: PlacementResult,
   via: PlacementVia,
   pattern: StrategyPattern,
+  releasedCarry?: boolean,
 ): string => {
   switch (result.status) {
     case "created":
@@ -148,15 +180,20 @@ const describePlacement = (
     // The defect this branch exists for: a drop inside the block's own cell.
     // The grid rightly changed nothing, and saying the cell refused the order
     // contradicts the block sitting in it.
+    //
+    // "created" and "moved" above already describe something happening to this
+    // very block, so a released-carry clause there would be noise. This branch
+    // and "refused" below describe nothing happening, which is where a user who
+    // was carrying that block needs telling that they no longer are.
     case "unchanged":
-      return `${describeSource(source)} stayed in ${describeCell(cell, pattern)}.`;
+      return `${describeSource(source)} stayed in ${describeCell(cell, pattern)}${carryReleased(releasedCarry)}.`;
     case "refused":
       // "any more" only for a carry: the arrow keys walk cells the grid offered
       // at pick-up time, so a refusal there means the grid has changed since. A
       // drag can be released over any cell, and most were never on offer.
       return `${describeCell(cell, pattern)} cannot take this order${
         via === "carry" ? " any more" : ""
-      }. ${wentNowhere(source, pattern)}`;
+      }. ${wentNowhere(source, pattern, releasedCarry)}`;
   }
 };
 
@@ -175,7 +212,13 @@ export const describeOutcome = (
       } Target: ${describeCell(outcome.target, pattern)}.`;
 
     case "pickUpRefused":
-      return `${describeSource(outcome.source)} cannot be placed anywhere in the grid right now.`;
+      // Reaching for a second order type while holding one leaves the first in
+      // hand when the new pick-up is refused, and only this says so.
+      return `${describeSource(outcome.source)} cannot be placed anywhere in the grid right now.${
+        outcome.carrying
+          ? ` Still carrying ${describeSource(outcome.carrying)}.`
+          : ""
+      }`;
 
     case "moveRefused":
       return outcome.reason === "onPriceAxis"
@@ -205,6 +248,7 @@ export const describeOutcome = (
         outcome.result,
         outcome.via,
         pattern,
+        outcome.releasedCarry,
       );
 
     case "removed":
@@ -212,7 +256,7 @@ export const describeOutcome = (
 
     case "dragEnded":
       return outcome.reason === "offGrid"
-        ? `Released outside the grid. ${wentNowhere(outcome.source, pattern)}`
-        : `Drag cancelled. ${wentNowhere(outcome.source, pattern)}`;
+        ? `Released outside the grid. ${wentNowhere(outcome.source, pattern, outcome.releasedCarry)}`
+        : `Drag cancelled. ${wentNowhere(outcome.source, pattern, outcome.releasedCarry)}`;
   }
 };

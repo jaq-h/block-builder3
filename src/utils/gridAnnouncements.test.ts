@@ -51,6 +51,22 @@ describe("describeOutcome, picking a block up", () => {
     );
   });
 
+  it("says the block already in hand survived a refused pick-up", () => {
+    // Reaching for a second order type is a swap, and a refused swap leaves the
+    // first order still carried. The same words `cellRefused` uses, because two
+    // forms for one fact is how the wording drifted apart in the first place.
+    expect(
+      say({
+        kind: "pickUpRefused",
+        source: { kind: "provider", type: "take-profit", label: "Take Profit" },
+        reason: "noTargets",
+        carrying: placed,
+      }),
+    ).toBe(
+      "Take Profit order cannot be placed anywhere in the grid right now. Still carrying Market block.",
+    );
+  });
+
   it("names the affordance a priced block does wire", () => {
     expect(
       say({ kind: "moveRefused", label: "Limit", reason: "onPriceAxis" }),
@@ -178,6 +194,64 @@ describe("describeOutcome, what the grid actually did", () => {
     );
   });
 
+  it("says a same-cell release also took the block out of the user's hand", () => {
+    // Carrying a block and then nudging that same block is one gesture with two
+    // consequences, and the second one is invisible: the carry is gone, so the
+    // next tap on a cell will do nothing. One sentence says both, because two
+    // live-region writes in a row can cut the first one off.
+    expect(
+      say({
+        kind: "placement",
+        source: placed,
+        cell: { col: 0, row: 1 },
+        result: { status: "unchanged", blockId: "b1" },
+        via: "drag",
+        releasedCarry: true,
+      }),
+    ).toBe(
+      "Market block stayed in Entry column, primary row, and is no longer picked up.",
+    );
+  });
+
+  it("says a refused release also took the block out of the user's hand", () => {
+    expect(
+      say({
+        kind: "placement",
+        source: placed,
+        cell,
+        result: { status: "refused" },
+        via: "drag",
+        releasedCarry: true,
+      }),
+    ).toBe(
+      "Exit column, upper conditional row cannot take this order. Market block stayed in Entry column, primary row, and is no longer picked up.",
+    );
+  });
+
+  it("leaves a move to speak for itself, since it names the block already", () => {
+    // "created", "moved" and "removed" already describe something happening to
+    // the very block that was carried, so repeating that it is no longer in
+    // hand is noise rather than news.
+    const moved: PlacementResult = {
+      status: "moved",
+      blockId: "b1",
+      from: { col: 0, row: 1 },
+    };
+    expect(
+      say({
+        kind: "placement",
+        source: placed,
+        cell,
+        result: moved,
+        via: "drag",
+        releasedCarry: true,
+      }),
+    ).toBe("Moved Market block to Exit column, upper conditional row.");
+    expect(say({ kind: "removed", source: placed, releasedCarry: true })).toBe(
+      "Removed Market block from the grid.",
+    );
+  });
+
   it("says 'any more' only for a carry, whose targets were offered", () => {
     // The arrow keys walk cells the grid offered at pick-up time, so a refusal
     // there means the grid has changed since. A drag can be released over any
@@ -204,6 +278,29 @@ describe("describeOutcome, a drag that ends without a placement", () => {
   it("says where a block is after the browser cancels the drag", () => {
     expect(say({ kind: "dragEnded", source: placed, reason: "aborted" })).toBe(
       "Drag cancelled. Market block stayed in Entry column, primary row.",
+    );
+  });
+
+  it("says a drag that ended nowhere still cost the user their carry", () => {
+    expect(
+      say({
+        kind: "dragEnded",
+        source: placed,
+        reason: "aborted",
+        releasedCarry: true,
+      }),
+    ).toBe(
+      "Drag cancelled. Market block stayed in Entry column, primary row, and is no longer picked up.",
+    );
+    expect(
+      say({
+        kind: "dragEnded",
+        source: palette,
+        reason: "offGrid",
+        releasedCarry: true,
+      }),
+    ).toBe(
+      "Released outside the grid. Market order was not placed, and is no longer picked up.",
     );
   });
 });

@@ -1,4 +1,4 @@
-import type { FC, PointerEvent } from "react";
+import { useRef, type FC, type PointerEvent } from "react";
 import {
   isCellValidForPlacement,
   getAlignment,
@@ -177,13 +177,32 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     if (!blockInfo) return { status: "refused" };
 
     const { col: sourceCol, row: sourceRow, block: blockData } = blockInfo;
+    const isSameCell = sourceCol === target.col && sourceRow === target.row;
 
-    // Putting a block back where it already is changes nothing, and is not a
-    // rejection: the placement rules read its own cell as occupied, so asking
-    // them would refuse the cell the block is visibly sitting in. That is what
-    // a nudge-and-release does, and reporting it as a refusal is what made the
-    // live region contradict itself.
-    if (sourceCol === target.col && sourceRow === target.row) {
+    // Two decisions here, and keeping them apart is the point.
+    //
+    // THE GUARD, below. `!position` is load-bearing scope protection rather
+    // than an oversight: it leaves the control flow of a same-cell release
+    // carrying drop coordinates exactly as it is on main. In the bulk pattern
+    // the placement rules take any cell, so the full move below still runs -
+    // it rewrites `axis` and `yPosition` onto the block and its order config,
+    // and the remove-then-push reorders the cell array, which is what the cell
+    // header reads `blocks[0]` for. That reordering and re-pricing is the
+    // cell-scale family of defects, owned by `bb3-mapping-owner` under the
+    // ruling that direction belongs to the cell and is stamped when the first
+    // block lands. Reconciling it here as well would be a second lane
+    // answering one question, which has already gone wrong on this project
+    // once. So the mutation stays byte-identical, and only what the user is
+    // TOLD is fixed.
+    //
+    // WHAT IS REPORTED, decided independently of that check. A block can never
+    // be refused by the cell it is already sitting in, whatever the placement
+    // rules say about an occupied cell - that is the whole of the defect this
+    // lane exists to close. Every same-cell release reads `unchanged`, on the
+    // refused path and on the mutated path alike; `refused` is left to a
+    // genuinely different target cell and `moved` to a release that really did
+    // change cells.
+    if (isSameCell && !position) {
       return { status: "unchanged", blockId: id };
     }
 
@@ -196,7 +215,9 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
         strategyPattern,
       )
     ) {
-      return { status: "refused" };
+      return isSameCell
+        ? { status: "unchanged", blockId: id }
+        : { status: "refused" };
     }
 
     const updatedBlock: BlockData = {
@@ -242,11 +263,13 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
       return updated;
     });
 
-    return {
-      status: "moved",
-      blockId: id,
-      from: { col: sourceCol, row: sourceRow },
-    };
+    return isSameCell
+      ? { status: "unchanged", blockId: id }
+      : {
+          status: "moved",
+          blockId: id,
+          from: { col: sourceCol, row: sourceRow },
+        };
   };
 
   /** Take a block off the grid entirely - a drag that ended outside it. */
@@ -329,17 +352,34 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   // ─── Drag handlers ───────────────────────────────────────────────
 
   const handleDragStart = (id: string) => {
+    carryReleasedByDragRef.current = false;
     setDraggingId(id);
   };
+
+  /**
+   * Whether the drag now in flight quietly took a carry of that same block out
+   * of the user's hand. `releaseForDrag` says nothing there on purpose - see
+   * its own note - so the outcome this gesture reaches has to carry the news,
+   * and this is how it travels from the moment of recognition to the moment of
+   * the drop.
+   *
+   * It is reset at the START of every gesture rather than at the end, and that
+   * is deliberate: a `pointercancel` fires `onDragCancel` - which is `endDrag`
+   * - BEFORE `onDragAborted`, which is the handler that announces, so clearing
+   * it on end would wipe the flag the abort sentence needs. Resetting on
+   * pointer-down covers every gesture, taps included, so nothing leaks into the
+   * next one either.
+   */
+  const carryReleasedByDragRef = useRef(false);
 
   /**
    * A real drag has started on `subjectKey` - a block id, or a palette order
    * type. Whether that ends an active carry silently or out loud is decided in
    * one place, `releaseForDrag`, from whether the drag is about the carried
-   * block itself.
+   * block itself. A silent release is remembered rather than dropped.
    */
   const handleDragRecognised = (subjectKey: string) => {
-    command.releaseForDrag(subjectKey);
+    carryReleasedByDragRef.current = command.releaseForDrag(subjectKey);
   };
 
   const endDrag = () => {
@@ -349,6 +389,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   };
 
   const handleProviderDragStart = (type: string) => {
+    carryReleasedByDragRef.current = false;
     setDraggingFromProvider(type);
     setHoveredProviderId(null);
   };
@@ -374,6 +415,8 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     const positionData = findCellAndPositionData(x, y);
     const source = providerSource(type);
 
+    const releasedCarry = carryReleasedByDragRef.current;
+
     if (positionData) {
       const cell = { col: positionData.col, row: positionData.row };
       announcer.report({
@@ -382,11 +425,17 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
         cell,
         result: placeProviderInCell(type, cell),
         via: "drag",
+        releasedCarry,
       });
     } else {
       // Released over no cell at all. Nothing was created, and this used to be
       // the one drag outcome that said nothing whatsoever.
-      announcer.report({ kind: "dragEnded", source, reason: "offGrid" });
+      announcer.report({
+        kind: "dragEnded",
+        source,
+        reason: "offGrid",
+        releasedCarry,
+      });
     }
     endDrag();
   };
@@ -401,6 +450,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
       kind: "dragEnded",
       source: providerSource(type),
       reason: "aborted",
+      releasedCarry: carryReleasedByDragRef.current,
     });
   };
 
@@ -476,17 +526,21 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
   // ─── Drop handler ────────────────────────────────────────────────
 
-  /** A placed block, named the way the announcer names it. */
-  const gridSource = (id: string) => {
-    const blockInfo = findBlockInGrid(grid, id);
-    if (!blockInfo) return null;
-    return {
-      kind: "grid" as const,
-      id,
-      label: blockInfo.block.label,
-      origin: { col: blockInfo.col, row: blockInfo.row },
-    };
-  };
+  /**
+   * A placed block, named the way the announcer names it, from the lookup its
+   * caller has already done: finding it twice is one traversal too many and
+   * leaves two null checks to keep in step.
+   */
+  const gridSource = (info: {
+    col: number;
+    row: number;
+    block: BlockData;
+  }) => ({
+    kind: "grid" as const,
+    id: info.block.id,
+    label: info.block.label,
+    origin: { col: info.col, row: info.row },
+  });
 
   const handleDragEnd = (id: string, x: number, y: number) => {
     const blockInfo = findBlockInGrid(grid, id);
@@ -498,11 +552,13 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     );
 
     // The block is not on the grid, so there is no fact to report about it.
-    const source = gridSource(id);
-    if (!blockInfo || !source) {
+    if (!blockInfo) {
       endDrag();
       return;
     }
+
+    const source = gridSource(blockInfo);
+    const releasedCarry = carryReleasedByDragRef.current;
 
     // The drag is the only feedback a screen-reader user gets for this gesture,
     // and it is the gesture a finger reaches for first. What is said comes from
@@ -518,11 +574,12 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
         cell,
         result: moveBlockToCell(id, cell, { axis, yPosition }),
         via: "drag",
+        releasedCarry,
       });
     } else {
       // Dropped outside - remove only this block
       removeBlock(id, source.origin);
-      announcer.report({ kind: "removed", source });
+      announcer.report({ kind: "removed", source, releasedCarry });
     }
 
     endDrag();
@@ -535,9 +592,14 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
    * left to `onBlockDragCancel`, which fires for the same event.
    */
   const handleBlockDragAborted = (id: string) => {
-    const source = gridSource(id);
-    if (source) {
-      announcer.report({ kind: "dragEnded", source, reason: "aborted" });
+    const blockInfo = findBlockInGrid(grid, id);
+    if (blockInfo) {
+      announcer.report({
+        kind: "dragEnded",
+        source: gridSource(blockInfo),
+        reason: "aborted",
+        releasedCarry: carryReleasedByDragRef.current,
+      });
     }
   };
 

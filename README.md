@@ -304,13 +304,25 @@ the carried block is placed somewhere the user never chose. Cancelling at pointe
 instead would break the tap that places a carried block into another block's cell, which is
 why `usePointerGesture` reports drag recognition as its own moment.
 
-Whether that release is **spoken** is decided in exactly one place, `releaseForDrag`, on one
-question: is the drag about the block being carried? Dragging the block you just tapped, and
-the drag's own outcome when it lands is the complete story - anything said as it begins would
-be made false a moment later by that very gesture. Dragging anything else, and the drag's
-outcome says nothing about the carry at all, so the release is announced: *"Take Profit order
-returned to the palette: a drag took over."* Leaving that silent lost the carry with no word
-said, and the next tap on a cell then did nothing the user could explain.
+**How** that release is spoken is decided in exactly one place, `releaseForDrag`, on one
+question: is the drag about the block being carried? Dragging anything else - a vertical price
+drag, a palette drag while holding a placed block - and the drag's outcome says nothing about
+the carry at all, so the release gets its own sentence: *"Take Profit order returned to the
+palette: a drag took over."* Dragging the block you just tapped, and nothing is said as the
+gesture begins, because anything said then would be made false a moment later by that very
+gesture. Instead `releaseForDrag` reports back that it released the carry silently, and the
+clause is folded into the one sentence the gesture's outcome produces once it is settled fact:
+*"Market block stayed in Entry column, primary row, and is no longer picked up."* It is added
+only where the base sentence describes nothing happening to that block - `unchanged`, `refused`
+and both `dragEnded` reasons - since *"Moved"*, *"Placed"* and *"Removed"* already say the block
+left the user's hand. One outcome, one sentence: two live-region writes in quick succession
+risk the first being cut off. Leaving any of it silent lost the carry with no word said, and
+the next tap on a cell then did nothing the user could explain.
+
+A refused **pick-up** says the same thing for the same reason: reaching for a second order type
+while holding one is a swap, and when the new order has nowhere legal to go the first is still
+in hand - *"Take Profit order cannot be placed anywhere in the grid right now. Still carrying
+Market block."*
 
 Every other way a gesture can end speaks too: a **free drag of a placed block** that lands on a
 cell, stays in its own cell or leaves the grid; a **palette drag** that resolves to a cell or is
@@ -336,9 +348,13 @@ buys, and each had been violated:
   how a release inside a block's own cell came to announce *"Entry column, primary row cannot
   take this order. Market block stayed in Entry column, primary row"*: the drop supplied a
   position, the same-cell no-op branch was skipped, and `isCellValidForPlacement` read the
-  block's own occupied cell as illegal. A same-cell release is `unchanged`, and reads *"Market
-  block stayed in Entry column, primary row."* The bulk pattern never showed it, because every
-  cell is a legal target there, so `GridArea.dom.test.tsx` pins it on the conditional pattern.
+  block's own occupied cell as illegal. What `moveBlockToCell` **reports** for a same-cell
+  release is now decided independently of that validity check: a block can never be refused by
+  the cell it is already sitting in, so every same-cell release is `unchanged` on the refused
+  path and on the mutated path alike, and reads *"Market block stayed in Entry column, primary
+  row."* `refused` is left to a genuinely different target cell and `moved` to a release that
+  really did change cells. The bulk pattern never showed the defect, because every cell is a
+  legal target there, so `GridArea.dom.test.tsx` pins it on the conditional pattern.
 - **A sentence has to still be true after the operation that triggered it.** This is the trap
   the three earlier point fixes fell into: cancelling a carry when a drag began made the
   cancellation silent, and announcing the drag's outcome instead made that announcement false.
@@ -358,8 +374,8 @@ row would otherwise be silent the second time.
 
 **Known gap, bulk pattern only.** A bulk cell holding any axis-less block draws *every*
 block in it without an axis: `getCellDisplayMode` returns `"no-axis"` as soon as one block
-has no axes, and that decides the whole cell. Four things follow, and all are limited to
-that case. They do not share a provenance, so they are listed apart - two inherited, two
+has no axes, and that decides the whole cell. Five things follow, and all are limited to
+that case. They do not share a provenance, so they are listed apart - three inherited, two
 introduced here.
 
 *Inherited, and present before the pointer/keyboard work.* Mouse free drag reaches a paired
@@ -374,6 +390,19 @@ end while its label reads the raw value.
 leg is refused in such a cell - there was no keyboard or tap pick-up at all before this
 change, so the refusal could not have been inherited - and it deliberately does not offer
 the arrow keys, because that render wires none.
+
+*Inherited, deliberately left alone here, and owned by `bb3-mapping-owner`.* A same-cell
+nudge in the bulk pattern still **mutates the grid**. Only the reported outcome above changed;
+the mutation is unchanged from `main`. Because every bulk cell is a legal target, a release
+inside a block's own cell falls through to the full move: it rewrites that order's `axis` and
+`yPosition` from the drop coordinates, into the block and its order config, and its
+remove-then-push reorders the cell array - so the cell header, which renders `blocks[0].label`,
+can change from the order that was nudged to the one beside it. That is the cell-scale family
+of defects, owned by `bb3-mapping-owner` under the ruling that direction belongs to the cell
+and is stamped when the first block lands; reconciling it in the announcement lane as well
+would be two lanes answering one question, which is how the display and the payload drifted
+apart before. `GridArea.dom.test.tsx` pins the behaviour as it stands so a later change cannot
+quietly settle it here instead.
 
 *Introduced by the pointer/keyboard work, and now contained.* Unifying the track geometry
 made the vertical drag resolve its track by the block's own `axis` field, which can disagree

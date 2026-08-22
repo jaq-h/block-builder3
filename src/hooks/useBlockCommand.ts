@@ -73,8 +73,13 @@ export interface UseBlockCommandReturn {
   /**
    * A pointer drag has been recognised on `subjectKey` - a block id, or a
    * palette order type - so it takes the interaction over from the carry.
+   *
+   * Returns true when it released a carry of that *same* subject without
+   * saying so. The caller owes that user a mention of it on the outcome the
+   * drag eventually reaches; see `releaseForDrag` for why it cannot be said
+   * here.
    */
-  releaseForDrag: (subjectKey: string) => void;
+  releaseForDrag: (subjectKey: string) => boolean;
   /** The block id that should take focus, once React has rendered it. */
   focusRequest: string | null;
   clearFocusRequest: () => void;
@@ -120,7 +125,14 @@ export const useBlockCommand = ({
     // A placed block can always go back where it came from.
     if (preferred) targets = withOriginCell(targets, preferred);
     if (targets.length === 0) {
-      report({ kind: "pickUpRefused", source, reason: "noTargets" });
+      // Nothing was dispatched, so a carry this pick-up was trying to swap out
+      // is still live - and the refusal is the only place that can say so.
+      report({
+        kind: "pickUpRefused",
+        source,
+        reason: "noTargets",
+        carrying: carrying?.source,
+      });
       return false;
     }
     dispatch({ type: "pickUp", source, targets, preferred });
@@ -174,24 +186,26 @@ export const useBlockCommand = ({
    *
    * - Same subject, so the drag will move, place or remove the very block a
    *   cancellation would name as resting somewhere. Saying anything now would
-   *   be true for a moment and then false; the drag's own outcome, announced
-   *   when it lands, is the complete and durable story.
+   *   be true for a moment and then false. So nothing is said *now*, and `true`
+   *   is returned instead: the caller folds "no longer picked up" into the one
+   *   sentence the drag's own outcome produces, where it is settled fact.
    * - Different subject - a vertical price drag on another block, a palette
    *   drag while holding a grid block - and the drag's outcome says nothing
    *   about the carry at all. Staying silent there loses the carry with no word
    *   said, and the next tap on a cell then does nothing the user can explain.
    */
-  const releaseForDrag = (subjectKey: string) => {
+  const releaseForDrag = (subjectKey: string): boolean => {
     pointerPickUpRef.current = false;
-    if (!carrying) return;
+    if (!carrying) return false;
     const isSameSubject = isCarrying(subjectKey);
     dispatch({ type: "cancel" });
-    if (isSameSubject) return;
+    if (isSameSubject) return true;
     report({
       kind: "carryEnded",
       source: carrying.source,
       reason: "superseded",
     });
+    return false;
   };
 
   const activateProvider = (type: string, origin: ActivationOrigin) => {

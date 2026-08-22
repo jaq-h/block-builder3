@@ -727,6 +727,136 @@ describe("GridArea, a carry that a drag takes over", () => {
 });
 
 // =============================================================================
+// A SAME-CELL NUDGE IN THE BULK PATTERN, WHICH ANOTHER LANE OWNS
+// =============================================================================
+//
+// What the user is TOLD about a same-cell release is decided independently of
+// the placement rules: a block can never be refused by the cell it is sitting
+// in. What the grid DOES on that release is deliberately untouched here. In the
+// bulk pattern every cell is a legal target, so the drop still runs the full
+// move - it rewrites the dragged order's `axis` and `yPosition`, and its
+// remove-then-push reorders the cell array, which is what the cell header reads
+// `blocks[0]` for. That reordering and re-pricing belongs to `bb3-mapping-owner`
+// under the ruling that direction belongs to the cell, and two lanes
+// reconciling one question is how the display and the payload drifted apart
+// before. This test is the fence: it fails if that mutation is quietly changed
+// here instead of there.
+
+describe("GridArea, a same-cell nudge in the bulk pattern", () => {
+  it("still reorders and re-prices the cell, while saying the block stayed", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("m1"), placedLimit(25, "b1"));
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+
+    const home = cell(0, 1) as HTMLElement;
+    expect(home).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Market, Limit",
+    );
+    // The cell header, which renders `blocks[0].label`.
+    expect(within(home).getByText("Market")).toBeInTheDocument();
+
+    // Ten pixels and a release inside the block's own cell: the most ordinary
+    // accidental gesture there is.
+    stubRect(home, 400, 200);
+    const market = within(home).getByRole("button", { name: /^Market order,/ });
+    fireEvent(market, pointerAt("pointerdown", 30, 500));
+    fireEvent(market, pointerAt("pointermove", 40, 504));
+    fireEvent(market, pointerAt("pointerup", 40, 504));
+
+    // Unchanged from main, and owned elsewhere: the Market has been taken out
+    // and pushed back, so the Limit is now `blocks[0]` and names the cell.
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Limit, Market",
+    );
+    expect(within(cell(0, 1) as HTMLElement).getByText("Limit")).toBeInTheDocument();
+
+    // And the sentence is decided from the fact that the block did not change
+    // cells, not from what the placement rules said about the cell.
+    expect(announcement()).toBe("Market block stayed in Entry column, row 2.");
+  });
+});
+
+// =============================================================================
+// A CARRY THAT THE DRAGGED BLOCK'S OWN GESTURE ENDS
+// =============================================================================
+//
+// Dragging the very block you are carrying releases that carry, and saying so
+// as the drag begins would be falsified by the same gesture. So it is folded
+// into the one sentence the gesture's outcome produces - which matters most
+// exactly where that outcome describes nothing happening, because then nothing
+// else in it tells the user their block has left their hand and the next tap on
+// a cell will do nothing.
+
+describe("GridArea, a carry ended by a drag on that same block", () => {
+  it("says the block stayed and that it is no longer carried, in one sentence", () => {
+    const { block } = renderConditionalMarket();
+
+    tap(block);
+    expect(announcement()).toContain("Picked up Market block");
+
+    fireEvent(block, pointerAt("pointerdown", 30, 500));
+    fireEvent(block, pointerAt("pointermove", 40, 504));
+    fireEvent(block, pointerAt("pointerup", 40, 504));
+    fireEvent.click(block, { bubbles: true });
+
+    expect(announcement()).toBe(
+      "Market block stayed in Entry column, primary row, and is no longer picked up.",
+    );
+    // The clause has to still be true after the operation that produced it.
+    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
+  });
+
+  it("says the same when the browser cancels that drag", () => {
+    const { block } = renderConditionalMarket();
+
+    tap(block);
+
+    fireEvent(block, pointerAt("pointerdown", 30, 500));
+    fireEvent(block, pointerAt("pointermove", 40, 504));
+    fireEvent(block, pointerAt("pointercancel", 40, 504));
+
+    // `onDragCancel` ends the drag before `onDragAborted` announces, so this
+    // also pins that the released-carry flag outlives the end of the gesture.
+    expect(announcement()).toBe(
+      "Drag cancelled. Market block stayed in Entry column, primary row, and is no longer picked up.",
+    );
+    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
+  });
+});
+
+// =============================================================================
+// A PICK-UP REFUSED WHILE SOMETHING IS ALREADY CARRIED
+// =============================================================================
+
+describe("GridArea, a refused pick-up while a block is carried", () => {
+  it("names the order that is still in hand", () => {
+    // Every diagonal of an occupied cell is itself occupied, so the conditional
+    // rules leave nowhere on this grid for a new order to go.
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    grid[1][0].push(placedMarket("b2"));
+    grid[1][2].push(placedMarket("b3"));
+    render(<Harness initialGrid={grid} />);
+
+    // A placed block can always go back where it came from, so this pick-up is
+    // offered even though nothing new can be placed.
+    tap(screen.getAllByRole("button", { name: /^Market order,/ })[0]);
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+
+    // Refusing without dispatching leaves the Market carried, and the highlight
+    // that shows it is not available to a screen-reader user.
+    expect(announcement()).toBe(
+      "Take Profit order cannot be placed anywhere in the grid right now. Still carrying Market block.",
+    );
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+  });
+});
+
+// =============================================================================
 // A BULK CELL HOLDING TWO ORDER FAMILIES
 // =============================================================================
 //
