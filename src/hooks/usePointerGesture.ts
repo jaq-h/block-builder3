@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 // One code path for mouse, touch and pen. Both drag hooks build on this, so a
 // finger, a stylus and a mouse produce exactly the same callbacks.
 //
-// Two things here are load-bearing:
+// Three things here are load-bearing:
 //
 //  - `setPointerCapture` retargets every subsequent move/up for this pointer to
 //    the element the gesture started on. That is what makes a release *outside

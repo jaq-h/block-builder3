@@ -26,7 +26,8 @@ function emitChange() {
   for (const fn of listeners) fn();
 }
 
-// ── Public API (called from useFreeDrag) ───────────────────────────────────
+// ── Public API (called from useFreeDrag, and from GridArea's outside-click
+//    escape hatch, which stops an overlay whose gesture lost its owner) ──────
 
 export function startDragOverlay(
   icon: SvgIcon | undefined,

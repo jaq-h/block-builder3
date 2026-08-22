@@ -407,7 +407,7 @@ same two placement functions in `GridArea`, expressed in terms of a target **cel
 than a pointer coordinate, so the input methods cannot drift apart.
 
 **Pointer: mouse, touch and pen.** `usePointerGesture` handles the raw gesture on Pointer
-Events, so one code path serves all three devices. Two details are load-bearing:
+Events, so one code path serves all three devices. Three details are load-bearing:
 
 - The dragged element takes `setPointerCapture`, which is what delivers `pointerup` even
   when the button is released **outside the browser window**. The previous
