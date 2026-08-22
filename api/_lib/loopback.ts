@@ -82,17 +82,18 @@ export const isLoopbackHostName = (name: string): boolean =>
 /**
  * Is a Vite/Node bind host confined to loopback?
  *
- * Vite reports `undefined` or `false` for its localhost default and `true` for
- * "every interface"; a string is whatever `--host` was given.
+ * Only `undefined` and `false` mean "Vite's own default", which is loopback.
+ * `true` means every interface. Everything else is a host name the operator
+ * supplied, and it has to be one of the three above - including the empty
+ * string, which is not a spelling of the default: `listen({ host: "" })` binds
+ * to `::`, so an empty `--host` exposes a credential-holding server to the
+ * network while reading like the safest possible value.
  */
 export const isLoopbackHost = (host: string | boolean | undefined): boolean => {
   if (host === undefined || host === false) return true;
   if (host === true) return false;
 
-  const bare = host.trim();
-  if (bare === "") return true;
-
-  return isLoopbackHostName(bare);
+  return isLoopbackHostName(host);
 };
 
 /**
@@ -138,16 +139,25 @@ export const APP_REQUEST_HEADER = "x-block-builder-app";
  *
  * This is the affirmative proof, and it exists because every attempt to *infer*
  * a caller's identity from whichever optional headers happened to be present
- * was bypassed by a request shape that omits them. A cross-origin `fetch`
- * carrying a header outside the CORS safelist triggers a preflight, and this
- * server answers `OPTIONS` with a 405 and no `Access-Control-Allow-*` headers,
- * so the real request is never sent. An `<img src>`, a `<script src>` and a
- * form post cannot set a header at all. So a request that carries this header
- * came from something that can choose its own headers: this app's page, curl,
- * or a script the operator ran.
+ * was bypassed by a request shape that omits them. An `<img src>`, a
+ * `<script src>` and a form post cannot set a header at all, and a cross-origin
+ * `fetch` carrying a header outside the CORS safelist has to win a preflight
+ * first. Neither server this app runs on grants one to another site:
+ *
+ * - Deployed, the function answers `OPTIONS` itself, with a 405 from
+ *   `requireMethod` and no `Access-Control-Allow-*` header at all.
+ * - Under `npm run dev`, Vite's own `cors` middleware answers the preflight
+ *   before our middleware is reached, with a 204 - but its default allowed
+ *   origins are loopback only, so a page on another site is sent no
+ *   `Access-Control-Allow-Origin` and the browser drops the real request.
+ *
+ * That default does admit *other loopback origins*, so a page served from a
+ * different port on this machine can pass the dev server's preflight and set
+ * the header. It is refused by `isForeignOriginRequest` instead, which is why
+ * this check is one of four rather than the whole test.
  *
  * It is not a secret and is not authentication - anything on this machine can
- * send it. It is the thing a *foreign page* structurally cannot send.
+ * send it. It is the thing a page on another *site* cannot get permission to.
  */
 export const hasAppRequestHeader = (req: IncomingMessage): boolean => {
   const value = req.headers?.[APP_REQUEST_HEADER];

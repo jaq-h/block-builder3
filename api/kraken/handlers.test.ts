@@ -344,10 +344,10 @@ describe("GET /api/kraken/balance", () => {
     }
   });
 
-  it("refuses a cross-origin POST that sends only CORS-safelisted headers", async () => {
-    // The shape that triggers no preflight, so nothing else would have stopped
-    // it: a page on evil.example fetches with Accept alone, from the operator's
-    // own machine, naming the genuine loopback host.
+  it("refuses a cross-site caller even when it does present the app header", async () => {
+    // The independent proof of the origin check: this request satisfies the peer
+    // address, the Host header and the app header, and is refused on
+    // Sec-Fetch-Site alone. Nothing here rests on the header being hard to set.
     goLive();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
@@ -355,6 +355,27 @@ describe("GET /api/kraken/balance", () => {
     await balanceHandler(
       request("GET", "127.0.0.1", "localhost:3002", {
         ...CROSS_SITE,
+        accept: "application/json",
+        origin: "http://evil.example",
+      }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cross-origin fetch that sends only CORS-safelisted headers", async () => {
+    // The shape that triggers no preflight, and therefore the shape a foreign
+    // page can actually send: Accept alone, from the operator's own machine,
+    // naming the genuine loopback host. It carries no app header, because it
+    // could not.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await balanceHandler(
+      request("GET", "127.0.0.1", "localhost:3002", {
         accept: "application/json",
         origin: "http://evil.example",
       }),

@@ -29,6 +29,18 @@ const ROUTES: Record<string, () => Promise<{ default: ApiHandler }>> = {
   "/api/kraken/ws-token": () => import("../api/kraken/ws-token"),
 };
 
+/**
+ * How to name a refused bind in the error. An empty host is worth spelling out:
+ * it listens on every interface, which is the opposite of what it reads like.
+ */
+const describeBind = (host: string | boolean | undefined): string => {
+  if (host === true) return "every interface";
+  if (typeof host === "string" && host.trim() === "") {
+    return "an empty host, which listens on every interface";
+  }
+  return JSON.stringify(host);
+};
+
 export const krakenApiDevServer = (rootDir: string): Plugin => ({
   name: "kraken-api-dev-server",
   apply: "serve",
@@ -47,7 +59,7 @@ export const krakenApiDevServer = (rootDir: string): Plugin => ({
     if (resolveServerRuntime(process.env).mode === "live" && !isLoopbackHost(host)) {
       throw new Error(
         `Refusing to start: live Kraken trading is configured, but the dev server is bound ` +
-          `to ${host === true ? "every interface" : JSON.stringify(host)}, which this app ` +
+          `to ${describeBind(host)}, which this app ` +
           "does not serve live. This server signs Kraken requests for any caller that can " +
           "reach it and provides no authentication, so live mode is served only on the " +
           "loopback names " +

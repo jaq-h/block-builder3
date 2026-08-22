@@ -213,7 +213,8 @@ Live mode is therefore confined to loopback, twice over:
 
 - **The bind.** A dev server configured for live trading and bound to anything but
   `localhost`, `127.0.0.1` or `::1` **fails to start**, with an error naming the bind it
-  refused and the three it serves (`vite/krakenApiDevServer.ts`). That list is the same one
+  refused and the three it serves (`vite/krakenApiDevServer.ts`). An empty `--host` is
+  refused with the rest: it reads like the default but listens on every interface. That list is the same one
   the per-request `Host` check uses, so a bind that would start a server refusing its own
   operator is caught at startup rather than becoming a live server that answers every request
   as though it simulated. Any other hosting must apply the same rule: bind live mode to
@@ -227,11 +228,16 @@ Live mode is therefore confined to loopback, twice over:
      instructed: an attacker's page re-resolves its own hostname to `127.0.0.1`, so the peer
      address is loopback while the page reading the Kraken token is not yours;
   3. the request carries this app's own header, `X-Block-Builder-App: 1`. It is not a secret
-     and carries no credential; it is the thing a foreign page structurally cannot send. A
-     cross-origin `fetch` with a header outside the CORS safelist triggers a preflight, which
-     this server answers `405` with no `Access-Control-Allow-*` header, so the real request is
-     never sent; an `<img src>` or a form post cannot set a header at all. The app sends it on
-     every call, and a script or a `curl` invocation sends it by hand;
+     and carries no credential; it is the thing a page on another site cannot get permission
+     to send. An `<img src>` or a form post cannot set a header at all, and a cross-origin
+     `fetch` with a header outside the CORS safelist has to win a preflight first. Deployed,
+     the function answers that `OPTIONS` itself with a `405` and no `Access-Control-Allow-*`
+     header. Under `npm run dev`, Vite's own `cors` middleware answers it before ours runs,
+     with a `204`, but its default allowed origins are loopback only, so a foreign origin is
+     sent no `Access-Control-Allow-Origin` and the browser drops the real request. A page on
+     *another loopback origin* does pass that preflight, and is refused by check 4 instead,
+     which is why this is one check of four. The app sends the header on every call, and a
+     script or a `curl` invocation sends it by hand;
   4. no foreign origin is declared, by `Sec-Fetch-Site` or `Origin`. Without this any site the
      operator visits while running live can `POST /api/kraken/ws-token` with CORS-safelisted
      headers only, which sends no preflight. It could not read the reply, but it would have

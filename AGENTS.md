@@ -118,7 +118,8 @@ simulates.
 
 **Live mode is loopback only, and we ship no authentication for it.** A live server signs for
 whoever reaches it, so it is confined twice: `vite/krakenApiDevServer.ts` *fails to start* when
-live mode is configured on a bind other than `localhost`, `127.0.0.1` or `::1`, and
+live mode is configured on a bind other than `localhost`, `127.0.0.1` or `::1` (an empty
+host is refused too, since it listens on every interface), and
 `isOperatorRequest` in `api/_lib/loopback.ts` gates `/api/kraken/balance`,
 `/api/kraken/ws-token` and `/api/kraken/status` per request, regardless of the bind. The bind
 check and the `Host` check share one list of loopback names (`LOOPBACK_HOST_NAMES`), because
@@ -131,8 +132,11 @@ or `Origin` (this is what stops any site the operator visits from burning a Krak
 through the token mint). The header is the only affirmative check: the other three infer a
 caller from headers a request may simply omit, and each was bypassed in turn by a shape that
 omits them, most recently an `<img src>` on a browser predating Fetch Metadata, which sends
-neither `Sec-Fetch-Site` nor `Origin`. A foreign page cannot set a header without a preflight
-it will fail, so absence of the origin headers is no longer read as "this is curl". The client
+neither `Sec-Fetch-Site` nor `Origin`. A page on another site cannot set a header without a
+preflight neither server grants it (the deployed function answers `OPTIONS` 405; the dev
+server's `cors` middleware answers 204 but allows loopback origins only), so absence of the
+origin headers is no longer read as "this is curl". A page on another loopback origin does
+get through that preflight, and is caught by the origin check instead. The client
 sends it from `API_REQUEST_HEADERS` in `src/api/appRequestHeader.ts`; that name and
 `APP_REQUEST_HEADER` in `api/_lib/loopback.ts` are **two constants that must stay in step**,
 and `api/kraken/handlers.test.ts` builds a request from the client's copy so a drift fails

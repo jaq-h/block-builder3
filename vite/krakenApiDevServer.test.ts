@@ -100,10 +100,21 @@ describe("the dev server's loopback rule", () => {
     );
   });
 
+  it("refuses to start a live server on an empty host, which listens everywhere", () => {
+    // `listen({ host: "" })` binds to `::`, so an empty --host reads like the
+    // safest possible value and is the least safe one.
+    goLive();
+
+    for (const host of ["", "   "]) {
+      expect(() => start(createServer(host))).toThrow(/Refusing to start/);
+    }
+    expect(() => start(createServer(""))).toThrow(/every interface/);
+  });
+
   it("starts a live server on the loopback default and on each name it serves", () => {
     goLive();
 
-    for (const host of [undefined, false, "", "localhost", "127.0.0.1", "::1", "[::1]"]) {
+    for (const host of [undefined, false, "localhost", "127.0.0.1", "::1", "[::1]"]) {
       expect(() => start(createServer(host))).not.toThrow();
     }
   });
