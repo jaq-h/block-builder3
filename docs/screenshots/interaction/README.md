@@ -4,12 +4,27 @@ Captured from the running app over the DevTools protocol, so every gesture below
 browser input rather than a synthesised DOM event. Chrome at 1440x900 for the desktop shots
 and 390x844 with touch emulation for the phone ones.
 
-All four were captured against `ad7a372`. Later commits do change behaviour, but only what
-the grid announces - nothing these shots render - so each is still accurate for what it
-depicts. Two earlier sets had to be thrown away - the first recorded prices produced by the
-vertical-drag mapping this change replaced, and the second predated three further
-behavioural commits. A screenshot that predates the code it claims to show is not evidence,
-so provenance here is stated as a commit rather than as "the final code".
+All four were captured against `ad7a372`. Two earlier sets had to be thrown away - the first
+recorded prices produced by the vertical-drag mapping this change replaced, and the second
+predated three further behavioural commits. A screenshot that predates the code it claims to
+show is not evidence, so provenance here is stated as a commit rather than as "the final
+code".
+
+**These are evidence of the interaction, not of the current chrome.** The gestures and the
+outcomes below still hold, but the panel chrome around them has since been reworked: all
+three panel titles now share one bar geometry, the selected order assembly type carries an
+accent border and a tick rather than looking identical to the unselected one, the grid
+cell's height floor is derived from the axis geometry instead of a flat 220px, and the
+Active Orders container no longer draws a scrollbar it can never move. So the header
+alignment, the pattern selector and the scrollbars visible in these shots are the state
+those changes replaced. Re-shooting the set is the job of whoever next needs it to show
+chrome, and it has to wait for the pointer drag to be fixed first: a regular mouse drag
+currently never places, the block stays stuck to the cursor, and that defect is reported.
+`02-mouse-desktop.png` is one of the four gestures in this set, so re-shooting now would
+either fail outright or record the broken behaviour as the reference interaction. That is
+this folder's own rule rather than an exception to it - a screenshot that records a known
+defect as the reference is no more evidence than one that predates the code it claims to
+show.
 
 | Shot | What it shows |
 |---|---|

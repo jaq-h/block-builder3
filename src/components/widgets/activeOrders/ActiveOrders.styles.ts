@@ -1,6 +1,8 @@
 // Active Orders widget → Tailwind + CVA
 import { cva } from "class-variance-authority";
 import type { CSSProperties } from "react";
+import { cn } from "../../../lib/utils";
+import { panelHeaderBar, panelHeaderTitle } from "../../../styles/shared";
 
 // =============================================================================
 // CONTAINER & LAYOUT
@@ -16,10 +18,11 @@ export const columnsWrapper = "flex flex-1 h-full gap-1.5";
 // HEADER
 // =============================================================================
 
-export const header =
-  "p-4 text-center border-b border-border-neutral bg-bg-overlay";
+// The same bar the chart panel above it and the assembly panel beside it use,
+// so all three sit at one height with their titles on one rail.
+export const header = panelHeaderBar;
 
-export const headerTextClass = "m-0 text-lg text-text-primary";
+export const headerTextClass = cn("m-0", panelHeaderTitle);
 
 // =============================================================================
 // STATUS BAR

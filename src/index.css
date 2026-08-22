@@ -155,7 +155,7 @@
    COMPOSITED BREATHING ANIMATIONS (via pseudo-element opacity)
    ============================================================================ */
 
-/* Grid cell breathing — valid drop target / hover indicator */
+/* Grid cell breathing - valid drop target / hover indicator */
 .animate-breathing {
     animation: none !important;
 }
@@ -172,7 +172,7 @@
     animation: breathingGlow 1.5s ease-in infinite;
 }
 
-/* Block button breathing — highlighted provider block */
+/* Block button breathing - highlighted provider block */
 .animate-block-breathing {
     animation: none !important;
 }
@@ -255,7 +255,28 @@ h1 {
     line-height: 1.1;
 }
 
-button {
+/* This block is the Vite starter's default button skin, and it sits outside any
+   cascade layer. Unlayered CSS beats layered CSS whatever the specificity, and
+   every Tailwind utility is layered, so for any button it matches it wins: that
+   button's own `px-*`, `border-*`, `rounded-*`, `bg-*` and `text-*` do nothing.
+   That is a real defect and it is app-wide - the fix is to move this block into
+   `@layer base`, which repaints every button in the app and so is a deliberate
+   design change rather than a side effect of somebody's bug fix.
+
+   Until that change is taken on its own terms, `[data-unstyled]` is the way out
+   for one control at a time. A button carrying it is saying "I bring my own
+   skin"; this rule stops matching it and its utilities apply normally. Every
+   button without the attribute renders exactly as it always has.
+
+   Use it only where a control genuinely needs to paint itself - a selected
+   state, a semantic colour - and never as a blanket. When the app-wide change
+   lands, the `:not(...)` and every `data-unstyled` come off together.
+
+   The focus ring is deliberately NOT scoped. It is the one part of this block
+   that is a real default rather than a skin, no component overrides it, and a
+   control that opts out of the skin must not silently opt out of being
+   focusable-visibly. */
+button:not([data-unstyled]) {
     border-radius: 8px;
     border: 1px solid var(--border-color-neutral);
     padding: 0.6em 1.2em;
@@ -268,7 +289,7 @@ button {
     color: rgba(255, 255, 255, 0.87);
 }
 
-button:hover {
+button:not([data-unstyled]):hover {
     border-color: var(--accent-color-purple);
     background-color: rgba(133, 91, 251, 0.15);
 }

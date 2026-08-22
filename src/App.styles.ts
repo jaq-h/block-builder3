@@ -37,6 +37,12 @@ export const navLinkVariants = cva(
 // the generic grey button skin instead of green. The real fix is to move that
 // reset into `@layer base`, which changes how every button in the app paints, so
 // it belongs in its own change rather than riding along here.
+//
+// `[data-unstyled]` is now the per-control way out of that reset, and this
+// button could carry it instead and drop every `!` below for the same rendering.
+// It deliberately has not: swapping the mechanism under the app's primary action
+// buys nothing on its own, and it is part of the app-wide change above rather
+// than of whatever bug fix happens to be passing through.
 export const executeButtonVariants = cva(
   [
     "px-5! py-2.5! text-white! border-none! rounded! text-sm! font-medium!",
@@ -86,8 +92,17 @@ export const simulationBadgeVariants = cva(
 // collapses to `auto`, the content grows past the viewport and the action bar -
 // Execute Trade included - ends up clipped below the fold. Below `lg` the height
 // stays content-driven so the tabbed layout keeps scrolling with the page.
+//
+// The row template has to change with the breakpoint, because what is in the
+// grid changes with it. Below `lg` there are two rows and two in-flow items -
+// the tab nav, then `main`. Above `lg` the nav is `display: none` and so is not
+// a grid item at all, and the visually-hidden `h1` is absolutely positioned and
+// so is not one either, which left `main` alone in the `auto` row and a `1fr`
+// row standing empty underneath it: measured at a 1440x900 viewport the tracks
+// came out `835.5px 64.5px`, so the desktop shell threw away 64.5px of viewport
+// and the assembly grid was that much shorter than the window could give it.
 export const appContainer =
-  "flex-1 min-h-0 lg:h-dvh grid grid-rows-[auto_1fr] overflow-hidden bg-bg-primary";
+  "flex-1 min-h-0 lg:h-dvh grid grid-rows-[auto_1fr] lg:grid-rows-[1fr] overflow-hidden bg-bg-primary";
 
 export const mainContent = "overflow-hidden";
 
