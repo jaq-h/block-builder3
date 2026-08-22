@@ -35,8 +35,12 @@ const createResponse = (): FakeResponse => {
   return res as unknown as FakeResponse;
 };
 
-const request = (method: string, remoteAddress = "127.0.0.1"): IncomingMessage =>
-  ({ method, socket: { remoteAddress } }) as IncomingMessage;
+const request = (
+  method: string,
+  remoteAddress = "127.0.0.1",
+  host: string | undefined = "localhost:3002",
+): IncomingMessage =>
+  ({ method, socket: { remoteAddress }, headers: { host } }) as IncomingMessage;
 
 // =============================================================================
 // Environment
@@ -134,6 +138,16 @@ describe("GET /api/kraken/status", () => {
 
     expect(status.json()).toMatchObject({ liveAvailable: false });
     expect(balance.statusCode).toBe(403);
+  });
+
+  it("tells a DNS-rebound caller that it simulates, though its peer address is loopback", async () => {
+    // The attacker's page re-resolved its own hostname to 127.0.0.1, so the peer
+    // address looks local. The Host header is what gives it away.
+    goLive();
+    const res = createResponse();
+    await statusHandler(request("GET", "127.0.0.1", "kraken-rebind.example"), res);
+
+    expect(res.json()).toMatchObject({ mode: "simulation", liveAvailable: false });
   });
 
   it("simulates when the peer address cannot be read at all", async () => {
@@ -264,6 +278,60 @@ describe("GET /api/kraken/balance", () => {
     }
   });
 
+  it("serves every loopback host a browser actually addresses", async () => {
+    goLive();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      okResponse({ error: [], result: { ZUSD: "1.0" } }),
+    );
+
+    for (const host of ["localhost", "localhost:3002", "127.0.0.1:3002", "[::1]:3002"]) {
+      const res = createResponse();
+      await balanceHandler(request("GET", "127.0.0.1", host), res);
+      expect(res.statusCode).toBe(200);
+    }
+  });
+
+  it("refuses a DNS rebind, whose peer address is loopback but whose Host is not", async () => {
+    // The attack the peer-address check alone does not stop: an attacker's page
+    // re-resolves its own hostname to 127.0.0.1, so the request arrives from
+    // loopback, is same-origin to that page, and would hand it the account.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await balanceHandler(request("GET", "127.0.0.1", "kraken-rebind.example"), res);
+
+    expect(res.statusCode).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses a Host header that is malformed rather than guessing at it", async () => {
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    for (const host of ["", "   ", "localhost@evil.example", "evil.example/localhost"]) {
+      const res = createResponse();
+      await balanceHandler(request("GET", "127.0.0.1", host), res);
+      expect(res.statusCode).toBe(403);
+    }
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses a request carrying no Host header at all", async () => {
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await balanceHandler(
+      { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: {} } as IncomingMessage,
+      res,
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("refuses when the peer address cannot be read at all", async () => {
     // A guard that cannot see who is calling has to assume the worst.
     goLive();
@@ -333,6 +401,17 @@ describe("POST /api/kraken/ws-token", () => {
 
     const res = createResponse();
     await wsTokenHandler(request("POST", "10.0.0.4"), res);
+
+    expect(res.statusCode).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses to mint a token for a DNS-rebound page", async () => {
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await wsTokenHandler(request("POST", "127.0.0.1", "kraken-rebind.example"), res);
 
     expect(res.statusCode).toBe(403);
     expect(fetchSpy).not.toHaveBeenCalled();

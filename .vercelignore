@@ -1,0 +1,9 @@
+# Vercel's zero-config function detection publishes every file under `api/` that
+# is not prefixed with an underscore as a Serverless Function. A colocated test
+# would therefore become a route: `api/kraken/handlers.test.ts` would be built
+# as `/api/kraken/handlers.test`, which imports `vitest` and exports no handler.
+#
+# The pattern covers every test under `api/`, not just today's file, so adding
+# the next one cannot quietly publish an endpoint. `api/_lib/` is already safe
+# by the underscore rule, but is matched here too so the rule has no exceptions.
+api/**/*.test.ts

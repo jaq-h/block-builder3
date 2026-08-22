@@ -122,6 +122,7 @@ describe("the dev server's routes", () => {
       url,
       method: "GET",
       socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "localhost:3002" },
     } as IncomingMessage;
 
     const next = vi.fn();

@@ -208,13 +208,22 @@ Live mode is therefore confined to loopback, twice over:
   **fails to start** with an error naming the problem (`vite/krakenApiDevServer.ts`). Any other
   hosting must apply the same rule: bind live mode to `127.0.0.1`, never `0.0.0.0`.
 - **The request.** Independently of the bind, `/api/kraken/balance` and `/api/kraken/ws-token`
-  answer `403` to any peer that is not `127.0.0.0/8` or `::1` (`api/_lib/loopback.ts`), so a
-  permissive bind cannot expose them either. `/api/kraken/status` answers the same way round:
-  a non-loopback caller is told the deployment simulates, because that is what it will get.
+  answer `403` unless *both* halves of the request are loopback (`api/_lib/loopback.ts`): the
+  peer address is in `127.0.0.0/8` or is `::1`, **and** the `Host` header is `localhost`,
+  `127.0.0.1` or `[::1]`, with any port. The `Host` half is not redundant. Without it a DNS
+  rebind reaches a server bound exactly as instructed: an attacker's page re-resolves its own
+  hostname to `127.0.0.1`, so the peer address is loopback while the page reading the Kraken
+  token is not yours. A missing or malformed `Host` is refused. `/api/kraken/status` applies
+  the same test and tells a caller that fails it that the deployment simulates, because that
+  is what that caller will get.
+
+That guard establishes that a request came from this machine. It does **not** establish who
+sent it, and it is not authentication.
 
 **Exposing this beyond loopback is the operator's own responsibility.** If you put a live
 instance behind a proxy, on a LAN, or on a tunnel, you must add your own authentication in
-front of it. We provide none, on purpose.
+front of it. We provide none, on purpose. A reverse proxy in particular defeats the peer-address
+half of the guard by design, since every request then arrives from the proxy.
 
 ### Running live, locally or self-hosted
 

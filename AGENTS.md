@@ -65,8 +65,8 @@ corrupt a real order or leak a credential (`api/_lib/`, `src/api/orderMapper.ts`
 
 ## Deployment
 
-Vercel, configured entirely by `vercel.json`; the README's **Deployment** section justifies every
-entry in it. Three facts bite during ordinary work:
+Vercel, configured by `vercel.json` plus `.vercelignore`; the README's **Deployment** section
+justifies every entry in them. Four facts bite during ordinary work:
 
 - **A new external endpoint has to be added to the CSP's `connect-src`.** Miss it and the request
   is blocked in production only, with nothing in the source to explain why. `npm run preview` does
@@ -77,6 +77,10 @@ entry in it. Three facts bite during ordinary work:
   Node's `IncomingMessage`/`ServerResponse` so the same module runs on Vercel, on the Vite dev
   server and in the tests. Nothing there reads a request body, which is the one place those three
   environments genuinely differ.
+- **Every non-underscore file under `api/` becomes a public route.** That includes a colocated
+  test, which would deploy as an endpoint that imports `vitest` and exports no handler.
+  `.vercelignore` excludes `api/**/*.test.ts`, and `api/_lib/deploymentSurface.test.ts` asserts which
+  routes the deploy would actually publish.
 
 ## Credentials and the server boundary
 
@@ -110,9 +114,11 @@ simulates.
 **Live mode is loopback only, and we ship no authentication for it.** A live server signs for
 whoever reaches it, so it is confined twice: `vite/krakenApiDevServer.ts` *fails to start* when
 live mode is configured on a non-loopback bind, and `api/_lib/loopback.ts` answers 403 to a
-non-loopback peer at `/api/kraken/balance` and `/api/kraken/ws-token` regardless of the bind.
-`/api/kraken/status` follows the same rule and reports simulation to a non-loopback caller, so
-the UI never promises live trading a caller cannot use.
+non-loopback request at `/api/kraken/balance` and `/api/kraken/ws-token` regardless of the bind.
+A request counts as loopback only when the peer address *and* the `Host` header both are; the
+`Host` half is what stops a DNS rebind, which produces a loopback peer for a page you never
+opened. `/api/kraken/status` applies the same test and reports simulation to a caller that
+fails it, so the UI never promises live trading a caller cannot use.
 Other hosting must bind live mode to `127.0.0.1` itself. Exposing a live instance beyond
 loopback requires the operator to add their own protection; we deliberately provide none.
 

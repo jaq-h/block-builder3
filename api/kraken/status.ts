@@ -18,7 +18,7 @@
  */
 
 import { requireMethod, sendJson, type ApiHandler } from "../_lib/http";
-import { isLoopbackAddress } from "../_lib/loopback";
+import { isLoopbackRequest } from "../_lib/loopback";
 import { getServerRuntime } from "../_lib/runtime";
 
 const handler: ApiHandler = (req, res) => {
@@ -37,8 +37,7 @@ const handler: ApiHandler = (req, res) => {
     return;
   }
 
-  const live =
-    runtime.mode === "live" && isLoopbackAddress(req.socket?.remoteAddress);
+  const live = runtime.mode === "live" && isLoopbackRequest(req);
 
   sendJson(res, 200, {
     mode: live ? "live" : "simulation",
