@@ -38,9 +38,12 @@ SVG imports work in tests for the same reason.
   each test.
 - Tests are colocated with the code they cover, named `*.test.ts`/`*.test.tsx`.
 
-Some tests deliberately assert **current, wrong** behaviour. They are commented
-`CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. If you are fixing the
-underlying bug, change the test and the comment together; do not quietly loosen it.
+A test may deliberately assert **current, wrong** behaviour, commented
+`CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. None are live today;
+the last of them, in `src/api/orderMapper.test.ts`, were converted when the bugs they
+pinned were fixed. That is the convention when you fix such a bug: flip the expectation to
+the correct behaviour and keep a `FORMERLY A CHARACTERISATION OF A KNOWN BUG` note
+recording the wrong values, rather than deleting the test or quietly loosening it.
 
 `src/test/pointerCapture.ts` installs a tracking `setPointerCapture` on `Element.prototype`:
 jsdom ships `PointerEvent` but not the capture methods, so without it the assertion that a
@@ -130,6 +133,114 @@ in the app and so wants its own change.
 `display: none`. Using a JSX element variable in two branches mounts two
 independent components, and crossing the breakpoint then swaps in an empty one -
 silent data loss. `src/App.test.tsx` fails if that returns.
+
+## Prices and order types
+
+The invariants the order path depends on, each of which was previously violated in
+`src/api/orderMapper.ts` and is now pinned by tests:
+
+- **One price formula.** `src/utils/price.ts` `priceAtOffset` is the shared owner of
+  "percentage offset from market" for the grid display and the order mapper. The grid cell
+  renders its price chip through `calculatePrice`, which delegates to it, and the order
+  mapper builds Kraken payloads from it directly, so the price sent is the price shown.
+  `src/components/widgets/orderChart/OrderChart.tsx` still inlines an identical copy of the
+  formula for its price lines; reconciling that belongs to `bb3-mapping-owner`, which
+  owns that file. Captain's decision D3: a block at yPosition 25 means **25%** from market,
+  not 2.5%. The side of the market comes from the block's own `direction`, never from
+  re-deriving one from row/column - those disagree under the bulk pattern. That settles the
+  direction question **for single-block cells**; it is still **open for bulk cells holding
+  mixed order families**, which is the known gap below, owned by `bb3-mapping-owner`.
+- **A block's order type is `BlockData.orderType`.** Never parse it back out of the block id.
+  Ids look like `sa-stop-loss-limit-limit-2`, and substring matching on them turned every
+  `-limit` variant into a plain limit order with no trigger. Because `mapOrderType` refuses
+  an unrecognised type rather than guessing, its table in `src/api/orderMapper.ts` and the
+  `ORDER_TYPES` palette in `src/data/orderTypes.ts` are **two lists that must stay in step**,
+  like the path aliases below. Add a type to the palette alone and it drops, renders, saves
+  and reloads fine, then throws at Execute; `orderMapper.test.ts` maps every palette entry
+  so that fails in CI instead.
+- **A block carries only its own axis.** A dual-axis order type is placed as two blocks, one
+  per axis, and `BlockData.axes` on each is just that leg's (`["trigger"]` or `["limit"]`),
+  never the order type's whole list. Rebuilding a saved block from `typeDef.axes` gave one
+  leg both, and the mapper then read that leg's single slider twice and emitted a payload
+  whose `trigger_price` and `limit_price` were the same number - which passes `validateOrder`
+  cleanly, so nothing catches it. `axesForBlockAxis` in `src/utils/blockFactory.ts` owns the
+  axis-to-axes mapping, and both hydration paths go through it - `gridFromConfig` in
+  `StrategyAssemblyContext.tsx` and the Active Orders panel's grid - rather than reaching for
+  `typeDef.axes` or re-deriving `axis === 1 ? trigger : limit`, which has no notion of a
+  single-axis type and relabels a Stop Loss saved at axis 2 as a limit leg. The mapper now
+  refuses a block that claims both axes, on the primary and on a linked conditional alike,
+  so a regression in any construction path fails loudly instead of shipping a trigger price
+  equal to the limit price.
+- **Conditional links are flat and one level deep.** A Kraken conditional close hangs off
+  exactly one primary order and carries no conditional of its own, so each primary may
+  carry one conditional, a conditional may not be shared between two primaries, and a
+  conditional may not have a conditional of its own. Every other shape of the
+  `linkedBlockId` graph is refused by `assertLinksAreFlat` in `src/api/orderMapper.ts`,
+  because each one otherwise emits a wrong order set with nothing to explain it: a cycle
+  sends no orders at all, a chain drops its tail, a shared conditional submits the same
+  close twice, and a link naming a block that is not on the grid emits the primary alone
+  with its protective close gone. A block linked as a conditional must also be an order type
+  Kraken accepts as a conditional close - `CONDITIONAL_ORDER_TYPES` is the one list, shared
+  by that guard and by `buildConditional`, and a block that fails it used to be dropped from
+  the payload without a word, having already been skipped for being somebody's conditional.
+  `findLinkedBlocks` still drops a link it cannot resolve, because it is a resolver rather
+  than a validator; the guard reads each block's raw `linkedBlockId` so it sees the dangle
+  the resolver has already discarded.
+
+  **Ordering constraint, a hard prerequisite rather than a nice-to-have:** before anything
+  in the app writes `linkedBlockId`, deleting a block must clear every link pointing at it.
+  Refusing a dangling link is safe only because nothing writes links today; wiring that path
+  up without fixing deletion first turns an ordinary delete into a refused strategy for real
+  users. Owned by `bb3-mapping-owner`.
+
+`src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type, a block
+claiming both axes, a link graph that is not flat, an incomplete conditional close, and a
+price that is not a finite number or not a positive static one all throw or fail validation,
+because silently substituting a different order is the failure this module exists to
+prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that and surfaces it as `orderError`.
+
+`validateOrder`'s price guard is a last line of defence, not the fix for what feeds it:
+prices reach it as strings, so `"0.0"` is truthy and a presence check passed it. It is
+reachable because `calculateYPosition` works on a 0-100 scale while the slider and the axis
+labels use `SCALE_CONFIG.MAX_PERCENT = 50`, and the drop handler writes the unclamped result
+into the block - a block dragged to the bottom of its cell is a 100% offset, which is a
+price of zero. That root cause is in the drag layer and is owned by `bb3-mapping-owner`.
+Every price must be finite; **positivity is checked only for a static price**, because under
+a `pct` or `quote` price type the value is a signed offset and `-1.5` is legitimate.
+
+Still open in the same file, and deliberately not fixed with the above: the two legs of a
+dual-axis order type (`stop-loss-limit` and friends) are emitted as two separate orders
+rather than one payload carrying both `limit_price` and `triggers`, so each leg now fails
+`validateOrder`. Merging them needs a durable pairing identity on the block, since either
+leg can be dragged to another cell.
+
+**Known gap: under the bulk pattern the price shown and the price sent can disagree.**
+`src/components/common/grid/GridCell.tsx` derives one `isDescending` for the whole cell from
+`blocks[0].direction` and renders every block's price chip, percentage sign and slider
+geometry from it, while the mapper reads each block's own `direction`. A bulk-pattern cell
+can hold blocks with opposite directions, so the two diverge. Concretely: at a $50,000
+market, drop a Limit into Entry/Primary and then a Stop Loss into the same cell, and the
+Stop Loss chip reads `-25.00% $37,500` while the payload and the chart line both say
+`62,500`. It is not reachable in the conditional pattern, which is the default. It is
+deliberately not fixed here, and has been filed to `bb3-mapping-owner`, which owns
+reconciling the chip, the chart and the payload together; that owner must decide what a bulk
+cell means and apply that one answer to all three in a single change - splitting it across
+owners is how display and payload drifted apart in the first place, which is exactly what
+decision D3 exists to prevent.
+
+**Known gap: `axis` is derived two ways, so a live grid and a reloaded one can disagree
+about which leg is the trigger.** Hydration derives `axes` from the saved `axis`, but the
+drop handler rewrites `axis` from the pointer's x-half (`findAxisAtPosition` in
+`src/utils/grid.ts` returns 1 for the left half, 2 for the right; `GridArea.tsx` writes it
+straight into the config) without touching `axes`. Concretely: drag a Stop Loss Limit's
+trigger leg and release just right of the cell midline, and the live session still emits
+`triggers.price = 66098.4` from its in-memory `["trigger"]`, while the same config after an
+Edit reload comes back as `["limit"]` and emits `limit_price = 66098.4`. Same saved
+strategy, two different payloads. Nothing wrong is submitted today, because a split
+dual-axis leg fails `validateOrder` either way - but it becomes a silent wrong payload the
+moment the two legs are merged into one order, which is why it is written down here rather
+than left as folklore. Owned by `bb3-mapping-owner`; `axis` and `axes` should be kept in
+step at the one place `axis` changes, through `axesForBlockAxis`.
 
 ## Path aliases
 

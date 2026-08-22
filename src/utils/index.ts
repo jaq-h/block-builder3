@@ -44,9 +44,13 @@ export {
   isProviderBlockHighlighted,
 } from "./grid";
 
+// Price formula shared by the grid display and the order mapper
+export { priceAtOffset } from "./price";
+
 // Block factory utilities
 export {
   createBlocksFromOrderType,
+  axesForBlockAxis,
   buildOrderConfigEntry,
   shouldShowPercentage,
   isBlockVerticallyDraggable,

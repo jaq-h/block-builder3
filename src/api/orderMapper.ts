@@ -9,31 +9,92 @@ import type {
   OrderType,
   OrderSide,
   ConditionalOrder,
+  ConditionalOrderType,
   OrderTrigger,
+  PriceType,
   TriggerReference,
   UIBlockData,
   OrderBuildContext,
 } from "./types";
 import { DEFAULT_SYMBOL } from "./config";
+import { priceAtOffset } from "../utils/price";
+
+// A Map, not an object literal: an object literal also resolves inherited
+// Object.prototype members, so a type of "toString" or "constructor" would look
+// up to a truthy function and flow into order_type as a garbage value that
+// validateOrder's presence check waves through.
+const ORDER_TYPES_BY_UI_TYPE = new Map<string, OrderType>([
+  ["limit", "limit"],
+  ["market", "market"],
+  ["iceberg", "iceberg"],
+  ["stop-loss", "stop-loss"],
+  ["stop-loss-limit", "stop-loss-limit"],
+  ["take-profit", "take-profit"],
+  ["take-profit-limit", "take-profit-limit"],
+  ["trailing-stop", "trailing-stop"],
+  ["trailing-stop-limit", "trailing-stop-limit"],
+  ["settle-position", "settle-position"],
+]);
+
+// The order types Kraken accepts as a conditional close. One list, because both
+// the link guard and the conditional builder need this same fact and a second
+// copy is how two lists drift apart - the failure already documented for the
+// order-type table and the ORDER_TYPES palette. Built as a Set of
+// ConditionalOrderType so the compiler checks every member against the union the
+// predicate below narrows to, and read as a ReadonlySet<string> so `.has` still
+// takes any OrderType.
+const CONDITIONAL_ORDER_TYPES: ReadonlySet<string> = new Set<ConditionalOrderType>([
+  "limit",
+  "stop-loss",
+  "stop-loss-limit",
+  "take-profit",
+  "take-profit-limit",
+  "trailing-stop",
+  "trailing-stop-limit",
+]);
+
+const isConditionalOrderType = (
+  type: OrderType,
+): type is ConditionalOrderType => CONDITIONAL_ORDER_TYPES.has(type);
+
+// The order types that must carry a limit price, and those that must carry a
+// trigger. One list each, shared by the primary order and by its conditional
+// close, so the two halves of a payload cannot be held to different rules.
+const LIMIT_PRICE_ORDER_TYPES: ReadonlySet<string> = new Set<OrderType>([
+  "limit",
+  "iceberg",
+  "stop-loss-limit",
+  "take-profit-limit",
+  "trailing-stop-limit",
+]);
+
+const TRIGGER_ORDER_TYPES: ReadonlySet<string> = new Set<OrderType>([
+  "stop-loss",
+  "stop-loss-limit",
+  "take-profit",
+  "take-profit-limit",
+  "trailing-stop",
+  "trailing-stop-limit",
+]);
 
 /**
- * Map UI order type string to Kraken OrderType
+ * Map UI order type string to Kraken OrderType.
+ *
+ * Throws rather than falling back to "limit": quietly relabelling an order the
+ * user built as a different one is the failure this module exists to prevent,
+ * and a plain limit order is precisely the wrong guess - it is the one type
+ * that carries no protective trigger.
  */
 const mapOrderType = (type: string): OrderType => {
-  const typeMap: Record<string, OrderType> = {
-    limit: "limit",
-    market: "market",
-    iceberg: "iceberg",
-    "stop-loss": "stop-loss",
-    "stop-loss-limit": "stop-loss-limit",
-    "take-profit": "take-profit",
-    "take-profit-limit": "take-profit-limit",
-    "trailing-stop": "trailing-stop",
-    "trailing-stop-limit": "trailing-stop-limit",
-    "settle-position": "settle-position",
-  };
+  const orderType = ORDER_TYPES_BY_UI_TYPE.get(type);
 
-  return typeMap[type] || "limit";
+  if (!orderType) {
+    throw new Error(
+      `Unknown order type "${type}" - refusing to guess a Kraken order type for it.`,
+    );
+  }
+
+  return orderType;
 };
 
 /**
@@ -45,52 +106,23 @@ const determineSide = (col: number): OrderSide => {
 };
 
 /**
- * Calculate actual price from percentage position and current market price
+ * The price a block represents, from its slider position and the market price.
  *
- * @param yPosition - Percentage position (0-100)
- * @param currentPrice - Current market price
- * @param row - Grid row (0 = top/profit, 1 = middle/primary, 2 = bottom/stop-loss)
- * @param col - Grid column (0 = entry, 1 = exit)
- * @returns Calculated price
+ * Decision D3: the interface is the source of truth. A block at yPosition 25 is
+ * 25% away from market, exactly as its label, its price chip and the chart line
+ * all say, so this calls the same `priceAtOffset` the grid cell renders from
+ * and reads the same `direction` the cell renders from. There is no scale
+ * factor and no second opinion about which side of the market the block is on.
  */
-export const calculatePriceFromPosition = (
-  yPosition: number,
+export const calculateBlockPrice = (
+  block: UIBlockData,
   currentPrice: number,
-  row: number,
-  col: number,
-): number => {
-  // The percentage represents distance from market price
-  // Row 0 (Top): Above market price (for take-profit on exit, limit on entry)
-  // Row 1 (Middle): At or near market price
-  // Row 2 (Bottom): Below market price (for stop-loss)
-
-  // Calculate the price offset
-  // We'll use a configurable scale factor (e.g., 1% position = 0.1% price change)
-  const scaleFactor = 0.1; // 1% UI position = 0.1% price change
-  const percentChange = (yPosition / 100) * scaleFactor * 100;
-
-  // Determine direction based on row and column
-  let priceMultiplier: number;
-
-  if (row === 0) {
-    // Top row: Above market (positive offset)
-    priceMultiplier = 1 + percentChange / 100;
-  } else if (row === 2) {
-    // Bottom row: Below market (negative offset)
-    priceMultiplier = 1 - percentChange / 100;
-  } else {
-    // Middle row: Based on column
-    // Entry (buy) typically at or below market
-    // Exit (sell) typically at or above market
-    if (col === 0) {
-      priceMultiplier = 1 - percentChange / 100;
-    } else {
-      priceMultiplier = 1 + percentChange / 100;
-    }
-  }
-
-  return currentPrice * priceMultiplier;
-};
+): number =>
+  priceAtOffset(
+    currentPrice,
+    block.position.yPosition,
+    block.direction === "downside",
+  );
 
 /**
  * Format price for Kraken API (string with appropriate precision)
@@ -99,51 +131,23 @@ export const formatPriceForAPI = (
   price: number,
   symbol: string = DEFAULT_SYMBOL,
 ): string => {
-  // Determine precision based on asset
+  // Precision follows the BASE asset, not any appearance of "BTC" in the pair.
+  // `symbol.includes("BTC")` also matches a BTC-QUOTED pair such as ETH/BTC,
+  // whose prices are fractions - formatting 0.034512 to one decimal sends the
+  // order at "0.0".
+  const [base] = symbol.split("/");
+  if (base === "BTC" || base === "XBT") {
+    return price.toFixed(1); // BTC pairs quote to one decimal place
+  }
+
   let precision = 2;
-  if (symbol.includes("BTC") || symbol.includes("XBT")) {
-    precision = 1; // BTC pairs typically use 1 decimal place for prices
-  } else if (price < 1) {
+  if (price < 1) {
     precision = 6;
   } else if (price < 100) {
     precision = 4;
   }
 
   return price.toFixed(precision);
-};
-
-/**
- * Extract order type from block ID
- * Block IDs follow the format: baseId-type-counter
- */
-export const extractOrderTypeFromId = (blockId: string): string => {
-  const orderTypes = [
-    "limit",
-    "market",
-    "iceberg",
-    "stop-loss",
-    "stop-loss-limit",
-    "take-profit",
-    "take-profit-limit",
-    "trailing-stop",
-    "trailing-stop-limit",
-  ];
-
-  for (const type of orderTypes) {
-    if (blockId.includes(`-${type}-`)) {
-      return type;
-    }
-  }
-
-  // Fallback: try to extract from ID parts
-  const parts = blockId.split("-");
-  for (const part of parts) {
-    if (orderTypes.includes(part)) {
-      return part;
-    }
-  }
-
-  return "limit"; // Default fallback
 };
 
 /**
@@ -156,7 +160,10 @@ export const blockDataToUIBlock = (
 ): UIBlockData => {
   return {
     id: block.id,
-    orderType: extractOrderTypeFromId(block.id),
+    // Read the block's own order type. It used to be re-derived by scanning the
+    // id string for "-<type>-", which matched "limit" inside every "-limit"
+    // variant and turned a stop-loss-limit into a plain limit order.
+    orderType: block.orderType,
     abrv: block.abrv,
     position: {
       col,
@@ -164,9 +171,33 @@ export const blockDataToUIBlock = (
       yPosition: block.yPosition,
       axis: block.axis,
     },
+    direction: block.direction,
     axes: block.axes,
     linkedBlockId: block.linkedBlockId,
   };
+};
+
+/**
+ * Refuse a block that claims both a trigger and a limit axis.
+ *
+ * A block carries one `yPosition`, so it can express exactly one price. Giving
+ * both prices that same number is the mapper guessing, and guessing inside an
+ * order payload is the failure this module exists to prevent - the collapse
+ * passes `validateOrder` cleanly, so nothing downstream catches it.
+ *
+ * A dual-axis order type is placed as two blocks, one per axis, and every
+ * construction path gives each leg only its own axis. So this is unreachable
+ * today, and that is the point: should a hydration path ever go back to handing
+ * a leg the order type's whole axes list, it fails loudly here instead of
+ * quietly emitting a trigger price equal to the limit price.
+ */
+const assertSingleAxis = (block: UIBlockData): void => {
+  if (block.axes.includes("trigger") && block.axes.includes("limit")) {
+    throw new Error(
+      `Block "${block.id}" claims both a trigger and a limit axis, but a single ` +
+        "slider position cannot express both a trigger price and a limit price.",
+    );
+  }
 };
 
 /**
@@ -175,22 +206,19 @@ export const blockDataToUIBlock = (
 const buildTrigger = (
   block: UIBlockData,
   currentPrice: number,
+  symbol: string,
   triggerRef: TriggerReference = "last",
 ): OrderTrigger | undefined => {
   if (!block.axes.includes("trigger")) {
     return undefined;
   }
 
-  const triggerPrice = calculatePriceFromPosition(
-    block.position.yPosition,
-    currentPrice,
-    block.position.row,
-    block.position.col,
-  );
-
   return {
     reference: triggerRef,
-    price: formatPriceForAPI(triggerPrice),
+    // The symbol has to be passed in. Left to the DEFAULT_SYMBOL default, the
+    // trigger price and the limit price in the same payload come out at
+    // different precisions on any non-BTC pair.
+    price: formatPriceForAPI(calculateBlockPrice(block, currentPrice), symbol),
     price_type: "static",
   };
 };
@@ -201,55 +229,48 @@ const buildTrigger = (
 const buildConditional = (
   linkedBlock: UIBlockData | undefined,
   currentPrice: number,
+  symbol: string,
 ): ConditionalOrder | undefined => {
   if (!linkedBlock) {
     return undefined;
   }
 
+  assertSingleAxis(linkedBlock);
+
   const orderType = mapOrderType(linkedBlock.orderType);
 
-  // Only certain order types can be conditionals
-  const validConditionalTypes = [
-    "limit",
-    "stop-loss",
-    "stop-loss-limit",
-    "take-profit",
-    "take-profit-limit",
-    "trailing-stop",
-    "trailing-stop-limit",
-  ];
-
-  if (!validConditionalTypes.includes(orderType)) {
-    return undefined;
+  // Returning undefined here dropped the block from the order set entirely: it
+  // has already been skipped at the top level for being somebody's conditional,
+  // so the user drew two things and one vanished with nothing to explain it.
+  // That is the same silent-order-loss the link guard refuses, and the rule is
+  // not applied inconsistently on its fourth appearance. Emitting the block as
+  // a standalone order was the alternative and it invents an intent the user
+  // never expressed - they linked it as a conditional.
+  if (!isConditionalOrderType(orderType)) {
+    throw new Error(
+      `Block "${linkedBlock.id}" is linked as a conditional close, but Kraken ` +
+        `cannot use a ${orderType} order as one, so this strategy cannot be submitted.`,
+    );
   }
 
   const conditional: ConditionalOrder = {
-    order_type: orderType as ConditionalOrder["order_type"],
+    order_type: orderType,
   };
+
+  const price = formatPriceForAPI(
+    calculateBlockPrice(linkedBlock, currentPrice),
+    symbol,
+  );
 
   // Add limit price if the order type uses it
   if (linkedBlock.axes.includes("limit")) {
-    conditional.limit_price = formatPriceForAPI(
-      calculatePriceFromPosition(
-        linkedBlock.position.yPosition,
-        currentPrice,
-        linkedBlock.position.row,
-        linkedBlock.position.col,
-      ),
-    );
+    conditional.limit_price = price;
     conditional.limit_price_type = "static";
   }
 
   // Add trigger price if the order type uses it
   if (linkedBlock.axes.includes("trigger")) {
-    conditional.trigger_price = formatPriceForAPI(
-      calculatePriceFromPosition(
-        linkedBlock.position.yPosition,
-        currentPrice,
-        linkedBlock.position.row,
-        linkedBlock.position.col,
-      ),
-    );
+    conditional.trigger_price = price;
     conditional.trigger_price_type = "static";
   }
 
@@ -264,6 +285,8 @@ export const mapBlockToOrderParams = (
   context: OrderBuildContext,
   linkedBlock?: UIBlockData,
 ): OrderParams => {
+  assertSingleAxis(block);
+
   const orderType = mapOrderType(block.orderType);
   const side = context.side || determineSide(block.position.col);
 
@@ -277,12 +300,7 @@ export const mapBlockToOrderParams = (
   // Add limit price for limit-based orders
   if (block.axes.includes("limit")) {
     params.limit_price = formatPriceForAPI(
-      calculatePriceFromPosition(
-        block.position.yPosition,
-        context.currentPrice,
-        block.position.row,
-        block.position.col,
-      ),
+      calculateBlockPrice(block, context.currentPrice),
       context.symbol,
     );
     params.limit_price_type = "static";
@@ -290,12 +308,16 @@ export const mapBlockToOrderParams = (
 
   // Add trigger for trigger-based orders
   if (block.axes.includes("trigger")) {
-    params.triggers = buildTrigger(block, context.currentPrice);
+    params.triggers = buildTrigger(block, context.currentPrice, context.symbol);
   }
 
   // Add conditional order if there's a linked block
   if (linkedBlock) {
-    params.conditional = buildConditional(linkedBlock, context.currentPrice);
+    params.conditional = buildConditional(
+      linkedBlock,
+      context.currentPrice,
+      context.symbol,
+    );
   }
 
   // Add optional parameters from context
@@ -358,6 +380,138 @@ export const findLinkedBlocks = (
 };
 
 /**
+ * Find a cycle in the "this block's conditional is that block" graph.
+ *
+ * Every block links to at most one other, so the links form a functional graph:
+ * following them from any block either runs out or repeats. Returns the ids of
+ * the first cycle found, in order, or null when the links are a valid forest.
+ */
+const findLinkCycle = (
+  blocks: UIBlockData[],
+  linkedBlocks: Map<string, UIBlockData>,
+): string[] | null => {
+  const settled = new Set<string>();
+
+  for (const start of blocks) {
+    const path: string[] = [];
+    const indexOnPath = new Map<string, number>();
+    let current: UIBlockData | undefined = start;
+
+    while (current && !settled.has(current.id)) {
+      const seenAt = indexOnPath.get(current.id);
+      if (seenAt !== undefined) {
+        return path.slice(seenAt);
+      }
+
+      indexOnPath.set(current.id, path.length);
+      path.push(current.id);
+      current = linkedBlocks.get(current.id);
+    }
+
+    path.forEach((id) => settled.add(id));
+  }
+
+  return null;
+};
+
+/**
+ * Refuse a link graph that is not a flat, one-level set of primary-to-conditional
+ * relationships.
+ *
+ * A Kraken conditional close hangs off exactly one primary order and carries no
+ * conditional of its own, so the only shape the mapper can submit is: each
+ * primary carries at most one conditional, a conditional is not shared between
+ * primaries, and a conditional does not link onward.
+ *
+ * Every other shape is refused rather than guessed at, which is the same ruling
+ * already made for the cycle: the mapper must never quietly invent an answer
+ * when the input is ambiguous. Each of them otherwise produces a wrong order set
+ * with nothing to explain it. A cycle drops every block in it, because each is
+ * somebody's conditional, and Execute sends nothing at all. A chain a -> b -> c
+ * emits one order and drops c, because b is skipped as somebody's conditional so
+ * its own link is never followed while c is skipped for being named as one. A
+ * diamond a -> c, b -> c emits two orders that both carry c, so c's close is
+ * submitted twice.
+ *
+ * A link whose target is not on the grid is refused first, because it cannot be
+ * seen further down: `findLinkedBlocks` resolves ids to blocks and drops the
+ * dangling entry, so the walk below only ever sees links that resolved. Left
+ * alone, the primary is emitted on its own with its protective close silently
+ * gone - the same silent loss as the rest, and the shape that deleting a linked
+ * block would produce. The error names the block carrying the link and the id it
+ * points at, because repairing it means knowing exactly which link to clear.
+ *
+ * Nothing in the app writes `linkedBlockId` today, so none of this is reachable
+ * from the UI. That is the same caveat the cycle guard carries, and it is the
+ * point of both: the construction paths fail loudly here rather than shipping a
+ * silently wrong order set if one of them ever starts writing links.
+ */
+const assertLinksAreFlat = (
+  blocks: UIBlockData[],
+  linkedBlocks: Map<string, UIBlockData>,
+): void => {
+  const blockIds = new Set(blocks.map((block) => block.id));
+  blocks.forEach((block) => {
+    if (block.linkedBlockId && !blockIds.has(block.linkedBlockId)) {
+      throw new Error(
+        `Block "${block.id}" names "${block.linkedBlockId}" as its conditional ` +
+          "close, but no such block is on the grid. Clear that link or restore " +
+          "the block, because this strategy cannot be submitted as it stands.",
+      );
+    }
+  });
+
+  const cycle = findLinkCycle(blocks, linkedBlocks);
+  if (cycle) {
+    throw new Error(
+      `Conditional order links form a cycle: ${[...cycle, cycle[0]].join(" -> ")}. ` +
+        "A conditional close attaches to exactly one primary order, so this strategy cannot be submitted.",
+    );
+  }
+
+  const primariesByConditional = new Map<
+    string,
+    { block: UIBlockData; primaries: string[] }
+  >();
+  linkedBlocks.forEach((conditional, primaryId) => {
+    const entry = primariesByConditional.get(conditional.id) ?? {
+      block: conditional,
+      primaries: [],
+    };
+    entry.primaries.push(primaryId);
+    primariesByConditional.set(conditional.id, entry);
+  });
+
+  primariesByConditional.forEach(({ block, primaries }, conditionalId) => {
+    if (primaries.length > 1) {
+      throw new Error(
+        `Block "${conditionalId}" is named as the conditional of more than one ` +
+          `primary order (${primaries.join(", ")}). A conditional close attaches ` +
+          "to exactly one primary order, so this strategy cannot be submitted.",
+      );
+    }
+
+    const onward = linkedBlocks.get(conditionalId);
+    if (onward) {
+      throw new Error(
+        `Block "${conditionalId}" is the conditional of "${primaries[0]}" and ` +
+          `itself links to "${onward.id}". A conditional close carries no ` +
+          "conditional of its own, so this strategy cannot be submitted.",
+      );
+    }
+
+    const orderType = mapOrderType(block.orderType);
+    if (!isConditionalOrderType(orderType)) {
+      throw new Error(
+        `Block "${conditionalId}" is linked as the conditional of ` +
+          `"${primaries[0]}", but Kraken cannot use a ${orderType} order as a ` +
+          "conditional close, so this strategy cannot be submitted.",
+      );
+    }
+  });
+};
+
+/**
  * Map the entire grid to an array of Kraken OrderParams
  * This is the main function to convert UI state to API-ready orders
  */
@@ -369,12 +523,16 @@ export const mapGridToOrders = (
   const linkedBlocks = findLinkedBlocks(blocks);
   const orders: OrderParams[] = [];
 
+  // The skip below drops every block that is somebody's conditional, which is
+  // correct only for a flat one-level link graph. Breaking a bad shape by
+  // electing one block the primary was the alternative, and it was rejected: it
+  // would send a real set of orders that the user never asked for, which is the
+  // same silent substitution the rest of this module exists to prevent.
+  assertLinksAreFlat(blocks, linkedBlocks);
+
   // Process blocks that aren't linked as conditionals to other blocks
   const processedIds = new Set<string>();
-  const conditionalIds =
-    new Set(linkedBlocks.values()).size > 0
-      ? new Set([...linkedBlocks.values()].map((b) => b.id))
-      : new Set<string>();
+  const conditionalIds = new Set([...linkedBlocks.values()].map((b) => b.id));
 
   blocks.forEach((block) => {
     // Skip if this block is a conditional for another block
@@ -416,8 +574,12 @@ export const validateOrder = (params: OrderParams): string[] => {
     errors.push("Symbol is required");
   }
 
-  if (!params.order_qty || parseFloat(params.order_qty) <= 0) {
-    errors.push("Order quantity must be greater than 0");
+  // `parseFloat` used to do this, which let "abc" through: it parses to NaN,
+  // and every NaN comparison is false, so `NaN <= 0` was false and garbage went
+  // out as the order quantity. `Number` rejects trailing junk ("0.5 BTC") too.
+  const quantity = Number(params.order_qty);
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    errors.push("Order quantity must be a positive number");
   }
 
   if (!params.side) {
@@ -429,31 +591,104 @@ export const validateOrder = (params: OrderParams): string[] => {
   }
 
   // Validate limit price for limit orders
-  const limitOrderTypes: OrderType[] = [
-    "limit",
-    "iceberg",
-    "stop-loss-limit",
-    "take-profit-limit",
-    "trailing-stop-limit",
-  ];
-  if (limitOrderTypes.includes(params.order_type) && !params.limit_price) {
+  if (LIMIT_PRICE_ORDER_TYPES.has(params.order_type) && !params.limit_price) {
     errors.push(`Limit price is required for ${params.order_type} orders`);
   }
 
   // Validate trigger for trigger-based orders
-  const triggerOrderTypes: OrderType[] = [
-    "stop-loss",
-    "stop-loss-limit",
-    "take-profit",
-    "take-profit-limit",
-    "trailing-stop",
-    "trailing-stop-limit",
-  ];
-  if (triggerOrderTypes.includes(params.order_type) && !params.triggers) {
+  if (TRIGGER_ORDER_TYPES.has(params.order_type) && !params.triggers) {
     errors.push(
       `Trigger configuration is required for ${params.order_type} orders`,
     );
   }
+
+  // The conditional close is a whole order too, and the same required-price
+  // rules apply to it. Without this an incomplete conditional validated clean
+  // while the identical shape as a primary was rejected, so the guarantee that a
+  // split dual-axis leg fails validation rather than shipping as a wrong order
+  // held on one half of the payload only. The messages name the conditional so a
+  // reader can tell which half is incomplete.
+  const conditional = params.conditional;
+  if (conditional) {
+    if (
+      LIMIT_PRICE_ORDER_TYPES.has(conditional.order_type) &&
+      !conditional.limit_price
+    ) {
+      errors.push(
+        `Conditional limit price is required for ${conditional.order_type} conditional closes`,
+      );
+    }
+
+    if (
+      TRIGGER_ORDER_TYPES.has(conditional.order_type) &&
+      !conditional.trigger_price
+    ) {
+      errors.push(
+        `Conditional trigger price is required for ${conditional.order_type} conditional closes`,
+      );
+    }
+  }
+
+  // Every price the payload carries has to be a finite number, and a static one
+  // has to be positive. A presence check is not enough: prices are strings here,
+  // so "0.0" is truthy and an order priced at zero validated cleanly. That
+  // became reachable when decision D3 removed the mapper's 0.1 damping - a
+  // yPosition of 100 on a downside block is a 100% offset, which is a price of
+  // 0, where the damped maths used to land on 45,000.
+  //
+  // Positivity is checked only for a static price because under a `pct` or
+  // `quote` price type the value is a signed offset, so a relative limit price
+  // of "-1.5" is legitimate. The mapper emits nothing but static prices today,
+  // which is not a reason to guard more broadly: `validateOrder` is this
+  // module's exported validation entry point, so a wrong guard is a trap for
+  // the next caller rather than a harmless dead branch.
+  //
+  // This is the last line of defence, not the fix. The real bug is upstream:
+  // `calculateYPosition` works on a 0-100 scale while the slider and the axis
+  // labels use SCALE_CONFIG.MAX_PERCENT = 50, and the drop handler writes the
+  // unclamped result straight into the block. That lives in the drag layer and
+  // is owned by bb3-mapping-owner.
+  const requirePrice = (
+    label: string,
+    value?: string,
+    priceType?: PriceType,
+  ): void => {
+    if (value === undefined) {
+      return;
+    }
+
+    const price = Number(value);
+    if (!Number.isFinite(price)) {
+      errors.push(`${label} must be a finite number`);
+      return;
+    }
+
+    if ((priceType ?? "static") === "static" && price <= 0) {
+      errors.push(`${label} must be a positive number`);
+    }
+  };
+
+  requirePrice("Limit price", params.limit_price, params.limit_price_type);
+  requirePrice(
+    "Trigger price",
+    params.triggers?.price,
+    params.triggers?.price_type,
+  );
+  requirePrice(
+    "Top-level trigger price",
+    params.trigger_price,
+    params.trigger_price_type,
+  );
+  requirePrice(
+    "Conditional limit price",
+    params.conditional?.limit_price,
+    params.conditional?.limit_price_type,
+  );
+  requirePrice(
+    "Conditional trigger price",
+    params.conditional?.trigger_price,
+    params.conditional?.trigger_price_type,
+  );
 
   return errors;
 };

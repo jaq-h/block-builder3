@@ -3,7 +3,7 @@
 // =============================================================================
 
 import type { BlockData } from "../types/grid";
-import type { OrderTypeDefinition, SvgIcon } from "../data/orderTypes";
+import type { AxisType, OrderTypeDefinition, SvgIcon } from "../data/orderTypes";
 import { getDefaultPosition, ORDER_TYPES } from "../data/orderTypes";
 import LimitIcon from "../assets/icons/limit.svg?react";
 
@@ -83,6 +83,26 @@ const getBlockIcons = (
 // =============================================================================
 // BLOCK CREATION
 // =============================================================================
+
+/**
+ * The axes a single placed block owns, given its order type's full axes list
+ * and the axis it sits on (axis 1 = trigger, axis 2 = limit).
+ *
+ * A dual-axis order type is placed as one block per axis, and each leg carries
+ * only its own. Give a leg the order type's whole list and it claims both, so
+ * the mapper reads one slider twice and sends a payload whose trigger price and
+ * limit price are the same number.
+ */
+export const axesForBlockAxis = (
+  typeAxes: AxisType[],
+  axis: 1 | 2,
+): AxisType[] => {
+  if (typeAxes.length <= 1) {
+    return [...typeAxes];
+  }
+
+  return axis === 1 ? ["trigger"] : ["limit"];
+};
 
 /**
  * Creates BlockData instances from an OrderTypeDefinition

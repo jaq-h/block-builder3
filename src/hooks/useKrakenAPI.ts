@@ -281,17 +281,36 @@ export const useKrakenAPI = (
     grid: GridData,
     quantity: string,
   ): OrderParams[] => {
+    // Every offset in the grid is relative to the market price, so without one
+    // there is no order to build. Say so rather than returning an empty array
+    // and leaving a stale error from an earlier attempt on screen.
     if (!currentPrice) {
-      console.warn("Cannot prepare orders: no current price available");
+      setOrderError(
+        "Cannot prepare orders: no current market price available yet.",
+      );
+      setPendingOrders([]);
       return [];
     }
 
-    const orders = mapGridToOrders(grid, {
-      symbol,
-      currentPrice,
-      quantity,
-    });
+    // The mapper refuses a grid it cannot express as Kraken orders - a cycle of
+    // conditional links, or an order type it does not recognise. Surface that
+    // rather than letting it escape as an unhandled error from the click.
+    let orders: OrderParams[];
+    try {
+      orders = mapGridToOrders(grid, {
+        symbol,
+        currentPrice,
+        quantity,
+      });
+    } catch (error) {
+      setOrderError(
+        error instanceof Error ? error.message : "Could not build orders",
+      );
+      setPendingOrders([]);
+      return [];
+    }
 
+    setOrderError(null);
     setPendingOrders(orders);
     return orders;
   };
