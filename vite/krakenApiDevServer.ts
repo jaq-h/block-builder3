@@ -15,7 +15,7 @@
 import path from "node:path";
 import type { Plugin } from "vite";
 import type { ApiHandler } from "../api/_lib/http";
-import { isLoopbackHost } from "../api/_lib/loopback";
+import { isLoopbackHost, LOOPBACK_HOST_NAMES } from "../api/_lib/loopback";
 import { resolveServerRuntime } from "../api/_lib/serverConfig";
 import { applyLocalEnv } from "./localEnv";
 
@@ -38,14 +38,21 @@ export const krakenApiDevServer = (rootDir: string): Plugin => ({
     // A live dev server holds the operator's Kraken key and signs for whoever
     // asks, so it may only listen on loopback. Refuse to start rather than warn:
     // a warning scrolls past, and by then the key is reachable from the network.
+    //
+    // The accepted binds are exactly the host names the per-request guard
+    // accepts, so a bind that would start a server refusing its own operator
+    // (a live server on 127.0.0.2 answers every request as though it simulated)
+    // fails here instead, where the message can say what to use.
     const host = server.config.server.host;
     if (resolveServerRuntime(process.env).mode === "live" && !isLoopbackHost(host)) {
       throw new Error(
         `Refusing to start: live Kraken trading is configured, but the dev server is bound ` +
-          `to ${host === true ? "every interface" : JSON.stringify(host)} rather than ` +
-          "loopback. This server signs Kraken requests for any caller that can reach it and " +
-          "provides no authentication. Drop the --host flag, or set " +
-          "KRAKEN_TRADING_MODE=simulation.",
+          `to ${host === true ? "every interface" : JSON.stringify(host)}, which this app ` +
+          "does not serve live. This server signs Kraken requests for any caller that can " +
+          "reach it and provides no authentication, so live mode is served only on the " +
+          "loopback names " +
+          `${LOOPBACK_HOST_NAMES.join(", ")}. Drop the --host flag, pass one of those names, ` +
+          "or set KRAKEN_TRADING_MODE=simulation.",
       );
     }
 

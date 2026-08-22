@@ -83,10 +83,27 @@ describe("the dev server's loopback rule", () => {
     expect(() => start(createServer(true))).toThrow(/--host/);
   });
 
-  it("starts a live server on the loopback default", () => {
+  it("refuses to start a live server on a 127.0.0.0/8 address it does not serve", () => {
+    // The bind check and the per-request Host check share one list of loopback
+    // names. Starting on 127.0.0.2 would produce a live server that refuses
+    // every request it receives and tells the operator it simulates.
     goLive();
 
-    for (const host of [undefined, false, "localhost", "127.0.0.1", "::1"]) {
+    expect(() => start(createServer("127.0.0.2"))).toThrow(/Refusing to start/);
+  });
+
+  it("names the hosts it does serve, so a refused bind says what to use instead", () => {
+    goLive();
+
+    expect(() => start(createServer("127.0.0.2"))).toThrow(
+      /localhost, 127\.0\.0\.1, ::1/,
+    );
+  });
+
+  it("starts a live server on the loopback default and on each name it serves", () => {
+    goLive();
+
+    for (const host of [undefined, false, "", "localhost", "127.0.0.1", "::1", "[::1]"]) {
       expect(() => start(createServer(host))).not.toThrow();
     }
   });

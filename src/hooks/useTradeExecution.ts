@@ -26,8 +26,6 @@ export interface UseTradeExecutionReturn {
   error: string | null;
   /** Whether simulation mode is active */
   isSimulationMode: boolean;
-  /** Whether this deployment's server will sign real Kraken requests */
-  isLiveAvailable: boolean;
   /** Whether the user is allowed to toggle between simulation and API mode */
   canToggle: boolean;
   /** Toggle simulation mode on/off */
@@ -129,7 +127,6 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     isSubmitting,
     error,
     isSimulationMode,
-    isLiveAvailable,
     canToggle,
     toggleSimulationMode,
     handleConfigChange,

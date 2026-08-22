@@ -19,13 +19,7 @@ export {
 } from './tradingMode';
 
 // Server-side Kraken calls (signed by `api/`, never by the browser)
-export {
-  getWebSocketToken,
-  fetchBalances,
-  WS_TOKEN_ENDPOINT,
-  BALANCE_ENDPOINT,
-  type Balances,
-} from './krakenServer';
+export { getWebSocketToken, WS_TOKEN_ENDPOINT, type Balances } from './krakenServer';
 
 // REST API
 export {

@@ -6,6 +6,7 @@ import {
   getWebSocketToken,
   WS_TOKEN_ENDPOINT,
 } from "./krakenServer";
+import { APP_REQUEST_HEADER } from "./appRequestHeader";
 
 const jsonResponse = (status: number, body: unknown) =>
   ({
@@ -31,6 +32,7 @@ describe("getWebSocketToken", () => {
     expect(url).toBe(WS_TOKEN_ENDPOINT);
     expect(String(url)).not.toContain("kraken.com");
     expect(init?.method).toBe("POST");
+    expect((init?.headers as Record<string, string>)[APP_REQUEST_HEADER]).toBe("1");
     // No signing material of any kind leaves the browser.
     expect(JSON.stringify(init?.headers ?? {})).not.toContain("API-Sign");
   });
@@ -78,6 +80,19 @@ describe("fetchBalances", () => {
 
     await expect(fetchBalances()).resolves.toEqual({ ZUSD: "100.0000" });
     expect(fetchSpy.mock.calls[0][0]).toBe(BALANCE_ENDPOINT);
+  });
+
+  it("sends the header the server requires, or the call is refused", async () => {
+    // The server serves a credentialed endpoint only to a caller that sets this,
+    // so a call made without it fails against a live server and passes here.
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { balances: {} }));
+
+    await fetchBalances();
+
+    const headers = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers[APP_REQUEST_HEADER]).toBe("1");
   });
 
   it("surfaces a refusal rather than pretending the account is empty", async () => {

@@ -8,6 +8,7 @@ import {
   STATUS_ENDPOINT,
   subscribeTradingMode,
 } from "./tradingMode";
+import { APP_REQUEST_HEADER } from "./appRequestHeader";
 
 const jsonResponse = (status: number, body: unknown) =>
   ({
@@ -49,7 +50,9 @@ describe("loadTradingMode", () => {
     expect(getTradingModeStatus().mode).toBe("live");
   });
 
-  it("asks the endpoint the server actually serves", async () => {
+  it("asks the endpoint the server actually serves, with the header it requires", async () => {
+    // Status applies the same caller test as the credentialed endpoints, so a
+    // request without this header is told the deployment simulates.
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, { mode: "simulation" }));
@@ -57,6 +60,9 @@ describe("loadTradingMode", () => {
     await loadTradingMode();
 
     expect(fetchSpy).toHaveBeenCalledWith(STATUS_ENDPOINT, expect.anything());
+
+    const headers = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers[APP_REQUEST_HEADER]).toBe("1");
   });
 
   it("refuses to believe `liveAvailable` without a live mode beside it", async () => {

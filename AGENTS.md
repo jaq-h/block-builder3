@@ -118,19 +118,31 @@ simulates.
 
 **Live mode is loopback only, and we ship no authentication for it.** A live server signs for
 whoever reaches it, so it is confined twice: `vite/krakenApiDevServer.ts` *fails to start* when
-live mode is configured on a non-loopback bind, and `isOperatorRequest` in
-`api/_lib/loopback.ts` gates `/api/kraken/balance` and `/api/kraken/ws-token` per request,
-regardless of the bind. It is three checks and each closes a hole the others leave: the peer
-address is loopback, the `Host` header names a loopback host (this is what stops a DNS rebind,
-which produces a loopback peer for a page you never opened), and the request came from this
-app's own page by `Sec-Fetch-Site` or `Origin` (this is what stops any site the operator visits
-from burning a Kraken nonce through the token mint). A caller that fails any of them gets the
-same `503 "mode":"simulation"` a simulating deployment gives everybody, and `/api/kraken/status`
-tells it the same thing: a remote caller must not be able to tell a live host from a simulating
-one, so no refusal may name a credential. `misconfigured` stays loud to every caller, because
-that state signs nothing and a key added to a hosting dashboard has to break visibly.
-Other hosting must bind live mode to `127.0.0.1` itself. Exposing a live instance beyond
-loopback requires the operator to add their own protection; we deliberately provide none.
+live mode is configured on a bind other than `localhost`, `127.0.0.1` or `::1`, and
+`isOperatorRequest` in `api/_lib/loopback.ts` gates `/api/kraken/balance`,
+`/api/kraken/ws-token` and `/api/kraken/status` per request, regardless of the bind. The bind
+check and the `Host` check share one list of loopback names (`LOOPBACK_HOST_NAMES`), because
+two lists that merely agreed is how a live server on `127.0.0.2` came to start happily and then
+refuse every request it got. It is four checks and each closes a hole the others leave: the
+peer address is loopback, the `Host` header names a loopback host (this is what stops a DNS
+rebind, which produces a loopback peer for a page you never opened), the request carries this
+app's own `X-Block-Builder-App` header, and no foreign origin is declared by `Sec-Fetch-Site`
+or `Origin` (this is what stops any site the operator visits from burning a Kraken nonce
+through the token mint). The header is the only affirmative check: the other three infer a
+caller from headers a request may simply omit, and each was bypassed in turn by a shape that
+omits them, most recently an `<img src>` on a browser predating Fetch Metadata, which sends
+neither `Sec-Fetch-Site` nor `Origin`. A foreign page cannot set a header without a preflight
+it will fail, so absence of the origin headers is no longer read as "this is curl". The client
+sends it from `API_REQUEST_HEADERS` in `src/api/appRequestHeader.ts`; that name and
+`APP_REQUEST_HEADER` in `api/_lib/loopback.ts` are **two constants that must stay in step**,
+and `api/kraken/handlers.test.ts` builds a request from the client's copy so a drift fails
+there. A caller that fails any check gets the same `503 "mode":"simulation"` a simulating
+deployment gives everybody, and `/api/kraken/status` tells it the same thing: a remote caller
+must not be able to tell a live host from a simulating one, so no refusal may name a
+credential. `misconfigured` stays loud to every caller, because that state signs nothing and a
+key added to a hosting dashboard has to break visibly. Other hosting must bind live mode to
+`127.0.0.1` itself. Exposing a live instance beyond loopback requires the operator to add their
+own protection; we deliberately provide none.
 
 Private Kraken endpoints are an **allowlist** in `api/_lib/krakenClient.ts`, not a proxy.
 A generic signing endpoint would let any visitor have the server sign anything. Adding an

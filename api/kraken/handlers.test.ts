@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import statusHandler from "./status";
 import balanceHandler from "./balance";
 import wsTokenHandler from "./ws-token";
+import { API_REQUEST_HEADERS } from "../../src/api/appRequestHeader";
 
 // =============================================================================
 // A ServerResponse stand-in
@@ -35,21 +36,34 @@ const createResponse = (): FakeResponse => {
   return res as unknown as FakeResponse;
 };
 
+/**
+ * The headers the client really sends, lowercased the way Node delivers them.
+ * Taken from the client's own constant rather than retyped, because the header
+ * name is one contract held in two trees that may not import each other: a
+ * rename on either side has to fail here rather than in a browser.
+ */
+const APP_HEADERS: Record<string, string> = Object.fromEntries(
+  Object.entries(API_REQUEST_HEADERS).map(([name, value]) => [
+    name.toLowerCase(),
+    value,
+  ]),
+);
+
+/** What the app's own page sends, and what a foreign page sends instead. */
+const SAME_ORIGIN = { ...APP_HEADERS, "sec-fetch-site": "same-origin" };
+const CROSS_SITE = { ...APP_HEADERS, "sec-fetch-site": "cross-site" };
+
 const request = (
   method: string,
   remoteAddress = "127.0.0.1",
   host: string | undefined = "localhost:3002",
-  headers: Record<string, string> = { "sec-fetch-site": "same-origin" },
+  headers: Record<string, string> = SAME_ORIGIN,
 ): IncomingMessage =>
   ({
     method,
     socket: { remoteAddress },
     headers: { host, ...headers },
   }) as IncomingMessage;
-
-/** What the app's own page sends, and what a foreign page sends instead. */
-const SAME_ORIGIN = { "sec-fetch-site": "same-origin" };
-const CROSS_SITE = { "sec-fetch-site": "cross-site" };
 
 // =============================================================================
 // Environment
@@ -176,6 +190,20 @@ describe("GET /api/kraken/status", () => {
     await statusHandler(request("GET", "127.0.0.1", "kraken-rebind.example"), res);
 
     expect(res.json()).toMatchObject({ mode: "simulation", liveAvailable: false });
+  });
+
+  it("tells a headerless local caller that it simulates, as the credentialed endpoints do", async () => {
+    // Status has to agree with what the caller would actually be served, and an
+    // img tag or a form post is served nothing.
+    goLive();
+    const res = createResponse();
+    await statusHandler(request("GET", "127.0.0.1", "localhost:3002", {}), res);
+
+    expect(res.json()).toEqual({
+      mode: "simulation",
+      liveAvailable: false,
+      errors: [],
+    });
   });
 
   it("simulates when the peer address cannot be read at all", async () => {
@@ -345,6 +373,7 @@ describe("GET /api/kraken/balance", () => {
     const res = createResponse();
     await balanceHandler(
       request("GET", "127.0.0.1", "localhost:3002", {
+        ...APP_HEADERS,
         origin: "http://evil.example",
       }),
       res,
@@ -354,7 +383,7 @@ describe("GET /api/kraken/balance", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("serves the app's own page, and a caller that is no browser at all", async () => {
+  it("serves the app's own page, and a script that sends the app's header", async () => {
     goLive();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       okResponse({ error: [], result: { ZUSD: "1.0" } }),
@@ -363,10 +392,10 @@ describe("GET /api/kraken/balance", () => {
     const callers: Record<string, string>[] = [
       // The app itself, on both header generations.
       SAME_ORIGIN,
-      { origin: "http://localhost:3002" },
-      // A user-typed address, and curl, which sends neither header.
-      { "sec-fetch-site": "none" },
-      {},
+      { ...APP_HEADERS, origin: "http://localhost:3002" },
+      // A user-typed address, and curl, which sends neither origin header.
+      { ...APP_HEADERS, "sec-fetch-site": "none" },
+      APP_HEADERS,
     ];
 
     for (const headers of callers) {
@@ -374,6 +403,43 @@ describe("GET /api/kraken/balance", () => {
       await balanceHandler(request("GET", "127.0.0.1", "localhost:3002", headers), res);
       expect(res.statusCode).toBe(200);
     }
+  });
+
+  it("refuses an otherwise perfect same-origin call that omits the app header", async () => {
+    // The header is what the guard rests on now, so its absence alone has to be
+    // enough to refuse: everything else about this request is the app's.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await balanceHandler(
+      request("GET", "127.0.0.1", "localhost:3002", {
+        "sec-fetch-site": "same-origin",
+        accept: "application/json",
+      }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({ mode: "simulation" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses an img tag on a page the operator visited, which sets no header at all", async () => {
+    // The shape the old "neither header present, so this is curl" fallback let
+    // through: `<img src="http://localhost:3002/api/kraken/balance">` on
+    // evil.example, in a browser predating Fetch Metadata (Safari below 16.4).
+    // A no-cors GET carries no Origin and that browser sends no Sec-Fetch-Site,
+    // so the peer address and the Host header look exactly like the operator's.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await balanceHandler(request("GET", "127.0.0.1", "localhost:3002", {}), res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({ mode: "simulation" });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("refuses a DNS rebind, whose peer address is loopback but whose Host is not", async () => {
@@ -507,6 +573,28 @@ describe("POST /api/kraken/ws-token", () => {
     );
 
     expect(res.statusCode).toBe(503);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses a form post from a page the operator visited, which sets no header either", async () => {
+    // `<form method="post" action="http://localhost:3002/api/kraken/ws-token">`
+    // submits cross-origin with no scripting and no preflight, and on a browser
+    // that sends no Fetch Metadata it names no origin either. Every call to this
+    // endpoint burns a Kraken nonce, which is what makes refusing it matter even
+    // though the attacker could never read the token.
+    goLive();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = createResponse();
+    await wsTokenHandler(
+      request("POST", "127.0.0.1", "localhost:3002", {
+        "content-type": "application/x-www-form-urlencoded",
+      }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({ mode: "simulation" });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

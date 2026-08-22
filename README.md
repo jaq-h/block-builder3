@@ -211,25 +211,42 @@ WebSocket token carrying the key's permissions, and anyone who can open
 
 Live mode is therefore confined to loopback, twice over:
 
-- **The bind.** A dev server configured for live trading and bound to anything but loopback
-  **fails to start** with an error naming the problem (`vite/krakenApiDevServer.ts`). Any other
-  hosting must apply the same rule: bind live mode to `127.0.0.1`, never `0.0.0.0`.
-- **The request.** Independently of the bind, `/api/kraken/balance` and `/api/kraken/ws-token`
-  serve a request only when all three of these hold (`api/_lib/loopback.ts`):
+- **The bind.** A dev server configured for live trading and bound to anything but
+  `localhost`, `127.0.0.1` or `::1` **fails to start**, with an error naming the bind it
+  refused and the three it serves (`vite/krakenApiDevServer.ts`). That list is the same one
+  the per-request `Host` check uses, so a bind that would start a server refusing its own
+  operator is caught at startup rather than becoming a live server that answers every request
+  as though it simulated. Any other hosting must apply the same rule: bind live mode to
+  `127.0.0.1`, never `0.0.0.0`.
+- **The request.** Independently of the bind, `/api/kraken/balance`, `/api/kraken/ws-token`
+  and `/api/kraken/status` serve a caller only when all four of these hold
+  (`api/_lib/loopback.ts`):
   1. the peer address is in `127.0.0.0/8` or is `::1`;
   2. the `Host` header is `localhost`, `127.0.0.1` or `[::1]`, with any port. Missing or
      malformed is refused. Without this a DNS rebind reaches a server bound exactly as
      instructed: an attacker's page re-resolves its own hostname to `127.0.0.1`, so the peer
      address is loopback while the page reading the Kraken token is not yours;
-  3. the request came from this app's own page, by `Sec-Fetch-Site` or `Origin`. Without this
-     any site the operator visits while running live can `POST /api/kraken/ws-token` with
-     CORS-safelisted headers only, which sends no preflight. It could not read the reply, but
-     it would have burned a Kraken nonce and a slice of the account's rate limit.
+  3. the request carries this app's own header, `X-Block-Builder-App: 1`. It is not a secret
+     and carries no credential; it is the thing a foreign page structurally cannot send. A
+     cross-origin `fetch` with a header outside the CORS safelist triggers a preflight, which
+     this server answers `405` with no `Access-Control-Allow-*` header, so the real request is
+     never sent; an `<img src>` or a form post cannot set a header at all. The app sends it on
+     every call, and a script or a `curl` invocation sends it by hand;
+  4. no foreign origin is declared, by `Sec-Fetch-Site` or `Origin`. Without this any site the
+     operator visits while running live can `POST /api/kraken/ws-token` with CORS-safelisted
+     headers only, which sends no preflight. It could not read the reply, but it would have
+     burned a Kraken nonce and a slice of the account's rate limit.
+
+  Checks 1, 2 and 4 all *infer* who the caller is from headers that a request may simply
+  omit, and each was bypassed in turn by a shape that omits them. Check 3 is the affirmative
+  one, and the reason the absence of `Sec-Fetch-Site` and `Origin` is no longer read as
+  "this must be curl": on a browser predating Fetch Metadata (Safari below 16.4) an `<img>`
+  or a form post from an attacker's page sends neither, and looked identical to a script.
 
   A request that fails any of them is answered exactly as a simulating deployment answers
   everyone: `503`, `"mode":"simulation"`. `/api/kraken/status` applies the same test and tells
-  such a caller the deployment simulates. The two agree on purpose, so a remote caller cannot
-  learn from one what the other declines to say.
+  such a caller the deployment simulates. The three agree on purpose, so a remote caller cannot
+  learn from one what the others decline to say.
 
 That guard establishes that a request came from this machine and from this app. It does **not**
 establish who is at the keyboard, and it is not authentication.
@@ -258,16 +275,25 @@ KRAKEN_API_PRIVATE_KEY=your_api_private_key_here
 ```
 
 4. Run `npm run dev`, which mounts the same `api/` handlers Vercel runs (see
-   `vite/krakenApiDevServer.ts`) and binds to loopback. Do not add `--host`: the dev server
-   refuses to start in live mode on any other interface. `npx vercel dev` sets `VERCEL`, which
+   `vite/krakenApiDevServer.ts`) and binds to loopback. Do not add `--host` unless it names
+   `localhost`, `127.0.0.1` or `::1`: the dev server refuses to start in live mode on any
+   other bind, including the rest of `127.0.0.0/8`. `npx vercel dev` sets `VERCEL`, which
    is a hosting signal, so it runs in simulation - use it to exercise the deployment's own
    headers, not to trade.
 
 Check `GET /api/kraken/status` to see what the server decided:
 
 ```
-$ curl -s localhost:3002/api/kraken/status
+$ curl -s -H 'X-Block-Builder-App: 1' localhost:3002/api/kraken/status
 {"mode":"live","liveAvailable":true,"errors":[]}
+```
+
+Every endpoint needs that header, and every scripted caller has to send it - without it the
+server answers as it answers a stranger, `{"mode":"simulation","liveAvailable":false,...}`:
+
+```
+$ curl -s -H 'X-Block-Builder-App: 1' localhost:3002/api/kraken/balance
+$ curl -s -X POST -H 'X-Block-Builder-App: 1' localhost:3002/api/kraken/ws-token
 ```
 
 Anything ambiguous is refused rather than guessed. `KRAKEN_TRADING_MODE=live` with a missing
@@ -281,9 +307,12 @@ carrying a hosting signal, or with a mode string the server does not recognise, 
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/kraken/status` | GET | Which mode the server is in. Carries no credential, ever. |
+| `/api/kraken/status` | GET | Which mode the server is in. Carries no credential, ever. Answers `simulation` to any caller the other two would refuse. |
 | `/api/kraken/balance` | GET | Account balances. The authenticated read that exercises the boundary. Operator's own page on loopback only. |
 | `/api/kraken/ws-token` | POST | Mints a Kraken WebSocket token, which is short-lived and scoped, unlike the key that produced it. Operator's own page on loopback only. |
+
+All three require the `X-Block-Builder-App: 1` header described above, whatever mode the
+deployment is in.
 
 The private endpoints are an **allowlist, not a proxy** (`api/_lib/krakenClient.ts`). A generic
 "sign whatever the browser asks" endpoint would be a signing oracle, which is the failure this

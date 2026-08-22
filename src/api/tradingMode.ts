@@ -12,6 +12,8 @@
  * misconfigured deployment and a hostile response all land in the same place.
  */
 
+import { API_REQUEST_HEADERS } from "./appRequestHeader";
+
 export type TradingMode = "unknown" | "simulation" | "live" | "misconfigured";
 
 export interface TradingModeStatus {
@@ -77,7 +79,7 @@ const requestTradingMode = async (): Promise<TradingModeStatus> => {
   let response: Response;
   try {
     response = await fetch(STATUS_ENDPOINT, {
-      headers: { Accept: "application/json" },
+      headers: API_REQUEST_HEADERS,
     });
   } catch {
     // No server boundary reachable - for instance a purely static host with no

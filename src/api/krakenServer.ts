@@ -5,7 +5,13 @@
  * hold the credential and do the signing. The browser sends an intent and
  * receives a result; it never sees a key, and there is no code path left in the
  * bundle that could sign anything even if it did.
+ *
+ * Every call carries `API_REQUEST_HEADERS`, which the server requires: a
+ * credentialed endpoint serves only a caller that can set its own headers, and
+ * a foreign page cannot.
  */
+
+import { API_REQUEST_HEADERS } from "./appRequestHeader";
 
 export const WS_TOKEN_ENDPOINT = "/api/kraken/ws-token";
 export const BALANCE_ENDPOINT = "/api/kraken/balance";
@@ -43,7 +49,7 @@ const describeFailure = async (
 export const getWebSocketToken = async (): Promise<string> => {
   const response = await fetch(WS_TOKEN_ENDPOINT, {
     method: "POST",
-    headers: { Accept: "application/json" },
+    headers: API_REQUEST_HEADERS,
   });
 
   if (!response.ok) {
@@ -67,7 +73,7 @@ export const getWebSocketToken = async (): Promise<string> => {
  */
 export const fetchBalances = async (): Promise<Balances> => {
   const response = await fetch(BALANCE_ENDPOINT, {
-    headers: { Accept: "application/json" },
+    headers: API_REQUEST_HEADERS,
   });
 
   if (!response.ok) {
