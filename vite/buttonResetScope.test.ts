@@ -23,14 +23,28 @@
 // mirrors the shell `src/App.tsx` renders - `#root`, the container inside it,
 // the tab `nav` and `main`, and a button under each.
 //
-// What that reaches, stated as exactly what it is: a skin rule fails this file
-// when its selector reaches one of those fixture buttons, so the bare `button`
-// type selector, and anything scoping it by the id, by an element ancestor the
-// app renders, by an attribute a button carries, or by a state pseudo-class -
-// written flat or nested, since rule bodies are walked too. A rule scoped by a
-// class, `.pattern-selector button` say, is out of reach, because the fixture
-// buttons carry no classes; this file does not claim to catch that. Reformatting
-// the stylesheet changes nothing either way.
+// THE REACH. Stated here once and in full, both conditions and both holes;
+// everything below refers back to this paragraph rather than restating it, and
+// three earlier versions of this comment claimed more than the code enforces.
+// A rule is in the model when its selector meets both conditions `buttonSelectors`
+// applies: it reaches one of the fixture's buttons, AND it reaches none of the
+// fixture's non-button elements.
+//
+// The second condition is what separates a button skin from a universal reset
+// like `* { box-sizing }`, which every button keeps whatever it opts out of. It
+// is also a hole, because a skin written through a selector that happens to land
+// on something other than a button - `#root *`, `main div > *`, `:is(button,
+// div)` - is dropped from the model before `skinSelectors()` ever sees it. An
+// unlayered `#root * { border: ...; padding: ...; background-color: ... }` would
+// paint the pattern selector's buttons and every assertion here would still
+// pass. The first condition has a hole of its own: the fixture's buttons carry
+// no classes, so a class-scoped rule such as `.pattern-selector button` never
+// reaches one.
+//
+// What is left in reach is the bare `button` type selector, and anything scoping
+// it by the id, by an element ancestor the app renders, by an attribute a button
+// carries, or by a state pseudo-class - written flat or nested, since rule
+// bodies are walked. Reformatting the stylesheet changes nothing either way.
 //
 // This lives in `vite/` rather than beside the stylesheet for the same reason
 // the two tests under `api/_lib/` do - it asserts a property of the repository
@@ -221,11 +235,7 @@ let plainButtons: Element[];
 let optedOutButton: Element;
 let notButtons: Element[];
 
-/**
- * Selectors that single buttons out - they reach a button and cannot reach a
- * non-button, so they are the app's button skin rather than a universal reset
- * like `* { box-sizing }`, which every button keeps whatever it opts out of.
- */
+/** The stylesheet's selectors that the model keeps, by THE REACH above. */
 let buttonSelectors: ButtonSelector[];
 
 beforeEach(() => {
@@ -304,9 +314,10 @@ describe("the button reset's opt-out", () => {
     }
   });
 
-  it("lets no unlayered skin rule reach a `data-unstyled` button", () => {
-    // Named rather than counted: a failure here has to say which selector let
-    // the skin back in, whatever it was written as.
+  it("lets no skin rule it can see reach a `data-unstyled` button", () => {
+    // What it can see is THE REACH at the top of this file. Named rather than
+    // counted: a failure here has to say which selector let the skin back in,
+    // whatever it was written as.
     expect(
       skinSelectors()
         .filter(({ selector }) => optedOutButton.matches(selector))

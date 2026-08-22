@@ -59,12 +59,15 @@ export const patternButton = cva(
   },
 );
 
-// The tick and the label sit on one line, with the tick's slot present on both
-// buttons so choosing a pattern does not nudge its label sideways.
+// The tick and the label sit on one line: a slot, the label, and a slot equal to
+// the first. The leading slot is present on both buttons so choosing a pattern
+// does not nudge its label sideways, and the trailing one balances it so the
+// label stays on the same centre line as the description beneath it.
 export const patternLabelRow = "flex items-center gap-1";
 
 // A fixed slot rather than a conditionally rendered icon: `w-3` is the tick's
 // 11px plus its stroke, and reserving it keeps both labels on the same rail.
+// The row uses it twice, once holding the tick and once empty.
 export const patternMarker =
   "inline-flex w-3 shrink-0 items-center justify-center [&>svg]:stroke-current";
 

@@ -51,15 +51,20 @@ const PatternSelector: FC = function PatternSelector() {
             <span className={patternLabelRow}>
               {/* The one cue that survives with no colour at all. The slot is
                   rendered on both buttons so the label does not shift sideways
-                  as the tick appears; only the tick itself is conditional.
-                  `aria-hidden` because `aria-pressed` above already carries the
-                  same fact, and announcing it twice is worse than once. */}
+                  as the tick appears; only the tick itself is conditional. It is
+                  mirrored on the trailing side so the label keeps the centre
+                  line the description under it sits on, rather than riding half
+                  a slot to the right of it. Both are `aria-hidden`, the marker
+                  because `aria-pressed` above already carries the same fact and
+                  announcing it twice is worse than once, the mirror because it
+                  is empty. */}
               <span className={patternMarker} aria-hidden="true">
                 {isActive && <CheckIcon width={11} height={11} />}
               </span>
               <span className={patternLabel}>
                 {PATTERN_CONFIGS[pattern].label}
               </span>
+              <span className={patternMarker} aria-hidden="true" />
             </span>
             <span className={patternDescription}>
               {PATTERN_CONFIGS[pattern].description}

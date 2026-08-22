@@ -75,16 +75,30 @@ describe("PatternSelector", () => {
     expect(unselected.querySelector("svg")).toBeNull();
   });
 
-  it("keeps the mark's slot on both buttons so the label does not shift", () => {
+  it("hangs the label between two equal slots, on both buttons", () => {
     renderSelector("bulk");
 
+    // Two properties at once, and the selected and unselected button are both
+    // here: the label sits between a slot and its mirror, with nothing outside
+    // them, so it does not move when the tick appears in the leading slot and it
+    // keeps the row's centre line rather than riding to one side of it.
     for (const name of [/Bulk Order/, /Conditional Order/]) {
-      const button = screen.getByRole("button", { name });
-      // The label is the second child of the row: the marker slot is the first,
-      // whether or not it currently holds the tick.
-      const row = button.firstElementChild!;
-      expect(row.children).toHaveLength(2);
-      expect(row.children[1]!.textContent).toMatch(/Order$/);
+      const row = screen.getByRole("button", { name }).firstElementChild!;
+      const label = Array.from(row.children).find((child) =>
+        /Order$/.test(child.textContent ?? ""),
+      );
+
+      expect(label).toBeDefined();
+      const leading = label!.previousElementSibling;
+      const trailing = label!.nextElementSibling;
+
+      expect(leading).not.toBeNull();
+      expect(trailing).not.toBeNull();
+      expect(leading!.previousElementSibling).toBeNull();
+      expect(trailing!.nextElementSibling).toBeNull();
+      expect(trailing!.className).toBe(leading!.className);
+      expect(leading!.textContent).toBe("");
+      expect(trailing!.textContent).toBe("");
     }
   });
 
