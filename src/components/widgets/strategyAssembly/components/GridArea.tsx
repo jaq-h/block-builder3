@@ -44,6 +44,12 @@ import {
 interface GridAreaProps {
   currentPrice: number | null;
   tickerError?: string | null;
+  /**
+   * A saved strategy the builder refused to load, because the market it was
+   * placed on is not in the catalogue any more. `attempt` distinguishes two
+   * presses of the same Edit button, so the second is announced too.
+   */
+  strategyMarketUnavailable?: { symbol: string; attempt: number } | null;
 }
 
 /**
@@ -61,7 +67,11 @@ interface GridAreaProps {
  * cell with the arrow keys and calls the same function. That is what keeps the
  * two input models from drifting apart.
  */
-const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
+const GridArea: FC<GridAreaProps> = ({
+  currentPrice,
+  tickerError,
+  strategyMarketUnavailable,
+}) => {
   // ─── Context subscriptions ───────────────────────────────────────
   const { grid, strategyPattern, setGrid, setOrderConfig } = useGridData();
 
@@ -323,6 +333,25 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     // every one of them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [market.symbol, market.name]);
+
+  // ─── A strategy the builder would not load ───────────────────────
+  //
+  // Reported here rather than beside the Edit button for the same reason as
+  // above: this grid is what did not change, and it has one voice. The refusal
+  // itself belongs to `App`, which owns the market and the load; this only says
+  // so, once, after the render in which nothing happened.
+  const refusedAttemptRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!strategyMarketUnavailable) return;
+    if (refusedAttemptRef.current === strategyMarketUnavailable.attempt) return;
+    refusedAttemptRef.current = strategyMarketUnavailable.attempt;
+    announcer.report({
+      kind: "strategyMarketUnavailable",
+      symbol: strategyMarketUnavailable.symbol,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strategyMarketUnavailable]);
 
   const command = useBlockCommand({
     grid,

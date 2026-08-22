@@ -139,7 +139,20 @@ export type GridOutcome =
    * speaks - and it is reported by `GridArea` once the grid has actually been
    * handed the new market, so it states a fact rather than an intention.
    */
-  | { kind: "marketChanged"; name: string; symbol: string };
+  | { kind: "marketChanged"; name: string; symbol: string }
+  /**
+   * A saved strategy could not be loaded back into the grid, because the market
+   * it was placed on is not one this app offers any more.
+   *
+   * The grid is deliberately left alone in that case. Every position the saved
+   * strategy holds is a percentage offset from its own market's price, so
+   * loading it against whatever pair happens to be selected reprices the whole
+   * thing into a different order set - the corruption the market tag exists to
+   * prevent, one step further out. Refusing is only safe if the refusal is
+   * audible, which is what this is: a fact about a grid that did *not* change,
+   * reported by the same owner that reports one that did.
+   */
+  | { kind: "strategyMarketUnavailable"; symbol: string };
 
 // =============================================================================
 // WORDING
@@ -319,5 +332,8 @@ export const describeOutcome = (
 
     case "marketChanged":
       return `Market changed to ${outcome.name}. Every block on the grid is now priced from the ${outcome.symbol} market price.`;
+
+    case "strategyMarketUnavailable":
+      return `This strategy was placed on ${outcome.symbol}, which is no longer available. It was not loaded, because its prices would mean something different on another market.`;
   }
 };

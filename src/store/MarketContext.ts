@@ -24,8 +24,16 @@ export interface MarketContextValue {
   activeMarket: ActiveMarket;
   /** Every pair the selector offers. */
   markets: readonly Market[];
-  /** Select a pair by its WebSocket v2 symbol. An unknown symbol is ignored. */
-  selectMarket: (symbol: string) => void;
+  /**
+   * Select a pair by its WebSocket v2 symbol.
+   *
+   * Returns whether the catalogue holds it. A caller that only wants the
+   * selection changed can ignore the answer; a caller that goes on to act as
+   * though the pair is now selected - rehydrating a saved strategy priced
+   * against it, say - must not, because a symbol we do not ship leaves the
+   * previous selection in place.
+   */
+  selectMarket: (symbol: string) => boolean;
   /** Why the metadata could not be loaded, if it could not. */
   metadataError: string | null;
 }
@@ -44,7 +52,7 @@ const DEFAULT_CONTEXT: MarketContextValue = {
   precision: null,
   activeMarket: { market: DEFAULT_MARKET, precision: null },
   markets: MARKETS,
-  selectMarket: () => {},
+  selectMarket: () => false,
   metadataError: null,
 };
 

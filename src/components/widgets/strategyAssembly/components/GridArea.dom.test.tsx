@@ -103,7 +103,19 @@ const Harness: FC<{
    * to say so and has to redraw its chips at the new pair's precision.
    */
   switchTo?: { market: Market; precision: MarketPrecision };
-}> = ({ initialGrid, pattern = "conditional", gridReplacement, switchTo }) => {
+  /**
+   * Renders a control that reports a strategy the builder refused to load,
+   * the way `App` does when the market an order was placed on is no longer in
+   * the catalogue. The grid is what did *not* change, and it has one voice.
+   */
+  refuseStrategyOn?: string;
+}> = ({
+  initialGrid,
+  pattern = "conditional",
+  gridReplacement,
+  switchTo,
+  refuseStrategyOn,
+}) => {
   const [selected, setSelected] = useState<{
     market: Market;
     precision: MarketPrecision;
@@ -122,6 +134,10 @@ const Harness: FC<{
     null,
   );
   const blockCounterRef = useRef(0);
+  const [refused, setRefused] = useState<{
+    symbol: string;
+    attempt: number;
+  } | null>(null);
 
   return (
     <MarketContext.Provider
@@ -174,7 +190,11 @@ const Harness: FC<{
               blockCounterRef,
             }}
           >
-            <GridArea currentPrice={MARKET_PRICE} tickerError={null} />
+            <GridArea
+              currentPrice={MARKET_PRICE}
+              tickerError={null}
+              strategyMarketUnavailable={refused}
+            />
             {gridReplacement && (
               <button onClick={() => setGrid(gridReplacement)}>
                 replace the grid
@@ -183,6 +203,18 @@ const Harness: FC<{
             {switchTo && (
               <button onClick={() => setSelected(switchTo)}>
                 switch market
+              </button>
+            )}
+            {refuseStrategyOn && (
+              <button
+                onClick={() =>
+                  setRefused((prev) => ({
+                    symbol: refuseStrategyOn,
+                    attempt: (prev?.attempt ?? 0) + 1,
+                  }))
+                }
+              >
+                refuse a strategy
               </button>
             )}
           </StaticContext.Provider>
@@ -1229,5 +1261,58 @@ describe("GridArea, when the market changes", () => {
     render(<Harness initialGrid={grid} switchTo={arb} />);
 
     expect(screen.queryByText(/^Market changed to/)).not.toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// A STRATEGY THE BUILDER WOULD NOT LOAD
+// =============================================================================
+//
+// A saved strategy holds percentage offsets from its own market's price, so one
+// placed on a pair the app no longer offers cannot be loaded without repricing
+// it into a different order set. `App` refuses; this grid is what did not
+// change, and it has the one voice that can say so.
+
+describe("GridArea, when a strategy could not be loaded", () => {
+  const refuse = () => {
+    fireEvent.click(screen.getByRole("button", { name: "refuse a strategy" }));
+  };
+
+  it("says which market it was, and that nothing was loaded", () => {
+    render(
+      <Harness initialGrid={clearGrid(2, 3)} refuseStrategyOn="ARB/USD" />,
+    );
+
+    refuse();
+
+    const said = screen.getByText(/ARB\/USD/);
+    expect(said).toBeInTheDocument();
+    expect(said.textContent).toContain("was not loaded");
+  });
+
+  it("stays quiet until a strategy is actually refused", () => {
+    render(
+      <Harness initialGrid={clearGrid(2, 3)} refuseStrategyOn="ARB/USD" />,
+    );
+
+    expect(screen.queryByText(/was not loaded/)).not.toBeInTheDocument();
+  });
+
+  // Pressing Edit twice on the same strategy is two refusals, and a live region
+  // only speaks when its content changes - so the second must not be silent.
+  it("says so again when the user tries the same strategy again", () => {
+    render(
+      <Harness initialGrid={clearGrid(2, 3)} refuseStrategyOn="ARB/USD" />,
+    );
+
+    refuse();
+    const first = screen.getByText(/was not loaded/).closest("[role=status]");
+
+    refuse();
+    const second = screen.getByText(/was not loaded/).closest("[role=status]");
+
+    // The announcer alternates between two regions precisely so a repeat is a
+    // content change rather than a no-op.
+    expect(second).not.toBe(first);
   });
 });

@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import type { FC, ReactNode } from "react";
 
 import ReadOnlyGridCell from "./ReadOnlyGridCell";
+import { MarketContext, type MarketContextValue } from "@store/MarketContext";
+import { MARKETS, findMarket } from "@data/markets";
+import { BTC_USD } from "@/test/marketFixtures";
 import type { BlockData } from "@/types/grid";
 
 // =============================================================================
@@ -40,11 +44,32 @@ const stopLoss = (yPosition: number): BlockData => ({
   axes: ["trigger"],
 });
 
+// The panel draws every price at the selected pair's own precision, so the
+// expectation has to be built from the same record rather than from a fixed two
+// decimals: BTC/USD prices to one, and without a precision nothing is drawn at
+// all. Wrapping in the context is what a real render has.
 const priceBelowMarket = (yPosition: number) =>
   `$${(MARKET_PRICE * (1 - yPosition / 100)).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: BTC_USD.priceDecimals,
+    maximumFractionDigits: BTC_USD.priceDecimals,
   })}`;
+
+const market = findMarket("BTC/USD")!;
+
+const marketValue: MarketContextValue = {
+  market,
+  precision: BTC_USD,
+  activeMarket: { market, precision: BTC_USD },
+  markets: MARKETS,
+  selectMarket: () => false,
+  metadataError: null,
+};
+
+const InMarket: FC<{ children: ReactNode }> = ({ children }) => (
+  <MarketContext.Provider value={marketValue}>
+    {children}
+  </MarketContext.Provider>
+);
 
 // =============================================================================
 // TESTS
@@ -53,12 +78,14 @@ const priceBelowMarket = (yPosition: number) =>
 describe("ReadOnlyGridCell", () => {
   it("describes each block by the price the panel actually shows", () => {
     render(
-      <ReadOnlyGridCell
-        colIndex={0}
-        rowIndex={1}
-        blocks={[limit(25), stopLoss(7)]}
-        currentPrice={MARKET_PRICE}
-      />,
+      <InMarket>
+        <ReadOnlyGridCell
+          colIndex={0}
+          rowIndex={1}
+          blocks={[limit(25), stopLoss(7)]}
+          currentPrice={MARKET_PRICE}
+        />
+      </InMarket>,
     );
 
     // The cell draws one descending scale, taken from the Limit, so the Stop
@@ -76,12 +103,14 @@ describe("ReadOnlyGridCell", () => {
 
   it("describes a single-family cell on its own scale", () => {
     render(
-      <ReadOnlyGridCell
-        colIndex={0}
-        rowIndex={1}
-        blocks={[limit(25)]}
-        currentPrice={MARKET_PRICE}
-      />,
+      <InMarket>
+        <ReadOnlyGridCell
+          colIndex={0}
+          rowIndex={1}
+          blocks={[limit(25)]}
+          currentPrice={MARKET_PRICE}
+        />
+      </InMarket>,
     );
 
     expect(

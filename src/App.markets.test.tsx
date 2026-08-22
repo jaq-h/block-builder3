@@ -1,7 +1,31 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+
+// The catalogue is the app's list of tradeable pairs, and a release can shorten
+// it. That is the only way an order already recorded can name a market the app
+// no longer offers, so the last test here shortens it between the submit and
+// the edit - the real module's real interface, with a mutable backing list.
+const catalogue = vi.hoisted(() => {
+  const markets = [
+    { symbol: "BTC/USD", base: "BTC", quote: "USD", name: "Bitcoin", quotePrefix: "$" },
+    { symbol: "ETH/USD", base: "ETH", quote: "USD", name: "Ethereum", quotePrefix: "$" },
+    { symbol: "SOL/USD", base: "SOL", quote: "USD", name: "Solana", quotePrefix: "$" },
+    { symbol: "ARB/USD", base: "ARB", quote: "USD", name: "Arbitrum", quotePrefix: "$" },
+    { symbol: "OP/USD", base: "OP", quote: "USD", name: "Optimism", quotePrefix: "$" },
+  ];
+  return { markets, listed: [...markets] };
+});
+
+vi.mock("@data/markets", () => ({
+  get MARKETS() {
+    return catalogue.listed;
+  },
+  DEFAULT_MARKET: catalogue.markets[0],
+  findMarket: (symbol: string) =>
+    catalogue.listed.find((market) => market.symbol === symbol),
+}));
 
 // The assembly panel is stubbed down to the two things this is about - choosing
 // a market and submitting - so the test is about what a *submitted* strategy
@@ -46,7 +70,14 @@ const submitStrategy = async (user: ReturnType<typeof userEvent.setup>) => {
   });
 };
 
-beforeEach(resetMountTracker);
+beforeEach(() => {
+  resetMountTracker();
+  catalogue.listed = [...catalogue.markets];
+});
+
+afterEach(() => {
+  catalogue.listed = [...catalogue.markets];
+});
 
 describe("a strategy and the market it was built on", () => {
   it("names the market on the order it was submitted for", async () => {
@@ -80,6 +111,48 @@ describe("a strategy and the market it was built on", () => {
     // Without this the builder reloads an ARB/USD strategy priced against
     // BTC/USD: the same 25% offset, a price five orders of magnitude away, and
     // nothing on screen saying the market changed underneath it.
+    expect(selectedMarket()).toHaveTextContent("ARB/USD");
+  });
+
+  // The same corruption, one step further out: a strategy tagged with a pair
+  // the catalogue no longer holds cannot have its market restored, so loading
+  // it would reprice it against whatever happens to be selected. It is refused
+  // instead - and said out loud, because a silent refusal is barely better than
+  // a silent repricing.
+  it("refuses to load a strategy whose market the app no longer offers", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "pick arb" }));
+    await submitStrategy(user);
+    await user.click(screen.getByRole("button", { name: "pick btc" }));
+
+    // A release drops the pair. The order recorded against it is still there.
+    catalogue.listed = catalogue.listed.filter(
+      (market) => market.symbol !== "ARB/USD",
+    );
+
+    await user.click(editStrategy());
+
+    // The builder is untouched: nothing loaded, and the selection left exactly
+    // where the user had it. Loading it here would have repriced every offset
+    // in the strategy against BTC/USD instead - the corruption the market tag
+    // exists to prevent, one step further out.
+    expect(screen.getByTestId("loaded-config")).toHaveTextContent("none");
+    expect(selectedMarket()).toHaveTextContent("BTC/USD");
+  });
+
+  it("still loads a strategy whose market is still listed", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "pick arb" }));
+    await submitStrategy(user);
+    await user.click(screen.getByRole("button", { name: "pick btc" }));
+
+    await user.click(editStrategy());
+
+    expect(screen.getByTestId("loaded-config")).not.toHaveTextContent("none");
     expect(selectedMarket()).toHaveTextContent("ARB/USD");
   });
 });

@@ -20,8 +20,10 @@
 // (`MarketPrecision`), and that record is passed in rather than derived from
 // the symbol string.
 //
-// Nothing here has a default precision, on purpose. A caller that has not got
-// one yet must say so; substituting BTC's rules is the bug this replaces.
+// Nothing here has a default precision, on purpose - for the screen as much as
+// for the payload. A caller that has not got one yet must say so; substituting
+// BTC's two decimals is the bug this replaces, and it is no less a wrong price
+// for being one nobody submits.
 
 import type { ActiveMarket, MarketPrecision } from "../types/markets";
 
@@ -85,8 +87,16 @@ export const formatPriceForAPI = (
  * Unlike a price, this does **not** pad. `lot_decimals` is a maximum, not a
  * width: half a bitcoin is `"0.5"`, and padding it to `"0.50000000"` would put
  * seven digits into the payload that say nothing and that the user never typed.
- * Rounding through `Number` after `toFixed` is what drops the padding while
- * keeping the rounding.
+ *
+ * The padding is trimmed off the string rather than rounded away through
+ * `Number`, because `String(Number(x))` switches to exponential notation below
+ * 1e-6: `formatQuantityForAPI("0.0000005", BTC_USD)` produced `"5e-7"`, which
+ * went into `order_qty` as a wrong value with no error - the silent rejection
+ * this module exists to prevent. It was unreachable on the five pairs shipped
+ * today only because every one of their `ordermin` values happens to sit above
+ * 1e-6, so `validateOrder` refused such a quantity first. That is an invariant
+ * held by data that happens to line up rather than by structure, which is the
+ * same reasoning rejected for the display/tick divergence above.
  *
  * A quantity that is not a finite number is passed through untouched: turning
  * `"half a bitcoin"` into `"NaN"` would hide it from `validateOrder`, whose
@@ -102,7 +112,10 @@ export const formatQuantityForAPI = (
   if (quantity.trim() === "") return quantity;
   const value = Number(quantity);
   if (!Number.isFinite(value)) return quantity;
-  return String(Number(value.toFixed(precision.quantityDecimals)));
+
+  const fixed = value.toFixed(precision.quantityDecimals);
+  if (!fixed.includes(".")) return fixed;
+  return fixed.replace(/0+$/, "").replace(/\.$/, "");
 };
 
 /**
@@ -128,26 +141,41 @@ export const formatQuantityForAPI = (
  * for BTC, ETH, SOL, ARB and OP draws exactly what it drew before, which
  * `marketFormat.test.ts` pins against real Kraken values.
  *
- * Until Kraken's metadata arrives there is no precision to follow and no tick
- * to snap to, and rather than guess one this falls back to two decimals - the
- * behaviour the app has always had. That window is safe because it is display
- * only: `mapGridToOrders` refuses to build a payload at all without a
- * `MarketPrecision`, so no order can be priced from a fallback the chip was
- * drawn with.
+ * Without a `MarketPrecision` there is no answer to draw, and this says so
+ * rather than picking a width. It used to fall back to two decimals, which was
+ * the behaviour the app had always had - but two decimals is BTC's habit, not a
+ * neutral default: it renders a real ARB price of 0.4231 as "$0.42", a
+ * different price level, quietly. Drawing a wrong price is precisely what
+ * decision D3 forbids, and the fallback made the "no fallback precision" rule
+ * true of the order path only. There is now no fallback anywhere.
+ *
+ * The two unknowns are told apart, because they are different facts and the
+ * call sites read differently: `NO_PRICE` means no price has arrived,
+ * `NO_PRECISION` means one has but Kraken's rules for the pair have not.
+ * `MarketSelector` shows `metadataError` beside the readout, so the second is
+ * explained where there is room to explain it.
  */
+
+/** No price to draw yet. */
+export const NO_PRICE = "—";
+
+/** A price, but no per-pair rule to draw it by. Never a number. */
+export const NO_PRECISION = "n/a";
+
 export const formatMarketPrice = (
   price: number | null,
   market?: ActiveMarket | null,
 ): string => {
-  if (price === null || !Number.isFinite(price)) return "—";
+  if (price === null || !Number.isFinite(price)) return NO_PRICE;
 
   const precision = market?.precision ?? null;
-  const decimals = precision?.priceDecimals ?? 2;
+  if (!precision) return NO_PRECISION;
+
   const prefix = market?.market.quotePrefix ?? "$";
-  const shown = precision ? roundToTick(price, precision.tickSize) : price;
+  const shown = roundToTick(price, precision.tickSize);
 
   return `${prefix}${shown.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: precision.priceDecimals,
+    maximumFractionDigits: precision.priceDecimals,
   })}`;
 };

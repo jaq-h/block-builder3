@@ -58,9 +58,12 @@ export const OrdersPanelStub = () => {
 export const MarketAssemblyPanelStub = ({
   onConfigChange,
   onExecute,
+  initialConfig,
 }: {
   onConfigChange: (config: OrderConfig) => void;
   onExecute: () => void;
+  /** What the builder was seeded with, so a test can see a load happen. */
+  initialConfig?: OrderConfig;
 }) => {
   const { market, selectMarket } = useMarket();
   useMountTally("assembly");
@@ -68,6 +71,9 @@ export const MarketAssemblyPanelStub = ({
   return (
     <div data-testid="assembly-panel">
       <span data-testid="selected-market">{market.symbol}</span>
+      <span data-testid="loaded-config">
+        {initialConfig ? Object.keys(initialConfig).join(",") : "none"}
+      </span>
       <button type="button" onClick={() => selectMarket("ARB/USD")}>
         pick arb
       </button>

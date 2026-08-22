@@ -5,6 +5,8 @@ import {
   formatPriceForAPI,
   formatQuantityForAPI,
   roundToTick,
+  NO_PRECISION,
+  NO_PRICE,
 } from "@utils/marketFormat";
 import {
   ALL_MARKET_PRECISIONS,
@@ -110,6 +112,40 @@ describe("formatQuantityForAPI", () => {
     );
     expect(formatQuantityForAPI("", BTC_USD)).toBe("");
   });
+
+  // `String(Number(x))` switches to exponential notation below 1e-6, so this
+  // used to put "5e-7" into `order_qty` - a wrong value with no error, which is
+  // the silent rejection this module exists to prevent. It was out of reach
+  // only because every shipped pair's `ordermin` happens to sit above 1e-6, an
+  // invariant held by data rather than by structure.
+  it("writes even the smallest quantity in plain decimal notation", () => {
+    expect(formatQuantityForAPI("0.0000005", BTC_USD)).toBe("0.0000005");
+    expect(formatQuantityForAPI("0.00000012", BTC_USD)).toBe("0.00000012");
+    expect(formatQuantityForAPI("0.000001", BTC_USD)).toBe("0.000001");
+
+    [
+      "0.0000005",
+      "0.00000012",
+      "0.000001",
+      "0.00000001",
+      "0.5",
+      "125.123456789",
+    ].forEach((quantity) => {
+      expect(formatQuantityForAPI(quantity, BTC_USD)).not.toMatch(/e/i);
+    });
+  });
+
+  // Rounding below the pair's precision gives zero, and zero is a number the
+  // user can see is wrong. "0e-7" is not.
+  it("rounds a quantity finer than the pair accepts down to a plain zero", () => {
+    expect(formatQuantityForAPI("0.0000005", ARB_USD)).toBe("0");
+  });
+
+  it("leaves no bare trailing dot on a whole number", () => {
+    expect(formatQuantityForAPI("2", BTC_USD)).toBe("2");
+    expect(formatQuantityForAPI("2.000000001", BTC_USD)).toBe("2");
+    expect(formatQuantityForAPI("100", ARB_USD)).toBe("100");
+  });
 });
 
 // =============================================================================
@@ -134,14 +170,33 @@ describe("formatMarketPrice", () => {
     );
   });
 
-  // The window before Kraken's metadata lands. Two decimals is what the app has
-  // always shown, and it is display only - `mapGridToOrders` refuses to build a
-  // payload without a precision record, so nothing can be *priced* from this.
-  it("falls back to two decimals while the precision is unknown", () => {
+  // The window before Kraken's metadata lands, and the state after a failed
+  // fetch. Two decimals is BTC's habit rather than a neutral default: it draws
+  // a real ARB price of 0.4231 as "$0.42", a different price level, quietly.
+  // Decision D3 is that the price shown is the price sent, so rather than pick
+  // a width this refuses to draw a number at all.
+  it("draws no number at all when the pair's precision is unknown", () => {
     expect(formatMarketPrice(1_234.5, active("ETH/USD", null))).toBe(
-      "$1,234.50",
+      NO_PRECISION,
     );
-    expect(formatMarketPrice(1_234.5)).toBe("$1,234.50");
+    expect(formatMarketPrice(0.4231, active("ARB/USD", null))).toBe(
+      NO_PRECISION,
+    );
+    expect(formatMarketPrice(1_234.5)).toBe(NO_PRECISION);
+
+    expect(formatMarketPrice(0.4231, active("ARB/USD", null))).not.toMatch(
+      /\d/,
+    );
+  });
+
+  // Two different facts, so two different words: one says no price has arrived,
+  // the other that one has but the rule for writing it has not.
+  it("tells a missing price apart from a missing precision", () => {
+    expect(NO_PRICE).not.toBe(NO_PRECISION);
+    expect(formatMarketPrice(null, active("ARB/USD", ARB_USD))).toBe(NO_PRICE);
+    expect(formatMarketPrice(0.4231, active("ARB/USD", null))).toBe(
+      NO_PRECISION,
+    );
   });
 
   it("has no price to draw when there is no price", () => {

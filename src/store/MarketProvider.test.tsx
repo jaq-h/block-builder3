@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { render, screen, waitFor, act } from "@testing-library/react";
 
 import { MarketProvider } from "./MarketProvider";
 import { useMarket } from "./useMarket";
-import { ARB_USD, BTC_USD } from "@/test/marketFixtures";
+import {
+  ARB_USD,
+  BTC_USD,
+  KRAKEN_ASSET_PAIRS_RESPONSE,
+} from "@/test/marketFixtures";
 
 // =============================================================================
 // THE PROVIDER LOADS KRAKEN'S RULES, WITHOUT REACHING KRAKEN IN A TEST
@@ -20,16 +24,33 @@ import { ARB_USD, BTC_USD } from "@/test/marketFixtures";
 // Kraken's own per-pair record, and no request leaves the process to get it.
 
 const Probe = () => {
-  const { market, precision, metadataError } = useMarket();
+  const { market, precision, metadataError, selectMarket } = useMarket();
   return (
     <div>
       <span data-testid="symbol">{market.symbol}</span>
       <span data-testid="decimals">{precision?.priceDecimals ?? "none"}</span>
       <span data-testid="order-min">{precision?.orderMin ?? "none"}</span>
       <span data-testid="error">{metadataError ?? "none"}</span>
+      <button type="button" onClick={() => selectMarket("ARB/USD")}>
+        pick arb
+      </button>
     </div>
   );
 };
+
+/** The AssetPairs answer, in the shape `fetch` hands back. */
+const assetPairsOk = () =>
+  ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    json: async () => KRAKEN_ASSET_PAIRS_RESPONSE,
+  }) as Response;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe("MarketProvider", () => {
   it("hands out Kraken's own rules for the selected pair", async () => {
@@ -113,7 +134,156 @@ describe("MarketProvider", () => {
       expect(screen.getByTestId("error")).toHaveTextContent("offline");
     });
     expect(screen.getByTestId("decimals")).toHaveTextContent("none");
+  });
+});
 
-    vi.restoreAllMocks();
+// =============================================================================
+// RECOVERY
+// =============================================================================
+//
+// This metadata is a hard prerequisite for the whole order path, so a single
+// dropped connection used to disable trading for the rest of the session with a
+// page reload as the only way out. These are about getting back from that.
+
+describe("MarketProvider after a failed request", () => {
+  it("retries, and prices the grid once a retry succeeds", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(assetPairsOk());
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await act(async () => {});
+    expect(screen.getByTestId("decimals")).toHaveTextContent("none");
+    expect(screen.getByTestId("error")).toHaveTextContent("network down");
+
+    // The first backoff. Before this, a blip meant no trading until reload.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("decimals")).toHaveTextContent(
+      String(BTC_USD.priceDecimals),
+    );
+    expect(screen.getByTestId("error")).toHaveTextContent("none");
+  });
+
+  // A pair Kraken has stopped listing, or a typo in the catalogue, fails
+  // identically every time. Retrying that forever is a request loop, not a
+  // recovery.
+  it("gives up rather than retrying forever", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("network down"));
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("asks again when the user picks a market and nothing has loaded", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("network down"));
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    const afterRetries = fetchSpy.mock.calls.length;
+
+    fetchSpy.mockResolvedValue(assetPairsOk());
+    await act(async () => {
+      screen.getByRole("button", { name: "pick arb" }).click();
+    });
+
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(afterRetries);
+    await act(async () => {});
+    expect(screen.getByTestId("decimals")).toHaveTextContent(
+      String(ARB_USD.priceDecimals),
+    );
+  });
+
+  // Switching pair during a slow request must not put a request on the wire per
+  // click: the endpoint would take a burst of identical calls for one answer.
+  it("does not start a second request while one is in flight", async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      (async () => {
+        await gate;
+        return assetPairsOk();
+      }) as typeof fetch,
+    );
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    const button = screen.getByRole("button", { name: "pick arb" });
+    await act(async () => {
+      button.click();
+      button.click();
+      button.click();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      release();
+    });
+    expect(screen.getByTestId("decimals")).toHaveTextContent(
+      String(ARB_USD.priceDecimals),
+    );
+  });
+
+  it("sets nothing after it has been unmounted", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
+    const errors: unknown[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args) => {
+      errors.push(args);
+    });
+
+    const { unmount } = render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(errors).toEqual([]);
   });
 });

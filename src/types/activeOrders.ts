@@ -28,11 +28,13 @@ export interface ActiveOrderEntry {
    * strategy built on ARB/USD reloads into a builder priced against BTC/USD and
    * the same numbers describe a completely different order set.
    *
-   * Optional because entries persisted before markets existed carry no symbol.
-   * A missing one is reported as unknown, never assumed to be BTC/USD - that
-   * assumption is the whole class of bug the market work removed.
+   * Required, so the compiler enforces it rather than a convention asking for
+   * it. There is no migration case to leave room for: the orders store keeps
+   * nothing across a reload - `createInitialState` starts from `{}` and nothing
+   * in `src/` touches `localStorage` or `sessionStorage` - so no entry can
+   * predate the market it was placed on.
    */
-  symbol?: string;
+  symbol: string;
   col: number;
   row: number;
   type: string;

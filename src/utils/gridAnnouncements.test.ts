@@ -403,3 +403,20 @@ describe("describeOutcome, a market change", () => {
     ).toMatch(/^Market changed to Arbitrum\./);
   });
 });
+
+describe("describeOutcome, a strategy that would not load", () => {
+  // A saved strategy holds percentage offsets from *its own* market's price, so
+  // loading it against a different pair reprices the whole thing into another
+  // order set. The builder refuses, and a refusal nobody hears is barely better
+  // than the silent repricing it replaced - so it names the market and says the
+  // grid was left alone.
+  it("names the market and says the strategy was not loaded", () => {
+    const said = say({
+      kind: "strategyMarketUnavailable",
+      symbol: "ARB/USD",
+    });
+
+    expect(said).toContain("ARB/USD");
+    expect(said).toContain("was not loaded");
+  });
+});

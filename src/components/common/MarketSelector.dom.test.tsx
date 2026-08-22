@@ -7,6 +7,7 @@ import MarketSelector from "./MarketSelector";
 import { MarketContext, type MarketContextValue } from "@store/MarketContext";
 import { MARKETS, findMarket } from "@data/markets";
 import { ARB_USD, BTC_USD } from "@/test/marketFixtures";
+import { NO_PRECISION } from "@utils/marketFormat";
 
 // =============================================================================
 // MARKET SELECTOR
@@ -22,7 +23,10 @@ const harness = (
 ): { Wrapper: FC<{ children: ReactNode }>; selectMarket: ReturnType<typeof vi.fn> } => {
   const selectMarket = vi.fn();
   const market = overrides.market ?? findMarket("BTC/USD")!;
-  const precision = overrides.precision ?? BTC_USD;
+  // `??` would turn an explicitly null precision - the state before Kraken's
+  // metadata lands, which is a case worth rendering - back into BTC's.
+  const precision =
+    "precision" in overrides ? overrides.precision! : BTC_USD;
 
   const value: MarketContextValue = {
     market,
@@ -122,6 +126,25 @@ describe("MarketSelector", () => {
     );
 
     expect(screen.getByText("$0.4568")).toBeInTheDocument();
+  });
+
+  // Two decimals is BTC's habit, not a neutral default: it draws a real ARB
+  // price of 0.4231 as "$0.42", a different price level, and quietly. Until
+  // Kraken's rules land there is no width to draw at, and the warning below the
+  // readout is what explains it.
+  it("draws no number while the pair's precision is unknown", () => {
+    const { Wrapper } = harness({
+      market: findMarket("ARB/USD")!,
+      precision: null,
+    });
+    render(
+      <Wrapper>
+        <MarketSelector currentPrice={0.4231} />
+      </Wrapper>,
+    );
+
+    expect(screen.queryByText("$0.42")).not.toBeInTheDocument();
+    expect(screen.getByText(NO_PRECISION)).toBeInTheDocument();
   });
 
   it("says the price is loading rather than showing a stale one", () => {

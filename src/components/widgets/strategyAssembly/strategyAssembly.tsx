@@ -26,6 +26,13 @@ interface StrategyAssemblyProps {
   isSimulationMode?: boolean;
   onToggleSimulationMode?: () => void;
   isEditMode?: boolean;
+  /**
+   * A strategy the builder refused to load, because the market it was placed on
+   * is not one the app offers any more. Passed through to `GridArea`, which is
+   * where the grid's single announcer lives - the refusal is a fact about a grid
+   * that did not change, and the panel has no voice of its own.
+   */
+  strategyMarketUnavailable?: { symbol: string; attempt: number } | null;
 }
 
 const StrategyAssembly: FC<StrategyAssemblyProps> = ({
@@ -68,6 +75,7 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
   isSimulationMode,
   onToggleSimulationMode,
   isEditMode,
+  strategyMarketUnavailable,
 }) => {
   // No symbol here any more: `useKrakenAPI` follows the selected market. Naming
   // one would let this panel price a pair the selector is not showing.
@@ -85,7 +93,11 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
           belongs to another lane. This adds a sibling and rebuilds nothing. */}
       <MarketSelector currentPrice={currentPrice} priceError={tickerError} />
       <PatternSelector />
-      <GridArea currentPrice={currentPrice} tickerError={tickerError} />
+      <GridArea
+        currentPrice={currentPrice}
+        tickerError={tickerError}
+        strategyMarketUnavailable={strategyMarketUnavailable}
+      />
       <UtilityButtons
         orderCount={orderCount}
         onExecute={onExecute}

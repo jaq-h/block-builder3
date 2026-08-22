@@ -279,9 +279,9 @@ export const calculatePrice = (
  * A flat two decimals was right for exactly one market. ARB/USD prices to four
  * (`$0.3421`, not `$0.34`) and BTC/USD to one, so a fixed width either invents
  * precision the pair does not have or hides the digits that distinguish two
- * price levels. The market is optional so a caller that has not got one yet -
- * or a test that does not care - keeps the old two decimals; see
- * `formatMarketPrice`, which owns that fallback and explains why it is safe.
+ * price levels. The market is optional, and a caller that has not got one yet
+ * gets no number at all rather than a guessed width; see `formatMarketPrice`,
+ * which owns that decision and explains it.
  */
 export const formatPrice = (
   price: number | null,

@@ -24,7 +24,11 @@ import {
   shouldBeDescending,
 } from "@utils/grid";
 import { priceAtOffset } from "@utils/price";
+import { NO_PRECISION } from "@utils/marketFormat";
 import type { BlockData, GridData } from "@/types/grid";
+import type { ActiveMarket, MarketPrecision } from "@/types/markets";
+import { ARB_USD, BTC_USD, ETH_USD } from "@/test/marketFixtures";
+import { findMarket } from "@data/markets";
 import { GRID_CONFIG } from "@data/orderTypes";
 
 // =============================================================================
@@ -380,15 +384,26 @@ describe("calculatePrice", () => {
 });
 
 describe("formatPrice", () => {
+  const active = (symbol: string, precision: MarketPrecision): ActiveMarket => ({
+    market: findMarket(symbol)!,
+    precision,
+  });
+
   it("renders an em dash placeholder when there is no price", () => {
     // Escaped rather than pasted so the character is unambiguous in review.
     expect(formatPrice(null)).toBe("\u2014");
   });
 
-  it("renders a grouped two-decimal dollar amount", () => {
-    expect(formatPrice(50_000)).toBe("$50,000.00");
-    expect(formatPrice(1234.5)).toBe("$1,234.50");
-    expect(formatPrice(0.126)).toBe("$0.13");
+  it("renders a grouped amount at the pair's own precision", () => {
+    expect(formatPrice(50_000, active("BTC/USD", BTC_USD))).toBe("$50,000.0");
+    expect(formatPrice(1234.5, active("ETH/USD", ETH_USD))).toBe("$1,234.50");
+    expect(formatPrice(0.1264, active("ARB/USD", ARB_USD))).toBe("$0.1264");
+  });
+
+  // A caller with no precision used to get two decimals, which is BTC's habit
+  // and not a neutral default - it draws an ARB price of 0.1264 as "$0.13".
+  it("draws no number when the pair's precision has not loaded", () => {
+    expect(formatPrice(50_000)).toBe(NO_PRECISION);
   });
 });
 
