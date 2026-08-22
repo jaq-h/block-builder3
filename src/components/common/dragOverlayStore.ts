@@ -26,7 +26,8 @@ function emitChange() {
   for (const fn of listeners) fn();
 }
 
-// ── Public API (called from useFreeDrag) ───────────────────────────────────
+// ── Public API (called from useFreeDrag, and from GridArea's outside-click
+//    escape hatch, which stops an overlay whose gesture lost its owner) ──────
 
 export function startDragOverlay(
   icon: SvgIcon | undefined,
@@ -47,6 +48,10 @@ export function updateDragOverlayPosition(clientX: number, clientY: number) {
 }
 
 export function stopDragOverlay() {
+  // Idempotent, because the escape hatch calls it on every click that lands
+  // outside the placement surface without first asking whether there is a ghost
+  // to clear - and an emit with nothing to say is a render for every such click.
+  if (currentState === INACTIVE_STATE) return;
   currentState = INACTIVE_STATE;
   emitChange(); // single render: overlay disappears
 }

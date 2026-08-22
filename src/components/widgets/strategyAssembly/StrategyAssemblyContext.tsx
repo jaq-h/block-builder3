@@ -1,4 +1,4 @@
-import { useState, useRef, useId } from "react";
+import { useEffect, useState, useRef, useId } from "react";
 import type {
   GridData,
   BlockData,
@@ -68,8 +68,7 @@ export function StrategyAssemblyProvider({
       ? gridFromConfig(initialConfig)
       : clearGrid(2, 3),
   );
-  const [orderConfig, setOrderConfigInternal] =
-    useState<OrderConfig>(initialConfig);
+  const [orderConfig, setOrderConfig] = useState<OrderConfig>(initialConfig);
   const [strategyPattern, setStrategyPattern] =
     useState<StrategyPattern>(initialPattern);
 
@@ -90,16 +89,19 @@ export function StrategyAssemblyProvider({
 
   // ─── Derived actions ───────────────────────────────────────────────
 
-  // Wrap setOrderConfig to notify parent
-  const setOrderConfig: React.Dispatch<React.SetStateAction<OrderConfig>> = (
-    action,
-  ) => {
-    setOrderConfigInternal((prev) => {
-      const newConfig = typeof action === "function" ? action(prev) : action;
-      onConfigChange?.(newConfig);
-      return newConfig;
-    });
-  };
+  // The parent is told what the config became, and it is told AFTER the fact.
+  // Notifying from inside the updater is a `setState` on another component
+  // while React is rendering this one: it logged "Cannot update a component
+  // while rendering a different component" on every single block placement, and
+  // under StrictMode - which runs every updater twice to surface exactly this -
+  // the parent was handed each change twice. `setOrderConfig` is therefore the
+  // plain state setter, and this effect is the only thing that talks upwards.
+  const notifiedRef = useRef(orderConfig);
+  useEffect(() => {
+    if (notifiedRef.current === orderConfig) return;
+    notifiedRef.current = orderConfig;
+    onConfigChange?.(orderConfig);
+  }, [orderConfig, onConfigChange]);
 
   const clearAll = () => {
     setGrid(clearGrid(2, 3));

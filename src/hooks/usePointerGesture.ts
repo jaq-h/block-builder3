@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // =============================================================================
 // POINTER GESTURE PRIMITIVE
@@ -7,13 +7,15 @@ import { useRef, useState } from "react";
 // One code path for mouse, touch and pen. Both drag hooks build on this, so a
 // finger, a stylus and a mouse produce exactly the same callbacks.
 //
-// Two things here are load-bearing:
+// Three things here are load-bearing:
 //
 //  - `setPointerCapture` retargets every subsequent move/up for this pointer to
 //    the element the gesture started on. That is what makes a release *outside
 //    the browser window* still deliver `pointerup`, which the old
 //    `window.addEventListener("mouseup")` implementation never received - the
 //    block then stayed glued to the cursor.
+//  - capture makes the element the gesture's only way out, so **unmounting is a
+//    third exit** and this hook has to take it. See the cleanup at the bottom.
 //  - the elements carry `touch-action: none` (see `blockVariants`), without
 //    which the browser claims a finger drag for page scrolling before the
 //    first `pointermove` ever reaches us.
@@ -55,9 +57,11 @@ export interface UsePointerGestureOptions {
    */
   onUp?: (point: GesturePoint, moved: boolean) => void;
   /**
-   * Fired when the browser takes the pointer away (`pointercancel`). `moved`
-   * says whether a drag had actually been recognised by then: an interrupted
-   * tap changed nothing and has nothing to report, an interrupted drag does.
+   * Fired when the gesture ends without a release: the browser takes the
+   * pointer away (`pointercancel`), or the element the gesture started on is
+   * unmounted under it. `moved` says whether a drag had actually been
+   * recognised by then: an interrupted tap changed nothing and has nothing to
+   * report, an interrupted drag does.
    */
   onCancel?: (moved: boolean) => void;
   /** When true, no gesture starts at all. */
@@ -117,6 +121,15 @@ export const usePointerGesture = ({
   // The gesture lives in a ref so move handling never depends on a rendered
   // value: a drag must keep working during the render that `isActive` triggers.
   const gestureRef = useRef<ActiveGesture | null>(null);
+
+  // Read by the unmount cleanup, which must not close over the callback of the
+  // render it happened to be created on. Kept current from an effect rather
+  // than from render, because a ref written during render is a ref the next
+  // render cannot be trusted to have seen.
+  const onCancelRef = useRef(onCancel);
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  });
 
   const finish = (): ActiveGesture | null => {
     const gesture = gestureRef.current;
@@ -184,6 +197,35 @@ export const usePointerGesture = ({
     finish();
     onCancel?.(gesture.moved);
   };
+
+  // ── The third exit ─────────────────────────────────────────────────────
+  //
+  // `pointerup` and `pointercancel` are both delivered to the element the
+  // gesture started on, so a gesture whose element goes away first has no way
+  // to finish at all. The browser releases the capture silently and the release
+  // lands on whatever is under the cursor; nothing then closes what pointer
+  // down opened. That is not hypothetical: the strategy panel is keyed on
+  // `strategyKey`, so the whole tree - palette included - is replaced the
+  // moment an in-flight submit resolves, which is roughly a second after the
+  // user clicked Execute Trade and squarely inside the next drag they start.
+  // `dragOverlayStore` is module state and outlives the tree, so the ghost
+  // block was then welded to the cursor for the rest of the session.
+  //
+  // Unmount therefore ends the gesture the same way `pointercancel` does:
+  // nothing moved, and whatever pointer down opened is closed. The dependency
+  // list is empty on purpose - this runs on unmount and never in between.
+  useEffect(
+    () => () => {
+      const gesture = gestureRef.current;
+      if (!gesture) return;
+      releaseCapture(gesture.element, gesture.pointerId);
+      gestureRef.current = null;
+      // No `setIsActive`: this component is going away, and the caller's
+      // cancel handler is the only thing with anything left to undo.
+      onCancelRef.current?.(gesture.moved);
+    },
+    [],
+  );
 
   return {
     isActive,

@@ -150,6 +150,55 @@ describe("Block, as a palette entry", () => {
     expect(getSnapshot().active).toBe(false);
   });
 
+  it("clears the overlay when the block is unmounted mid-drag", () => {
+    // The reproduction, reduced to one block. In the app the strategy panel is
+    // keyed on `strategyKey`, so an Execute Trade whose 800ms submit resolves
+    // while the user is dragging replaces the whole tree, palette included, and
+    // takes the dragged element with it. The browser then drops the pointer
+    // capture without a word and the release lands on whatever is underneath,
+    // so `pointerup` never reaches this block. `dragOverlayStore` is module
+    // state and survives the unmount, which is what welded the ghost block to
+    // the cursor for the rest of the session.
+    const onDragCancel = vi.fn();
+    const onDragAborted = vi.fn();
+    const { unmount } = render(
+      <Block
+        id="limit"
+        abrv="Lmt"
+        label="Limit"
+        onDragCancel={onDragCancel}
+        onDragAborted={onDragAborted}
+      />,
+    );
+    const button = screen.getByRole("button");
+
+    fireEvent(button, pointer("pointerdown", { x: 10, y: 10 }));
+    fireEvent(button, pointer("pointermove", { x: 90, y: 90 }));
+    expect(getSnapshot().active).toBe(true);
+
+    unmount();
+
+    expect(getSnapshot().active).toBe(false);
+    // Nothing moved, so it is the same outcome a `pointercancel` produces.
+    expect(onDragCancel).toHaveBeenCalledWith("limit");
+    expect(onDragAborted).toHaveBeenCalledWith("limit");
+  });
+
+  it("leaves the overlay alone when a block that is not dragging unmounts", () => {
+    render(<Block id="limit" abrv="Lmt" label="Limit" />);
+    const dragged = screen.getByRole("button");
+    fireEvent(dragged, pointer("pointerdown", { x: 10, y: 10 }));
+    fireEvent(dragged, pointer("pointermove", { x: 90, y: 90 }));
+
+    const bystander = render(<Block id="market" abrv="Mkt" label="Market" />);
+    bystander.unmount();
+
+    // The teardown belongs to the gesture, not to every block that goes away.
+    expect(getSnapshot().active).toBe(true);
+    fireEvent(dragged, pointer("pointerup", { x: 90, y: 90 }));
+    expect(getSnapshot().active).toBe(false);
+  });
+
   it("treats a tap as a command, not as a zero-length drop", () => {
     const onDragEnd = vi.fn();
     const onActivate = vi.fn();
