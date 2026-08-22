@@ -11,6 +11,7 @@ import type {
 
 import OrderChart from "./OrderChart";
 import { simpleMovingAverage } from "./indicators";
+import { withLatestCandle } from "@utils/liveCandles";
 
 // =============================================================================
 // HARNESS
@@ -119,13 +120,21 @@ describe("OrderChart", () => {
 
   /**
    * Mounts the panel and hands back a `tick`, which is what a WebSocket
-   * message does to it: the backfill array keeps its identity, only
-   * `latestCandle` changes, and the component re-renders in place.
+   * message does to the feed: a bar that has rolled over is final and joins
+   * `candles`, the new bar becomes the one being written, and `candles` keeps
+   * its identity while that bar forms.
+   *
+   * The stand-in honours that contract through the same fold the hook itself
+   * uses; that the real `useOHLCData` accumulates this way is pinned in
+   * `useOHLCData.test.ts`, against a real socket.
    */
   const mount = () => {
     const harness = chartState.instance as ReturnType<typeof fakeChart>;
     const { rerender } = render(<OrderChart orders={{}} />);
     const tick = (candle: CandlestickData<UTCTimestamp>) => {
+      if (feed.latestCandle && candle.time > feed.latestCandle.time) {
+        feed.candles = withLatestCandle(feed.candles, feed.latestCandle);
+      }
       feed.latestCandle = candle;
       rerender(<OrderChart orders={{}} />);
     };
@@ -192,6 +201,53 @@ describe("OrderChart", () => {
     expect(lastTime(lineSeries[0])).toBe(rolled.time);
     expect(lastValue(lineSeries[0])).toBe(
       expectedSMA([...backfill, rolled]).value,
+    );
+  });
+
+  it("keeps every bar that closes, so consecutive rollovers leave no gap", () => {
+    // One rollover was the case the broken feed happened to get right. The
+    // defect only shows from the second onwards: each new bar replaced the last
+    // one instead of following it, so the average was taken across a hole while
+    // still returning a finite number and drawing what looks like a live line.
+    const { lineSeries, tick } = mount();
+    enableSMA20();
+
+    const rolled = [
+      bar(backfill.length, 500),
+      bar(backfill.length + 1, 501),
+      bar(backfill.length + 2, 502),
+    ];
+    for (const candle of rolled) tick(candle);
+
+    const contiguous = [...backfill, ...rolled];
+
+    expect(lineSeries).toHaveLength(1);
+    expect(lineSeries[0].data).toHaveLength(contiguous.length - PERIOD + 1);
+
+    // Every bar accounted for, in time order, none skipped.
+    expect(lineSeries[0].data.map((point) => point.time)).toEqual(
+      contiguous.slice(PERIOD - 1).map((candle) => candle.time),
+    );
+    expect(lastValue(lineSeries[0])).toBe(expectedSMA(contiguous).value);
+  });
+
+  it("still rewrites the forming bar after the interval has rolled over", () => {
+    const { lineSeries, tick } = mount();
+    enableSMA20();
+
+    const rolled = bar(backfill.length, 500);
+    tick(rolled);
+    const points = lineSeries[0].data.length;
+
+    const forming = { ...rolled, close: 900 };
+    tick(forming);
+
+    // A rewrite of the bar being written moves the last point, it does not add
+    // one, and it must not lose the bar that closed before it.
+    expect(lineSeries[0].data).toHaveLength(points);
+    expect(lastTime(lineSeries[0])).toBe(forming.time);
+    expect(lastValue(lineSeries[0])).toBe(
+      expectedSMA([...backfill, forming]).value,
     );
   });
 });

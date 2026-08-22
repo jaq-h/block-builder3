@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 
 import { withLatestCandle } from "./liveCandles";
-import { simpleMovingAverage } from "./indicators";
+import { simpleMovingAverage } from "@widgets/orderChart/indicators";
 
 // =============================================================================
 // HARNESS
@@ -63,6 +63,25 @@ describe("withLatestCandle", () => {
     withLatestCandle(source, bar(180, 36));
 
     expect(source).toEqual(backfill);
+  });
+
+  it("accumulates without a gap when applied the way the feed applies it", () => {
+    // The feed folds twice over: `useOHLCData` folds a bar in the moment it
+    // closes, and the chart folds the bar still forming on top. Driven that way
+    // across several rollovers every bar has to survive, because an average
+    // computed over a window with a hole in it is still a finite number and
+    // still looks like a live line.
+    let closed = backfill;
+    let forming = bar(180, 30);
+
+    for (const next of [bar(240, 40), bar(300, 50), bar(360, 60)]) {
+      closed = withLatestCandle(closed, forming);
+      forming = next;
+    }
+
+    expect(withLatestCandle(closed, forming).map((c) => c.time)).toEqual([
+      60, 120, 180, 240, 300, 360,
+    ]);
   });
 
   it("moves a moving average's last point as the forming bar moves", () => {

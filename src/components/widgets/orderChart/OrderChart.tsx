@@ -15,7 +15,7 @@ import { useOHLCData, TIMEFRAME_MAP } from "../../../hooks/useOHLCData";
 import { useLightweightChart } from "./useLightweightChart";
 import { useIndicatorSeries } from "./useIndicatorSeries";
 import { OVERLAY_INDICATORS } from "./indicators";
-import { withLatestCandle } from "./liveCandles";
+import { withLatestCandle } from "@utils/liveCandles";
 import { orderPriceLines } from "./orderPriceLines";
 import { orderAutoscaleProvider } from "./orderAutoscale";
 import {
@@ -75,9 +75,9 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   });
 
   // The overlays are functions of the whole series, so they get the whole
-  // series: the backfill with the bar the WebSocket is still writing folded in.
-  // Handed `candles` alone they freeze at the fetch while the candles below
-  // them keep moving. See `liveCandles.ts`.
+  // series: every bar that has closed, with the bar the WebSocket is still
+  // writing folded on top. Handed `candles` alone they freeze at the fetch
+  // while the candles below them keep moving. See `liveCandles.ts`.
   const liveCandles = useMemo(
     () => withLatestCandle(candles, latestCandle),
     [candles, latestCandle],

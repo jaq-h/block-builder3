@@ -218,10 +218,17 @@ The README's **Interaction model** section is authoritative. Four things bite in
   are all derived from it, so adding one needs no wiring. Averages are pinned against a
   published vector in `indicators/movingAverage.test.ts` rather than eyeballed. An
   oscillator needing its own pane is not covered by this shape and would have to add one.
-  Feed an overlay the *live* candle list from `liveCandles.ts`, never `useOHLCData`'s
-  backfill alone: the candle series advances through `update`, an overlay is a function of
-  the whole series, and the two fed differently is a line that silently stops moving while
-  the candles under it keep going.
+  Feed an overlay the *live* candle list - `withLatestCandle(candles, latestCandle)` from
+  `src/utils/liveCandles.ts` - never `useOHLCData`'s `candles` alone and never a list built
+  any other way. An overlay is a function of the whole series while the candle series
+  advances through `update`, and the two fed differently is a line that looks live and is
+  not. Both halves of that fold have now been wrong in turn: fed the backfill alone an
+  overlay froze at the fetch, and fed each tick folded into a backfill that never grew it
+  advanced while dropping every bar that had closed since, averaging across a hole. The fold
+  is therefore one function with one owner on each side - `useOHLCData` folds a bar into
+  `candles` when the interval rolls over and that bar is final, keeping `candles`
+  identity-stable between bar closes; the chart folds the forming bar on top. The forming
+  bar counts towards an average, pinned in `movingAverage.ts` next to the EMA seed.
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region. `gridAnnouncements.ts` stays the app's only announcer.
