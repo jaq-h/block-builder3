@@ -20,8 +20,18 @@ interface UseFreeDragOptions {
   onActivate?: (id: string) => void;
   /** The gesture has travelled far enough to be a drag rather than a tap. */
   onDragRecognised?: (id: string) => void;
-  /** The browser took the pointer away mid-drag; put the block back. */
+  /**
+   * Close the drag that pointer-down opened, without a drop. Fired for a tap
+   * as well as for a `pointercancel`, so it is bookkeeping rather than an
+   * outcome - see `onDragAborted` for the half a user needs to hear about.
+   */
   onDragCancel?: (id: string) => void;
+  /**
+   * The browser took the pointer away after a real drag had begun. Nothing on
+   * the grid changed, and unlike `onDragCancel` this cannot be a tap, so it is
+   * the one an announcement can be hung on.
+   */
+  onDragAborted?: (id: string) => void;
   disabled?: boolean;
 }
 
@@ -43,6 +53,7 @@ export const useFreeDrag = ({
   onDragEnd,
   onActivate,
   onDragCancel,
+  onDragAborted,
   onDragRecognised,
   disabled = false,
 }: UseFreeDragOptions): UseFreeDragReturn => {
@@ -73,9 +84,10 @@ export const useFreeDrag = ({
       onDragCancel?.(id);
       onActivate?.(id);
     },
-    onCancel: () => {
+    onCancel: (moved) => {
       stopDragOverlay();
       onDragCancel?.(id);
+      if (moved) onDragAborted?.(id);
     },
   });
 

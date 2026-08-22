@@ -2,10 +2,16 @@
 import { describe, it, expect, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useBlockCommand } from "./useBlockCommand";
+import { useGridAnnouncer } from "./useGridAnnouncer";
 import { clearGrid } from "@utils/grid";
 import { createBlocksFromOrderType } from "@utils/blockFactory";
 import { getOrderType, ORDER_TYPES } from "@data/orderTypes";
-import type { BlockData, GridData, StrategyPattern } from "@/types/grid";
+import type {
+  BlockData,
+  GridData,
+  PlacementResult,
+  StrategyPattern,
+} from "@/types/grid";
 
 // =============================================================================
 // HARNESS
@@ -24,22 +30,49 @@ const limitBlock = (overrides: Partial<BlockData> = {}): BlockData => ({
   ...overrides,
 });
 
+/**
+ * The hook no longer owns the live region: `useGridAnnouncer` does, and it is
+ * the single place any sentence is composed. The harness wires the two together
+ * the way `GridArea` does and re-exposes the announcement, so every assertion
+ * below reads what a screen reader would actually receive.
+ */
+const renderCommand = (
+  grid: GridData,
+  strategyPattern: StrategyPattern,
+  placeProvider: (type: string, cell: { col: number; row: number }) => PlacementResult,
+  moveBlock: (id: string, cell: { col: number; row: number }) => PlacementResult,
+) =>
+  renderHook(() => {
+    const announcer = useGridAnnouncer(strategyPattern);
+    const command = useBlockCommand({
+      grid,
+      strategyPattern,
+      providerBlocks: ORDER_TYPES,
+      announcer,
+      placeProvider,
+      moveBlock,
+    });
+    return { ...command, announcement: announcer.announcement };
+  });
+
 const setup = (
   grid: GridData = clearGrid(2, 3),
   strategyPattern: StrategyPattern = "conditional",
 ) => {
-  const placeProvider = vi.fn(() => "new-block-id");
-  const moveBlock = vi.fn((id: string) => id);
-
-  const view = renderHook(() =>
-    useBlockCommand({
-      grid,
-      strategyPattern,
-      providerBlocks: ORDER_TYPES,
-      placeProvider,
-      moveBlock,
+  const placeProvider = vi.fn(
+    (): PlacementResult => ({ status: "created", blockId: "new-block-id" }),
+  );
+  // The grid the command model talks to reports what it did; this stands in for
+  // a move that really happened, out of the cell the fixtures place blocks in.
+  const moveBlock = vi.fn(
+    (id: string): PlacementResult => ({
+      status: "moved",
+      blockId: id,
+      from: { col: 0, row: 1 },
     }),
   );
+
+  const view = renderCommand(grid, strategyPattern, placeProvider, moveBlock);
 
   return { ...view, placeProvider, moveBlock };
 };
@@ -247,21 +280,20 @@ describe("useBlockCommand", () => {
 
       expect(placeProvider).not.toHaveBeenCalled();
       expect(result.current.carrying).not.toBeNull();
+      // A refused cell leaves the carry live, and the highlight that shows it
+      // is not available to a screen-reader user - so the sentence says it.
       expect(result.current.announcement.text).toBe(
-        "Entry column, upper conditional row cannot take this order.",
+        "Entry column, upper conditional row cannot take this order. Still carrying Limit order.",
       );
     });
 
     it("says the order was not placed when the grid refuses it downstream", () => {
       const grid = clearGrid(2, 3);
-      const view = renderHook(() =>
-        useBlockCommand({
-          grid,
-          strategyPattern: "conditional",
-          providerBlocks: ORDER_TYPES,
-          placeProvider: () => null,
-          moveBlock: () => null,
-        }),
+      const view = renderCommand(
+        grid,
+        "conditional",
+        () => ({ status: "refused" }),
+        () => ({ status: "refused" }),
       );
 
       act(() => view.result.current.activateProvider("limit", "keyboard"));
@@ -278,14 +310,11 @@ describe("useBlockCommand", () => {
 
     it("keeps focus somewhere real when the placement is rejected downstream", () => {
       const grid = clearGrid(2, 3);
-      const view = renderHook(() =>
-        useBlockCommand({
-          grid,
-          strategyPattern: "conditional",
-          providerBlocks: ORDER_TYPES,
-          placeProvider: () => null,
-          moveBlock: () => null,
-        }),
+      const view = renderCommand(
+        grid,
+        "conditional",
+        () => ({ status: "refused" }),
+        () => ({ status: "refused" }),
       );
 
       act(() => view.result.current.activateProvider("limit", "keyboard"));

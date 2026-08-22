@@ -17,6 +17,9 @@ export { useBlockCommand } from "./useBlockCommand";
 // Live-region announcements, paired with the LiveAnnouncer component
 export { useAnnouncer, type Announcement } from "./useAnnouncer";
 
+// The grid's single announcement owner: outcomes in, one vocabulary out
+export { useGridAnnouncer, type GridAnnouncer } from "./useGridAnnouncer";
+
 // Kraken API hook for price data and order management
 export { useKrakenAPI, default as useKrakenAPIDefault } from "./useKrakenAPI";
 

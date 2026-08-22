@@ -54,8 +54,12 @@ export interface UsePointerGestureOptions {
    * `TAP_SLOP_PX`, i.e. this was a tap or a click rather than a drag.
    */
   onUp?: (point: GesturePoint, moved: boolean) => void;
-  /** Fired when the browser takes the pointer away (`pointercancel`). */
-  onCancel?: () => void;
+  /**
+   * Fired when the browser takes the pointer away (`pointercancel`). `moved`
+   * says whether a drag had actually been recognised by then: an interrupted
+   * tap changed nothing and has nothing to report, an interrupted drag does.
+   */
+  onCancel?: (moved: boolean) => void;
   /** When true, no gesture starts at all. */
   disabled?: boolean;
 }
@@ -178,7 +182,7 @@ export const usePointerGesture = ({
     const gesture = gestureRef.current;
     if (!gesture || gesture.pointerId !== e.pointerId) return;
     finish();
-    onCancel?.();
+    onCancel?.(gesture.moved);
   };
 
   return {

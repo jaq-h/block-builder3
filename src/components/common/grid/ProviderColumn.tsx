@@ -19,6 +19,7 @@ interface ProviderColumnProps {
   onProviderDragStart: (type: string) => void;
   onProviderDragEnd: (type: string, x: number, y: number) => void;
   onProviderDragCancel: (type: string) => void;
+  onProviderDragAborted: (type: string) => void;
   onProviderDragRecognised: (type: string) => void;
   onProviderMouseEnter: (type: string) => void;
   onProviderMouseLeave: () => void;
@@ -41,6 +42,7 @@ const ProviderColumn: FC<ProviderColumnProps> = ({
   onProviderDragStart,
   onProviderDragEnd,
   onProviderDragCancel,
+  onProviderDragAborted,
   onProviderDragRecognised,
   onProviderMouseEnter,
   onProviderMouseLeave,
@@ -83,6 +85,7 @@ const ProviderColumn: FC<ProviderColumnProps> = ({
               onDragStart={() => onProviderDragStart(block.type)}
               onDragEnd={(_id, x, y) => onProviderDragEnd(block.type, x, y)}
               onDragCancel={() => onProviderDragCancel(block.type)}
+              onDragAborted={() => onProviderDragAborted(block.type)}
               onDragRecognised={() => onProviderDragRecognised(block.type)}
               onActivate={(_id, origin) =>
                 onProviderActivate(block.type, origin)

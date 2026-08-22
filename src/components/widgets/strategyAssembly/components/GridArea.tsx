@@ -12,12 +12,12 @@ import {
   createBlocksFromOrderType,
   buildOrderConfigEntry,
 } from "../../../../utils";
-import {
-  describeCell,
-  describeSource,
-  samePosition,
-} from "../../../../utils/blockCommand";
-import type { BlockData, CellPosition } from "../../../../types/grid";
+import { samePosition } from "../../../../utils/blockCommand";
+import type {
+  BlockData,
+  CellPosition,
+  PlacementResult,
+} from "../../../../types/grid";
 import { COLUMN_HEADERS } from "../../../../data/orderTypes";
 import { PATTERN_CONFIGS } from "../../../../types/grid";
 import { positionFromPointer, SCALE_CONFIG } from "../../../../styles/grid";
@@ -26,6 +26,7 @@ import GridCell from "../../../common/grid/GridCell";
 import LiveAnnouncer from "../../../common/LiveAnnouncer";
 import { BLOCK_INSTRUCTIONS_ID } from "../../../blocks/block";
 import { useBlockCommand } from "../../../../hooks/useBlockCommand";
+import { useGridAnnouncer } from "../../../../hooks/useGridAnnouncer";
 import { useGridData } from "../contexts/GridDataContext";
 import { useDrag } from "../contexts/DragContext";
 import { useHover } from "../contexts/HoverContext";
@@ -90,13 +91,14 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   // ─── Placement primitives (shared by drag and command model) ─────
 
   /**
-   * Add the blocks for an order type to a cell. Returns the id of the block
-   * that should take focus afterwards.
+   * Add the blocks for an order type to a cell. Returns what it actually did,
+   * which is the only thing anything is allowed to announce: see
+   * `utils/gridAnnouncements.ts`.
    */
   const placeProviderInCell = (
     type: string,
     target: CellPosition,
-  ): string | null => {
+  ): PlacementResult => {
     const providerBlock = providerBlocks.find((b) => b.type === type);
     if (
       !providerBlock ||
@@ -108,7 +110,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
         strategyPattern,
       )
     ) {
-      return null;
+      return { status: "refused" };
     }
 
     // Use factory to create blocks, then stamp direction from placement context
@@ -153,28 +155,36 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
       return updated;
     });
 
-    return blocks[0]?.id ?? null;
+    const blockId = blocks[0]?.id;
+    return blockId
+      ? { status: "created", blockId }
+      : // The factory produced nothing, so the grid gained nothing either.
+        { status: "refused" };
   };
 
   /**
-   * Move an existing block to a cell. `axis` and `yPosition` are supplied by
-   * the pointer drag, which reads them off the drop coordinates; the command
-   * model omits them and the block keeps the position it already had.
+   * Move an existing block to a cell, and report what happened. `axis` and
+   * `yPosition` are supplied by the pointer drag, which reads them off the drop
+   * coordinates; the command model omits them and the block keeps the position
+   * it already had.
    */
   const moveBlockToCell = (
     id: string,
     target: CellPosition,
     position?: { axis: 1 | 2; yPosition: number },
-  ): string | null => {
+  ): PlacementResult => {
     const blockInfo = findBlockInGrid(grid, id);
-    if (!blockInfo) return null;
+    if (!blockInfo) return { status: "refused" };
 
     const { col: sourceCol, row: sourceRow, block: blockData } = blockInfo;
 
-    // Putting a block back where it already is is a no-op, not a rejection:
-    // the placement rules read its own cell as occupied.
-    if (sourceCol === target.col && sourceRow === target.row && !position) {
-      return id;
+    // Putting a block back where it already is changes nothing, and is not a
+    // rejection: the placement rules read its own cell as occupied, so asking
+    // them would refuse the cell the block is visibly sitting in. That is what
+    // a nudge-and-release does, and reporting it as a refusal is what made the
+    // live region contradict itself.
+    if (sourceCol === target.col && sourceRow === target.row) {
+      return { status: "unchanged", blockId: id };
     }
 
     if (
@@ -186,7 +196,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
         strategyPattern,
       )
     ) {
-      return null;
+      return { status: "refused" };
     }
 
     const updatedBlock: BlockData = {
@@ -232,7 +242,11 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
       return updated;
     });
 
-    return id;
+    return {
+      status: "moved",
+      blockId: id,
+      from: { col: sourceCol, row: sourceRow },
+    };
   };
 
   /** Take a block off the grid entirely - a drag that ended outside it. */
@@ -254,10 +268,15 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
   // ─── Command model (select, arrows, place) ───────────────────────
 
+  // Every sentence this grid speaks goes through here, and `report` is the only
+  // way to reach it: see `utils/gridAnnouncements.ts` for what that buys.
+  const announcer = useGridAnnouncer(strategyPattern);
+
   const command = useBlockCommand({
     grid,
     strategyPattern,
     providerBlocks,
+    announcer,
     placeProvider: placeProviderInCell,
     moveBlock: (id, target) => moveBlockToCell(id, target),
   });
@@ -314,15 +333,13 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
   };
 
   /**
-   * A real drag has started, so it takes over from whatever the command model
-   * was carrying: leaving the carry live would let the click the browser
-   * appends to the drag place the carried block in a cell the user never chose.
-   * Focus is not handed back - pointer-down has already moved it to the block
-   * under the pointer, which is where a user reaching for the keyboard expects
-   * to be.
+   * A real drag has started on `subjectKey` - a block id, or a palette order
+   * type. Whether that ends an active carry silently or out loud is decided in
+   * one place, `releaseForDrag`, from whether the drag is about the carried
+   * block itself.
    */
-  const handleDragRecognised = () => {
-    command.cancel({ restoreFocus: false, silent: true });
+  const handleDragRecognised = (subjectKey: string) => {
+    command.releaseForDrag(subjectKey);
   };
 
   const endDrag = () => {
@@ -346,20 +363,45 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
     setHoveredProviderId(null);
   };
 
+  /** A palette order type, named the way the announcer names it. */
+  const providerSource = (type: string) => ({
+    kind: "provider" as const,
+    type,
+    label: providerBlocks.find((b) => b.type === type)?.label ?? type,
+  });
+
   const handleProviderDragEnd = (type: string, x: number, y: number) => {
     const positionData = findCellAndPositionData(x, y);
+    const source = providerSource(type);
+
     if (positionData) {
       const cell = { col: positionData.col, row: positionData.row };
-      const label =
-        providerBlocks.find((b) => b.type === type)?.label ?? type;
-      const source = { kind: "provider" as const, type, label };
-      command.announce(
-        placeProviderInCell(type, cell) === null
-          ? `${describeCell(cell, strategyPattern)} cannot take this order. ${describeSource(source)} was not placed.`
-          : `Placed ${describeSource(source)} in ${describeCell(cell, strategyPattern)}.`,
-      );
+      announcer.report({
+        kind: "placement",
+        source,
+        cell,
+        result: placeProviderInCell(type, cell),
+        via: "drag",
+      });
+    } else {
+      // Released over no cell at all. Nothing was created, and this used to be
+      // the one drag outcome that said nothing whatsoever.
+      announcer.report({ kind: "dragEnded", source, reason: "offGrid" });
     }
     endDrag();
+  };
+
+  /**
+   * The browser took the pointer away mid-drag; nothing was created. `endDrag`
+   * is not called here - `onProviderDragCancel` fires for the same event and
+   * already does it. This handler exists only to say what happened.
+   */
+  const handleProviderDragAborted = (type: string) => {
+    announcer.report({
+      kind: "dragEnded",
+      source: providerSource(type),
+      reason: "aborted",
+    });
   };
 
   // ─── Vertical drag (slider) ──────────────────────────────────────
@@ -434,6 +476,18 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
 
   // ─── Drop handler ────────────────────────────────────────────────
 
+  /** A placed block, named the way the announcer names it. */
+  const gridSource = (id: string) => {
+    const blockInfo = findBlockInGrid(grid, id);
+    if (!blockInfo) return null;
+    return {
+      kind: "grid" as const,
+      id,
+      label: blockInfo.block.label,
+      origin: { col: blockInfo.col, row: blockInfo.row },
+    };
+  };
+
   const handleDragEnd = (id: string, x: number, y: number) => {
     const blockInfo = findBlockInGrid(grid, id);
     const positionData = findCellAndPositionData(
@@ -443,41 +497,48 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
       blockInfo?.block.orderType,
     );
 
-    if (!blockInfo) {
+    // The block is not on the grid, so there is no fact to report about it.
+    const source = gridSource(id);
+    if (!blockInfo || !source) {
       endDrag();
       return;
     }
 
     // The drag is the only feedback a screen-reader user gets for this gesture,
-    // and it is the gesture a finger reaches for first, so each outcome says
-    // what actually happened - in the command model's own vocabulary, and
-    // never claiming a move, a placement or a removal that did not occur.
-    const origin = { col: blockInfo.col, row: blockInfo.row };
-    const source = {
-      kind: "grid" as const,
-      id,
-      label: blockInfo.block.label,
-      origin,
-    };
-
+    // and it is the gesture a finger reaches for first. What is said comes from
+    // the placement primitive's own account of what it did, so a release inside
+    // the block's own cell reads as "stayed", not as a refusal by the cell the
+    // block is sitting in.
     if (positionData) {
       const { col, row, axis, yPosition } = positionData;
-      const target = { col, row };
-      const placed = moveBlockToCell(id, target, { axis, yPosition }) !== null;
-      command.announce(
-        !placed
-          ? `${describeCell(target, strategyPattern)} cannot take this order. ${describeSource(source)} stayed in ${describeCell(origin, strategyPattern)}.`
-          : samePosition(target, origin)
-            ? `${describeSource(source)} stayed in ${describeCell(origin, strategyPattern)}.`
-            : `Moved ${describeSource(source)} to ${describeCell(target, strategyPattern)}.`,
-      );
+      const cell = { col, row };
+      announcer.report({
+        kind: "placement",
+        source,
+        cell,
+        result: moveBlockToCell(id, cell, { axis, yPosition }),
+        via: "drag",
+      });
     } else {
       // Dropped outside - remove only this block
-      removeBlock(id, origin);
-      command.announce(`Removed ${describeSource(source)} from the grid.`);
+      removeBlock(id, source.origin);
+      announcer.report({ kind: "removed", source });
     }
 
     endDrag();
+  };
+
+  /**
+   * The browser took the pointer away mid-drag. Nothing moved, so the block is
+   * still in the cell it started in - and saying so is the difference between a
+   * gesture that failed and a gesture the user thinks succeeded. `endDrag` is
+   * left to `onBlockDragCancel`, which fires for the same event.
+   */
+  const handleBlockDragAborted = (id: string) => {
+    const source = gridSource(id);
+    if (source) {
+      announcer.report({ kind: "dragEnded", source, reason: "aborted" });
+    }
   };
 
   // ─── Pointer move (drag tracking) ────────────────────────────────
@@ -544,6 +605,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
           onProviderDragStart={handleProviderDragStart}
           onProviderDragEnd={handleProviderDragEnd}
           onProviderDragCancel={endDrag}
+          onProviderDragAborted={handleProviderDragAborted}
           onProviderDragRecognised={handleDragRecognised}
           onProviderMouseEnter={handleProviderMouseEnter}
           onProviderMouseLeave={handleProviderMouseLeave}
@@ -616,6 +678,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
                     onBlockDragStart={handleDragStart}
                     onBlockDragEnd={handleDragEnd}
                     onBlockDragCancel={endDrag}
+                    onBlockDragAborted={handleBlockDragAborted}
                     onBlockDragRecognised={handleDragRecognised}
                     onBlockVerticalDrag={handleBlockVerticalDrag}
                     onBlockActivate={command.activateBlock}
@@ -625,7 +688,6 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
                     onCellActivate={() =>
                       command.activateCell({ col: colIndex, row: rowIndex })
                     }
-                    isCarryActive={command.carrying !== null}
                     carryingBlockId={carryingBlockId}
                     focusBlockId={command.focusRequest}
                     onBlockFocusHandled={command.clearFocusRequest}
@@ -636,7 +698,7 @@ const GridArea: FC<GridAreaProps> = ({ currentPrice, tickerError }) => {
           })}
         </div>
       </div>
-      <LiveAnnouncer announcement={command.announcement} />
+      <LiveAnnouncer announcement={announcer.announcement} />
     </div>
   );
 };

@@ -40,6 +40,22 @@ export interface CellPosition {
   row: number;
 }
 
+/**
+ * What a placement primitive actually did, reported by the code that did it
+ * rather than inferred by the caller from a nullable id. `gridAnnouncements`
+ * turns this into the words the user hears, so the sentence and the grid can
+ * never disagree: a same-cell release is `unchanged`, not a refusal.
+ */
+export type PlacementResult =
+  /** A new block was created in the target cell, from the palette. */
+  | { status: "created"; blockId: string }
+  /** An existing block left one cell and arrived in another. */
+  | { status: "moved"; blockId: string; from: CellPosition }
+  /** The block was already in the target cell, so nothing changed. */
+  | { status: "unchanged"; blockId: string }
+  /** The grid would not take the order; nothing on the grid changed. */
+  | { status: "refused" };
+
 // =============================================================================
 // DISPLAY MODE TYPES
 // =============================================================================

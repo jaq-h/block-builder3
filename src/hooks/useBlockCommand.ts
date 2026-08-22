@@ -2,24 +2,24 @@ import { useReducer, useRef, useState } from "react";
 import type {
   CellPosition,
   GridData,
+  PlacementResult,
   StrategyPattern,
 } from "../types/grid";
 import type { OrderTypeDefinition } from "../data/orderTypes";
 import {
   commandReducer,
-  describeCell,
-  describeSource,
   hasDualAxisPartner,
   IDLE_COMMAND_STATE,
   initialTarget,
   samePosition,
   validTargetsFor,
   withOriginCell,
+  type ActivationOrigin,
   type CarriedBlock,
   type CommandSource,
 } from "../utils/blockCommand";
 import { findBlockInGrid, getCellDisplayMode } from "../utils/grid";
-import { useAnnouncer, type Announcement } from "./useAnnouncer";
+import type { GridAnnouncer } from "./useGridAnnouncer";
 
 // =============================================================================
 // USE BLOCK COMMAND - the DOM-facing half of the select-then-place model
@@ -27,15 +27,14 @@ import { useAnnouncer, type Announcement } from "./useAnnouncer";
 //
 // The transitions themselves are pure and live in `utils/blockCommand.ts`.
 // This hook adds the two things a real interaction needs and a reducer cannot
-// provide: the announcement a screen-reader user hears at each step, and the
-// element focus has to land on afterwards.
+// provide: the outcome a screen-reader user hears at each step, and the element
+// focus has to land on afterwards.
+//
+// It reports outcomes to the announcer it is given; it never composes a
+// sentence. See `utils/gridAnnouncements.ts` for why that separation is the
+// point rather than a formality.
 
-/**
- * Which affordance activated a block. They diverge in exactly one place: Enter
- * on a carried block places it, because the keyboard has Escape to cancel with;
- * a second tap on it puts it back down, because a finger does not.
- */
-export type ActivationOrigin = "keyboard" | "pointer";
+export type { ActivationOrigin };
 
 export interface CancelOptions {
   /**
@@ -44,23 +43,18 @@ export interface CancelOptions {
    * and restoring it would drag the user back to the block they just left.
    */
   restoreFocus?: boolean;
-  /**
-   * Release the carry without speaking. A pointer drag that supersedes a carry
-   * uses this: the drag is about to move, remove or place the very block a
-   * cancellation message would name as resting somewhere, and the drag
-   * announces its own outcome instead.
-   */
-  silent?: boolean;
 }
 
 export interface UseBlockCommandOptions {
   grid: GridData;
   strategyPattern: StrategyPattern;
   providerBlocks: OrderTypeDefinition[];
-  /** Commit a new block from the palette; returns the block id to focus. */
-  placeProvider: (type: string, cell: CellPosition) => string | null;
-  /** Commit a move of an existing block; returns the block id to focus. */
-  moveBlock: (id: string, cell: CellPosition) => string | null;
+  /** The one voice of the grid; see `useGridAnnouncer`. */
+  announcer: GridAnnouncer;
+  /** Commit a new block from the palette, and report what the grid did. */
+  placeProvider: (type: string, cell: CellPosition) => PlacementResult;
+  /** Commit a move of an existing block, and report what the grid did. */
+  moveBlock: (id: string, cell: CellPosition) => PlacementResult;
 }
 
 export interface UseBlockCommandReturn {
@@ -71,32 +65,32 @@ export interface UseBlockCommandReturn {
   activateProvider: (type: string, origin: ActivationOrigin) => void;
   /** Enter, Space or a tap on a placed block. */
   activateBlock: (id: string, origin: ActivationOrigin) => void;
-  /** A tap on a cell while carrying. */
+  /** A tap on a cell. Does nothing, silently, while nothing is carried. */
   activateCell: (cell: CellPosition) => void;
   moveTarget: (dCol: number, dRow: number) => void;
+  /** Escape, Tab, or a second tap: the user put the block back. */
   cancel: (options?: CancelOptions) => void;
-  announce: (text: string) => void;
-  announcement: Announcement;
+  /**
+   * A pointer drag has been recognised on `subjectKey` - a block id, or a
+   * palette order type - so it takes the interaction over from the carry.
+   */
+  releaseForDrag: (subjectKey: string) => void;
   /** The block id that should take focus, once React has rendered it. */
   focusRequest: string | null;
   clearFocusRequest: () => void;
 }
 
-const CARRY_HELP: Record<ActivationOrigin, string> = {
-  keyboard: "Use the arrow keys to choose a cell, Enter to place, Escape to cancel.",
-  pointer: "Tap a highlighted cell to place it, or tap the block again to put it back.",
-};
-
 export const useBlockCommand = ({
   grid,
   strategyPattern,
   providerBlocks,
+  announcer,
   placeProvider,
   moveBlock,
 }: UseBlockCommandOptions): UseBlockCommandReturn => {
   const [state, dispatch] = useReducer(commandReducer, IDLE_COMMAND_STATE);
   const [focusRequest, setFocusRequest] = useState<string | null>(null);
-  const { announcement, announce } = useAnnouncer();
+  const { report } = announcer;
 
   const carrying = state.carrying;
 
@@ -126,59 +120,78 @@ export const useBlockCommand = ({
     // A placed block can always go back where it came from.
     if (preferred) targets = withOriginCell(targets, preferred);
     if (targets.length === 0) {
-      announce(
-        `${describeSource(source)} cannot be placed anywhere in the grid right now.`,
-      );
+      report({ kind: "pickUpRefused", source, reason: "noTargets" });
       return false;
     }
     dispatch({ type: "pickUp", source, targets, preferred });
     // The same choice the reducer makes, so the announcement can never name a
     // cell other than the one that is actually the target.
     const target = initialTarget(targets, preferred) ?? targets[0];
-    announce(
-      `Picked up ${describeSource(source)}. ${CARRY_HELP[origin]} Target: ${describeCell(target, strategyPattern)}.`,
-    );
+    report({ kind: "pickedUp", source, target, origin });
     return true;
   };
 
   const commit = (block: CarriedBlock, cell: CellPosition) => {
     pointerPickUpRef.current = false;
-    const placedId =
+    const result =
       block.source.kind === "provider"
         ? placeProvider(block.source.type, cell)
         : moveBlock(block.source.id, cell);
 
-    // `null` is how the grid refuses a placement, and it can disagree with the
-    // targets snapshotted at pick-up time - the grid may have been emptied or
-    // filled since. Saying "Placed" then would be a lie to the one user who has
-    // nothing but the announcement to go on.
-    if (placedId === null) {
-      dispatch({ type: "cancel" });
-      setFocusRequest(sourceKey(block.source));
-      announce(
-        `${describeCell(cell, strategyPattern)} cannot take this order any more. ${describeSource(block.source)} was not placed.`,
-      );
-      return;
-    }
-
-    dispatch({ type: "place" });
-    setFocusRequest(placedId);
-    announce(
-      `Placed ${describeSource(block.source)} in ${describeCell(cell, strategyPattern)}.`,
+    // The grid can disagree with the targets snapshotted at pick-up time - it
+    // may have been emptied or filled since - so what is said comes from what
+    // the grid did, never from what this call was hoping for.
+    dispatch({ type: result.status === "refused" ? "cancel" : "place" });
+    setFocusRequest(
+      result.status === "refused" ? sourceKey(block.source) : result.blockId,
     );
+    report({
+      kind: "placement",
+      source: block.source,
+      cell,
+      result,
+      via: "carry",
+    });
   };
 
-  const cancel = ({ restoreFocus = true, silent = false }: CancelOptions = {}) => {
+  const cancel = ({ restoreFocus = true }: CancelOptions = {}) => {
     pointerPickUpRef.current = false;
     if (!carrying) return;
     dispatch({ type: "cancel" });
     if (restoreFocus) setFocusRequest(sourceKey(carrying.source));
-    if (silent) return;
-    announce(
-      carrying.source.kind === "provider"
-        ? `Cancelled. ${describeSource(carrying.source)} returned to the palette.`
-        : `Cancelled. ${describeSource(carrying.source)} left in ${describeCell(carrying.source.origin, strategyPattern)}.`,
-    );
+    report({ kind: "carryEnded", source: carrying.source, reason: "cancelled" });
+  };
+
+  /**
+   * A real drag takes over from whatever the command model was carrying:
+   * leaving the carry live would let the click the browser appends to the drag
+   * place the carried block in a cell the user never chose. Focus is not handed
+   * back - pointer-down has already moved it to the block under the pointer.
+   *
+   * Whether that release is spoken turns on one question, and it is the whole
+   * reason this is not just `cancel()`: **is the drag about the block being
+   * carried?**
+   *
+   * - Same subject, so the drag will move, place or remove the very block a
+   *   cancellation would name as resting somewhere. Saying anything now would
+   *   be true for a moment and then false; the drag's own outcome, announced
+   *   when it lands, is the complete and durable story.
+   * - Different subject - a vertical price drag on another block, a palette
+   *   drag while holding a grid block - and the drag's outcome says nothing
+   *   about the carry at all. Staying silent there loses the carry with no word
+   *   said, and the next tap on a cell then does nothing the user can explain.
+   */
+  const releaseForDrag = (subjectKey: string) => {
+    pointerPickUpRef.current = false;
+    if (!carrying) return;
+    const isSameSubject = isCarrying(subjectKey);
+    dispatch({ type: "cancel" });
+    if (isSameSubject) return;
+    report({
+      kind: "carryEnded",
+      source: carrying.source,
+      reason: "superseded",
+    });
   };
 
   const activateProvider = (type: string, origin: ActivationOrigin) => {
@@ -226,9 +239,11 @@ export const useBlockCommand = ({
     // the block can still do - and only what this render actually wires.
     const cellBlocks = grid[cell.col][cell.row];
     if (getCellDisplayMode(cellBlocks) !== "no-axis") {
-      announce(
-        `${found.block.label} is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.`,
-      );
+      report({
+        kind: "moveRefused",
+        label: found.block.label,
+        reason: "onPriceAxis",
+      });
       return;
     }
 
@@ -237,9 +252,11 @@ export const useBlockCommand = ({
     // would leave its partner behind and the two halves would be submitted as
     // two orders on opposite sides of the market.
     if (hasDualAxisPartner(cellBlocks, found.block)) {
-      announce(
-        `${found.block.label} cannot be moved on its own: its trigger and limit must stay in the same cell.`,
-      );
+      report({
+        kind: "moveRefused",
+        label: found.block.label,
+        reason: "dualAxisPartner",
+      });
       return;
     }
 
@@ -264,14 +281,14 @@ export const useBlockCommand = ({
       pointerPickUpRef.current = false;
       return;
     }
+    // A click on the grid with nothing carried is not an interaction the user
+    // started - it is a click on the page - so it says nothing.
     if (!carrying) return;
     const isValid = carrying.targets.some((target) =>
       samePosition(target, cell),
     );
     if (!isValid) {
-      announce(
-        `${describeCell(cell, strategyPattern)} cannot take this order.`,
-      );
+      report({ kind: "cellRefused", source: carrying.source, cell });
       return;
     }
     commit(carrying, cell);
@@ -281,13 +298,11 @@ export const useBlockCommand = ({
     if (!carrying) return;
     const next = commandReducer(state, { type: "moveTarget", dCol, dRow });
     if (next === state) {
-      announce("No cell available in that direction.");
+      report({ kind: "noTargetThatWay" });
       return;
     }
     dispatch({ type: "moveTarget", dCol, dRow });
-    announce(
-      `${describeCell(next.carrying!.target, strategyPattern)}, ready to place.`,
-    );
+    report({ kind: "targetChanged", target: next.carrying!.target });
   };
 
   return {
@@ -298,8 +313,7 @@ export const useBlockCommand = ({
     activateCell,
     moveTarget,
     cancel,
-    announce,
-    announcement,
+    releaseForDrag,
     focusRequest,
     clearFocusRequest: () => setFocusRequest(null),
   };

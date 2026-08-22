@@ -253,7 +253,9 @@ the cell it started in.
 
 The pure half of that model - the transitions and the target arithmetic - lives in
 `src/utils/blockCommand.ts` and is directly testable. `useBlockCommand` adds the two things
-a reducer cannot supply: what gets announced, and where focus lands afterwards.
+a reducer cannot supply: which outcome is reported to the announcer at each step, and where
+focus lands afterwards. It chooses no wording of its own; see **Announcements have one
+owner** below.
 
 **What moves between cells, and what does not.** A block the cell draws **on a price axis**
 stays in its cell. That is not an accessibility shortfall: a mouse cannot move one either -
@@ -302,39 +304,53 @@ the carried block is placed somewhere the user never chose. Cancelling at pointe
 instead would break the tap that places a carried block into another block's cell, which is
 why `usePointerGesture` reports drag recognition as its own moment.
 
-That release is **silent** (`cancel({ silent: true })`), and the drag announces its own
-outcome when it ends instead. A cancellation message names a resting place - "left in Entry
-column, row 2" - and the very gesture that triggered it is about to move, remove or place
-that block, so the last thing said would contradict the grid. A **free drag of a placed block that
-ends on a cell or off the grid**, and a **palette drag that resolves to a cell**, therefore
-say what they did: moved to a named cell, stayed where it was, removed from the grid, or
-placed from the palette into a named cell, using `describeCell` and `describeSource` so the pointer path and the keyboard path sound like one
-interaction. The vertical price drag is deliberately left silent: a placed block is a
-`role="slider"`, and assistive technology already speaks its `aria-valuetext` on every
-change.
+Whether that release is **spoken** is decided in exactly one place, `releaseForDrag`, on one
+question: is the drag about the block being carried? Dragging the block you just tapped, and
+the drag's own outcome when it lands is the complete story - anything said as it begins would
+be made false a moment later by that very gesture. Dragging anything else, and the drag's
+outcome says nothing about the carry at all, so the release is announced: *"Take Profit order
+returned to the palette: a drag took over."* Leaving that silent lost the carry with no word
+said, and the next tap on a cell then did nothing the user could explain.
 
-**Known announcement gap, shipping deliberately.** Not every path through the announcement
-layer is correct yet. These are gaps in this change, not limits of the platform or of
-assistive technology, and each is deterministic rather than occasional:
+Every other way a gesture can end speaks too: a **free drag of a placed block** that lands on a
+cell, stays in its own cell or leaves the grid; a **palette drag** that resolves to a cell or is
+released outside every one of them (*"Released outside the grid. Market order was not placed."*);
+and a **`pointercancel`** after a real drag (*"Drag cancelled. Market block stayed in Entry
+column, primary row."*). A `pointercancel` that interrupts what was still only a tap says
+nothing, because nothing happened. The **vertical price drag** stays silent about the price
+itself: a placed block is a `role="slider"`, and assistive technology speaks its
+`aria-valuetext` on every change.
 
-- A **vertical price drag releases an active carry silently.** It crosses the same tap slop
-  as any other drag, so it supersedes the carry, but it never reaches the drop handler and
-  nothing is announced. The carry is gone with no word said - and the next tap on a cell
-  then does nothing at all, because `GridCell` attaches its click handler only while
-  something is carried. A **`pointercancel`** ends the same way: `endDrag` alone, no message.
-- A **palette drag released outside every cell announces nothing.** `handleProviderDragEnd`
-  speaks only when the release resolves to a cell.
-- On the **conditional pattern - the default - a same-cell release announces a refusal that
-  contradicts where the block is.** The drop supplies a position, so `moveBlockToCell` skips
-  its same-cell no-op branch and asks `isCellValidForPlacement`, which reads the block's own
-  occupied cell as an illegal target. The live region then says "Entry column, primary row
-  cannot take this order. Market block stayed in Entry column, primary row." Nudging a block
-  a few pixels and letting go is enough to hear it. The bulk pattern does not show it,
-  because every cell is a legal target there.
+**Announcements have one owner.** `src/utils/gridAnnouncements.ts` writes every sentence the
+grid speaks, and `useGridAnnouncer` is the only thing that reaches the live region. No call
+site composes a message: the carry, the free drag, the palette drag and the vertical drag each
+*report an outcome* - a fact about what just happened - and the owner turns it into words.
+`useBlockCommand` is handed that announcer rather than owning one, and exposes no `announce`,
+so there is no way to invent wording next to the code that acts. Two invariants are what this
+buys, and each had been violated:
 
-All three are sequenced to the lane that gives the block-to-price mapping and the
-announcement layer a single owner. The plan is that this branch waits for that lane rather
-than merging ahead of it.
+- **An outcome is what happened, not what was about to be attempted.** `placeProviderInCell`
+  and `moveBlockToCell` return a `PlacementResult` - `created`, `moved`, `unchanged` or
+  `refused` - produced by the code that actually mutated the grid, so a sentence cannot claim
+  a move, a refusal or a removal that did not occur. Deriving it from a nullable id instead is
+  how a release inside a block's own cell came to announce *"Entry column, primary row cannot
+  take this order. Market block stayed in Entry column, primary row"*: the drop supplied a
+  position, the same-cell no-op branch was skipped, and `isCellValidForPlacement` read the
+  block's own occupied cell as illegal. A same-cell release is `unchanged`, and reads *"Market
+  block stayed in Entry column, primary row."* The bulk pattern never showed it, because every
+  cell is a legal target there, so `GridArea.dom.test.tsx` pins it on the conditional pattern.
+- **A sentence has to still be true after the operation that triggered it.** This is the trap
+  the three earlier point fixes fell into: cancelling a carry when a drag began made the
+  cancellation silent, and announcing the drag's outcome instead made that announcement false.
+  It is why `releaseForDrag` turns on the same-block question above rather than on a `silent`
+  flag passed in by whoever happened to be calling.
+
+The same rule decides one thing outside the announcer: `GridCell` wires its click handler
+unconditionally rather than only while something is carried. Whether a click means anything is
+the command model's decision, and a cell that drops the click on its own judgement is a second
+opinion on the same question. With nothing carried a cell tap still places nothing - there is
+nothing to place - and it says nothing, because a click on the page is not an action the user
+started; what changed is that the reason is now the last thing the live region said.
 
 Announcements go through `LiveAnnouncer`, which alternates between two live regions: a
 screen reader only reads a region whose content **changed**, so two identical messages in a
