@@ -115,9 +115,14 @@ describe("describeOutcome, a carry that ends without a placement", () => {
   });
 
   it("names the cell a placed block was left in", () => {
-    expect(say({ kind: "carryEnded", source: placed, reason: "cancelled" })).toBe(
-      "Cancelled. Market block left in Entry column, primary row.",
-    );
+    expect(
+      say({
+        kind: "carryEnded",
+        source: placed,
+        reason: "cancelled",
+        at: { col: 0, row: 1 },
+      }),
+    ).toBe("Cancelled. Market block left in Entry column, primary row.");
   });
 
   it("says a drag took the interaction over rather than the user cancelling", () => {
@@ -126,9 +131,49 @@ describe("describeOutcome, a carry that ends without a placement", () => {
     expect(say({ kind: "carryEnded", source: palette, reason: "superseded" })).toBe(
       "Market order returned to the palette: a drag took over.",
     );
-    expect(say({ kind: "carryEnded", source: placed, reason: "superseded" })).toBe(
-      "Market block left in Entry column, primary row: a drag took over.",
+    expect(
+      say({
+        kind: "carryEnded",
+        source: placed,
+        reason: "superseded",
+        at: { col: 0, row: 1 },
+      }),
+    ).toBe("Market block left in Entry column, primary row: a drag took over.");
+  });
+
+  it("names the cell the grid confirmed, never the pick-up snapshot", () => {
+    // `placed.origin` is Entry/primary. Reverse Blocks moves the block to the
+    // other column while it is carried, and the grid's answer wins.
+    expect(
+      say({
+        kind: "carryEnded",
+        source: placed,
+        reason: "cancelled",
+        at: { col: 1, row: 1 },
+      }),
+    ).toBe("Cancelled. Market block left in Exit column, primary row.");
+  });
+
+  it("names no cell when the grid can no longer find the block", () => {
+    // Clear All. Both reasons have to stay grammatical with the cell-less
+    // clause substituted in, since both frame it differently.
+    const cancelled = say({
+      kind: "carryEnded",
+      source: placed,
+      reason: "cancelled",
+    });
+    expect(cancelled).toBe("Cancelled. Market block is no longer on the grid.");
+    expect(cancelled).not.toContain("column");
+
+    const superseded = say({
+      kind: "carryEnded",
+      source: placed,
+      reason: "superseded",
+    });
+    expect(superseded).toBe(
+      "Market block is no longer on the grid: a drag took over.",
     );
+    expect(superseded).not.toContain("column");
   });
 });
 

@@ -313,11 +313,18 @@ gesture begins, because anything said then would be made false a moment later by
 gesture. Instead `releaseForDrag` reports back that it released the carry silently, and the
 clause is folded into the one sentence the gesture's outcome produces once it is settled fact:
 *"Market block stayed in Entry column, primary row, and is no longer picked up."* It is added
-only where the base sentence describes nothing happening to that block - `unchanged`, `refused`
-and both `dragEnded` reasons - since *"Moved"*, *"Placed"* and *"Removed"* already say the block
-left the user's hand. One outcome, one sentence: two live-region writes in quick succession
+only where the base sentence describes nothing happening to that block - `unchanged`, `refused`,
+`gone` and both `dragEnded` reasons - since *"Moved"*, *"Placed"* and *"Removed"* already say the
+block left the user's hand. One outcome, one sentence: two live-region writes in quick succession
 risk the first being cut off. Leaving any of it silent lost the carry with no word said, and
 the next tap on a cell then did nothing the user could explain.
+
+The **keyboard and tap commit path** says the same thing for the same reason, because a commit
+always ends the carry too: placing a block back in its own cell reads *"Market block stayed in
+Entry column, primary row, and is no longer picked up."* rather than the bare *"stayed in"* a
+nudge with nothing carried produces. Silence there would not merely omit a cue - the sibling
+refusal below says *"Still carrying X."* whenever the carry does survive, so saying nothing
+about it reads as *you are still holding it*.
 
 A refused **pick-up** says the same thing for the same reason: reaching for a second order type
 while holding one is a swap, and when the new order has nowhere legal to go the first is still
@@ -362,8 +369,14 @@ buys, and each had been violated:
   after **Reverse Blocks** naming the column the block was mirrored out of. And "the block is
   not on the grid" is `gone` rather than `refused`, with a sentence that names no cell at all
   (*"Market block is no longer on the grid."*), because after **Clear All** there is no cell
-  that would be true. A palette order is unaffected: it has no origin, and its clause is
-  already *"was not placed."*
+  that would be true. The same holds for a carry that simply ends: `cancel` and
+  `releaseForDrag` each ask the grid where the block is at that moment and pass the answer on
+  the outcome, so *"Cancelled. Market block left in Exit column, primary row."* after a reverse,
+  and *"Cancelled. Market block is no longer on the grid."* after a clear. `restingPlace` never
+  reads the snapshot at all - the bullet you are reading was written before the module honoured
+  it, and the rule is now enforced by there being nothing stale in that function's scope to
+  reach for. A palette order is unaffected: it has no origin, and its clause is already
+  *"was not placed."*
 - **A sentence has to still be true after the operation that triggered it.** This is the trap
   the three earlier point fixes fell into: cancelling a carry when a drag began made the
   cancellation silent, and announcing the drag's outcome instead made that announcement false.

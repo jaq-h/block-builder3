@@ -114,6 +114,18 @@ export const useBlockCommand = ({
   const sourceKey = (source: CommandSource): string =>
     source.kind === "provider" ? source.type : source.id;
 
+  /**
+   * Where the grid says this block is, right now. `CommandSource.origin` is a
+   * pick-up-time snapshot and the grid can be replaced under a live carry, so
+   * every sentence that names a carried block's cell is composed from this
+   * instead. `undefined` means the grid no longer holds the block at all.
+   */
+  const confirmedCell = (source: CommandSource): CellPosition | undefined => {
+    if (source.kind !== "grid") return undefined;
+    const found = findBlockInGrid(grid, source.id);
+    return found ? { col: found.col, row: found.row } : undefined;
+  };
+
   /** True when the block was actually picked up, false when it was refused. */
   const pickUp = (
     source: CommandSource,
@@ -169,12 +181,17 @@ export const useBlockCommand = ({
         dispatch({ type: "place" });
         setFocusRequest(result.blockId);
     }
+    // Every branch above ends the carry, so this path always has to say so -
+    // and where that clause belongs is the announcer's decision, not this
+    // caller's. It appends it only to the sentences that do not already
+    // describe something happening to the block.
     report({
       kind: "placement",
       source: block.source,
       cell,
       result,
       via: "carry",
+      releasedCarry: true,
     });
   };
 
@@ -183,7 +200,12 @@ export const useBlockCommand = ({
     if (!carrying) return;
     dispatch({ type: "cancel" });
     if (restoreFocus) setFocusRequest(sourceKey(carrying.source));
-    report({ kind: "carryEnded", source: carrying.source, reason: "cancelled" });
+    report({
+      kind: "carryEnded",
+      source: carrying.source,
+      reason: "cancelled",
+      at: confirmedCell(carrying.source),
+    });
   };
 
   /**
@@ -216,6 +238,7 @@ export const useBlockCommand = ({
       kind: "carryEnded",
       source: carrying.source,
       reason: "superseded",
+      at: confirmedCell(carrying.source),
     });
     return false;
   };

@@ -55,6 +55,32 @@ const renderCommand = (
     return { ...command, announcement: announcer.announcement };
   });
 
+/**
+ * The same wiring, but with the grid as a prop so it can be replaced under a
+ * live carry - which is what Clear All, Reverse Blocks and a pattern switch do,
+ * none of which end the carry. The `GridArea` harness stubs those buttons out,
+ * so this is the honest place to drive them.
+ */
+const renderCommandWithReplaceableGrid = (
+  initialGrid: GridData,
+  moveBlock: () => PlacementResult = () => ({ status: "refused" }),
+) =>
+  renderHook(
+    ({ grid }: { grid: GridData }) => {
+      const announcer = useGridAnnouncer("conditional");
+      const command = useBlockCommand({
+        grid,
+        strategyPattern: "conditional",
+        providerBlocks: ORDER_TYPES,
+        announcer,
+        placeProvider: () => ({ status: "refused" }),
+        moveBlock,
+      });
+      return { ...command, announcement: announcer.announcement };
+    },
+    { initialProps: { grid: initialGrid } },
+  );
+
 const setup = (
   grid: GridData = clearGrid(2, 3),
   strategyPattern: StrategyPattern = "conditional",
@@ -299,7 +325,7 @@ describe("useBlockCommand", () => {
       // still refuse. Announcing "Placed" then would be a lie to the one user
       // who has nothing but the announcement to go on.
       expect(view.result.current.announcement.text).toBe(
-        "Entry column, primary row cannot take this order any more. Limit order was not placed.",
+        "Entry column, primary row cannot take this order any more. Limit order was not placed, and is no longer picked up.",
       );
       expect(view.result.current.carrying).toBeNull();
     });
@@ -320,7 +346,7 @@ describe("useBlockCommand", () => {
       act(() => view.result.current.activateBlock("b1", "keyboard"));
 
       expect(view.result.current.announcement.text).toBe(
-        "Entry column, primary row cannot take this order any more. Market block stayed in Exit column, primary row.",
+        "Entry column, primary row cannot take this order any more. Market block stayed in Exit column, primary row, and is no longer picked up.",
       );
       expect(view.result.current.carrying).toBeNull();
     });
@@ -339,7 +365,7 @@ describe("useBlockCommand", () => {
       act(() => view.result.current.activateBlock("b1", "keyboard"));
 
       expect(view.result.current.announcement.text).toBe(
-        "Market block is no longer on the grid.",
+        "Market block is no longer on the grid, and is no longer picked up.",
       );
       expect(view.result.current.carrying).toBeNull();
       // A focus request naming a block that does not exist is never honoured,
@@ -362,6 +388,72 @@ describe("useBlockCommand", () => {
       // Nothing was created, so focus returns to the palette entry rather than
       // being dropped on the body.
       expect(view.result.current.focusRequest).toBe("limit");
+    });
+  });
+
+  describe("a carry the grid changes under", () => {
+    /** Where Reverse Blocks leaves the same block: the mirrored column. */
+    const gridWithBlockMoved = () => {
+      const grid = clearGrid(2, 3);
+      grid[1][1].push(axisLessBlock());
+      return grid;
+    };
+
+    it("names the cell the block is in now when the carry is cancelled", () => {
+      const view = renderCommandWithReplaceableGrid(gridWithMovableBlock());
+
+      act(() => view.result.current.activateBlock("b1", "keyboard"));
+      expect(view.result.current.carrying?.source).toMatchObject({
+        origin: { col: 0, row: 1 },
+      });
+
+      view.rerender({ grid: gridWithBlockMoved() });
+      act(() => view.result.current.cancel());
+
+      expect(view.result.current.announcement.text).toBe(
+        "Cancelled. Market block left in Exit column, primary row.",
+      );
+    });
+
+    it("names no cell at all when the grid no longer holds the block", () => {
+      const view = renderCommandWithReplaceableGrid(gridWithMovableBlock());
+
+      act(() => view.result.current.activateBlock("b1", "keyboard"));
+      view.rerender({ grid: clearGrid(2, 3) });
+      act(() => view.result.current.cancel());
+
+      expect(view.result.current.announcement.text).toBe(
+        "Cancelled. Market block is no longer on the grid.",
+      );
+      expect(view.result.current.announcement.text).not.toContain("column");
+    });
+
+    it("does the same when a drag supersedes the carry", () => {
+      const moved = renderCommandWithReplaceableGrid(gridWithMovableBlock());
+
+      act(() => moved.result.current.activateBlock("b1", "keyboard"));
+      moved.rerender({ grid: gridWithBlockMoved() });
+      // A different subject, so this release speaks for itself.
+      act(() => {
+        moved.result.current.releaseForDrag("limit");
+      });
+
+      expect(moved.result.current.announcement.text).toBe(
+        "Market block left in Exit column, primary row: a drag took over.",
+      );
+
+      const cleared = renderCommandWithReplaceableGrid(gridWithMovableBlock());
+
+      act(() => cleared.result.current.activateBlock("b1", "keyboard"));
+      cleared.rerender({ grid: clearGrid(2, 3) });
+      act(() => {
+        cleared.result.current.releaseForDrag("limit");
+      });
+
+      expect(cleared.result.current.announcement.text).toBe(
+        "Market block is no longer on the grid: a drag took over.",
+      );
+      expect(cleared.result.current.announcement.text).not.toContain("column");
     });
   });
 

@@ -868,6 +868,59 @@ describe("GridArea, a refused pick-up while a block is carried", () => {
 });
 
 // =============================================================================
+// A COMMIT THAT ENDS THE CARRY
+// =============================================================================
+//
+// Committing always ends the carry, and the sibling `cellRefused` outcome says
+// "Still carrying X." whenever the carry does survive - so a screen-reader user
+// is taught that hearing nothing about the carry means it is still in hand.
+// Silence on these paths therefore states the opposite of the truth.
+
+describe("GridArea, a commit that ends the carry", () => {
+  it("says the carry is over when a block is put back in its own cell", () => {
+    const { block } = renderConditionalMarket();
+
+    tap(block);
+    // `withOriginCell` always makes the block's own cell a target, so this is
+    // an ordinary put-it-back rather than an edge case.
+    fireEvent.click(cell(0, 1));
+
+    expect(announcement()).toBe(
+      "Market block stayed in Entry column, primary row, and is no longer picked up.",
+    );
+    // The defect was this reading word for word like the nudge-drag sentence
+    // produced when nothing was carried at all.
+    expect(announcement()).not.toBe(
+      "Market block stayed in Entry column, primary row.",
+    );
+    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
+  });
+
+  it("says the carry is over when the grid refuses the chosen cell", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    // The same block, plus a second one that takes the cell this carry is
+    // about to be committed into.
+    const occupied = clearGrid(2, 3);
+    occupied[0][1].push(placedMarket("b1"));
+    occupied[1][0].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} gridReplacement={occupied} />);
+
+    tap(screen.getByRole("button", { name: /^Market order,/ }));
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    // (1,0) was one of the cells the carry offered, and has been filled since.
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+    fireEvent.click(cell(1, 0));
+
+    expect(announcement()).toBe(
+      "Exit column, upper conditional row cannot take this order any more. Market block stayed in Entry column, primary row, and is no longer picked up.",
+    );
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+  });
+});
+
+// =============================================================================
 // A CARRY THAT OUTLIVES THE BLOCK IT NAMES
 // =============================================================================
 //
@@ -894,7 +947,9 @@ describe("GridArea, a carry whose block has been cleared away", () => {
     // just told they could drop into.
     fireEvent.click(cell(1, 0));
 
-    expect(announcement()).toBe("Market block is no longer on the grid.");
+    expect(announcement()).toBe(
+      "Market block is no longer on the grid, and is no longer picked up.",
+    );
     expect(announcement()).not.toContain("stayed in");
     expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
   });

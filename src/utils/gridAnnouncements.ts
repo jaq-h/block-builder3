@@ -99,7 +99,20 @@ export type GridOutcome =
   | { kind: "noTargetThatWay" }
   /** A cell was chosen that the carry never offered; the carry survives. */
   | { kind: "cellRefused"; source: CommandSource; cell: CellPosition }
-  | { kind: "carryEnded"; source: CommandSource; reason: CarryEndReason }
+  | {
+      kind: "carryEnded";
+      source: CommandSource;
+      reason: CarryEndReason;
+      /**
+       * Where the grid has just been asked to find the block, for a grid
+       * source. `undefined` means the grid could not find it, which is a fact
+       * about the grid rather than a missing argument - so a grid source must
+       * always supply this, and `restingPlace` treats its absence as "not
+       * there" rather than falling back to anything. A provider source has no
+       * cell at all and leaves it unset.
+       */
+      at?: CellPosition;
+    }
   | {
       kind: "placement";
       source: CommandSource;
@@ -140,14 +153,31 @@ const CARRY_HELP: Record<ActivationOrigin, string> = {
     "Tap a highlighted cell to place it, or tap the block again to put it back.",
 };
 
-/** Where a block that was not placed has ended up, as a verb phrase. */
+/**
+ * Where a block that was not placed has ended up, as a verb phrase.
+ *
+ * It deliberately does NOT read `source.origin`. That field is stamped once
+ * when the block is picked up and never refreshed, and the grid can be
+ * replaced under a live carry - Reverse Blocks moves the block to the other
+ * column, Clear All removes it - so the snapshot names a cell the block has
+ * left. `at` is the answer the grid gave when the carry ended, and its absence
+ * is itself an answer: the grid no longer holds this block.
+ *
+ * This is the module's own invariant, that no sentence names a location the
+ * grid has not just confirmed, and the module was found breaking it here after
+ * writing it down. A claim you authored is the hardest one to audit, so the
+ * rule is enforced by the shape of this function rather than by remembering
+ * it: there is nothing stale in scope for it to reach for.
+ */
 const restingPlace = (
   source: CommandSource,
   pattern: StrategyPattern,
-): string =>
-  source.kind === "provider"
-    ? "returned to the palette"
-    : `left in ${describeCell(source.origin, pattern)}`;
+  at?: CellPosition,
+): string => {
+  if (source.kind === "provider") return "returned to the palette";
+  // Saying less because the grid genuinely cannot confirm more is honest.
+  return at ? `left in ${describeCell(at, pattern)}` : "is no longer on the grid";
+};
 
 /**
  * The second half of every "nothing happened" sentence. A palette order that
@@ -189,9 +219,13 @@ const describePlacement = (
     // contradicts the block sitting in it.
     //
     // "created" and "moved" above already describe something happening to this
-    // very block, so a released-carry clause there would be noise. This branch
-    // and "refused" below describe nothing happening, which is where a user who
-    // was carrying that block needs telling that they no longer are.
+    // very block, so a released-carry clause there would be noise. This branch,
+    // "refused" and "gone" below describe nothing happening to it, which is
+    // where a user who was carrying that block needs telling that they no
+    // longer are - and where silence actively misleads, because the sibling
+    // `cellRefused` outcome says "Still carrying X." whenever the carry does
+    // survive. That convention teaches that no news is good news, so saying
+    // nothing here reads as "you are still holding it".
     case "unchanged":
       return `${describeSource(source)} stayed in ${describeCell(cell, pattern)}${carryReleased(releasedCarry)}.`;
     case "refused":
@@ -250,8 +284,8 @@ export const describeOutcome = (
 
     case "carryEnded":
       return outcome.reason === "cancelled"
-        ? `Cancelled. ${describeSource(outcome.source)} ${restingPlace(outcome.source, pattern)}.`
-        : `${describeSource(outcome.source)} ${restingPlace(outcome.source, pattern)}: a drag took over.`;
+        ? `Cancelled. ${describeSource(outcome.source)} ${restingPlace(outcome.source, pattern, outcome.at)}.`
+        : `${describeSource(outcome.source)} ${restingPlace(outcome.source, pattern, outcome.at)}: a drag took over.`;
 
     case "placement":
       return describePlacement(
