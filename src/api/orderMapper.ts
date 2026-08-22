@@ -9,7 +9,9 @@ import type {
   OrderType,
   OrderSide,
   ConditionalOrder,
+  ConditionalOrderType,
   OrderTrigger,
+  PriceType,
   TriggerReference,
   UIBlockData,
   OrderBuildContext,
@@ -33,6 +35,24 @@ const ORDER_TYPES_BY_UI_TYPE = new Map<string, OrderType>([
   ["trailing-stop-limit", "trailing-stop-limit"],
   ["settle-position", "settle-position"],
 ]);
+
+// The order types Kraken accepts as a conditional close. One list, because both
+// the link guard and the conditional builder need this same fact and a second
+// copy is how two lists drift apart - the failure already documented for the
+// order-type table and the ORDER_TYPES palette.
+const CONDITIONAL_ORDER_TYPES = new Set<OrderType>([
+  "limit",
+  "stop-loss",
+  "stop-loss-limit",
+  "take-profit",
+  "take-profit-limit",
+  "trailing-stop",
+  "trailing-stop-limit",
+]);
+
+const isConditionalOrderType = (
+  type: OrderType,
+): type is ConditionalOrderType => CONDITIONAL_ORDER_TYPES.has(type);
 
 /**
  * Map UI order type string to Kraken OrderType.
@@ -196,23 +216,22 @@ const buildConditional = (
 
   const orderType = mapOrderType(linkedBlock.orderType);
 
-  // Only certain order types can be conditionals
-  const validConditionalTypes = [
-    "limit",
-    "stop-loss",
-    "stop-loss-limit",
-    "take-profit",
-    "take-profit-limit",
-    "trailing-stop",
-    "trailing-stop-limit",
-  ];
-
-  if (!validConditionalTypes.includes(orderType)) {
-    return undefined;
+  // Returning undefined here dropped the block from the order set entirely: it
+  // has already been skipped at the top level for being somebody's conditional,
+  // so the user drew two things and one vanished with nothing to explain it.
+  // That is the same silent-order-loss the link guard refuses, and the rule is
+  // not applied inconsistently on its fourth appearance. Emitting the block as
+  // a standalone order was the alternative and it invents an intent the user
+  // never expressed - they linked it as a conditional.
+  if (!isConditionalOrderType(orderType)) {
+    throw new Error(
+      `Block "${linkedBlock.id}" is linked as a conditional close, but Kraken ` +
+        `cannot use a ${orderType} order as one, so this strategy cannot be submitted.`,
+    );
   }
 
   const conditional: ConditionalOrder = {
-    order_type: orderType as ConditionalOrder["order_type"],
+    order_type: orderType,
   };
 
   const price = formatPriceForAPI(
@@ -408,14 +427,20 @@ const assertLinksAreFlat = (
     );
   }
 
-  const primariesByConditional = new Map<string, string[]>();
+  const primariesByConditional = new Map<
+    string,
+    { block: UIBlockData; primaries: string[] }
+  >();
   linkedBlocks.forEach((conditional, primaryId) => {
-    const primaries = primariesByConditional.get(conditional.id) ?? [];
-    primaries.push(primaryId);
-    primariesByConditional.set(conditional.id, primaries);
+    const entry = primariesByConditional.get(conditional.id) ?? {
+      block: conditional,
+      primaries: [],
+    };
+    entry.primaries.push(primaryId);
+    primariesByConditional.set(conditional.id, entry);
   });
 
-  primariesByConditional.forEach((primaries, conditionalId) => {
+  primariesByConditional.forEach(({ block, primaries }, conditionalId) => {
     if (primaries.length > 1) {
       throw new Error(
         `Block "${conditionalId}" is named as the conditional of more than one ` +
@@ -430,6 +455,15 @@ const assertLinksAreFlat = (
         `Block "${conditionalId}" is the conditional of "${primaries[0]}" and ` +
           `itself links to "${onward.id}". A conditional close carries no ` +
           "conditional of its own, so this strategy cannot be submitted.",
+      );
+    }
+
+    const orderType = mapOrderType(block.orderType);
+    if (!isConditionalOrderType(orderType)) {
+      throw new Error(
+        `Block "${conditionalId}" is linked as the conditional of ` +
+          `"${primaries[0]}", but Kraken cannot use a ${orderType} order as a ` +
+          "conditional close, so this strategy cannot be submitted.",
       );
     }
   });
@@ -541,38 +575,60 @@ export const validateOrder = (params: OrderParams): string[] => {
     );
   }
 
-  // Every price the payload carries has to be a positive, finite number. A
-  // presence check is not enough: prices are strings here, so "0.0" is truthy
-  // and an order priced at zero validated cleanly. That became reachable when
-  // decision D3 removed the mapper's 0.1 damping - a yPosition of 100 on a
-  // downside block is a 100% offset, which is a price of 0, where the damped
-  // maths used to land on 45,000.
+  // Every price the payload carries has to be a finite number, and a static one
+  // has to be positive. A presence check is not enough: prices are strings here,
+  // so "0.0" is truthy and an order priced at zero validated cleanly. That
+  // became reachable when decision D3 removed the mapper's 0.1 damping - a
+  // yPosition of 100 on a downside block is a 100% offset, which is a price of
+  // 0, where the damped maths used to land on 45,000.
+  //
+  // Positivity is checked only for a static price because under a `pct` or
+  // `quote` price type the value is a signed offset, so a relative limit price
+  // of "-1.5" is legitimate. The mapper emits nothing but static prices today,
+  // which is not a reason to guard more broadly: `validateOrder` is this
+  // module's exported validation entry point, so a wrong guard is a trap for
+  // the next caller rather than a harmless dead branch.
   //
   // This is the last line of defence, not the fix. The real bug is upstream:
   // `calculateYPosition` works on a 0-100 scale while the slider and the axis
   // labels use SCALE_CONFIG.MAX_PERCENT = 50, and the drop handler writes the
   // unclamped result straight into the block. That lives in the drag layer and
-  // is owned elsewhere.
-  const requirePositivePrice = (label: string, value?: string): void => {
+  // is owned by bb3-mapping-owner.
+  const requirePrice = (
+    label: string,
+    value?: string,
+    priceType?: PriceType,
+  ): void => {
     if (value === undefined) {
       return;
     }
 
     const price = Number(value);
-    if (!Number.isFinite(price) || price <= 0) {
+    if (!Number.isFinite(price)) {
+      errors.push(`${label} must be a finite number`);
+      return;
+    }
+
+    if ((priceType ?? "static") === "static" && price <= 0) {
       errors.push(`${label} must be a positive number`);
     }
   };
 
-  requirePositivePrice("Limit price", params.limit_price);
-  requirePositivePrice("Trigger price", params.triggers?.price);
-  requirePositivePrice(
+  requirePrice("Limit price", params.limit_price, params.limit_price_type);
+  requirePrice(
+    "Trigger price",
+    params.triggers?.price,
+    params.triggers?.price_type,
+  );
+  requirePrice(
     "Conditional limit price",
     params.conditional?.limit_price,
+    params.conditional?.limit_price_type,
   );
-  requirePositivePrice(
+  requirePrice(
     "Conditional trigger price",
     params.conditional?.trigger_price,
+    params.conditional?.trigger_price_type,
   );
 
   return errors;

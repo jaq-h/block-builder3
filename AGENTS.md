@@ -141,10 +141,12 @@ Two invariants the order path depends on, both of which were previously violated
   renders its price chip through `calculatePrice`, which delegates to it, and the order
   mapper builds Kraken payloads from it directly, so the price sent is the price shown.
   `src/components/widgets/orderChart/OrderChart.tsx` still inlines an identical copy of the
-  formula for its price lines; reconciling that belongs to the mapping-owner lane, which
+  formula for its price lines; reconciling that belongs to `bb3-mapping-owner`, which
   owns that file. Captain's decision D3: a block at yPosition 25 means **25%** from market,
   not 2.5%. The side of the market comes from the block's own `direction`, never from
-  re-deriving one from row/column - those disagree under the bulk pattern.
+  re-deriving one from row/column - those disagree under the bulk pattern. That settles the
+  direction question **for single-block cells**; it is still **open for bulk cells holding
+  mixed order families**, which is the known gap below, owned by `bb3-mapping-owner`.
 - **A block's order type is `BlockData.orderType`.** Never parse it back out of the block id.
   Ids look like `sa-stop-loss-limit-limit-2`, and substring matching on them turned every
   `-limit` variant into a plain limit order with no trigger. Because `mapOrderType` refuses
@@ -173,20 +175,25 @@ Two invariants the order path depends on, both of which were previously violated
   `linkedBlockId` graph is refused by `assertLinksAreFlat` in `src/api/orderMapper.ts`,
   because each one otherwise emits a wrong order set with nothing to explain it: a cycle
   sends no orders at all, a chain drops its tail, and a shared conditional submits the same
-  close twice.
+  close twice. A block linked as a conditional must also be an order type Kraken accepts as
+  a conditional close - `CONDITIONAL_ORDER_TYPES` is the one list, shared by that guard and
+  by `buildConditional`, and a block that fails it used to be dropped from the payload
+  without a word, having already been skipped for being somebody's conditional.
 
 `src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type, a block
-claiming both axes, a link graph that is not flat, and a price that is not a positive
-finite number all throw or fail validation, because silently
+claiming both axes, a link graph that is not flat, and a price that is not a finite number
+or not a positive static one all throw or fail validation, because silently
 substituting a different order is the failure this module exists to prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that
 and surfaces it as `orderError`.
 
-`validateOrder`'s positive-and-finite price guard is a last line of defence, not the fix
-for what feeds it: prices reach it as strings, so `"0.0"` is truthy and a presence check
-passed it. It is reachable because `calculateYPosition` works on a 0-100 scale while the
-slider and the axis labels use `SCALE_CONFIG.MAX_PERCENT = 50`, and the drop handler writes
-the unclamped result into the block - a block dragged to the bottom of its cell is a 100%
-offset, which is a price of zero. That root cause is in the drag layer and is owned there.
+`validateOrder`'s price guard is a last line of defence, not the fix for what feeds it:
+prices reach it as strings, so `"0.0"` is truthy and a presence check passed it. It is
+reachable because `calculateYPosition` works on a 0-100 scale while the slider and the axis
+labels use `SCALE_CONFIG.MAX_PERCENT = 50`, and the drop handler writes the unclamped result
+into the block - a block dragged to the bottom of its cell is a 100% offset, which is a
+price of zero. That root cause is in the drag layer and is owned by `bb3-mapping-owner`.
+Every price must be finite; **positivity is checked only for a static price**, because under
+a `pct` or `quote` price type the value is a signed offset and `-1.5` is legitimate.
 
 Still open in the same file, and deliberately not fixed with the above: the two legs of a
 dual-axis order type (`stop-loss-limit` and friends) are emitted as two separate orders
@@ -202,9 +209,9 @@ can hold blocks with opposite directions, so the two diverge. Concretely: at a $
 market, drop a Limit into Entry/Primary and then a Stop Loss into the same cell, and the
 Stop Loss chip reads `-25.00% $37,500` while the payload and the chart line both say
 `62,500`. It is not reachable in the conditional pattern, which is the default. It is
-deliberately not fixed here, and has been filed to the lane that owns reconciling the chip,
-the chart and the payload together; that owner must decide what a bulk cell means and apply
-that one answer to all three in a single change - splitting it across owners is how display
+deliberately not fixed here, and has been filed to `bb3-mapping-owner`, which owns
+reconciling the chip, the chart and the payload together; that owner must decide what a bulk
+cell means and apply that one answer to all three in a single change - splitting it across owners is how display
 and payload drifted apart in the first place, which is exactly what decision D3 exists to
 prevent.
 
@@ -219,7 +226,7 @@ Edit reload comes back as `["limit"]` and emits `limit_price = 66098.4`. Same sa
 strategy, two different payloads. Nothing wrong is submitted today, because a split
 dual-axis leg fails `validateOrder` either way - but it becomes a silent wrong payload the
 moment the two legs are merged into one order, which is why it is written down here rather
-than left as folklore. Owned by the mapping-owner lane; `axis` and `axes` should be kept in
+than left as folklore. Owned by `bb3-mapping-owner`; `axis` and `axes` should be kept in
 step at the one place `axis` changes, through `axesForBlockAxis`.
 
 ## Path aliases

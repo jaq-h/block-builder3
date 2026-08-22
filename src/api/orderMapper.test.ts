@@ -507,17 +507,23 @@ describe("mapBlockToOrderParams", () => {
     });
   });
 
+  // It used to return the order with `conditional` left undefined, so the block
+  // the user linked simply disappeared from the payload. A market order cannot
+  // be a Kraken conditional close, and the strategy is refused rather than
+  // quietly reduced to something the user did not draw.
   it("refuses to attach an order type Kraken cannot use as a conditional", () => {
-    const params = mapBlockToOrderParams(uiBlock(), context(), {
-      id: "sa-market-2",
-      orderType: "market",
-      abrv: "Mkt",
-      position: { col: 0, row: 1, yPosition: 0, axis: 1 },
-      direction: "upside",
-      axes: [],
-    });
-
-    expect(params.conditional).toBeUndefined();
+    expect(() =>
+      mapBlockToOrderParams(uiBlock(), context(), {
+        id: "sa-market-2",
+        orderType: "market",
+        abrv: "Mkt",
+        position: { col: 0, row: 1, yPosition: 0, axis: 1 },
+        direction: "upside",
+        axes: [],
+      }),
+    ).toThrow(
+      /"sa-market-2" is linked as a conditional close, but Kraken cannot use a market order as one/,
+    );
   });
 });
 
@@ -727,6 +733,31 @@ describe("mapGridToOrders", () => {
     ).toThrow(/"c" is named as the conditional of more than one primary/);
   });
 
+  // The block used to vanish: "b" is skipped at the top level for being
+  // somebody's conditional, then the conditional builder declined a market
+  // order and returned nothing, so the grid emitted one limit order with no
+  // conditional and no trace of "b" at all.
+  it("refuses a conditional whose order type Kraken cannot use as one", () => {
+    const grid = gridWith([
+      { col: 0, row: 1, block: blockData({ id: "a", linkedBlockId: "b" }) },
+      {
+        col: 1,
+        row: 0,
+        block: blockData({ id: "b", orderType: "market", axes: [] }),
+      },
+    ]);
+
+    expect(() =>
+      mapGridToOrders(grid, {
+        symbol: "BTC/USD",
+        currentPrice: MARKET_PRICE,
+        quantity: "1",
+      }),
+    ).toThrow(
+      /"b" is linked as the conditional of "a", but Kraken cannot use a market order as a conditional close/,
+    );
+  });
+
   it("produces no orders for an empty grid", () => {
     expect(
       mapGridToOrders(gridWith([]), {
@@ -906,15 +937,49 @@ describe("validateOrder", () => {
   });
 
   const LIMIT_PRICE_ERROR = "Limit price must be a positive number";
+  const LIMIT_PRICE_FINITE_ERROR = "Limit price must be a finite number";
 
-  it("rejects a limit price that is zero, negative or not a number", () => {
-    ["0", "0.0", "-1", "abc", "", "   ", "NaN", "Infinity"].forEach(
-      (limit_price) => {
-        expect(validateOrder({ ...valid, limit_price })).toContain(
-          LIMIT_PRICE_ERROR,
-        );
+  it("rejects a static limit price that is zero or negative", () => {
+    ["0", "0.0", "-1", "", "   "].forEach((limit_price) => {
+      expect(validateOrder({ ...valid, limit_price })).toContain(
+        LIMIT_PRICE_ERROR,
+      );
+    });
+  });
+
+  it("rejects a limit price that is not a number, whatever its price type", () => {
+    (["static", "pct", "quote", undefined] as const).forEach(
+      (limit_price_type) => {
+        ["abc", "NaN", "Infinity", "1.5 BTC"].forEach((limit_price) => {
+          expect(
+            validateOrder({ ...valid, limit_price, limit_price_type }),
+          ).toContain(LIMIT_PRICE_FINITE_ERROR);
+        });
       },
     );
+  });
+
+  // Under a `pct` or `quote` price type the value is a signed offset from the
+  // reference, not an absolute price, so a negative one is what the caller
+  // meant. Positivity is a static-price rule and is applied only there.
+  it("accepts a relative price that is negative", () => {
+    expect(
+      validateOrder({
+        ...valid,
+        limit_price: "-1.5",
+        limit_price_type: "pct",
+      }),
+    ).toEqual([]);
+
+    expect(
+      validateOrder({
+        order_type: "stop-loss",
+        side: "sell",
+        order_qty: "0.5",
+        symbol: "BTC/USD",
+        triggers: { reference: "last", price: "-2", price_type: "quote" },
+      }),
+    ).toEqual([]);
   });
 
   it("names the offending field on every price the payload carries", () => {
@@ -935,7 +1000,7 @@ describe("validateOrder", () => {
     expect(errors).toEqual([
       LIMIT_PRICE_ERROR,
       "Trigger price must be a positive number",
-      "Conditional limit price must be a positive number",
+      "Conditional limit price must be a finite number",
       "Conditional trigger price must be a positive number",
     ]);
   });
