@@ -10,6 +10,7 @@ import {
   type KrakenOHLCData,
 } from "../api";
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
+import { withLatestCandle } from "@utils/liveCandles";
 
 // Map UI timeframe labels to Kraken interval values (minutes)
 export const TIMEFRAME_MAP: Record<string, number> = {
@@ -79,7 +80,15 @@ const fetchHistoricalOHLC = async (
  * Keeping the tag in the same state as the data is what lets `isLoading` and
  * `error` be derived during render: state that belongs to a different
  * symbol/interval is simply not this request's, so there is nothing to reset
- * from an effect and no cascading render on every timeframe change.
+ * from an effect and no cascading render on every timeframe change. The tag is
+ * also what makes the accumulation below start clean on a new symbol or
+ * interval, rather than carrying bars across from the previous series.
+ *
+ * `candles` is every bar that has closed - the REST backfill plus each bar the
+ * socket has since finished writing - and `latestCandle` is the bar still being
+ * written. Splitting them is what keeps `candles` identity-stable between bar
+ * closes; `withLatestCandle` is the one fold that puts them back together, and
+ * both this hook and its consumers go through it. See `liveCandles.ts`.
  */
 interface OHLCState {
   requestKey: string;
@@ -160,14 +169,30 @@ export const useOHLCData = ({
       if (!relevant.length) return;
 
       if (msg.type === "update") {
-        // Real-time update - update latest candle, but only onto the request
-        // this tick actually belongs to.
+        // Real-time update, applied only onto the request this tick actually
+        // belongs to.
         const candle = krakenToCandle(relevant[relevant.length - 1]);
-        setState((prev) =>
-          prev.requestKey === requestKey
-            ? { ...prev, latestCandle: candle }
-            : prev,
-        );
+        setState((prev) => {
+          if (prev.requestKey !== requestKey) return prev;
+
+          // A tick for a bar older than the one being written arrived out of
+          // order. What we already hold is the more complete record, so it wins
+          // rather than being rewound.
+          if (prev.latestCandle && candle.time < prev.latestCandle.time) {
+            return prev;
+          }
+
+          // The interval has rolled over, so the bar we were writing is final
+          // and joins the accumulated list; this one takes its place. Between
+          // rollovers `candles` keeps its identity, which is what stops a
+          // consumer's effect from churning on every tick.
+          const candles =
+            prev.latestCandle && candle.time > prev.latestCandle.time
+              ? withLatestCandle(prev.candles, prev.latestCandle)
+              : prev.candles;
+
+          return { ...prev, candles, latestCandle: candle };
+        });
       }
       // We ignore "snapshot" from WS since we already have REST backfill
     },

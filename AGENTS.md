@@ -190,6 +190,52 @@ The README's **Interaction model** section is authoritative. Four things bite in
   market price, negative below - so arrow-key direction matches on-screen direction on both
   scale directions. `yPosition` in the data stays an unsigned magnitude plus a `direction`.
 
+## The chart panel
+
+`src/components/widgets/orderChart/` owns the price chart. Two rules keep it honest:
+
+- **The price scale is presentation and nothing else.** `priceScale.ts` maps the
+  linear/logarithmic choice onto the library's `PriceScaleMode` and stops there. No price,
+  no order and no grid position is derived from it, which is the whole reason the
+  logarithmic option is safe here: the grid and the chart share exactly one fact, the price,
+  and both take it from `calculatePrice`. They share no coordinate space - the grid's axis
+  is a 0-50% control track in a cell, the chart's is a price axis in a separate panel - so
+  there is no second derivation for a logarithmic mapping to break. A scale argument
+  appearing in `orderPriceLines` would be that second derivation, and
+  `orderPriceLines.test.ts` guards it by *calling* the function with each shape a scale
+  would plausibly arrive in and asserting the prices do not move. An arity assertion would
+  not: `Function.prototype.length` stops counting at the first optional parameter, so
+  `toHaveLength(2)` stays green for `scale?: PriceScaleKind` and for a trailing options
+  object, which are exactly the regressions it would exist to catch.
+  `orderAutoscale.ts` carries the one thing a logarithmic axis genuinely cannot do: show a
+  zero or negative price, which the drag layer's 0-100 vs 50 percent mismatch can still
+  produce. It always returns a provider, never `undefined`: `applyOptions` merges with a
+  helper that skips an undefined source value, so `undefined` does not clear a provider,
+  it leaves the previous one installed and the chart stretched to a level the user has
+  already deleted.
+- **An indicator is a pure `compute` plus a registry entry.** `indicators/registry.ts` is
+  the one list; the toolbar, the line series and their lifecycle in `useIndicatorSeries.ts`
+  are all derived from it, so adding one needs no wiring. Averages are pinned against a
+  published vector in `indicators/movingAverage.test.ts` rather than eyeballed. An
+  oscillator needing its own pane is not covered by this shape and would have to add one.
+  Feed an overlay the *live* candle list - `withLatestCandle(candles, latestCandle)` from
+  `src/utils/liveCandles.ts` - never `useOHLCData`'s `candles` alone and never a list built
+  any other way. An overlay is a function of the whole series while the candle series
+  advances through `update`, and the two fed differently is a line that looks live and is
+  not. Both halves of that fold have now been wrong in turn: fed the backfill alone an
+  overlay froze at the fetch, and fed each tick folded into a backfill that never grew it
+  advanced while dropping every bar that had closed since, averaging across a hole. The fold
+  is therefore one function with one owner on each side - `useOHLCData` folds a bar into
+  `candles` when the interval rolls over and that bar is final, keeping `candles`
+  identity-stable between bar closes; the chart folds the forming bar on top. The forming
+  bar counts towards an average, pinned in `movingAverage.ts` next to the EMA seed.
+
+Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
+must not reach for a live region. `gridAnnouncements.ts` stays the app's only announcer.
+Their accessible name is `label: description`, so the visible text stays *inside* the name
+rather than being replaced by it (WCAG 2.5.3 Label in Name): a bare `aria-label` spelling
+out the abbreviation renames "SMA 20" to something a voice-control user cannot say.
+
 ## Layout and the CSS cascade
 
 Three traps live in the layout, and each is easy to reintroduce.
@@ -205,7 +251,8 @@ content-driven so the tabbed layout still scrolls with the page.
 **Bare element rules in `src/index.css` beat every Tailwind utility.** `button {}`
 and friends there sit outside any cascade layer, and unlayered CSS wins over
 layered CSS regardless of specificity - so `bg-status-green` on a `<button>` does
-nothing. `executeButtonVariants` works around it with `!` modifiers and says why.
+nothing. `executeButtonVariants` and the chart toolbar's `chartToggleButton`
+work around it with `!` modifiers and say why.
 The real fix is to move that reset into `@layer base`, which repaints every button
 in the app and so wants its own change.
 
@@ -224,9 +271,10 @@ The invariants the order path depends on, each of which was previously violated 
   "percentage offset from market" for the grid display and the order mapper. The grid cell
   renders its price chip through `calculatePrice`, which delegates to it, and the order
   mapper builds Kraken payloads from it directly, so the price sent is the price shown.
-  `src/components/widgets/orderChart/OrderChart.tsx` still inlines an identical copy of the
-  formula for its price lines; reconciling that belongs to `bb3-mapping-owner`, which
-  owns that file. Captain's decision D3: a block at yPosition 25 means **25%** from market,
+  The chart's order lines join them: `orderPriceLines.ts` calls the same `calculatePrice`,
+  and `orderPriceLines.dom.test.tsx` reads the chip a real `GridCell` renders and asserts
+  it is the number the chart draws, so the copy the chart used to inline cannot come back.
+  Captain's decision D3: a block at yPosition 25 means **25%** from market,
   not 2.5%. The side of the market comes from the block's own `direction`, never from
   re-deriving one from row/column - those disagree under the bulk pattern. That settles the
   direction question **for single-block cells**; it is still **open for bulk cells holding
