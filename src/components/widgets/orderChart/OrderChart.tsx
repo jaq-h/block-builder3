@@ -1,4 +1,11 @@
-import { useState, useRef, useEffect, useCallback, type FC } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  type FC,
+} from "react";
 import { LineStyle } from "lightweight-charts";
 import type { IPriceLine } from "lightweight-charts";
 
@@ -8,6 +15,7 @@ import { useOHLCData, TIMEFRAME_MAP } from "../../../hooks/useOHLCData";
 import { useLightweightChart } from "./useLightweightChart";
 import { useIndicatorSeries } from "./useIndicatorSeries";
 import { OVERLAY_INDICATORS } from "./indicators";
+import { withLatestCandle } from "./liveCandles";
 import { orderPriceLines } from "./orderPriceLines";
 import { orderAutoscaleProvider } from "./orderAutoscale";
 import {
@@ -66,7 +74,16 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     interval,
   });
 
-  useIndicatorSeries(chart, candles, enabledIndicators);
+  // The overlays are functions of the whole series, so they get the whole
+  // series: the backfill with the bar the WebSocket is still writing folded in.
+  // Handed `candles` alone they freeze at the fetch while the candles below
+  // them keep moving. See `liveCandles.ts`.
+  const liveCandles = useMemo(
+    () => withLatestCandle(candles, latestCandle),
+    [candles, latestCandle],
+  );
+
+  useIndicatorSeries(chart, liveCandles, enabledIndicators);
 
   // Track price lines so we can remove them on re-render
   const priceLinesRef = useRef<IPriceLine[]>([]);
@@ -207,7 +224,10 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
                 key={indicator.id}
                 type="button"
                 aria-pressed={enabledIndicators.has(indicator.id)}
-                aria-label={indicator.description}
+                // The visible label is kept inside the accessible name rather
+                // than replaced by it: WCAG 2.5.3 Label in Name, so someone
+                // driving the app by voice can say the words they can see.
+                aria-label={`${indicator.label}: ${indicator.description}`}
                 onClick={() => toggleIndicator(indicator.id)}
                 className={chartToggleButton({
                   isActive: enabledIndicators.has(indicator.id),
@@ -237,7 +257,7 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
                 key={option.kind}
                 type="button"
                 aria-pressed={priceScale === option.kind}
-                aria-label={option.description}
+                aria-label={`${option.label}: ${option.description}`}
                 onClick={() => setPriceScale(option.kind)}
                 className={chartToggleButton({
                   isActive: priceScale === option.kind,

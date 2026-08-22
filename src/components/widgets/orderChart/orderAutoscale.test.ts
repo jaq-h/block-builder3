@@ -18,7 +18,7 @@ const candles = (minValue: number, maxValue: number) => (): AutoscaleInfo => ({
 const apply = (
   provider: ReturnType<typeof orderAutoscaleProvider>,
   original: () => AutoscaleInfo | null,
-) => provider!(original)!.priceRange!;
+) => provider(original)!.priceRange!;
 
 // =============================================================================
 // TESTS
@@ -26,7 +26,27 @@ const apply = (
 
 describe("orderAutoscaleProvider", () => {
   it("hands the series back to its own scaling when there is nothing to include", () => {
-    expect(orderAutoscaleProvider([], false)).toBeUndefined();
+    expect(apply(orderAutoscaleProvider([], false), candles(70_000, 80_000))).toEqual(
+      { minValue: 70_000, maxValue: 80_000 },
+    );
+  });
+
+  it("releases the range again when the last order block is deleted", () => {
+    // The case that was slipping through. A level far below the candles
+    // widens the range; deleting that block has to give the range back. The
+    // reset must be a provider that defers, never `undefined`: `applyOptions`
+    // merges with a helper that skips an undefined source value, so an
+    // undefined here would leave the widening provider installed for good and
+    // the chart would stay zoomed out to 25,000 with no block at 25,000.
+    const widened = orderAutoscaleProvider([25_000], false);
+    expect(apply(widened, candles(70_000, 80_000)).minValue).toBeLessThan(70_000);
+
+    const afterDelete = orderAutoscaleProvider([], false);
+    expect(afterDelete).toBeTypeOf("function");
+    expect(apply(afterDelete, candles(70_000, 80_000))).toEqual({
+      minValue: 70_000,
+      maxValue: 80_000,
+    });
   });
 
   it("widens the candles' range to hold every order level, with padding", () => {
@@ -96,7 +116,7 @@ describe("orderAutoscaleProvider", () => {
   });
 
   it("passes a null range straight through", () => {
-    const provider = orderAutoscaleProvider([50_000], true)!;
+    const provider = orderAutoscaleProvider([50_000], true);
     expect(provider(() => null)).toBeNull();
     expect(provider(() => ({ priceRange: null }))).toEqual({
       priceRange: null,

@@ -15,6 +15,13 @@ import type { IndicatorCandle } from "./types";
 // instead is also common and gives *different numbers*, so the choice is
 // pinned by `movingAverage.test.ts` against a published series rather than
 // left to whoever edits this next.
+//
+// The second convention, pinned for the same reason: the bar that is still
+// being written counts. Whatever candles arrive here are averaged, and the
+// caller hands over the live list, forming bar included - see
+// `liveCandles.ts`. Dropping it would hold the last point one bar behind the
+// candles for the whole life of that bar, which on a 1m timeframe is a line
+// that is visibly and permanently stale.
 
 /**
  * Candles the indicators may average.

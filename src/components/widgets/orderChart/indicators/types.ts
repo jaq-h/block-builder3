@@ -35,8 +35,11 @@ export interface OverlayIndicator {
   /** Toolbar button text. Short, because the toolbar is narrow. */
   label: string;
   /**
-   * The button's accessible name. The label is an abbreviation, and "SMA 20"
-   * read aloud is not a description of anything.
+   * Spelled out for the accessible name. The label is an abbreviation, and
+   * "SMA 20" read aloud is not a description of anything. The button's name is
+   * `label: description`, so the visible text stays inside it rather than being
+   * replaced by it: WCAG 2.5.3 Label in Name, which is what lets someone
+   * driving the app by voice say the words they can see.
    */
   description: string;
   /** A token from `src/styles/theme.ts`. Never a literal colour. */

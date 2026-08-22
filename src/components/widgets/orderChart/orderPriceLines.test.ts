@@ -123,12 +123,47 @@ describe("orderPriceLines", () => {
     ).toEqual([]);
   });
 
-  it("takes no price-scale argument, so no scale can change a price", () => {
-    // Structural, and deliberately asserted rather than left to review: the
-    // whole safety case for the logarithmic option is that the scale is a
+  it("draws the same lines whatever price scale it is handed", () => {
+    // The whole safety case for the logarithmic option is that the scale is a
     // price-to-pixel mapping inside the chart pane and never an input to a
     // price. A scale parameter appearing here would be the eighth instance of
-    // one fact derived two ways.
-    expect(orderPriceLines).toHaveLength(2);
+    // one fact derived two ways, so the guard has to be executed rather than
+    // left to review.
+    //
+    // It is deliberately behavioural rather than an arity check.
+    // `Function.prototype.length` stops counting at the first optional
+    // parameter, so `expect(orderPriceLines).toHaveLength(2)` stays green for
+    // exactly the regression it would exist to catch: a
+    // `scale?: PriceScaleKind` third parameter, or a scale folded into a
+    // trailing options object. Calling through each of those shapes is what
+    // actually fails the moment a scale reaches a price.
+    const orders = config({
+      below: { col: 0, row: 1, type: "limit", axis: 2, yPosition: 25, direction: "downside" },
+      above: { col: 1, row: 1, type: "take-profit", axis: 1, yPosition: 12.5, direction: "upside" },
+    });
+
+    const expected = orderPriceLines(orders, MARKET);
+    expect(expected.map((line) => line.price)).toEqual([37_500, 56_250]);
+
+    // The shapes a scale would most plausibly arrive in, all of which a
+    // two-parameter signature simply ignores.
+    const scaleShapes: unknown[] = [
+      "logarithmic",
+      "linear",
+      { scale: "logarithmic" },
+      { priceScale: "logarithmic" },
+      { mode: "logarithmic" },
+      { logarithmic: true },
+    ];
+
+    const callWithExtra = orderPriceLines as unknown as (
+      orders: OrderConfig,
+      marketPrice: number | null,
+      ...rest: unknown[]
+    ) => ReturnType<typeof orderPriceLines>;
+
+    for (const shape of scaleShapes) {
+      expect(callWithExtra(orders, MARKET, shape)).toEqual(expected);
+    }
   });
 });

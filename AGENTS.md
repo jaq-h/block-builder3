@@ -201,18 +201,33 @@ The README's **Interaction model** section is authoritative. Four things bite in
   and both take it from `calculatePrice`. They share no coordinate space - the grid's axis
   is a 0-50% control track in a cell, the chart's is a price axis in a separate panel - so
   there is no second derivation for a logarithmic mapping to break. A scale argument
-  appearing in `orderPriceLines` would be that second derivation; a test asserts its arity.
+  appearing in `orderPriceLines` would be that second derivation, and
+  `orderPriceLines.test.ts` guards it by *calling* the function with each shape a scale
+  would plausibly arrive in and asserting the prices do not move. An arity assertion would
+  not: `Function.prototype.length` stops counting at the first optional parameter, so
+  `toHaveLength(2)` stays green for `scale?: PriceScaleKind` and for a trailing options
+  object, which are exactly the regressions it would exist to catch.
   `orderAutoscale.ts` carries the one thing a logarithmic axis genuinely cannot do: show a
   zero or negative price, which the drag layer's 0-100 vs 50 percent mismatch can still
-  produce.
+  produce. It always returns a provider, never `undefined`: `applyOptions` merges with a
+  helper that skips an undefined source value, so `undefined` does not clear a provider,
+  it leaves the previous one installed and the chart stretched to a level the user has
+  already deleted.
 - **An indicator is a pure `compute` plus a registry entry.** `indicators/registry.ts` is
   the one list; the toolbar, the line series and their lifecycle in `useIndicatorSeries.ts`
   are all derived from it, so adding one needs no wiring. Averages are pinned against a
   published vector in `indicators/movingAverage.test.ts` rather than eyeballed. An
   oscillator needing its own pane is not covered by this shape and would have to add one.
+  Feed an overlay the *live* candle list from `liveCandles.ts`, never `useOHLCData`'s
+  backfill alone: the candle series advances through `update`, an overlay is a function of
+  the whole series, and the two fed differently is a line that silently stops moving while
+  the candles under it keep going.
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region. `gridAnnouncements.ts` stays the app's only announcer.
+Their accessible name is `label: description`, so the visible text stays *inside* the name
+rather than being replaced by it (WCAG 2.5.3 Label in Name): a bare `aria-label` spelling
+out the abbreviation renames "SMA 20" to something a voice-control user cannot say.
 
 ## Layout and the CSS cascade
 

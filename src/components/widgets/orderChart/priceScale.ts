@@ -28,7 +28,11 @@ export interface PriceScaleOption {
   kind: PriceScaleKind;
   /** Button text. */
   label: string;
-  /** Accessible name - "Log" is not a description of anything. */
+  /**
+   * Spelled out for the accessible name - "Log" is not a description of
+   * anything. The button's name is `label: description`, so the visible text
+   * stays inside it: WCAG 2.5.3 Label in Name.
+   */
   description: string;
 }
 

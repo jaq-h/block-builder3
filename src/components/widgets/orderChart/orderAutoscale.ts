@@ -22,10 +22,30 @@ import type { AutoscaleInfo } from "lightweight-charts";
  */
 export const MIN_LOG_RANGE_RATIO = 1e-4;
 
+/** The shape lightweight-charts wants for `autoscaleInfoProvider`. */
+export type OrderAutoscaleProvider = (
+  original: () => AutoscaleInfo | null,
+) => AutoscaleInfo | null;
+
+/**
+ * Defers to the candles entirely.
+ *
+ * This is the reset, and it has to be a real function rather than `undefined`:
+ * `applyOptions` merges its argument with a helper that *skips* an undefined
+ * source value, so clearing the option by passing `undefined` leaves whatever
+ * provider was installed last still installed. Delete the last order block and
+ * the chart would stay stretched to a level no longer on the grid, with
+ * nothing on screen to explain it. Handing the original back is exactly what
+ * the series does when no provider is set at all.
+ */
+const DEFER_TO_CANDLES: OrderAutoscaleProvider = (original) => original();
+
 /**
  * An `autoscaleInfoProvider` that widens the candles' own range to include
- * `prices`, or `undefined` when there is nothing to include - which is how the
- * series is told to go back to scaling itself.
+ * `prices`, or one that defers to the candles when there is nothing to
+ * include.
+ *
+ * Always a provider, never `undefined`, for the reason on `DEFER_TO_CANDLES`.
  *
  * `isLogarithmic` changes only which prices a logarithmic axis is *able* to
  * show and where its floor sits. It is not an input to any price: see
@@ -34,13 +54,11 @@ export const MIN_LOG_RANGE_RATIO = 1e-4;
 export const orderAutoscaleProvider = (
   prices: readonly number[],
   isLogarithmic: boolean,
-):
-  | ((original: () => AutoscaleInfo | null) => AutoscaleInfo | null)
-  | undefined => {
+): OrderAutoscaleProvider => {
   const usable = prices.filter((price) =>
     isLogarithmic ? price > 0 : Number.isFinite(price),
   );
-  if (!usable.length) return undefined;
+  if (!usable.length) return DEFER_TO_CANDLES;
 
   const min = Math.min(...usable);
   const max = Math.max(...usable);
