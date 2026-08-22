@@ -281,8 +281,14 @@ export const useKrakenAPI = (
     grid: GridData,
     quantity: string,
   ): OrderParams[] => {
+    // Every offset in the grid is relative to the market price, so without one
+    // there is no order to build. Say so rather than returning an empty array
+    // and leaving a stale error from an earlier attempt on screen.
     if (!currentPrice) {
-      console.warn("Cannot prepare orders: no current price available");
+      setOrderError(
+        "Cannot prepare orders: no current market price available yet.",
+      );
+      setPendingOrders([]);
       return [];
     }
 

@@ -282,6 +282,19 @@ describe("mapBlockToOrderParams", () => {
     ).toThrow(/not-a-real-order-type/);
   });
 
+  // An object-literal lookup resolves inherited Object.prototype members too,
+  // so these used to return a truthy function that flowed straight into
+  // order_type. validateOrder only checks that order_type is present, so the
+  // payload went out with a function where its type should be.
+  it.each(["toString", "constructor", "hasOwnProperty", "__proto__"])(
+    "refuses %s, which is not an order type but is on Object.prototype",
+    (inherited) => {
+      expect(() =>
+        mapBlockToOrderParams(uiBlock({ orderType: inherited }), context()),
+      ).toThrow(inherited);
+    },
+  );
+
   it("derives the side from the column when the context does not pin one", () => {
     const ctx = context();
     delete (ctx as Partial<OrderBuildContext>).side;

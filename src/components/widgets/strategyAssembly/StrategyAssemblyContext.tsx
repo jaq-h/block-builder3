@@ -7,7 +7,11 @@ import type {
   OrderConfig,
   StrategyPattern,
 } from "../../../types/grid";
-import { clearGrid, shouldBeDescending } from "../../../utils";
+import {
+  axesForBlockAxis,
+  clearGrid,
+  shouldBeDescending,
+} from "../../../utils";
 import { ORDER_TYPES } from "../../../data/orderTypes";
 
 /** Reconstruct a GridData visual state from a saved OrderConfig */
@@ -23,6 +27,7 @@ function gridFromConfig(config: OrderConfig): GridData {
       (shouldBeDescending(entry.row, entry.col, "conditional", entry.type)
         ? "downside"
         : "upside");
+    const axis = entry.axis ?? 2;
     const block: BlockData = {
       id,
       orderType: entry.type,
@@ -30,10 +35,10 @@ function gridFromConfig(config: OrderConfig): GridData {
       icon: typeDef.icon,
       abrv: typeDef.abrv,
       allowedRows: typeDef.allowedRows,
-      axis: entry.axis ?? 2,
+      axis,
       yPosition: entry.yPosition ?? 0,
       direction,
-      axes: typeDef.axes,
+      axes: axesForBlockAxis(typeDef.axes, axis),
     };
     g[entry.col][entry.row].push(block);
   });

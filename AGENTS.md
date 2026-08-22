@@ -136,16 +136,26 @@ silent data loss. `src/App.test.tsx` fails if that returns.
 Two invariants the order path depends on, both of which were previously violated in
 `src/api/orderMapper.ts` and are now pinned by tests:
 
-- **One price formula.** `src/utils/price.ts` `priceAtOffset` is the only implementation of
-  "percentage offset from market". The grid cell renders its price chip through
-  `calculatePrice`, which delegates to it, and the order mapper builds Kraken payloads from
-  it directly, so the price sent is the price shown. Captain's decision D3: a block at
-  yPosition 25 means **25%** from market, not 2.5%. The side of the market comes from the
-  block's own `direction`, never from re-deriving one from row/column - those disagree under
-  the bulk pattern.
+- **One price formula.** `src/utils/price.ts` `priceAtOffset` is the shared owner of
+  "percentage offset from market" for the grid display and the order mapper. The grid cell
+  renders its price chip through `calculatePrice`, which delegates to it, and the order
+  mapper builds Kraken payloads from it directly, so the price sent is the price shown.
+  `src/components/widgets/orderChart/OrderChart.tsx` still inlines an identical copy of the
+  formula for its price lines; reconciling that belongs to the mapping-owner lane, which
+  owns that file. Captain's decision D3: a block at yPosition 25 means **25%** from market,
+  not 2.5%. The side of the market comes from the block's own `direction`, never from
+  re-deriving one from row/column - those disagree under the bulk pattern.
 - **A block's order type is `BlockData.orderType`.** Never parse it back out of the block id.
   Ids look like `sa-stop-loss-limit-limit-2`, and substring matching on them turned every
   `-limit` variant into a plain limit order with no trigger.
+- **A block carries only its own axis.** A dual-axis order type is placed as two blocks, one
+  per axis, and `BlockData.axes` on each is just that leg's (`["trigger"]` or `["limit"]`),
+  never the order type's whole list. Rebuilding a saved block from `typeDef.axes` gave one
+  leg both, and the mapper then read that leg's single slider twice and emitted a payload
+  whose `trigger_price` and `limit_price` were the same number - which passes `validateOrder`
+  cleanly, so nothing catches it. `axesForBlockAxis` in `src/utils/blockFactory.ts` owns the
+  axis-to-axes mapping; hydration paths must go through it rather than reaching for
+  `typeDef.axes`.
 
 `src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type and a cycle
 in the conditional-link graph both throw, because silently substituting a different order is
@@ -157,6 +167,19 @@ dual-axis order type (`stop-loss-limit` and friends) are emitted as two separate
 rather than one payload carrying both `limit_price` and `triggers`, so each leg now fails
 `validateOrder`. Merging them needs a durable pairing identity on the block, since either
 leg can be dragged to another cell.
+
+**Known gap: under the bulk pattern the price shown and the price sent can disagree.**
+`src/components/common/grid/GridCell.tsx` derives one `isDescending` for the whole cell from
+`blocks[0].direction` and renders every block's price chip, percentage sign and slider
+geometry from it, while the mapper reads each block's own `direction`. A bulk-pattern cell
+can hold blocks with opposite directions, so the two diverge. Concretely: at a $50,000
+market, drop a Limit into Entry/Primary and then a Stop Loss into the same cell, and the
+Stop Loss chip reads `-25.00% $37,500` while the payload and the chart line both say
+`62,500`. It is not reachable in the conditional pattern, which is the default. It is owned
+by the mapping-owner lane, which must decide what a bulk cell means and apply that one
+answer to the chip, the chart and the payload in a single change - splitting it across
+owners is how display and payload drifted apart in the first place, which is exactly what
+decision D3 exists to prevent.
 
 ## Path aliases
 

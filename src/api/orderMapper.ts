@@ -17,18 +17,22 @@ import type {
 import { DEFAULT_SYMBOL } from "./config";
 import { priceAtOffset } from "../utils/price";
 
-const ORDER_TYPES_BY_UI_TYPE: Record<string, OrderType> = {
-  limit: "limit",
-  market: "market",
-  iceberg: "iceberg",
-  "stop-loss": "stop-loss",
-  "stop-loss-limit": "stop-loss-limit",
-  "take-profit": "take-profit",
-  "take-profit-limit": "take-profit-limit",
-  "trailing-stop": "trailing-stop",
-  "trailing-stop-limit": "trailing-stop-limit",
-  "settle-position": "settle-position",
-};
+// A Map, not an object literal: an object literal also resolves inherited
+// Object.prototype members, so a type of "toString" or "constructor" would look
+// up to a truthy function and flow into order_type as a garbage value that
+// validateOrder's presence check waves through.
+const ORDER_TYPES_BY_UI_TYPE = new Map<string, OrderType>([
+  ["limit", "limit"],
+  ["market", "market"],
+  ["iceberg", "iceberg"],
+  ["stop-loss", "stop-loss"],
+  ["stop-loss-limit", "stop-loss-limit"],
+  ["take-profit", "take-profit"],
+  ["take-profit-limit", "take-profit-limit"],
+  ["trailing-stop", "trailing-stop"],
+  ["trailing-stop-limit", "trailing-stop-limit"],
+  ["settle-position", "settle-position"],
+]);
 
 /**
  * Map UI order type string to Kraken OrderType.
@@ -39,7 +43,7 @@ const ORDER_TYPES_BY_UI_TYPE: Record<string, OrderType> = {
  * that carries no protective trigger.
  */
 const mapOrderType = (type: string): OrderType => {
-  const orderType = ORDER_TYPES_BY_UI_TYPE[type];
+  const orderType = ORDER_TYPES_BY_UI_TYPE.get(type);
 
   if (!orderType) {
     throw new Error(

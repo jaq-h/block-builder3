@@ -50,6 +50,7 @@ export { priceAtOffset } from "./price";
 // Block factory utilities
 export {
   createBlocksFromOrderType,
+  axesForBlockAxis,
   buildOrderConfigEntry,
   shouldShowPercentage,
   isBlockVerticallyDraggable,
