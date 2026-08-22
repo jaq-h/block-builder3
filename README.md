@@ -415,6 +415,27 @@ Events, so one code path serves all three devices. Two details are load-bearing:
   stayed glued to the cursor.
 - Blocks carry `touch-action: none`. Without it the browser claims a finger drag for page
   scrolling before the first `pointermove` arrives.
+- A gesture has **three** exits: `pointerup`, `pointercancel`, and the element being
+  unmounted under it. The first two are only ever delivered to the element the gesture
+  started on, so the third is not optional: an element that goes away first leaves the
+  gesture with no way to finish, the browser drops the capture without a word, and the
+  release lands on whatever happens to be underneath. The builder reaches that state by an
+  ordinary route - the whole strategy panel is keyed on `strategyKey`, so an Execute Trade
+  whose simulated submit resolves while a drag is in flight replaces the tree and takes the
+  dragged block with it - and because the drag overlay is module state, the ghost block then
+  outlived the tree and followed the cursor for the rest of the session. `usePointerGesture`
+  ends a live gesture on unmount, down the same path a `pointercancel` takes: nothing moved.
+
+**Clicking away puts a block down.** A block can be in the user's hand two ways at once as far
+as they can tell - carried by the command model, or left behind by a gesture that lost its
+owner - so one gesture releases both: a click that lands **outside the placement surface**.
+That surface is the element `GridArea` draws, the palette a block is picked up from together
+with the cells it can be put down in, so the boundary is the thing that owns placement rather
+than a panel outline or a coordinate, and a click on a legal target still places the block. It
+is read on `pointerdown` in the capture phase; a drag that is genuinely in flight holds pointer
+capture and every event it produces is retargeted to the dragged block, which is inside the
+surface, so a live gesture can never be cancelled by it. Focus is left where the user clicked
+rather than handed back, for the same reason Tab does not hand it back.
 
 A release that never travelled more than a few pixels is a **tap**, not a zero-length drop,
 and is handed to the command model instead of the drop handler.

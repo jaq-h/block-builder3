@@ -26,6 +26,11 @@ import { MarketContext } from "@store/MarketContext";
 import { MARKETS, findMarket } from "@data/markets";
 import { ARB_USD, BTC_USD } from "@/test/marketFixtures";
 import type { Market, MarketPrecision } from "@/types/markets";
+import {
+  getSnapshot as dragOverlaySnapshot,
+  startDragOverlay,
+  stopDragOverlay,
+} from "@common/dragOverlayStore";
 
 // =============================================================================
 // HARNESS
@@ -120,6 +125,12 @@ const Harness: FC<{
     name: string;
     marketChanged: boolean;
   } | null;
+  /**
+   * A control that sits beside `GridArea` rather than inside it, the way the
+   * pattern selector and Clear All do. It is outside the placement surface, so
+   * clicking it is one of the things that puts a carried block down.
+   */
+  outsideControl?: boolean;
 }> = ({
   initialGrid,
   pattern = "conditional",
@@ -127,6 +138,7 @@ const Harness: FC<{
   switchTo,
   refuseStrategyOn,
   strategyLoaded,
+  outsideControl,
 }) => {
   const [selected, setSelected] = useState<{
     market: Market;
@@ -235,6 +247,7 @@ const Harness: FC<{
                 refuse a strategy
               </button>
             )}
+            {outsideControl && <button>a control beside the grid</button>}
           </StaticContext.Provider>
         </HoverContext.Provider>
       </DragContext.Provider>
@@ -1283,6 +1296,119 @@ describe("GridArea, when the market changes", () => {
 });
 
 // =============================================================================
+// CLICKING AWAY FROM THE PLACEMENT SURFACE
+// =============================================================================
+//
+// The placement surface is the element `GridArea` draws: the palette a block is
+// picked up from and the cells it can be put down in. Nothing else on the page
+// can place anything, so a click elsewhere is the way out of holding a block -
+// and it has to work whichever mechanism is holding it, because the user cannot
+// tell a command carry from a drag that lost its owner.
+
+const outside = (target: EventTarget) =>
+  fireEvent(target as Element, pointerAt("pointerdown", 900, 900));
+
+const renderEmptyGrid = (outsideControl = false) =>
+  render(<Harness initialGrid={clearGrid(2, 3)} outsideControl={outsideControl} />);
+
+const palette = (name: string) => screen.getByRole("button", { name });
+
+describe("GridArea, clicking away from the placement surface", () => {
+  afterEach(() => {
+    stopDragOverlay();
+  });
+
+  it("puts down a block carried by a tap, and leaves no cell offering itself", () => {
+    renderEmptyGrid();
+
+    tap(palette("Add Limit order"));
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    outside(document.body);
+
+    expect(announcement()).toBe("Cancelled. Limit order returned to the palette.");
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+    // And the carry really is gone, rather than merely undrawn: a tap on a
+    // legal cell now places nothing.
+    fireEvent.click(cell(0, 1));
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, primary row, empty",
+    );
+  });
+
+  it("puts down a block carried from the keyboard", () => {
+    renderEmptyGrid();
+
+    fireEvent.keyDown(palette("Add Limit order"), { key: "Enter" });
+    expect(announcement()).toContain("Picked up Limit order");
+
+    outside(document.body);
+
+    expect(announcement()).toBe("Cancelled. Limit order returned to the palette.");
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+  });
+
+  it("counts a control beside the grid as outside it", () => {
+    renderEmptyGrid(true);
+
+    tap(palette("Add Limit order"));
+    outside(screen.getByRole("button", { name: "a control beside the grid" }));
+
+    expect(announcement()).toBe("Cancelled. Limit order returned to the palette.");
+  });
+
+  it("leaves focus where the user clicked, rather than dragging it back", () => {
+    renderEmptyGrid(true);
+    const control = screen.getByRole("button", { name: "a control beside the grid" });
+
+    tap(palette("Add Limit order"));
+    control.focus();
+    outside(control);
+
+    expect(document.activeElement).toBe(control);
+  });
+
+  it("does not cancel when the click lands on the grid itself", () => {
+    renderEmptyGrid();
+
+    tap(palette("Add Limit order"));
+    fireEvent(cell(0, 1), pointerAt("pointerdown", 30, 30));
+    fireEvent.click(cell(0, 1));
+
+    expect(announcement()).toBe("Placed Limit order in Entry column, primary row.");
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, primary row, Limit",
+    );
+  });
+
+  it("does not cancel when the click lands on the palette", () => {
+    renderEmptyGrid();
+
+    tap(palette("Add Limit order"));
+    fireEvent(palette("Add Take Profit order"), pointerAt("pointerdown", 30, 30));
+
+    // Reaching for another order type is a swap, which the palette decides -
+    // not a click that means "put this down".
+    expect(announcement()).toContain("Picked up Limit order");
+  });
+
+  it("clears a drag ghost that has lost its owner", () => {
+    // `dragOverlayStore` is module state, so a gesture that never finished
+    // leaves a ghost behind with nothing left to stop it. That is the pointer
+    // half of the same escape hatch, and the user cannot tell it from a carry.
+    renderEmptyGrid();
+    startDragOverlay(undefined, "Lmt", 100, 100);
+    expect(dragOverlaySnapshot().active).toBe(true);
+
+    outside(document.body);
+
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+});
+
+// =============================================================================
 // A STRATEGY THE BUILDER WOULD NOT LOAD
 // =============================================================================
 //
@@ -1385,5 +1511,54 @@ describe("GridArea, when a strategy has just been loaded into it", () => {
     render(<Harness initialGrid={clearGrid(2, 3)} />);
 
     expect(announcement()).toBe("");
+  });
+});
+
+// =============================================================================
+// THE PANEL REPLACED UNDER A LIVE DRAG
+// =============================================================================
+//
+// The reproduction this lane exists for, at the scale it actually happens.
+// `App` keys the whole strategy panel on `strategyKey`, so a submit that
+// resolves - roughly 800ms after Execute Trade is clicked - replaces the tree,
+// palette included, and takes the dragged element with it. `pointerup` and
+// `pointercancel` are both delivered to that element, so the gesture had no way
+// left to finish; the browser dropped the capture without a word and the
+// release landed on whatever was under the cursor. `dragOverlayStore` is module
+// state and outlives the tree, so the ghost block was then welded to the cursor
+// for the rest of the session.
+
+describe("GridArea, replaced under a live drag", () => {
+  afterEach(() => {
+    stopDragOverlay();
+  });
+
+  it("clears the drag ghost when the panel is remounted mid-drag", () => {
+    const Remountable = () => {
+      const [generation, setGeneration] = useState(0);
+      return (
+        <>
+          <Harness key={generation} initialGrid={clearGrid(2, 3)} />
+          <button onClick={() => setGeneration((n) => n + 1)}>
+            resubmit and reset the panel
+          </button>
+        </>
+      );
+    };
+    render(<Remountable />);
+
+    const limit = screen.getByRole("button", { name: "Add Limit order" });
+    fireEvent(limit, pointerAt("pointerdown", 30, 30));
+    fireEvent(limit, pointerAt("pointermove", 200, 300));
+    expect(dragOverlaySnapshot().active).toBe(true);
+
+    // `click` rather than a pointer sequence on purpose: a pointer-down out
+    // here would reach the escape hatch, and this has to fail on the drag layer
+    // alone when the drag layer is the thing that is broken.
+    fireEvent.click(
+      screen.getByRole("button", { name: "resubmit and reset the panel" }),
+    );
+
+    expect(dragOverlaySnapshot().active).toBe(false);
   });
 });

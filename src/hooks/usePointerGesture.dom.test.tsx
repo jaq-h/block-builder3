@@ -17,6 +17,8 @@ interface Calls {
   recognised: string[];
   up: { point: { x: number; y: number }; moved: boolean }[];
   cancel: string[];
+  /** `moved` as each cancellation reported it: a tap and a drag differ here. */
+  cancelMoved: boolean[];
 }
 
 const Probe = ({ calls, disabled }: { calls: Calls; disabled?: boolean }) => {
@@ -26,7 +28,10 @@ const Probe = ({ calls, disabled }: { calls: Calls; disabled?: boolean }) => {
     onMove: (p) => calls.move.push(p),
     onDragRecognised: () => calls.recognised.push("recognised"),
     onUp: (point, moved) => calls.up.push({ point, moved }),
-    onCancel: () => calls.cancel.push("cancelled"),
+    onCancel: (moved) => {
+      calls.cancel.push("cancelled");
+      calls.cancelMoved.push(moved);
+    },
   });
 
   return (
@@ -42,6 +47,7 @@ const emptyCalls = (): Calls => ({
   recognised: [],
   up: [],
   cancel: [],
+  cancelMoved: [],
 });
 
 /**
@@ -172,6 +178,61 @@ describe("usePointerGesture", () => {
     expect(calls.cancel).toEqual(["cancelled"]);
     expect(calls.up).toEqual([]);
     expect(target().dataset.active).toBe("false");
+  });
+
+  describe("unmounting mid-gesture", () => {
+    // `pointerup` and `pointercancel` are both delivered to the element the
+    // gesture started on, so an element that goes away first leaves the gesture
+    // with no way out at all: the browser drops the capture silently and the
+    // release lands on whatever is under the cursor. Everything pointer-down
+    // opened then stays open, which is how the drag ghost came to be welded to
+    // the cursor when the strategy panel remounted under a live drag.
+    it("cancels a drag when the element is unmounted under it", () => {
+      const calls = emptyCalls();
+      const { unmount } = render(<Probe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 0, y: 0 }));
+      fireEvent(target(), pointer("pointermove", { x: 90, y: 90 }));
+      unmount();
+
+      expect(calls.cancel).toEqual(["cancelled"]);
+      expect(calls.cancelMoved).toEqual([true]);
+      expect(calls.up).toEqual([]);
+    });
+
+    it("reports an unmounted tap as a tap, so nothing is announced for it", () => {
+      const calls = emptyCalls();
+      const { unmount } = render(<Probe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 0, y: 0 }));
+      unmount();
+
+      expect(calls.cancelMoved).toEqual([false]);
+    });
+
+    it("releases the capture it took", () => {
+      const calls = emptyCalls();
+      const { unmount } = render(<Probe calls={calls} />);
+      const element = target();
+
+      fireEvent(element, pointer("pointerdown", { x: 0, y: 0 }));
+      expect(capture.captured.get(element)?.has(1)).toBe(true);
+
+      unmount();
+
+      expect(capture.captured.get(element)?.has(1)).toBe(false);
+    });
+
+    it("says nothing when no gesture was in flight", () => {
+      const calls = emptyCalls();
+      const { unmount } = render(<Probe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 0, y: 0 }));
+      fireEvent(target(), pointer("pointerup", { x: 0, y: 0 }));
+      unmount();
+
+      expect(calls.cancel).toEqual([]);
+    });
   });
 
   describe("tap detection", () => {

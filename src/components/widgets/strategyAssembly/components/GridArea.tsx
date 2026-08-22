@@ -21,6 +21,7 @@ import type {
 import { COLUMN_HEADERS } from "../../../../data/orderTypes";
 import { PATTERN_CONFIGS } from "../../../../types/grid";
 import { positionFromPointer, SCALE_CONFIG } from "../../../../styles/grid";
+import { stopDragOverlay } from "../../../common/dragOverlayStore";
 import ProviderColumn from "../../../common/grid/ProviderColumn";
 import GridCell from "../../../common/grid/GridCell";
 import LiveAnnouncer from "../../../common/LiveAnnouncer";
@@ -496,6 +497,52 @@ const GridArea: FC<GridAreaProps> = ({
     setHoverCell(null);
   };
 
+  // ─── Putting a block down by clicking away from the grid ─────────
+  //
+  // The placement surface is exactly what this component draws: the palette a
+  // block is picked up from, and the cells it can be put down in. Everything
+  // else on the page - the pattern selector, Clear All, Execute Trade, the
+  // chart, the orders panel, the background - can place nothing, so a click
+  // there means the user is done holding whatever they are holding. Choosing
+  // the surface by the element that owns placement, rather than by a panel
+  // outline or a coordinate, is what keeps this rule and the drop rules from
+  // ever disagreeing: a click that lands on a legal target is not outside.
+  const placementSurfaceRef = useRef<HTMLDivElement>(null);
+
+  // Both mechanisms, on every outside click, because the user cannot tell which
+  // one has the block: the command model's carry, and anything a pointer
+  // gesture left behind. Focus is deliberately not handed back - the user has
+  // just clicked somewhere else, and `restoreFocus` would drag them back to the
+  // block they were leaving, which is the same reason Tab does not restore it.
+  const releaseInHandRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    releaseInHandRef.current = () => {
+      if (command.carrying) command.cancel({ restoreFocus: false });
+      stopDragOverlay();
+      endDrag();
+      setHoveredProviderId(null);
+    };
+  });
+
+  // `pointerdown` in the capture phase. Capture, so nothing in between can
+  // swallow the click before it is seen; pointer-down rather than click,
+  // because a drag that is genuinely in flight holds pointer capture and every
+  // event it produces is retargeted to the dragged block - which is inside the
+  // surface - so a live gesture can never be cancelled by this, only a ghost
+  // one that has already lost its owner.
+  useEffect(() => {
+    const onPointerDownAnywhere = (event: globalThis.PointerEvent) => {
+      const surface = placementSurfaceRef.current;
+      if (!surface) return;
+      const target = event.target;
+      if (target instanceof Node && surface.contains(target)) return;
+      releaseInHandRef.current();
+    };
+    document.addEventListener("pointerdown", onPointerDownAnywhere, true);
+    return () =>
+      document.removeEventListener("pointerdown", onPointerDownAnywhere, true);
+  }, []);
+
   const handleProviderDragStart = (type: string) => {
     carryReleasedByDragRef.current = false;
     setDraggingFromProvider(type);
@@ -755,7 +802,11 @@ const GridArea: FC<GridAreaProps> = ({
   // ─── Render ──────────────────────────────────────────────────────
 
   return (
-    <div className={contentWrapper} onPointerMove={handlePointerMove}>
+    <div
+      ref={placementSurfaceRef}
+      className={contentWrapper}
+      onPointerMove={handlePointerMove}
+    >
       {/* Named once and referenced by every block, so the instructions are
           available to a screen reader without being repeated nine times. */}
       <p id={BLOCK_INSTRUCTIONS_ID} className="sr-only">
