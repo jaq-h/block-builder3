@@ -305,6 +305,51 @@ describe("usePointerGesture", () => {
       expect(target().dataset.active).toBe("false");
     });
 
+    it("starts the next gesture after a release nothing in the page heard", () => {
+      // The one release the window listeners cannot hear: let go outside the
+      // window with no capture in force, so it is retargeted nowhere and
+      // dispatched to nothing - not the element, not the window. The gesture
+      // survives it, and the next pointer down is what has to end it. Dropping
+      // that pointer down instead would deaden this element for the rest of
+      // the session, which is the wedge the whole lane exists to close.
+      const calls = emptyCalls();
+      render(<ProbeWithNeighbour calls={calls} />);
+      const refused = vi
+        .spyOn(target(), "setPointerCapture")
+        .mockImplementation(() => {
+          throw new DOMException("NotFoundError", "NotFoundError");
+        });
+
+      fireEvent(target(), pointer("pointerdown", { x: 10, y: 10 }));
+      fireEvent(elsewhere(), pointer("pointermove", { x: 400, y: 300 }));
+      // Nothing is dispatched for the release, on purpose.
+      expect(calls.up).toEqual([]);
+      expect(calls.cancel).toEqual([]);
+
+      refused.mockRestore();
+      fireEvent(target(), pointer("pointerdown", { x: 20, y: 20 }));
+
+      // The stale gesture was owed an outcome, and got the one an interrupted
+      // drag gets rather than being discarded.
+      expect(calls.cancel).toEqual(["cancelled"]);
+      expect(calls.cancelMoved).toEqual([true]);
+      // And what starts underneath it is an ordinary gesture: capture taken,
+      // active, and reported all the way to its own release.
+      expect(calls.down).toEqual([
+        { x: 10, y: 10 },
+        { x: 20, y: 20 },
+      ]);
+      expect(capture.captured.get(target())?.has(1)).toBe(true);
+      expect(target().dataset.active).toBe("true");
+
+      fireEvent(elsewhere(), pointer("pointermove", { x: 200, y: 150 }));
+      fireEvent(elsewhere(), pointer("pointerup", { x: 200, y: 150 }));
+
+      expect(calls.up).toEqual([{ point: { x: 200, y: 150 }, moved: true }]);
+      expect(calls.cancel).toEqual(["cancelled"]);
+      expect(target().dataset.active).toBe("false");
+    });
+
     it("ends the gesture when the element stops carrying its handlers", () => {
       // `Block` swaps its whole handler set the moment a block gains or loses a
       // price axis, on the same button and without unmounting - so the unmount

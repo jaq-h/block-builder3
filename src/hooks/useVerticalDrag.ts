@@ -23,8 +23,12 @@ interface UseVerticalDragReturn {
  * Vertical drag of a placed block along its price axis - the interaction that
  * sets the order's price. On pointer events, so a finger can price an order.
  *
- * The block is captured on pointer down, so dragging past the edge of the cell,
- * or off the window entirely, still ends the drag on release.
+ * The release is listened for on the window rather than on the block, so
+ * dragging past the edge of the cell still ends the drag wherever it is let
+ * go. The capture the block takes on pointer down is what holds hit-testing
+ * still, and what makes a release outside the window reach the page at all;
+ * inside the page it is not what delivers the release. See
+ * `usePointerGesture`.
  *
  * The consumer maps a pointer Y onto the axis as though it were the block's
  * centre, so the grab offset - how far from that centre the pointer actually

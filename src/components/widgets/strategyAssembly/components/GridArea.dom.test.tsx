@@ -1639,12 +1639,12 @@ describe("GridArea, when a strategy has just been loaded into it", () => {
 // The reproduction this lane exists for, at the scale it actually happens.
 // `App` keys the whole strategy panel on `strategyKey`, so a submit that
 // resolves - roughly 800ms after Execute Trade is clicked - replaces the tree,
-// palette included, and takes the dragged element with it. `pointerup` and
-// `pointercancel` are both delivered to that element, so the gesture had no way
-// left to finish; the browser dropped the capture without a word and the
-// release landed on whatever was under the cursor. `dragOverlayStore` is module
-// state and outlives the tree, so the ghost block was then welded to the cursor
-// for the rest of the session.
+// palette included, and takes the dragged element with it. The listeners that
+// would have heard `pointerup` or `pointercancel` belong to that tree, so they
+// come off with it and the gesture has no way left to finish - which is why
+// unmount has to be an exit of its own rather than something the window
+// listeners cover. `dragOverlayStore` is module state and outlives the tree, so
+// the ghost block was then welded to the cursor for the rest of the session.
 
 describe("GridArea, replaced under a live drag", () => {
   afterEach(() => {

@@ -20,7 +20,9 @@ import { useEffect, useRef, useState } from "react";
 //    the cell under the cursor cannot steal a hover, and the drop coordinates
 //    are the pointer's rather than whatever slid under it - and it is why
 //    `GridArea` can read the drag from events bubbling through the placement
-//    surface. It is no longer what *delivers* the release.
+//    surface. It is kept for that, not to end anything: inside the page the
+//    release is heard without it. Outside the window it is the only thing that
+//    delivers a release at all, which is the one case below.
 //  - the elements carry `touch-action: none` (see `blockVariants`), without
 //    which the browser claims a finger drag for page scrolling before the
 //    first `pointermove` ever reaches us.
@@ -45,12 +47,24 @@ import { useEffect, useRef, useState } from "react";
 // retargeted to the element and then bubble to the window like any other, so
 // the window sees everything the element sees *plus* everything it misses -
 // which makes it a superset rather than a second mechanism, and leaves exactly
-// one path into `finish()`. This is the opposite of the mouse listeners the
-// hook replaced: those were on `mouseup`, which the browser genuinely does not
-// deliver for a release outside the window. A pointer release outside the
-// window is delivered, and now it is heard whether or not the capture held.
+// one path into `finish()`.
 //
-// Unmount is still the third exit and still has to be taken by hand: the
+// Be precise about what that buys, because the previous version of this
+// comment was not. Wherever *in the page* the release lands, and whatever
+// handlers the element is wearing by then, the window hears it. What it does
+// not buy is delivery from *outside* the window: an active capture is the only
+// thing that retargets an off-window release into the page, so a pointer let
+// go outside the window with no capture in force reaches nobody - not the
+// element and not the window either, exactly as the `mouseup` listeners this
+// replaced never saw one. Capture makes that release deliverable; the window
+// listeners make every delivered release heard.
+//
+// That residue is why pointer down *ends* a gesture it finds already in hand
+// rather than ignoring it: a release nobody heard would otherwise leave the
+// gesture alive forever and every later drag on that element dropped on the
+// spot. See `handlePointerDown`.
+//
+// Unmount is an exit of its own and still has to be taken by hand: the
 // listeners come off with the component, so a gesture whose component goes
 // away mid-drag would otherwise leave its overlay behind. See the cleanup at
 // the bottom.
@@ -234,7 +248,21 @@ export const usePointerGesture = ({
     // Only the primary pointer, and for a mouse only the primary button - a
     // right-click or a second finger must not start a second drag.
     if (!e.isPrimary || e.button !== 0) return;
-    if (gestureRef.current) return;
+
+    // A gesture still in hand at pointer down is one whose release nobody
+    // heard - the one delivery hole the window listeners cannot close, a
+    // release let go outside the window with no capture in force. Ignoring
+    // this event would make that hole permanent: the element would drop every
+    // later drag on this line for the rest of the session, and the stale
+    // gesture's overlay would stay on the cursor with an outcome still owed to
+    // it. So it ends here, down the path `pointercancel` takes, and the new
+    // gesture starts normally underneath it.
+    const stale = gestureRef.current;
+    if (stale) {
+      const { moved } = stale;
+      finish();
+      onCancel?.(moved);
+    }
 
     const element = e.currentTarget;
     // Suppresses text selection and the browser's own drag of the icon. It also
@@ -268,7 +296,11 @@ export const usePointerGesture = ({
       },
     };
     setIsActive(true);
-    callbacksRef.current.onDown?.({ x: e.clientX, y: e.clientY }, element);
+    // Straight off the props, not through the ref: this is itself a React
+    // handler, so it already holds the current render's callbacks - the same
+    // way it reads `disabled`. The ref is for the window listeners, which are
+    // installed once per gesture and outlive the render that installed them.
+    onDown?.({ x: e.clientX, y: e.clientY }, element);
   };
 
   // ── The third exit ─────────────────────────────────────────────────────

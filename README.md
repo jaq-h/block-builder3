@@ -418,8 +418,17 @@ Events, so one code path serves all three devices. Four details are load-bearing
 - The dragged element still takes `setPointerCapture`, but for what it is actually for:
   holding hit-testing still for the duration, so the cell under the cursor cannot steal a
   hover and `GridArea` can read the drag off events bubbling through the placement surface.
-  It is **not** what delivers the release. That distinction is load-bearing, because
-  listening only on the element made the capture the single point of failure for every exit:
+  Be precise about the division of labour, because getting it wrong is what produced the bug
+  below. **Inside the page the capture is not what delivers the release** - the window hears
+  it wherever it lands and whatever handlers the element is wearing by then. **Outside the
+  window the capture is the only thing that delivers it at all**, since nothing else
+  retargets an off-window pointer into the page; a release let go out there with no capture
+  in force reaches neither the element nor the window, exactly as a `mouseup` never did. That
+  leaves one hole the listeners cannot close, and `pointerdown` closes it instead: a gesture
+  still in hand when the next one starts is ended down the `pointercancel` path, so a release
+  nobody heard costs one announcement rather than deadening the element for the session.
+  The distinction is load-bearing, because listening only on the element made the capture the
+  single point of failure for every exit:
   `setPointerCapture` can be refused, the browser can drop a capture mid-gesture, and an
   element can stop carrying a hook's handlers without unmounting - `Block` swaps its whole
   handler set the moment a block gains or loses a price axis. Any of those and `onUp` never

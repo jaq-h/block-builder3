@@ -42,8 +42,10 @@ interface UseFreeDragReturn {
 
 /**
  * Free-form drag of a block across the grid, on pointer events so that mouse,
- * touch and pen all take the same path. See `usePointerGesture` for why the
- * listeners are on the element rather than on `window`.
+ * touch and pen all take the same path. The gesture starts on the block and
+ * ends on the window: see `usePointerGesture` for why the release is listened
+ * for there rather than on the element, and for what the pointer capture is
+ * and is not responsible for.
  */
 export const useFreeDrag = ({
   id,
