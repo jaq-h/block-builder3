@@ -200,7 +200,8 @@ The README's **Interaction model** section is authoritative. Nine things bite in
   so a release let go out there with no capture in force reaches neither the element nor the
   window, and no listener can be added that would hear it. **List the exits, because the last
   two exist for that hole:** a gesture ends on a release the window heard, on a
-  `pointercancel`, on unmount, on a fresh `pointerdown` on the same element, and on a
+  `pointercancel`, on unmount, on a fresh `pointerdown` on the element while it still carries
+  *that hook instance's* handlers, and on a
   `pointermove` carrying `buttons === 0`. That last one is a platform fact, not a heuristic -
   a held pointer reports its pressed-button bitmask on every move, and only a move made after
   the button came up reports 0 - and it is the exit that matters most, because until the
@@ -210,7 +211,11 @@ The README's **Interaction model** section is authoritative. Nine things bite in
   for a placed block means `handleDragEnd` deleting it. Reaching anywhere else takes moving
   the mouse, so the move check runs before any tap-slop or `onMove` work and the stale move is
   never reported as a move. Only a mouse reaches this at all: touch and pen are implicitly
-  captured to the element they went down on, so their release is always delivered. **What is
+  captured to the element they went down on, so their release is always delivered. It is also
+  the exit that covers the handler swap, and the `pointerdown` one is not: `Block` wires
+  `useFreeDrag` or `useVerticalDrag` depending on the block's axis, so a block that gained one
+  since hands its next `pointerdown` to the other hook, which owns no stale gesture - while
+  the stale hook keeps its own window listeners and hears the move whatever the element wears. **What is
   not covered:** between an unheard release and the next of those two events, the gesture is
   still live and its overlay is still on the cursor. Do not "simplify" any of this back into
   an early return, and do not answer it with a capture watchdog, a timer or a

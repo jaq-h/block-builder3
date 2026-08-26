@@ -284,7 +284,10 @@ const pointerAt = (
   type: string,
   x: number,
   y: number,
-  { buttons = buttonsFor(type) }: { buttons?: number } = {},
+  {
+    buttons = buttonsFor(type),
+    pointerType = "touch",
+  }: { buttons?: number; pointerType?: string } = {},
 ) => {
   const event = new PointerEvent(type, {
     bubbles: true,
@@ -295,7 +298,7 @@ const pointerAt = (
   Object.defineProperties(event, {
     pointerId: { value: 1 },
     isPrimary: { value: true },
-    pointerType: { value: "touch" },
+    pointerType: { value: pointerType },
     clientX: { value: x },
     clientY: { value: y },
     buttons: { value: buttons },
@@ -811,23 +814,35 @@ describe("GridArea, a release the dragged block never receives", () => {
     // pointer id is a constant 1 - so the release of the very next click would
     // be matched as this gesture's drop, at coordinates that are on no cell,
     // and the block the user only meant to stop dragging would be deleted.
+    //
+    // Mouse throughout, and that is the scenario rather than a detail: a finger
+    // is implicitly captured to the element it went down on, so its release is
+    // always delivered and a touch gesture cannot go stale in the first place.
+    const mouse = (type: string, x: number, y: number, buttons = buttonsFor(type)) =>
+      pointerAt(type, x, y, { pointerType: "mouse", buttons });
+
     const { first } = renderTwoBlocks();
     vi.spyOn(first, "setPointerCapture").mockImplementation(() => {
       throw new DOMException("NotFoundError", "NotFoundError");
     });
 
-    fireEvent(first, pointerAt("pointerdown", 30, 150));
-    fireEvent(document.body, pointerAt("pointermove", 900, 900));
+    fireEvent(first, mouse("pointerdown", 30, 150));
+    fireEvent(document.body, mouse("pointermove", 900, 900));
     // Nothing is dispatched for the release, on purpose.
 
     // Reaching the chart panel to dismiss the ghost means moving the mouse,
     // and a move made with the button already up carries no button at all.
-    fireEvent(document.body, pointerAt("pointermove", 700, 400, { buttons: 0 }));
-    fireEvent(document.body, pointerAt("pointerdown", 700, 400));
-    fireEvent(document.body, pointerAt("pointerup", 700, 400));
+    fireEvent(document.body, mouse("pointermove", 700, 400, 0));
+    fireEvent(document.body, mouse("pointerdown", 700, 400));
+    fireEvent(document.body, mouse("pointerup", 700, 400));
 
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
-    expect(announcement()).not.toContain("Removed");
+    // The positive sentence, not the absence of the wrong one: going silent is
+    // the other half of the failure this lane is about, so a passing test has
+    // to show the user was told where the block ended up.
+    expect(announcement()).toBe(
+      "Drag cancelled. Market block stayed in Entry column, row 2.",
+    );
     expect(dragOverlaySnapshot().active).toBe(false);
   });
 

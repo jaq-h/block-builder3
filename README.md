@@ -426,9 +426,13 @@ Events, so one code path serves all three devices. Four details are load-bearing
   in force reaches neither the element nor the window, exactly as a `mouseup` never did. That
   leaves one hole the listeners cannot close, so the exits are worth listing exactly: a
   gesture ends on a release the window heard, on a `pointercancel`, on unmount, on a fresh
-  `pointerdown` on the same element, and on a `pointermove` carrying `buttons === 0`. The last
+  `pointerdown` on the element while it still carries that hook instance's handlers, and on a
+  `pointermove` carrying `buttons === 0`. The last
   two notice that unheard release from the two directions a user can reach it: pressing the
-  same block again, or moving the mouse anywhere. `buttons === 0` is a platform fact rather
+  same block again, or moving the mouse anywhere. Only the second covers the handler swap -
+  `Block` wires `useFreeDrag` or `useVerticalDrag` by the block's axis, so a block that gained
+  one since sends its next `pointerdown` to a hook holding no stale gesture, while the stale
+  hook still hears every move on its own window listeners. `buttons === 0` is a platform fact rather
   than a heuristic - a held pointer reports its pressed-button bitmask on every move, and only
   a move made after the button came up reports 0 - and it is what stops a gesture nobody ended
   from intercepting an unrelated click: the listeners match on pointer id alone, a mouse's id

@@ -439,12 +439,13 @@ describe("usePointerGesture", () => {
   });
 
   describe("unmounting mid-gesture", () => {
-    // `pointerup` and `pointercancel` are both delivered to the element the
-    // gesture started on, so an element that goes away first leaves the gesture
-    // with no way out at all: the browser drops the capture silently and the
-    // release lands on whatever is under the cursor. Everything pointer-down
-    // opened then stays open, which is how the drag ghost came to be welded to
-    // the cursor when the strategy panel remounted under a live drag.
+    // The window listeners belong to the component that installed them, so a
+    // component that goes away mid-gesture takes them with it and the release
+    // is heard by nobody. That, rather than anything about which element the
+    // events reach, is why unmount has to be an exit taken by hand: everything
+    // pointer down opened would otherwise stay open, which is how the drag
+    // ghost came to be welded to the cursor when the strategy panel remounted
+    // under a live drag.
     it("cancels a drag when the element is unmounted under it", () => {
       const calls = emptyCalls();
       const { unmount } = render(<Probe calls={calls} />);

@@ -60,13 +60,23 @@ import { useEffect, useRef, useState } from "react";
 // listeners make every delivered release heard.
 //
 // So the exits are worth listing exactly, because that residue is what the
-// last three are for. A gesture ends on a release the window heard, on a
-// `pointercancel`, on unmount, on a fresh pointer down on the same element,
-// and on a move that proves the button is already up. The last two are the
-// unheard release being noticed late, from the two directions the user can
-// reach it from: pressing that element again, or moving the mouse anywhere.
-// Nothing here watches the capture, because a capture the hook never got is
-// not something it can watch.
+// last two are for. A gesture ends on a release the window heard, on a
+// `pointercancel`, on unmount, on a fresh pointer down on the element while it
+// still carries *this hook's* handlers, and on a move that proves the button
+// is already up. The last two are the unheard release being noticed late, from
+// the two directions the user can reach it from: pressing that element again,
+// or moving the mouse anywhere.
+//
+// Those two are not equals, and the difference is the handler swap. `Block`
+// instantiates both `useFreeDrag` and `useVerticalDrag` and wires whichever
+// suits the block's current axis, so a block that gains a price axis after a
+// free-drag gesture went stale hands the next pointer down to the *other*
+// hook, which has no stale gesture of its own to end. The pointer-down exit is
+// per hook instance and stops there; the `buttons === 0` exit is the one that
+// covers the handler swap, because the stale hook keeps its own window
+// listeners and hears that move whatever the element is wearing. Nothing here
+// watches the capture, because a capture the hook never got is not something
+// it can watch.
 //
 // What that leaves uncovered, stated rather than glossed: between the unheard
 // release and whichever of those two events comes next, the gesture is still
@@ -179,14 +189,16 @@ export const usePointerGesture = ({
   // value: a drag must keep working during the render that `isActive` triggers.
   const gestureRef = useRef<ActiveGesture | null>(null);
 
-  // Every callback behind one ref that each render refreshes. The window
-  // listeners are installed once, on pointer down, so without this they would
-  // spend the whole gesture calling the handlers of the render it started on -
-  // and every caller here passes inline arrows that change identity each time.
+  // The callbacks the window listeners reach for, behind one ref that each
+  // render refreshes. Those listeners are installed once, on pointer down, so
+  // without this they would spend the whole gesture calling the handlers of
+  // the render it started on - and every caller here passes inline arrows that
+  // change identity each time. `onDown` is deliberately not among them:
+  // `handlePointerDown` is a React prop handler and already holds the current
+  // render's copy, so routing it through here would only make it staler.
   // Written from an effect rather than during render, because a ref written
   // during render is a ref the next render cannot be trusted to have seen.
   const callbacksRef = useRef({
-    onDown,
     onMove,
     onDragRecognised,
     onUp,
@@ -194,7 +206,6 @@ export const usePointerGesture = ({
   });
   useEffect(() => {
     callbacksRef.current = {
-      onDown,
       onMove,
       onDragRecognised,
       onUp,
@@ -294,11 +305,13 @@ export const usePointerGesture = ({
     // A gesture still in hand at pointer down is one whose release nobody
     // heard - the one delivery hole the window listeners cannot close, a
     // release let go outside the window with no capture in force. Ignoring
-    // this event would make that hole permanent: the element would drop every
+    // this event would make that hole permanent: this hook would drop every
     // later drag on this line for the rest of the session, and the stale
     // gesture's overlay would stay on the cursor with an outcome still owed to
     // it. So it ends here, down the path `pointercancel` takes, and the new
-    // gesture starts normally underneath it.
+    // gesture starts normally underneath it. This reaches only gestures this
+    // hook instance owns; a block that swapped drag hooks since is covered by
+    // the `buttons === 0` exit in `handleMove` instead.
     const stale = gestureRef.current;
     if (stale) {
       const { moved } = stale;
