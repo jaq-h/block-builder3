@@ -270,11 +270,27 @@ const stubRect = (element: Element, top: number, height: number) => {
   } as DOMRect);
 };
 
-const pointerAt = (type: string, x: number, y: number) => {
+/**
+ * The pressed-button bitmask a real pointer carries for this event type: 1
+ * while the button is held, 0 once it is up. `usePointerGesture` reads a move
+ * carrying 0 as proof of a release it never heard, so a helper leaving it at
+ * jsdom's default would model a pointer that is never pressed. A test that
+ * needs that stale case states `buttons` itself.
+ */
+const buttonsFor = (type: string): number =>
+  type === "pointerdown" || type === "pointermove" ? 1 : 0;
+
+const pointerAt = (
+  type: string,
+  x: number,
+  y: number,
+  { buttons = buttonsFor(type) }: { buttons?: number } = {},
+) => {
   const event = new PointerEvent(type, {
     bubbles: true,
     cancelable: true,
     button: 0,
+    buttons,
   });
   Object.defineProperties(event, {
     pointerId: { value: 1 },
@@ -282,6 +298,7 @@ const pointerAt = (type: string, x: number, y: number) => {
     pointerType: { value: "touch" },
     clientX: { value: x },
     clientY: { value: y },
+    buttons: { value: buttons },
   });
   return event;
 };
@@ -784,6 +801,33 @@ describe("GridArea, a release the dragged block never receives", () => {
 
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
     expect(announcement()).toBe("Removed Market block from the grid.");
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("does not delete a block when a dismissal click follows an unheard release", () => {
+    // The one release nothing in the page can hear: no capture is in force, so
+    // the pointer let go outside the window is retargeted nowhere. The gesture
+    // survives it with its window listeners still installed, and a mouse's
+    // pointer id is a constant 1 - so the release of the very next click would
+    // be matched as this gesture's drop, at coordinates that are on no cell,
+    // and the block the user only meant to stop dragging would be deleted.
+    const { first } = renderTwoBlocks();
+    vi.spyOn(first, "setPointerCapture").mockImplementation(() => {
+      throw new DOMException("NotFoundError", "NotFoundError");
+    });
+
+    fireEvent(first, pointerAt("pointerdown", 30, 150));
+    fireEvent(document.body, pointerAt("pointermove", 900, 900));
+    // Nothing is dispatched for the release, on purpose.
+
+    // Reaching the chart panel to dismiss the ghost means moving the mouse,
+    // and a move made with the button already up carries no button at all.
+    fireEvent(document.body, pointerAt("pointermove", 700, 400, { buttons: 0 }));
+    fireEvent(document.body, pointerAt("pointerdown", 700, 400));
+    fireEvent(document.body, pointerAt("pointerup", 700, 400));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    expect(announcement()).not.toContain("Removed");
     expect(dragOverlaySnapshot().active).toBe(false);
   });
 

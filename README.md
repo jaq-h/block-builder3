@@ -424,9 +424,20 @@ Events, so one code path serves all three devices. Four details are load-bearing
   window the capture is the only thing that delivers it at all**, since nothing else
   retargets an off-window pointer into the page; a release let go out there with no capture
   in force reaches neither the element nor the window, exactly as a `mouseup` never did. That
-  leaves one hole the listeners cannot close, and `pointerdown` closes it instead: a gesture
-  still in hand when the next one starts is ended down the `pointercancel` path, so a release
-  nobody heard costs one announcement rather than deadening the element for the session.
+  leaves one hole the listeners cannot close, so the exits are worth listing exactly: a
+  gesture ends on a release the window heard, on a `pointercancel`, on unmount, on a fresh
+  `pointerdown` on the same element, and on a `pointermove` carrying `buttons === 0`. The last
+  two notice that unheard release from the two directions a user can reach it: pressing the
+  same block again, or moving the mouse anywhere. `buttons === 0` is a platform fact rather
+  than a heuristic - a held pointer reports its pressed-button bitmask on every move, and only
+  a move made after the button came up reports 0 - and it is what stops a gesture nobody ended
+  from intercepting an unrelated click: the listeners match on pointer id alone, a mouse's id
+  is a constant 1, so the next `pointerup` anywhere in the page would otherwise be resolved as
+  this gesture's drop at that point and delete the block. Only a mouse can reach that at all,
+  since touch and pen are implicitly captured to the element they went down on and their
+  release is always delivered. Between an unheard release and the next of those two events the
+  gesture is still live and the ghost is still on the cursor; nothing here watches the capture,
+  because a capture the hook never got is not something it can watch.
   The distinction is load-bearing, because listening only on the element made the capture the
   single point of failure for every exit:
   `setPointerCapture` can be refused, the browser can drop a capture mid-gesture, and an
@@ -454,8 +465,10 @@ than a panel outline or a coordinate, and a click on a legal target still places
 is read on `pointerdown` in the capture phase; a drag that is genuinely in flight holds pointer
 capture and every event it produces is retargeted to the dragged block, which is inside the
 surface, so a live gesture is not cancelled by it. That rests on the capture, which is not
-guaranteed - but a gesture whose capture was refused still ends on its own window listeners
-and still reports its outcome, so the worst this can do is clear a ghost a moment early. Focus is left where the user clicked
+guaranteed. What this hatch does is clear the overlay and the carry; it does not end a pointer
+gesture, so it and `usePointerGesture` are two owners of "a block is in hand" and only the
+hook's own exits end the hook's half. Reconciling them onto one owner belongs to the
+`bb3-mouse-click-carry` lane. Focus is left where the user clicked
 rather than handed back, for the same reason Tab does not hand it back.
 
 A release that never travelled more than a few pixels is a **tap**, not a zero-length drop,

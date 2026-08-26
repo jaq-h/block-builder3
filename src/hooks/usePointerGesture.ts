@@ -59,10 +59,20 @@ import { useEffect, useRef, useState } from "react";
 // replaced never saw one. Capture makes that release deliverable; the window
 // listeners make every delivered release heard.
 //
-// That residue is why pointer down *ends* a gesture it finds already in hand
-// rather than ignoring it: a release nobody heard would otherwise leave the
-// gesture alive forever and every later drag on that element dropped on the
-// spot. See `handlePointerDown`.
+// So the exits are worth listing exactly, because that residue is what the
+// last three are for. A gesture ends on a release the window heard, on a
+// `pointercancel`, on unmount, on a fresh pointer down on the same element,
+// and on a move that proves the button is already up. The last two are the
+// unheard release being noticed late, from the two directions the user can
+// reach it from: pressing that element again, or moving the mouse anywhere.
+// Nothing here watches the capture, because a capture the hook never got is
+// not something it can watch.
+//
+// What that leaves uncovered, stated rather than glossed: between the unheard
+// release and whichever of those two events comes next, the gesture is still
+// live as far as this hook is concerned, and its overlay is still on the
+// cursor. The first mouse move ends it, so the window is the distance between
+// a release outside the window and the pointer coming back into the page.
 //
 // Unmount is an exit of its own and still has to be taken by hand: the
 // listeners come off with the component, so a gesture whose component goes
@@ -215,6 +225,38 @@ export const usePointerGesture = ({
   const handleMove = (e: PointerEvent) => {
     const gesture = gestureFor(e.pointerId);
     if (!gesture) return;
+
+    // A move carrying no pressed button is proof the release already happened
+    // and nobody heard it. That is a platform fact rather than a guess: a
+    // pointer that is down reports its pressed-button bitmask on every move,
+    // and only a move made after the button came back up reports 0. Measured
+    // in Chrome - down 1, move 1, up 0, and every move after that 0.
+    //
+    // It matters because the window listeners outlive the release they never
+    // saw, and they match on pointer id alone. A mouse's id is a constant 1,
+    // so the next `pointerup` anywhere in the page - a click meant to dismiss
+    // the ghost, on the chart or on another panel - would be matched by a
+    // gesture that ended minutes ago and resolved as a drop at that unrelated
+    // point, which for a placed block means `handleDragEnd` deleting it.
+    // Reaching anywhere else takes moving the mouse, so this runs first.
+    //
+    // Only a mouse can get here. Touch and pen pointers are implicitly
+    // captured to the element they went down on, so their release is always
+    // delivered and the gesture cannot go stale in the first place; a mouse
+    // has no implicit capture, so when the one this hook asks for is refused
+    // or dropped, a release outside the window reaches nothing at all. Touch
+    // is protected a second time by never reusing a pointer id, which pen does
+    // not do - but a lifted pen still in range hovers, and a hover move
+    // carries 0, so this covers that too.
+    //
+    // The move is not reported, only the end: a move made after the button is
+    // up must not be able to register as a drag or re-price an order.
+    if (e.buttons === 0) {
+      const { moved } = gesture;
+      finish();
+      callbacksRef.current.onCancel?.(moved);
+      return;
+    }
 
     if (!gesture.moved) {
       const dx = e.clientX - gesture.startX;

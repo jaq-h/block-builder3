@@ -88,6 +88,16 @@ const emptyCalls = (): Calls => ({
 });
 
 /**
+ * The pressed-button bitmask a real pointer carries for this event type: 1
+ * while the button is held, 0 once it is up. The browser reports it on every
+ * move, and the hook reads it as proof of a release it never heard, so a
+ * helper that left it at jsdom's default of 0 would model a mouse that is
+ * never pressed. A test that needs the stale case states `buttons` itself.
+ */
+const buttonsFor = (type: string): number =>
+  type === "pointerdown" || type === "pointermove" ? 1 : 0;
+
+/**
  * jsdom's `PointerEvent` constructor ignores the pointer fields, so they are
  * stamped on explicitly. React reads them straight off the native event.
  */
@@ -99,6 +109,7 @@ const pointer = (
     pointerId?: number;
     isPrimary?: boolean;
     button?: number;
+    buttons?: number;
     pointerType?: string;
   } = {},
 ) => {
@@ -108,6 +119,7 @@ const pointer = (
     pointerId = 1,
     isPrimary = true,
     button = 0,
+    buttons = buttonsFor(type),
     pointerType = "mouse",
   } = init;
   const event = new PointerEvent(type, {
@@ -116,6 +128,7 @@ const pointer = (
     clientX: x,
     clientY: y,
     button,
+    buttons,
   });
   Object.defineProperties(event, {
     pointerId: { value: pointerId },
@@ -123,6 +136,7 @@ const pointer = (
     pointerType: { value: pointerType },
     clientX: { value: x },
     clientY: { value: y },
+    buttons: { value: buttons },
   });
   return event;
 };
@@ -348,6 +362,47 @@ describe("usePointerGesture", () => {
       expect(calls.up).toEqual([{ point: { x: 200, y: 150 }, moved: true }]);
       expect(calls.cancel).toEqual(["cancelled"]);
       expect(target().dataset.active).toBe("false");
+    });
+
+    it("ends a stale gesture on the first move made with the button up", () => {
+      // The other half of an unheard release, and the half that matters most:
+      // reaching anything else takes moving the mouse, and until the gesture
+      // ends its window listeners still match by pointer id - a mouse's is a
+      // constant 1 - so the next release anywhere in the page would be
+      // resolved as this gesture's drop at that unrelated point. A move
+      // carrying no pressed button is the browser saying the button is
+      // already up.
+      const calls = emptyCalls();
+      render(<ProbeWithNeighbour calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 10, y: 10 }));
+      fireEvent(elsewhere(), pointer("pointermove", { x: 400, y: 300 }));
+      // No release event of any kind: it was let go outside the window with no
+      // capture in force, so nothing in the page ever saw it.
+      expect(calls.up).toEqual([]);
+      expect(calls.cancel).toEqual([]);
+
+      fireEvent(elsewhere(), pointer("pointermove", { x: 420, y: 320, buttons: 0 }));
+
+      expect(calls.cancel).toEqual(["cancelled"]);
+      expect(calls.cancelMoved).toEqual([true]);
+      expect(calls.up).toEqual([]);
+      expect(target().dataset.active).toBe("false");
+      // The stale move is not a move: it must not re-price anything or count
+      // as travel, so only the drag's own move was ever reported.
+      expect(calls.move).toEqual([{ x: 400, y: 300 }]);
+
+      // And nothing of the dead gesture is left to intercept the release of
+      // whatever the user does next.
+      fireEvent(elsewhere(), pointer("pointerup", { x: 420, y: 320 }));
+      expect(calls.up).toEqual([]);
+
+      fireEvent(target(), pointer("pointerdown", { x: 10, y: 10 }));
+      fireEvent(elsewhere(), pointer("pointermove", { x: 200, y: 150 }));
+      fireEvent(elsewhere(), pointer("pointerup", { x: 200, y: 150 }));
+
+      expect(calls.up).toEqual([{ point: { x: 200, y: 150 }, moved: true }]);
+      expect(calls.cancel).toEqual(["cancelled"]);
     });
 
     it("ends the gesture when the element stops carrying its handlers", () => {

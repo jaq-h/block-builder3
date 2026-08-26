@@ -198,12 +198,23 @@ The README's **Interaction model** section is authoritative. Nine things bite in
   delivers the release**, and nothing may be built as though it were. **Outside the window it
   is the only thing that does**: nothing else retargets an off-window pointer into the page,
   so a release let go out there with no capture in force reaches neither the element nor the
-  window, and no listener can be added that would hear it. That one hole is closed at the
-  other end instead - `handlePointerDown` ends a gesture it finds already in hand, down the
-  `pointercancel` path, before starting the new one, so a release nobody heard costs one
-  announcement rather than deadening that element for the rest of the session. Do not
-  "simplify" that back into an early return, and do not answer it with a capture watchdog:
-  the hook cannot see a capture it never got.
+  window, and no listener can be added that would hear it. **List the exits, because the last
+  two exist for that hole:** a gesture ends on a release the window heard, on a
+  `pointercancel`, on unmount, on a fresh `pointerdown` on the same element, and on a
+  `pointermove` carrying `buttons === 0`. That last one is a platform fact, not a heuristic -
+  a held pointer reports its pressed-button bitmask on every move, and only a move made after
+  the button came up reports 0 - and it is the exit that matters most, because until the
+  gesture ends its window listeners still match on pointer id alone and a mouse's id is a
+  constant 1. The next `pointerup` anywhere in the page, including the click meant to dismiss
+  the ghost, would otherwise be resolved as this gesture's drop at that unrelated point, which
+  for a placed block means `handleDragEnd` deleting it. Reaching anywhere else takes moving
+  the mouse, so the move check runs before any tap-slop or `onMove` work and the stale move is
+  never reported as a move. Only a mouse reaches this at all: touch and pen are implicitly
+  captured to the element they went down on, so their release is always delivered. **What is
+  not covered:** between an unheard release and the next of those two events, the gesture is
+  still live and its overlay is still on the cursor. Do not "simplify" any of this back into
+  an early return, and do not answer it with a capture watchdog, a timer or a
+  `lostpointercapture` listener: the hook cannot see a capture it never got.
 
   That distinction is the whole bug this replaced. When the exits ran only through the
   element, three things the hook cannot see each left a gesture alive forever: `capture()`
@@ -231,8 +242,10 @@ The README's **Interaction model** section is authoritative. Nine things bite in
   listens for `pointerdown` in the capture phase: a drag that is genuinely in flight holds
   pointer capture and its events are retargeted to the dragged block, which is inside the
   surface, so a live gesture is not cancelled by it. That rests on the capture, which is not
-  guaranteed - but a gesture whose capture was refused still ends on its own window listeners
-  and still reports its outcome, so the worst this can do is clear a ghost early. Focus is not handed back, for the
+  guaranteed. Note what this hatch does **not** do: it clears the overlay and the carry, and
+  it does not end a pointer gesture, so the two are separate owners of "a block is in hand"
+  and only the hook's own exits below end the hook's half. Reconciling them onto one owner
+  belongs to `bb3-mouse-click-carry`. Focus is not handed back, for the
   same reason Tab does not hand it back.
 - **Every new interactive affordance needs a keyboard path and an announcement**, not just a
   handler. Placement is expressed in terms of a target cell in `GridArea`
