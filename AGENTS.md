@@ -179,7 +179,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Nine things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Eight things bite in ordinary work:
 
 - **Never add a `window` *mouse* listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events. Mouse events are also suppressed during a drag,
@@ -187,58 +187,23 @@ The README's **Interaction model** section is authoritative. Nine things bite in
   browser genuinely does not deliver for a release outside the window; it is not a rule
   against `window` itself, and the pointer listeners below are the point.
 - **A gesture starts on an element and ends on the window, and every gesture ends.**
-  `usePointerGesture` puts only `pointerdown` on the element - that is the one thing that has
-  to know *which* element this is - and listens on the window for `pointermove`, `pointerup`
-  and `pointercancel` for the life of the gesture, keyed on the pointer id. A captured
-  pointer's events are retargeted to the element and *then* bubble to the window, so the
-  window sees everything the element sees plus everything it misses: one delivery path, not
-  two. `setPointerCapture` is still taken, but for what it is actually for - holding
-  hit-testing still, so the cell under the cursor cannot steal a hover and `GridArea` can read
-  the drag off events bubbling through the placement surface. **Inside the page it is not what
-  delivers the release**, and nothing may be built as though it were. **Outside the window it
-  is the only thing that does**: nothing else retargets an off-window pointer into the page,
-  so a release let go out there with no capture in force reaches neither the element nor the
-  window, and no listener can be added that would hear it. **List the exits, because the last
-  two exist for that hole:** a gesture ends on a release the window heard, on a
-  `pointercancel`, on unmount, on a fresh `pointerdown` on the element while it still carries
-  *that hook instance's* handlers, and on a
-  `pointermove` carrying `buttons === 0`. That last one is a platform fact, not a heuristic -
-  a held pointer reports its pressed-button bitmask on every move, and only a move made after
-  the button came up reports 0 - and it is the exit that matters most, because until the
-  gesture ends its window listeners still match on pointer id alone and a mouse's id is a
-  constant 1. The next `pointerup` anywhere in the page, including the click meant to dismiss
-  the ghost, would otherwise be resolved as this gesture's drop at that unrelated point, which
-  for a placed block means `handleDragEnd` deleting it. Reaching anywhere else takes moving
-  the mouse, so the move check runs before any tap-slop or `onMove` work and the stale move is
-  never reported as a move. Only a mouse reaches this at all: touch and pen are implicitly
-  captured to the element they went down on, so their release is always delivered. It is also
-  the exit that covers the handler swap, and the `pointerdown` one is not: `Block` wires
-  `useFreeDrag` or `useVerticalDrag` depending on the block's axis, so a block that gained one
-  since hands its next `pointerdown` to the other hook, which owns no stale gesture - while
-  the stale hook keeps its own window listeners and hears the move whatever the element wears. **What is
-  not covered:** between an unheard release and the next of those two events, the gesture is
-  still live and its overlay is still on the cursor. Do not "simplify" any of this back into
-  an early return, and do not answer it with a capture watchdog, a timer or a
-  `lostpointercapture` listener: the hook cannot see a capture it never got.
-
-  That distinction is the whole bug this replaced. When the exits ran only through the
-  element, three things the hook cannot see each left a gesture alive forever: `capture()`
-  swallows its own failure by design, the browser can drop a capture mid-gesture, and an
-  element can stop carrying this hook's handlers while its component stays mounted - `Block`
-  swaps its entire handler set (`useFreeDrag` <-> `useVerticalDrag`) the moment a block gains
-  or loses a price axis. `onUp` then never ran, so nothing called `stopDragOverlay` and
-  nothing reported an outcome. `dragOverlayStore` is **module state** and the overlay follows
-  the pointer from its own window listener, so the ghost block was welded to the cursor for
-  the rest of the session, silently, and the builder was unusable until a reload.
-  `usePointerGesture.dom.test.tsx` pins this under "a release the element never receives", and
-  `GridArea.dom.test.tsx` under "a release the dragged block never receives".
-- **Unmount is still an exit, and still has to be taken by hand.** The window listeners come
-  off with the component, so a gesture whose component goes away mid-drag would leave its
-  overlay behind. That is not hypothetical: `App` keys the whole strategy panel on
-  `strategyKey`, so an Execute Trade whose submit resolves mid-drag replaces the tree, palette
-  included. `usePointerGesture` therefore ends a live gesture on unmount, down the same path a
-  `pointercancel` takes; a new drag hook gets that for free and must not re-open the hole by
-  holding gesture state of its own.
+  `usePointerGesture` puts only `pointerdown` on the element - the one thing that has to know
+  *which* element this is - and listens on the window for `pointermove`, `pointerup` and
+  `pointercancel` for the life of the gesture, keyed on the pointer id. `setPointerCapture` is
+  still taken, for what it is actually for, holding hit-testing still: **inside the page it is
+  not what delivers the release, and outside the window it is the only thing that does.**
+  **The exits, in full, because none of them may be simplified away:** a release the window
+  heard, a `pointercancel`, unmount, a fresh `pointerdown` on the element while it still
+  carries *that hook instance's* handlers, and a `pointermove` carrying `buttons === 0`.
+  Unmount is the one that has to be taken by hand, since the window listeners come off with
+  the component; a new drag hook gets it for free and must not re-open the hole by holding
+  gesture state of its own. **What is not covered:** between an unheard release and the next
+  exit, the gesture is still live and its overlay is still on the cursor. Do not "simplify"
+  any of this back into an early return, and do not answer it with a capture watchdog, a timer
+  or a `lostpointercapture` listener: the hook cannot see a capture it never got. The README's
+  **Interaction model** section carries why each exit exists and what the element-only
+  delivery cost; `usePointerGesture.dom.test.tsx` pins it under "a release the element never
+  receives" and `GridArea.dom.test.tsx` under "a release the dragged block never receives".
 - **A click outside the placement surface puts down whatever is in hand.** The surface is the
   element `GridArea` draws - the palette a block is picked up from and the cells it can be put
   down in - and it is chosen by that element rather than by a panel outline, so this rule and
@@ -249,7 +214,7 @@ The README's **Interaction model** section is authoritative. Nine things bite in
   surface, so a live gesture is not cancelled by it. That rests on the capture, which is not
   guaranteed. Note what this hatch does **not** do: it clears the overlay and the carry, and
   it does not end a pointer gesture, so the two are separate owners of "a block is in hand"
-  and only the hook's own exits below end the hook's half. Reconciling them onto one owner
+  and only the hook's own exits, above, end the hook's half. Reconciling them onto one owner
   belongs to `bb3-mouse-click-carry`. Focus is not handed back, for the
   same reason Tab does not hand it back.
 - **Every new interactive affordance needs a keyboard path and an announcement**, not just a
