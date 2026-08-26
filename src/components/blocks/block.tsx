@@ -79,9 +79,10 @@ interface BlockProps {
   onDragEnd?: (id: string, x: number, y: number) => void;
   onDragCancel?: (id: string) => void;
   /**
-   * A free drag was interrupted by the browser (`pointercancel`) after it had
-   * really begun. Nothing moved, and unlike `onDragCancel` this never fires for
-   * a tap, so it is the outcome the user is told about.
+   * A free drag ended after it had really begun without a release to resolve -
+   * see `usePointerGesture`'s `onCancel` for the ways that happens. Nothing
+   * moved, and unlike `onDragCancel` this never fires for a tap, so it is the
+   * outcome the user is told about.
    */
   onDragAborted?: (id: string) => void;
   /**

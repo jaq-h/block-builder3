@@ -12,14 +12,29 @@ import {
 // HARNESS
 // =============================================================================
 
+/**
+ * The pressed-button bitmask a real pointer carries for this event type: 1
+ * while the button is held, 0 once it is up. `usePointerGesture` reads a move
+ * carrying 0 as proof of a release it never heard, so a helper leaving it at
+ * jsdom's default would model a mouse that is never pressed.
+ */
+const buttonsFor = (type: string): number =>
+  type === "pointerdown" || type === "pointermove" ? 1 : 0;
+
 const pointer = (
   type: string,
-  { x = 0, y = 0, pointerId = 1 }: { x?: number; y?: number; pointerId?: number } = {},
+  {
+    x = 0,
+    y = 0,
+    pointerId = 1,
+    buttons = buttonsFor(type),
+  }: { x?: number; y?: number; pointerId?: number; buttons?: number } = {},
 ) => {
   const event = new PointerEvent(type, {
     bubbles: true,
     cancelable: true,
     button: 0,
+    buttons,
   });
   Object.defineProperties(event, {
     pointerId: { value: pointerId },
@@ -27,6 +42,7 @@ const pointer = (
     pointerType: { value: "mouse" },
     clientX: { value: x },
     clientY: { value: y },
+    buttons: { value: buttons },
   });
   return event;
 };

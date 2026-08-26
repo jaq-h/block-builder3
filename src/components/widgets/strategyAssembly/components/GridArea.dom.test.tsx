@@ -270,18 +270,38 @@ const stubRect = (element: Element, top: number, height: number) => {
   } as DOMRect);
 };
 
-const pointerAt = (type: string, x: number, y: number) => {
+/**
+ * The pressed-button bitmask a real pointer carries for this event type: 1
+ * while the button is held, 0 once it is up. `usePointerGesture` reads a move
+ * carrying 0 as proof of a release it never heard, so a helper leaving it at
+ * jsdom's default would model a pointer that is never pressed. A test that
+ * needs that stale case states `buttons` itself.
+ */
+const buttonsFor = (type: string): number =>
+  type === "pointerdown" || type === "pointermove" ? 1 : 0;
+
+const pointerAt = (
+  type: string,
+  x: number,
+  y: number,
+  {
+    buttons = buttonsFor(type),
+    pointerType = "touch",
+  }: { buttons?: number; pointerType?: string } = {},
+) => {
   const event = new PointerEvent(type, {
     bubbles: true,
     cancelable: true,
     button: 0,
+    buttons,
   });
   Object.defineProperties(event, {
     pointerId: { value: 1 },
     isPrimary: { value: true },
-    pointerType: { value: "touch" },
+    pointerType: { value: pointerType },
     clientX: { value: x },
     clientY: { value: y },
+    buttons: { value: buttons },
   });
   return event;
 };
@@ -694,6 +714,163 @@ describe("GridArea, what a completed drag says", () => {
     fireEvent(first, pointerAt("pointercancel", 30, 150));
 
     expect(announcement()).toBe("");
+  });
+});
+
+// =============================================================================
+// EVERY RELEASE ENDS THE GESTURE
+// =============================================================================
+//
+// The tests above all let go of the pointer on the block itself, which is what
+// capture normally arranges. These let go somewhere the block never hears about
+// - the shape a release takes whenever the capture is not in force - and assert
+// the two things that made the builder unusable when the gesture stayed alive:
+// the ghost stayed welded to the cursor, and the outcome went unsaid. Both come
+// from the same place, so both are checked together: `stopDragOverlay` runs off
+// `onUp`, and so does the only `announcer.report` for this gesture.
+//
+// The release TARGET is the point. A drop can land on a valid cell, a cell that
+// refuses it, the palette, another panel, or nothing at all, and not one of
+// those may decide whether the gesture finishes.
+
+describe("GridArea, a release the dragged block never receives", () => {
+  afterEach(() => {
+    stopDragOverlay();
+  });
+
+  /**
+   * Drag from `block`, and let go at a point the block itself is never told
+   * about - `document.body` stands in for whatever the pointer is actually
+   * over: another panel, the page background, or nothing, off the window.
+   */
+  const dragAndReleaseElsewhere = (block: Element, x: number, y: number) => {
+    fireEvent(block, pointerAt("pointerdown", 30, 20));
+    fireEvent(document.body, pointerAt("pointermove", x, y));
+    fireEvent(document.body, pointerAt("pointerup", x, y));
+  };
+
+  it("puts a palette order down in the cell the pointer was over", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+    stubRect(cell(1, 0), 100, 200);
+
+    dragAndReleaseElsewhere(palette("Add Market order"), 30, 150);
+
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
+    expect(announcement()).toBe("Placed Market order in Exit column, row 1.");
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("says the cell refused the order rather than going silent", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+    stubRect(cell(0, 0), 100, 200);
+
+    dragAndReleaseElsewhere(palette("Add Market order"), 30, 150);
+
+    expect(announcement()).toBe(
+      "Entry column, upper conditional row cannot take this order. Market order was not placed.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("says a palette order released off the grid was not placed", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    // No cell rect is stubbed, so this resolves to no cell at all: the chart
+    // panel, the orders panel, the background, or back over the palette.
+    dragAndReleaseElsewhere(palette("Add Market order"), 900, 900);
+
+    expect(announcement()).toBe(
+      "Released outside the grid. Market order was not placed.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("says a palette order released outside the window was not placed", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    // Off the top-left of the viewport, delivered to nothing in the document.
+    dragAndReleaseElsewhere(palette("Add Market order"), -220, -140);
+
+    expect(announcement()).toBe(
+      "Released outside the grid. Market order was not placed.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("removes a placed block released off the grid, and says so", () => {
+    const { first } = renderTwoBlocks();
+
+    dragAndReleaseElsewhere(first, 900, 900);
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(announcement()).toBe("Removed Market block from the grid.");
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("does not delete a block when a dismissal click follows an unheard release", () => {
+    // The one release nothing in the page can hear: no capture is in force, so
+    // the pointer let go outside the window is retargeted nowhere. The gesture
+    // survives it with its window listeners still installed, and a mouse's
+    // pointer id is a constant 1 - so the release of the very next click would
+    // be matched as this gesture's drop, at coordinates that are on no cell,
+    // and the block the user only meant to stop dragging would be deleted.
+    //
+    // Mouse throughout, and that is the scenario rather than a detail: a finger
+    // is implicitly captured to the element it went down on, so its release is
+    // always delivered and a touch gesture cannot go stale in the first place.
+    const mouse = (type: string, x: number, y: number, buttons = buttonsFor(type)) =>
+      pointerAt(type, x, y, { pointerType: "mouse", buttons });
+
+    const { first } = renderTwoBlocks();
+    vi.spyOn(first, "setPointerCapture").mockImplementation(() => {
+      throw new DOMException("NotFoundError", "NotFoundError");
+    });
+
+    fireEvent(first, mouse("pointerdown", 30, 150));
+    fireEvent(document.body, mouse("pointermove", 900, 900));
+    // Nothing is dispatched for the release, on purpose.
+
+    // Reaching the chart panel to dismiss the ghost means moving the mouse,
+    // and a move made with the button already up carries no button at all.
+    fireEvent(document.body, mouse("pointermove", 700, 400, 0));
+    fireEvent(document.body, mouse("pointerdown", 700, 400));
+    fireEvent(document.body, mouse("pointerup", 700, 400));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    // The positive sentence, not the absence of the wrong one: going silent is
+    // the other half of the failure this lane is about, so a passing test has
+    // to show the user was told where the block ended up.
+    expect(announcement()).toBe(
+      "Drag cancelled. Market block stayed in Entry column, row 2.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("says where a block still is when the browser cancels the drag elsewhere", () => {
+    const { first } = renderTwoBlocks();
+
+    fireEvent(first, pointerAt("pointerdown", 30, 150));
+    fireEvent(document.body, pointerAt("pointermove", 900, 900));
+    fireEvent(document.body, pointerAt("pointercancel", 900, 900));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    expect(announcement()).toBe(
+      "Drag cancelled. Market block stayed in Entry column, row 2.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("leaves the builder usable: the next drag still places a block", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+
+    // A release the block never receives, and then an ordinary drag. The
+    // wedged builder took every later gesture and did nothing with any of them.
+    dragAndReleaseElsewhere(palette("Add Market order"), 900, 900);
+    stubRect(cell(1, 0), 100, 200);
+    dragAndReleaseElsewhere(palette("Add Market order"), 30, 150);
+
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
+    expect(dragOverlaySnapshot().active).toBe(false);
   });
 });
 
@@ -1521,12 +1698,12 @@ describe("GridArea, when a strategy has just been loaded into it", () => {
 // The reproduction this lane exists for, at the scale it actually happens.
 // `App` keys the whole strategy panel on `strategyKey`, so a submit that
 // resolves - roughly 800ms after Execute Trade is clicked - replaces the tree,
-// palette included, and takes the dragged element with it. `pointerup` and
-// `pointercancel` are both delivered to that element, so the gesture had no way
-// left to finish; the browser dropped the capture without a word and the
-// release landed on whatever was under the cursor. `dragOverlayStore` is module
-// state and outlives the tree, so the ghost block was then welded to the cursor
-// for the rest of the session.
+// palette included, and takes the dragged element with it. The listeners that
+// would have heard `pointerup` or `pointercancel` belong to that tree, so they
+// come off with it and the gesture has no way left to finish - which is why
+// unmount has to be an exit of its own rather than something the window
+// listeners cover. `dragOverlayStore` is module state and outlives the tree, so
+// the ghost block was then welded to the cursor for the rest of the session.
 
 describe("GridArea, replaced under a live drag", () => {
   afterEach(() => {

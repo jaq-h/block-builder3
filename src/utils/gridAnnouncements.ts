@@ -55,7 +55,11 @@ export type PlacementVia =
 export type DragEndReason =
   /** Released outside every cell, with nothing there to place into. */
   | "offGrid"
-  /** The browser took the pointer away mid-drag (`pointercancel`). */
+  /**
+   * The drag ended mid-flight with no release to resolve: a `pointercancel`,
+   * an unmount, or a release nobody heard. `usePointerGesture`'s `onCancel`
+   * owns that list.
+   */
   | "aborted";
 
 /** Why a block could not be picked up at all. */

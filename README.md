@@ -407,24 +407,58 @@ same two placement functions in `GridArea`, expressed in terms of a target **cel
 than a pointer coordinate, so the input methods cannot drift apart.
 
 **Pointer: mouse, touch and pen.** `usePointerGesture` handles the raw gesture on Pointer
-Events, so one code path serves all three devices. Three details are load-bearing:
+Events, so one code path serves all three devices. Four details are load-bearing:
 
-- The dragged element takes `setPointerCapture`, which is what delivers `pointerup` even
-  when the button is released **outside the browser window**. The previous
-  `window.addEventListener("mouseup")` implementation never saw that release, and the block
-  stayed glued to the cursor.
+- **A gesture starts on an element and ends on the window.** Only `pointerdown` is listened
+  for on the element, because it is the only thing that has to know *which* element this is.
+  `pointermove`, `pointerup` and `pointercancel` are listened for on the window for the life
+  of the gesture, keyed on the pointer id. A captured pointer's events are retargeted to the
+  element and *then* bubble to the window, so the window is a superset of what the element
+  sees rather than a second mechanism - one delivery path, and one place a gesture ends.
+- The dragged element still takes `setPointerCapture`, but for what it is actually for:
+  holding hit-testing still for the duration, so the cell under the cursor cannot steal a
+  hover and `GridArea` can read the drag off events bubbling through the placement surface.
+  Be precise about the division of labour, because getting it wrong is what produced the bug
+  below. **Inside the page the capture is not what delivers the release** - the window hears
+  it wherever it lands and whatever handlers the element is wearing by then. **Outside the
+  window the capture is the only thing that delivers it at all**, since nothing else
+  retargets an off-window pointer into the page; a release let go out there with no capture
+  in force reaches neither the element nor the window, exactly as a `mouseup` never did. That
+  leaves one hole the listeners cannot close, so the exits are worth listing exactly: a
+  gesture ends on a release the window heard, on a `pointercancel`, on unmount, on a fresh
+  `pointerdown` on the element while it still carries that hook instance's handlers, and on a
+  `pointermove` carrying `buttons === 0`. The last
+  two notice that unheard release from the two directions a user can reach it: pressing the
+  same block again, or moving the mouse anywhere. Only the second covers the handler swap -
+  `Block` wires `useFreeDrag` or `useVerticalDrag` by the block's axis, so a block that gained
+  one since sends its next `pointerdown` to a hook holding no stale gesture, while the stale
+  hook still hears every move on its own window listeners. `buttons === 0` is a platform fact rather
+  than a heuristic - a held pointer reports its pressed-button bitmask on every move, and only
+  a move made after the button came up reports 0 - and it is what stops a gesture nobody ended
+  from intercepting an unrelated click: the listeners match on pointer id alone, a mouse's id
+  is a constant 1, so the next `pointerup` anywhere in the page would otherwise be resolved as
+  this gesture's drop at that point and delete the block. Only a mouse can reach that at all,
+  since touch and pen are implicitly captured to the element they went down on and their
+  release is always delivered. Between an unheard release and the next of those two events the
+  gesture is still live and the ghost is still on the cursor; nothing here watches the capture,
+  because a capture the hook never got is not something it can watch.
+  The distinction is load-bearing, because listening only on the element made the capture the
+  single point of failure for every exit:
+  `setPointerCapture` can be refused, the browser can drop a capture mid-gesture, and an
+  element can stop carrying a hook's handlers without unmounting - `Block` swaps its whole
+  handler set the moment a block gains or loses a price axis. Any of those and `onUp` never
+  ran: nothing called `stopDragOverlay`, nothing reported an outcome, and because the drag
+  overlay is module state that follows the pointer from its own window listener, the ghost
+  block was welded to the cursor for the rest of the session. Silently, and with the builder
+  unusable until a reload.
 - Blocks carry `touch-action: none`. Without it the browser claims a finger drag for page
   scrolling before the first `pointermove` arrives.
-- A gesture has **three** exits: `pointerup`, `pointercancel`, and the element being
-  unmounted under it. The first two are only ever delivered to the element the gesture
-  started on, so the third is not optional: an element that goes away first leaves the
-  gesture with no way to finish, the browser drops the capture without a word, and the
-  release lands on whatever happens to be underneath. The builder reaches that state by an
-  ordinary route - the whole strategy panel is keyed on `strategyKey`, so an Execute Trade
-  whose simulated submit resolves while a drag is in flight replaces the tree and takes the
-  dragged block with it - and because the drag overlay is module state, the ghost block then
-  outlived the tree and followed the cursor for the rest of the session. `usePointerGesture`
-  ends a live gesture on unmount, down the same path a `pointercancel` takes: nothing moved.
+- Unmount is still an exit and still has to be taken by hand: the window listeners come off
+  with the component. The builder reaches that state by an ordinary route - the whole
+  strategy panel is keyed on `strategyKey`, so an Execute Trade whose simulated submit
+  resolves while a drag is in flight replaces the tree and takes the dragged block with it.
+  `usePointerGesture` ends a live gesture on unmount, down the same path a `pointercancel`
+  takes: nothing moved.
 
 **Clicking away puts a block down.** A block can be in the user's hand two ways at once as far
 as they can tell - carried by the command model, or left behind by a gesture that lost its
@@ -434,7 +468,11 @@ with the cells it can be put down in, so the boundary is the thing that owns pla
 than a panel outline or a coordinate, and a click on a legal target still places the block. It
 is read on `pointerdown` in the capture phase; a drag that is genuinely in flight holds pointer
 capture and every event it produces is retargeted to the dragged block, which is inside the
-surface, so a live gesture can never be cancelled by it. Focus is left where the user clicked
+surface, so a live gesture is not cancelled by it. That rests on the capture, which is not
+guaranteed. What this hatch does is clear the overlay and the carry; it does not end a pointer
+gesture, so it and `usePointerGesture` are two owners of "a block is in hand" and only the
+hook's own exits end the hook's half. Reconciling them onto one owner belongs to the
+`bb3-mouse-click-carry` lane. Focus is left where the user clicked
 rather than handed back, for the same reason Tab does not hand it back.
 
 A release that never travelled more than a few pixels is a **tap**, not a zero-length drop,
