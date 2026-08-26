@@ -698,6 +698,124 @@ describe("GridArea, what a completed drag says", () => {
 });
 
 // =============================================================================
+// EVERY RELEASE ENDS THE GESTURE
+// =============================================================================
+//
+// The tests above all let go of the pointer on the block itself, which is what
+// capture normally arranges. These let go somewhere the block never hears about
+// - the shape a release takes whenever the capture is not in force - and assert
+// the two things that made the builder unusable when the gesture stayed alive:
+// the ghost stayed welded to the cursor, and the outcome went unsaid. Both come
+// from the same place, so both are checked together: `stopDragOverlay` runs off
+// `onUp`, and so does the only `announcer.report` for this gesture.
+//
+// The release TARGET is the point. A drop can land on a valid cell, a cell that
+// refuses it, the palette, another panel, or nothing at all, and not one of
+// those may decide whether the gesture finishes.
+
+describe("GridArea, a release the dragged block never receives", () => {
+  afterEach(() => {
+    stopDragOverlay();
+  });
+
+  /**
+   * Drag from `block`, and let go at a point the block itself is never told
+   * about - `document.body` stands in for whatever the pointer is actually
+   * over: another panel, the page background, or nothing, off the window.
+   */
+  const dragAndReleaseElsewhere = (block: Element, x: number, y: number) => {
+    fireEvent(block, pointerAt("pointerdown", 30, 20));
+    fireEvent(document.body, pointerAt("pointermove", x, y));
+    fireEvent(document.body, pointerAt("pointerup", x, y));
+  };
+
+  it("puts a palette order down in the cell the pointer was over", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+    stubRect(cell(1, 0), 100, 200);
+
+    dragAndReleaseElsewhere(palette("Add Market order"), 30, 150);
+
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
+    expect(announcement()).toBe("Placed Market order in Exit column, row 1.");
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("says the cell refused the order rather than going silent", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+    stubRect(cell(0, 0), 100, 200);
+
+    dragAndReleaseElsewhere(palette("Add Market order"), 30, 150);
+
+    expect(announcement()).toBe(
+      "Entry column, upper conditional row cannot take this order. Market order was not placed.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("says a palette order released off the grid was not placed", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    // No cell rect is stubbed, so this resolves to no cell at all: the chart
+    // panel, the orders panel, the background, or back over the palette.
+    dragAndReleaseElsewhere(palette("Add Market order"), 900, 900);
+
+    expect(announcement()).toBe(
+      "Released outside the grid. Market order was not placed.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("says a palette order released outside the window was not placed", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    // Off the top-left of the viewport, delivered to nothing in the document.
+    dragAndReleaseElsewhere(palette("Add Market order"), -220, -140);
+
+    expect(announcement()).toBe(
+      "Released outside the grid. Market order was not placed.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("removes a placed block released off the grid, and says so", () => {
+    const { first } = renderTwoBlocks();
+
+    dragAndReleaseElsewhere(first, 900, 900);
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(announcement()).toBe("Removed Market block from the grid.");
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("says where a block still is when the browser cancels the drag elsewhere", () => {
+    const { first } = renderTwoBlocks();
+
+    fireEvent(first, pointerAt("pointerdown", 30, 150));
+    fireEvent(document.body, pointerAt("pointermove", 900, 900));
+    fireEvent(document.body, pointerAt("pointercancel", 900, 900));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    expect(announcement()).toBe(
+      "Drag cancelled. Market block stayed in Entry column, row 2.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("leaves the builder usable: the next drag still places a block", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+
+    // A release the block never receives, and then an ordinary drag. The
+    // wedged builder took every later gesture and did nothing with any of them.
+    dragAndReleaseElsewhere(palette("Add Market order"), 900, 900);
+    stubRect(cell(1, 0), 100, 200);
+    dragAndReleaseElsewhere(palette("Add Market order"), 30, 150);
+
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+});
+
+// =============================================================================
 // A SAME-CELL RELEASE, ON THE CONDITIONAL PATTERN
 // =============================================================================
 //

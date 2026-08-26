@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { useState } from "react";
 import { usePointerGesture, TAP_SLOP_PX } from "./usePointerGesture";
 import {
   installPointerCapture,
@@ -38,6 +39,42 @@ const Probe = ({ calls, disabled }: { calls: Calls; disabled?: boolean }) => {
     <button type="button" data-testid="target" data-active={isActive} {...handlers}>
       block
     </button>
+  );
+};
+
+/**
+ * A block that stops carrying the gesture's handlers without unmounting, the
+ * way `Block` does the moment a block gains or loses a price axis: the same
+ * button, wearing the other drag hook's handlers from the next render on.
+ */
+const SwappableProbe = ({ calls }: { calls: Calls }) => {
+  const [wired, setWired] = useState(true);
+  const { isActive, handlers } = usePointerGesture({
+    onUp: (point, moved) => calls.up.push({ point, moved }),
+    onCancel: (moved) => {
+      calls.cancel.push("cancelled");
+      calls.cancelMoved.push(moved);
+    },
+  });
+
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="target"
+        data-active={isActive}
+        {...(wired ? handlers : {})}
+      >
+        block
+      </button>
+      <button
+        type="button"
+        data-testid="unwire"
+        onClick={() => setWired(false)}
+      >
+        swap handlers
+      </button>
+    </>
   );
 };
 
@@ -178,6 +215,127 @@ describe("usePointerGesture", () => {
     expect(calls.cancel).toEqual(["cancelled"]);
     expect(calls.up).toEqual([]);
     expect(target().dataset.active).toBe("false");
+  });
+
+  // ===========================================================================
+  // A RELEASE THE ELEMENT NEVER RECEIVES
+  // ===========================================================================
+  //
+  // Every test above lets go of the pointer on the element the gesture started
+  // on, which is what capture normally arranges. These are the releases that
+  // land somewhere else, and each one used to leave the gesture alive forever:
+  // `onUp` never ran, so nothing closed what pointer down opened, the drag
+  // overlay stayed welded to the cursor - it is module state and follows the
+  // pointer from its own window listener - and the outcome went unannounced,
+  // because the announcer only ever hears from these callbacks. The builder was
+  // then unusable until the page was reloaded.
+  //
+  // Capture is not a guarantee: `capture()` swallows its own failure by design,
+  // the browser can drop a capture mid-gesture, and an element can stop
+  // carrying this hook's handlers while its component stays mounted. None of
+  // those are things this hook can see, so none of them may decide whether a
+  // gesture ends.
+
+  describe("a release the element never receives", () => {
+    /** Somewhere else on the page: another panel, the chart, the background. */
+    const elsewhere = () => screen.getByTestId("elsewhere");
+
+    const ProbeWithNeighbour = ({ calls }: { calls: Calls }) => (
+      <>
+        <Probe calls={calls} />
+        <div data-testid="elsewhere">not the block</div>
+      </>
+    );
+
+    it("ends the gesture when the pointer is let go over another element", () => {
+      const calls = emptyCalls();
+      render(<ProbeWithNeighbour calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 10, y: 10 }));
+      fireEvent(elsewhere(), pointer("pointermove", { x: 400, y: 300 }));
+      fireEvent(elsewhere(), pointer("pointerup", { x: 400, y: 300 }));
+
+      expect(calls.up).toEqual([{ point: { x: 400, y: 300 }, moved: true }]);
+      expect(target().dataset.active).toBe("false");
+    });
+
+    it("ends the gesture when the release is only ever seen by the window", () => {
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 100, y: 100 }));
+      // Off the top-left of the viewport, and delivered to nothing inside the
+      // document at all - the shape a release outside the window takes when
+      // the capture that would have retargeted it is not in force.
+      fireEvent(window, pointer("pointermove", { x: -220, y: -140 }));
+      fireEvent(window, pointer("pointerup", { x: -220, y: -140 }));
+
+      expect(calls.up).toEqual([{ point: { x: -220, y: -140 }, moved: true }]);
+      expect(target().dataset.active).toBe("false");
+    });
+
+    it("cancels the gesture when the browser takes the pointer elsewhere", () => {
+      const calls = emptyCalls();
+      render(<ProbeWithNeighbour calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 10, y: 10 }));
+      fireEvent(elsewhere(), pointer("pointermove", { x: 400, y: 300 }));
+      fireEvent(elsewhere(), pointer("pointercancel", { x: 400, y: 300 }));
+
+      expect(calls.cancel).toEqual(["cancelled"]);
+      expect(calls.cancelMoved).toEqual([true]);
+      expect(calls.up).toEqual([]);
+      expect(target().dataset.active).toBe("false");
+    });
+
+    it("ends the gesture even when the capture it asked for was refused", () => {
+      const calls = emptyCalls();
+      render(<ProbeWithNeighbour calls={calls} />);
+      // A capture that throws is the failure `capture()` is written to swallow.
+      // Nothing downstream may depend on it having succeeded.
+      vi.spyOn(target(), "setPointerCapture").mockImplementation(() => {
+        throw new DOMException("NotFoundError", "NotFoundError");
+      });
+
+      fireEvent(target(), pointer("pointerdown", { x: 10, y: 10 }));
+      fireEvent(elsewhere(), pointer("pointermove", { x: 400, y: 300 }));
+      fireEvent(elsewhere(), pointer("pointerup", { x: 400, y: 300 }));
+
+      expect(calls.up).toEqual([{ point: { x: 400, y: 300 }, moved: true }]);
+      expect(target().dataset.active).toBe("false");
+    });
+
+    it("ends the gesture when the element stops carrying its handlers", () => {
+      // `Block` swaps its whole handler set the moment a block gains or loses a
+      // price axis, on the same button and without unmounting - so the unmount
+      // exit does not cover this one. The gesture belongs to the hook, not to
+      // whichever handlers the element happens to be wearing.
+      const calls = emptyCalls();
+      render(<SwappableProbe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 10, y: 10 }));
+      fireEvent(target(), pointer("pointermove", { x: 400, y: 300 }));
+      fireEvent.click(screen.getByTestId("unwire"));
+      fireEvent(target(), pointer("pointerup", { x: 400, y: 300 }));
+
+      expect(calls.up).toEqual([{ point: { x: 400, y: 300 }, moved: true }]);
+      expect(target().dataset.active).toBe("false");
+    });
+
+    it("leaves nothing behind once it has ended", () => {
+      // A second release, from a gesture that is already over, must not report
+      // an outcome the user never produced.
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 10, y: 10 }));
+      fireEvent(target(), pointer("pointerup", { x: 90, y: 90 }));
+      fireEvent(window, pointer("pointermove", { x: 200, y: 200 }));
+      fireEvent(window, pointer("pointerup", { x: 200, y: 200 }));
+
+      expect(calls.up).toHaveLength(1);
+      expect(calls.move).toEqual([]);
+    });
   });
 
   describe("unmounting mid-gesture", () => {

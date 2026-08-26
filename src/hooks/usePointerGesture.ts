@@ -9,19 +9,51 @@ import { useEffect, useRef, useState } from "react";
 //
 // Three things here are load-bearing:
 //
+//  - **A gesture starts on an element and ends on the window.** Pointer down is
+//    the only listener the element carries, because it is the only thing that
+//    has to know *which* element this is. Everything after it - move, up,
+//    cancel - is listened for on the window for the life of the gesture, keyed
+//    on the pointer id. See "One way out" below for why that is not the
+//    `window.addEventListener("mouseup")` this file was written to replace.
 //  - `setPointerCapture` retargets every subsequent move/up for this pointer to
-//    the element the gesture started on. That is what makes a release *outside
-//    the browser window* still deliver `pointerup`, which the old
-//    `window.addEventListener("mouseup")` implementation never received - the
-//    block then stayed glued to the cursor.
-//  - capture makes the element the gesture's only way out, so **unmounting is a
-//    third exit** and this hook has to take it. See the cleanup at the bottom.
+//    the element the gesture started on. It is what keeps hit-testing still -
+//    the cell under the cursor cannot steal a hover, and the drop coordinates
+//    are the pointer's rather than whatever slid under it - and it is why
+//    `GridArea` can read the drag from events bubbling through the placement
+//    surface. It is no longer what *delivers* the release.
 //  - the elements carry `touch-action: none` (see `blockVariants`), without
 //    which the browser claims a finger drag for page scrolling before the
 //    first `pointermove` ever reaches us.
 //
-// Because capture retargets the events, the listeners live on the element as
-// ordinary React props rather than on `window`.
+// ── One way out ────────────────────────────────────────────────────────────
+//
+// Every gesture ends. That is the whole invariant, and it used to rest on a
+// single assumption: that the element the gesture started on would receive the
+// release. Capture was the only thing making that true, and nothing verified
+// it. `capture()` below swallows its own failure by design, the browser can
+// drop a capture mid-gesture without telling the hook, and an element can stop
+// carrying this hook's handlers while its component stays mounted - `Block`
+// swaps its whole handler set the moment a block gains or loses a price axis.
+// Any one of those left the gesture alive with no way to finish: the release
+// landed on whatever was under the cursor, `onUp` never ran, and so nothing
+// ever called `stopDragOverlay`. `dragOverlayStore` is module state, so the
+// ghost block was welded to the cursor for the rest of the session, silently -
+// no outcome was reported either, because the announcer only ever hears from
+// these callbacks. The builder was unusable until a reload.
+//
+// Listening on the window closes that off. A captured pointer's events are
+// retargeted to the element and then bubble to the window like any other, so
+// the window sees everything the element sees *plus* everything it misses -
+// which makes it a superset rather than a second mechanism, and leaves exactly
+// one path into `finish()`. This is the opposite of the mouse listeners the
+// hook replaced: those were on `mouseup`, which the browser genuinely does not
+// deliver for a release outside the window. A pointer release outside the
+// window is delivered, and now it is heard whether or not the capture held.
+//
+// Unmount is still the third exit and still has to be taken by hand: the
+// listeners come off with the component, so a gesture whose component goes
+// away mid-drag would otherwise leave its overlay behind. See the cleanup at
+// the bottom.
 
 /** A pointer that never moved further than this is a tap, not a drag. */
 export const TAP_SLOP_PX = 4;
@@ -52,8 +84,10 @@ export interface UsePointerGestureOptions {
    */
   onDragRecognised?: () => void;
   /**
-   * Fired on release. `moved` is false when the pointer never travelled beyond
-   * `TAP_SLOP_PX`, i.e. this was a tap or a click rather than a drag.
+   * Fired on release, wherever the pointer was let go: over a cell, over the
+   * palette, over another panel, or outside the window entirely. `moved` is
+   * false when the pointer never travelled beyond `TAP_SLOP_PX`, i.e. this was
+   * a tap or a click rather than a drag.
    */
   onUp?: (point: GesturePoint, moved: boolean) => void;
   /**
@@ -70,9 +104,6 @@ export interface UsePointerGestureOptions {
 
 export interface PointerGestureHandlers {
   onPointerDown: (e: React.PointerEvent<HTMLElement>) => void;
-  onPointerMove: (e: React.PointerEvent<HTMLElement>) => void;
-  onPointerUp: (e: React.PointerEvent<HTMLElement>) => void;
-  onPointerCancel: (e: React.PointerEvent<HTMLElement>) => void;
 }
 
 export interface UsePointerGestureReturn {
@@ -86,6 +117,8 @@ interface ActiveGesture {
   startY: number;
   moved: boolean;
   element: HTMLElement;
+  /** Takes this gesture's window listeners back off again. */
+  removeListeners: () => void;
 }
 
 /** jsdom has no pointer capture, and a detached element throws. Neither is fatal. */
@@ -93,8 +126,8 @@ const capture = (element: HTMLElement, pointerId: number): void => {
   try {
     element.setPointerCapture?.(pointerId);
   } catch {
-    // Capture is an optimisation for events outside the element, not a
-    // precondition for the gesture itself.
+    // Capture keeps hit-testing still during the drag; it is not what ends the
+    // gesture, so failing to take it costs precision rather than the exit.
   }
 };
 
@@ -122,22 +155,78 @@ export const usePointerGesture = ({
   // value: a drag must keep working during the render that `isActive` triggers.
   const gestureRef = useRef<ActiveGesture | null>(null);
 
-  // Read by the unmount cleanup, which must not close over the callback of the
-  // render it happened to be created on. Kept current from an effect rather
-  // than from render, because a ref written during render is a ref the next
-  // render cannot be trusted to have seen.
-  const onCancelRef = useRef(onCancel);
+  // Every callback behind one ref that each render refreshes. The window
+  // listeners are installed once, on pointer down, so without this they would
+  // spend the whole gesture calling the handlers of the render it started on -
+  // and every caller here passes inline arrows that change identity each time.
+  // Written from an effect rather than during render, because a ref written
+  // during render is a ref the next render cannot be trusted to have seen.
+  const callbacksRef = useRef({
+    onDown,
+    onMove,
+    onDragRecognised,
+    onUp,
+    onCancel,
+  });
   useEffect(() => {
-    onCancelRef.current = onCancel;
+    callbacksRef.current = {
+      onDown,
+      onMove,
+      onDragRecognised,
+      onUp,
+      onCancel,
+    };
   });
 
-  const finish = (): ActiveGesture | null => {
-    const gesture = gestureRef.current;
-    if (!gesture) return null;
+  /** Undo everything pointer down set up. The one place a gesture is torn down. */
+  const teardown = (gesture: ActiveGesture): void => {
+    gesture.removeListeners();
     releaseCapture(gesture.element, gesture.pointerId);
     gestureRef.current = null;
+  };
+
+  const finish = (): void => {
+    const gesture = gestureRef.current;
+    if (!gesture) return;
+    teardown(gesture);
     setIsActive(false);
-    return gesture;
+  };
+
+  /** The gesture this event belongs to, or null when it belongs to no gesture. */
+  const gestureFor = (pointerId: number): ActiveGesture | null => {
+    const gesture = gestureRef.current;
+    return gesture && gesture.pointerId === pointerId ? gesture : null;
+  };
+
+  const handleMove = (e: PointerEvent) => {
+    const gesture = gestureFor(e.pointerId);
+    if (!gesture) return;
+
+    if (!gesture.moved) {
+      const dx = e.clientX - gesture.startX;
+      const dy = e.clientY - gesture.startY;
+      if (Math.hypot(dx, dy) > TAP_SLOP_PX) {
+        gesture.moved = true;
+        callbacksRef.current.onDragRecognised?.();
+      }
+    }
+    callbacksRef.current.onMove?.({ x: e.clientX, y: e.clientY }, gesture.moved);
+  };
+
+  const handleUp = (e: PointerEvent) => {
+    const gesture = gestureFor(e.pointerId);
+    if (!gesture) return;
+    const { moved } = gesture;
+    finish();
+    callbacksRef.current.onUp?.({ x: e.clientX, y: e.clientY }, moved);
+  };
+
+  const handleCancel = (e: PointerEvent) => {
+    const gesture = gestureFor(e.pointerId);
+    if (!gesture) return;
+    const { moved } = gesture;
+    finish();
+    callbacksRef.current.onCancel?.(moved);
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
@@ -158,58 +247,40 @@ export const usePointerGesture = ({
     element.focus?.({ preventScroll: true });
 
     capture(element, e.pointerId);
+
+    // The element's own window, not the ambient one: a block rendered into a
+    // portal or a second document still has to end its gesture.
+    const view = element.ownerDocument.defaultView ?? window;
+    view.addEventListener("pointermove", handleMove);
+    view.addEventListener("pointerup", handleUp);
+    view.addEventListener("pointercancel", handleCancel);
+
     gestureRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
       element,
+      removeListeners: () => {
+        view.removeEventListener("pointermove", handleMove);
+        view.removeEventListener("pointerup", handleUp);
+        view.removeEventListener("pointercancel", handleCancel);
+      },
     };
     setIsActive(true);
-    onDown?.({ x: e.clientX, y: e.clientY }, element);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLElement>) => {
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.pointerId !== e.pointerId) return;
-
-    if (!gesture.moved) {
-      const dx = e.clientX - gesture.startX;
-      const dy = e.clientY - gesture.startY;
-      if (Math.hypot(dx, dy) > TAP_SLOP_PX) {
-        gesture.moved = true;
-        onDragRecognised?.();
-      }
-    }
-    onMove?.({ x: e.clientX, y: e.clientY }, gesture.moved);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLElement>) => {
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.pointerId !== e.pointerId) return;
-    finish();
-    onUp?.({ x: e.clientX, y: e.clientY }, gesture.moved);
-  };
-
-  const handlePointerCancel = (e: React.PointerEvent<HTMLElement>) => {
-    const gesture = gestureRef.current;
-    if (!gesture || gesture.pointerId !== e.pointerId) return;
-    finish();
-    onCancel?.(gesture.moved);
+    callbacksRef.current.onDown?.({ x: e.clientX, y: e.clientY }, element);
   };
 
   // ── The third exit ─────────────────────────────────────────────────────
   //
-  // `pointerup` and `pointercancel` are both delivered to the element the
-  // gesture started on, so a gesture whose element goes away first has no way
-  // to finish at all. The browser releases the capture silently and the release
-  // lands on whatever is under the cursor; nothing then closes what pointer
-  // down opened. That is not hypothetical: the strategy panel is keyed on
+  // A gesture's listeners belong to the component that started it, so a
+  // component that goes away mid-drag takes them with it and the release is
+  // heard by nobody. That is not hypothetical: the strategy panel is keyed on
   // `strategyKey`, so the whole tree - palette included - is replaced the
   // moment an in-flight submit resolves, which is roughly a second after the
   // user clicked Execute Trade and squarely inside the next drag they start.
   // `dragOverlayStore` is module state and outlives the tree, so the ghost
-  // block was then welded to the cursor for the rest of the session.
+  // block would be welded to the cursor for the rest of the session.
   //
   // Unmount therefore ends the gesture the same way `pointercancel` does:
   // nothing moved, and whatever pointer down opened is closed. The dependency
@@ -218,11 +289,10 @@ export const usePointerGesture = ({
     () => () => {
       const gesture = gestureRef.current;
       if (!gesture) return;
-      releaseCapture(gesture.element, gesture.pointerId);
-      gestureRef.current = null;
+      teardown(gesture);
       // No `setIsActive`: this component is going away, and the caller's
       // cancel handler is the only thing with anything left to undo.
-      onCancelRef.current?.(gesture.moved);
+      callbacksRef.current.onCancel?.(gesture.moved);
     },
     [],
   );
@@ -231,9 +301,6 @@ export const usePointerGesture = ({
     isActive,
     handlers: {
       onPointerDown: handlePointerDown,
-      onPointerMove: handlePointerMove,
-      onPointerUp: handlePointerUp,
-      onPointerCancel: handlePointerCancel,
     },
   };
 };
