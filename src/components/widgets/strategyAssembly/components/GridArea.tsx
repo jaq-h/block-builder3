@@ -528,8 +528,11 @@ const GridArea: FC<GridAreaProps> = ({
   // swallow the click before it is seen; pointer-down rather than click,
   // because a drag that is genuinely in flight holds pointer capture and every
   // event it produces is retargeted to the dragged block - which is inside the
-  // surface - so a live gesture can never be cancelled by this, only a ghost
-  // one that has already lost its owner.
+  // surface - so a live gesture is not cancelled by this, only a ghost one
+  // that has already lost its owner. That rests on the capture, which is not
+  // guaranteed. Note the limit of this hatch: it clears the overlay and the
+  // carry, and it does not end a pointer gesture - `usePointerGesture`'s own
+  // exits own that half.
   useEffect(() => {
     const onPointerDownAnywhere = (event: globalThis.PointerEvent) => {
       const surface = placementSurfaceRef.current;
@@ -760,9 +763,11 @@ const GridArea: FC<GridAreaProps> = ({
 
   // ─── Pointer move (drag tracking) ────────────────────────────────
 
-  // The dragged block holds pointer capture, so `e.target` is the block itself
-  // for the whole drag - the cell under the pointer has to be found by
-  // coordinates rather than by walking up from the event target.
+  // While the dragged block holds pointer capture, `e.target` is the block
+  // itself for the whole drag, so the cell under the pointer has to be found by
+  // coordinates rather than by walking up from the event target. Coordinates
+  // are the answer for a drag whose capture was refused too, where the target
+  // is instead whatever happens to be under the cursor.
   const handlePointerMove = (e: PointerEvent) => {
     if (draggingId !== null || draggingFromProvider !== null) {
       setHoverCell(findCellAtPosition(e.clientX, e.clientY));

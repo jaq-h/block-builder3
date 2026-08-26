@@ -22,14 +22,17 @@ interface UseFreeDragOptions {
   onDragRecognised?: (id: string) => void;
   /**
    * Close the drag that pointer-down opened, without a drop. Fired for a tap
-   * as well as for a `pointercancel`, so it is bookkeeping rather than an
-   * outcome - see `onDragAborted` for the half a user needs to hear about.
+   * as well as for every way a gesture ends without a release, so it is
+   * bookkeeping rather than an outcome - see `onDragAborted` for the half a
+   * user needs to hear about.
    */
   onDragCancel?: (id: string) => void;
   /**
-   * The browser took the pointer away after a real drag had begun. Nothing on
-   * the grid changed, and unlike `onDragCancel` this cannot be a tap, so it is
-   * the one an announcement can be hung on.
+   * A real drag ended with no release to resolve - the browser took the
+   * pointer away, the block went away, or the release reached nobody; see
+   * `usePointerGesture`'s `onCancel`. Nothing on the grid changed, and unlike
+   * `onDragCancel` this cannot be a tap, so it is the one an announcement can
+   * be hung on.
    */
   onDragAborted?: (id: string) => void;
   disabled?: boolean;

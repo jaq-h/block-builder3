@@ -105,9 +105,11 @@ export interface UsePointerGestureOptions {
    */
   onDown?: (point: GesturePoint, element: HTMLElement) => void;
   /**
-   * Fired for every move of the captured pointer. `moved` is false while the
-   * gesture is still inside `TAP_SLOP_PX` and might yet turn out to be a tap;
-   * it is already true on the move that crosses the threshold.
+   * Fired for every move of the gesture's pointer, wherever it lands: moves
+   * are heard on the window, so this does not rest on the capture. `moved` is
+   * false while the gesture is still inside `TAP_SLOP_PX` and might yet turn
+   * out to be a tap; it is already true on the move that crosses the
+   * threshold.
    */
   onMove?: (point: GesturePoint, moved: boolean) => void;
   /**
@@ -125,11 +127,13 @@ export interface UsePointerGestureOptions {
    */
   onUp?: (point: GesturePoint, moved: boolean) => void;
   /**
-   * Fired when the gesture ends without a release: the browser takes the
-   * pointer away (`pointercancel`), or the element the gesture started on is
-   * unmounted under it. `moved` says whether a drag had actually been
-   * recognised by then: an interrupted tap changed nothing and has nothing to
-   * report, an interrupted drag does.
+   * Fired when the gesture ends without a release this hook heard: the
+   * browser takes the pointer away (`pointercancel`), the element the gesture
+   * started on is unmounted under it, or a release that reached nobody is
+   * noticed after the fact - by a fresh pointer down on the same element, or
+   * by a move carrying `buttons === 0`. `moved` says whether a drag had
+   * actually been recognised by then: an interrupted tap changed nothing and
+   * has nothing to report, an interrupted drag does.
    */
   onCancel?: (moved: boolean) => void;
   /** When true, no gesture starts at all. */
