@@ -35,7 +35,6 @@ import {
   chartIdentityFact,
   chartIdentityGroup,
   chartIdentityNotice,
-  chartTimeframeGroup,
   chartToggleButton,
 } from "./OrderChart.styles";
 import { panelHeaderTitle } from "../../../styles/shared";
@@ -259,7 +258,7 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
             )}
           </div>
           <div
-            className={chartTimeframeGroup}
+            className={chartControlGroup}
             role="group"
             aria-label="Timeframe"
           >

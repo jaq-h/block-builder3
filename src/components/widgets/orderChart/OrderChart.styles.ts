@@ -84,24 +84,24 @@ export const chartHeaderPrimaryRow = cn(panelTitleBar, "justify-between");
 export const chartHeaderSecondaryRow =
   "flex flex-wrap items-center justify-between gap-3 px-4 py-1.5 pb-2 min-h-[38px]";
 
-export const chartControlGroup = "flex items-center gap-1";
-
 /**
- * The timeframe strip, which shares the title bar with the symbol and price.
- * Seven buttons do not fit beside them on a phone: measured at 390px the last
- * of them, `1W`, sat outside the panel's `overflow-hidden` and could not be
- * reached at all, at any zoom, by any input.
+ * A named group of chart controls. Every one of them scrolls what it cannot
+ * show, and this panel is the narrowest in the app: it holds three such groups
+ * and no width to spare, so the alternative is not a tighter layout but a
+ * control nobody can reach. Measured on the base commit, `1W` sat outside the
+ * panel's `overflow-hidden` at 390px, and `EMA 20` did the same at 1024px -
+ * clipped, with no scrollbar anywhere to bring either back.
  *
- * `min-w-0` is what lets the strip shrink inside the title row - a flex item's
- * automatic minimum size is its content, which is what pushed it past the edge
- * - and `overflow-x-auto` then makes what does not fit reachable by scrolling
- * rather than clipped. The buttons inside are `shrink-0`, so they keep their
- * size and their target floor instead of being squeezed.
+ * `min-w-0` is what lets a group shrink inside its row: a flex item's automatic
+ * minimum size is its content, which is exactly what pushed these past the
+ * edge. `overflow-x-auto` then makes the overflow reachable rather than cut
+ * off. The buttons inside are `shrink-0` (`chartToggleButton`), so they keep
+ * their size and their 24px target floor instead of being squeezed under it.
+ *
+ * A new control group in this panel takes this rather than a bare flex row.
  */
-export const chartTimeframeGroup = cn(
-  chartControlGroup,
-  "min-w-0 overflow-x-auto",
-);
+export const chartControlGroup =
+  "flex items-center gap-1 min-w-0 overflow-x-auto";
 
 /**
  * The symbol and price at the head of the title bar, and what the group's floor
@@ -133,6 +133,10 @@ export const chartIdentityFact = "shrink-0 whitespace-nowrap";
 /** The offline notice: the one thing in the group that gives up width. */
 export const chartIdentityNotice = "truncate";
 
-/** The quiet caption in front of a control group. */
+/**
+ * The quiet caption in front of a control group. `shrink-0` and nowrap: it
+ * scrolls out of the group with the controls rather than reflowing them, which
+ * is the one thing that would push a button under its target floor.
+ */
 export const chartControlGroupLabel =
-  "text-[10px] uppercase tracking-wide text-text-dimmed mr-1";
+  "shrink-0 whitespace-nowrap text-[10px] uppercase tracking-wide text-text-dimmed mr-1";

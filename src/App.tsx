@@ -275,8 +275,19 @@ function AppInner() {
 
       <main className={mainContent}>
         {/* One tree for both layouts: a stacked, tabbed column below `lg`, and
-            the two-column grid above it. */}
-        <div className="px-4 py-4 lg:grid lg:grid-cols-[700px_minmax(300px,1fr)] lg:gap-4 lg:px-6 lg:h-full lg:overflow-hidden">
+            the two-column grid above it.
+
+            The assembly column is `minmax(0, 700px)` rather than a flat `700px`
+            because the two-column layout starts at `lg`, 1024px, and a flat one
+            needs 1064: 700 plus the 300px floor on the orders column, plus a
+            16px gap and 24px of padding either side. Between those two widths
+            the flat track overflowed a container that is `lg:overflow-hidden`,
+            so the orders column was cut off at the viewport edge with its
+            Refresh button half outside it and no scrollbar to reach it. The
+            `minmax` lets the assembly column give the difference back, and its
+            own grid area already scrolls when it is narrower than its content.
+            At 1064 and above nothing moves: 700px is still the maximum. */}
+        <div className="px-4 py-4 lg:grid lg:grid-cols-[minmax(0,700px)_minmax(300px,1fr)] lg:gap-4 lg:px-6 lg:h-full lg:overflow-hidden">
           {assemblyPanel}
           {ordersPanel}
         </div>
