@@ -1,45 +1,48 @@
 // @vitest-environment jsdom
 /// <reference lib="dom" />
 //
-// `src/index.css` carries the Vite starter's bare `button { ... }` skin outside
-// any cascade layer. Unlayered CSS beats layered CSS whatever the specificity
-// and every Tailwind utility is layered, so that block wins against any button
-// it matches - which is why the strategy pattern selector drew its selected and
-// unselected buttons identically, with the same computed border width, border
-// colour and background, and the app said nothing about which order assembly
-// type was in use.
+// `src/index.css` carries the Vite starter's bare `button { ... }` skin. For a
+// long time it sat outside any cascade layer, and unlayered CSS beats layered
+// CSS whatever the specificity - every Tailwind utility is layered, so that
+// block won against any button it matched. The strategy pattern selector drew
+// its selected and unselected buttons identically, with the same computed
+// border width, border colour and background, and the app said nothing about
+// which order assembly type was in use. Two lanes then worked around the same
+// reset without knowing about each other, one with a `[data-unstyled]` opt-out
+// and one with `!` modifiers.
 //
-// Moving the block into `@layer base` is the real fix and repaints every button
-// in the app, so it is being taken as its own deliberate change. `[data-unstyled]`
-// is the interim way out for one control at a time, and it only works while every
-// unlayered button rule keeps excluding it. Let one back in and the pattern
-// selector silently goes back to drawing nothing - silently, because nothing
-// throws and no rendering test can see it: jsdom applies no author stylesheet, so
-// a cascade is invisible to the rest of the suite.
+// The block is inside `@layer base` now and both workarounds are gone, so this
+// file guards the state that made them unnecessary rather than the workarounds.
+// It asserts two halves of one fact:
 //
-// So this file asks the question by meaning rather than by spelling: it parses
-// the stylesheet into rules, keeps the ones outside a cascade layer, and hands
-// their selectors to the browser's own selector engine, against a fixture that
-// mirrors the shell `src/App.tsx` renders - `#root`, the container inside it,
-// the tab `nav` and `main`, and a button under each.
+//   1. Nothing outside a cascade layer targets a button. Let one rule back out
+//      and every utility that button carries silently stops painting - silently,
+//      because nothing throws and no rendering test can see it: jsdom applies no
+//      author stylesheet, so a cascade is invisible to the rest of the suite.
+//   2. The defaults are still in `@layer base`, skin and focus ring both, so
+//      half one cannot be satisfied by deleting them.
+//
+// It asks by meaning rather than by spelling: it parses the stylesheet into
+// rules, records whether each one is inside a layer, and hands their selectors
+// to the browser's own selector engine against a fixture that mirrors the shell
+// `src/App.tsx` renders - `#root`, the container inside it, the tab `nav` and
+// `main`, and a button under each.
 //
 // THE REACH. Stated here once and in full, both conditions and both holes;
-// everything below refers back to this paragraph rather than restating it, and
-// three earlier versions of this comment claimed more than the code enforces.
-// A rule is in the model when its selector meets both conditions `buttonSelectors`
-// applies: it reaches one of the fixture's buttons, AND it reaches none of the
-// fixture's non-button elements.
+// everything below refers back to this paragraph rather than restating it.
+// A rule is in the model when its selector meets both conditions
+// `selectorsReachingButtons` applies: it reaches one of the fixture's buttons,
+// AND it reaches none of the fixture's non-button elements.
 //
 // The second condition is what separates a button skin from a universal reset
-// like `* { box-sizing }`, which every button keeps whatever it opts out of. It
-// is also a hole, because a skin written through a selector that happens to land
-// on something other than a button - `#root *`, `main div > *`, `:is(button,
-// div)` - is dropped from the model before `skinSelectors()` ever sees it. An
-// unlayered `#root * { border: ...; padding: ...; background-color: ... }` would
-// paint the pattern selector's buttons and every assertion here would still
-// pass. The first condition has a hole of its own: the fixture's buttons carry
-// no classes, so a class-scoped rule such as `.pattern-selector button` never
-// reaches one.
+// like `* { box-sizing }`, which is not what this file is about. It is also a
+// hole, because a skin written through a selector that happens to land on
+// something other than a button - `#root *`, `main div > *`, `:is(button, div)`
+// - is dropped from the model before either assertion sees it. An unlayered
+// `#root * { border: ...; padding: ...; background-color: ... }` would paint the
+// pattern selector's buttons and every assertion here would still pass. The
+// first condition has a hole of its own: the fixture's buttons carry no classes,
+// so a class-scoped rule such as `.pattern-selector button` never reaches one.
 //
 // What is left in reach is the bare `button` type selector, and anything scoping
 // it by the id, by an element ancestor the app renders, by an attribute a button
@@ -64,18 +67,21 @@ const css = readFileSync(
   "utf8",
 );
 
-/** One style rule: the selectors it is written under and what it declares. */
+/** One style rule: where it sits, what it is written under, what it declares. */
 interface StyleRule {
+  /** The `@layer` names it is nested inside, outermost first; empty if none. */
+  layers: string[];
   selectors: string[];
   properties: string[];
 }
 
 /**
  * At-rules whose body holds ordinary style rules, so the walk descends into
- * them. `@layer` is deliberately absent: a layered rule loses to every Tailwind
- * utility, so it cannot be the defect this file guards against. `@theme` and
- * `@keyframes` hold declarations and keyframe selectors rather than rules, and
- * jsdom's selector engine would reject `0%, 100%` outright.
+ * them. `@layer` is descended into as well, and what it contributes is its own
+ * name: a layered rule loses to every Tailwind utility, which is the state this
+ * file exists to keep. `@theme` and `@keyframes` hold declarations and keyframe
+ * selectors rather than rules, and jsdom's selector engine would reject
+ * `0%, 100%` outright.
  */
 const DESCENDED_AT_RULES = new Set(["media", "supports", "container", "scope"]);
 
@@ -111,6 +117,9 @@ const FOCUS_RING_PROPERTIES = new Set([
   "outline-style",
   "outline-width",
 ]);
+
+/** The layer the element defaults have to be in to stay defaults. */
+const BASE_LAYER = "base";
 
 /** Splits on top-level commas, so `:is(a, b)` stays one selector. */
 const splitSelectorList = (selectorList: string): string[] => {
@@ -148,18 +157,19 @@ const declaredProperties = (block: string): string[] => {
 };
 
 /**
- * Every style rule the stylesheet places outside a cascade layer, including
- * rules nested inside another style rule: Tailwind v4 compiles native nesting
- * through Lightning CSS, so `#root { button { ... } }` is an unlayered app-wide
- * skin written in two lines. A nested rule is recorded under its own selector
- * with the parent's scope dropped, which over-approximates what it reaches -
- * the direction a guard should err in. Anything the `@import "tailwindcss"`
- * pulls in is layered by the framework and so is not part of the model.
+ * Every style rule the stylesheet writes, each tagged with the `@layer` names it
+ * sits inside. Nested style rules are included: Tailwind v4 compiles native
+ * nesting through Lightning CSS, so `#root { button { ... } }` is an app-wide
+ * skin written in two lines, and it inherits its parent's layers. A nested rule
+ * is recorded under its own selector with the parent's scope dropped, which
+ * over-approximates what it reaches - the direction a guard should err in.
+ * Anything the `@import "tailwindcss"` pulls in is layered by the framework and
+ * so is not part of the model.
  */
-const parseUnlayeredRules = (source: string): StyleRule[] => {
+const parseRules = (source: string): StyleRule[] => {
   const rules: StyleRule[] = [];
 
-  const walk = (text: string): void => {
+  const walk = (text: string, layers: string[]): void => {
     let prelude = "";
     let index = 0;
 
@@ -193,13 +203,21 @@ const parseUnlayeredRules = (source: string): StyleRule[] => {
 
       if (head.startsWith("@")) {
         const name = head.slice(1).split(/[\s({]/, 1)[0].toLowerCase();
-        if (DESCENDED_AT_RULES.has(name)) walk(block);
+        if (name === "layer") {
+          // `@layer a, b;` declares an order and has no block, so it never
+          // reaches here. `@layer name { ... }` names one layer.
+          const layerName = head.slice("@layer".length).trim();
+          walk(block, [...layers, layerName]);
+        } else if (DESCENDED_AT_RULES.has(name)) {
+          walk(block, layers);
+        }
       } else if (head) {
         rules.push({
+          layers,
           selectors: splitSelectorList(head),
           properties: declaredProperties(block),
         });
-        walk(block);
+        walk(block, layers);
       }
 
       prelude = "";
@@ -207,7 +225,7 @@ const parseUnlayeredRules = (source: string): StyleRule[] => {
     }
   };
 
-  walk(source.replace(/\/\*[\s\S]*?\*\//g, ""));
+  walk(source.replace(/\/\*[\s\S]*?\*\//g, ""), []);
   return rules;
 };
 
@@ -231,12 +249,8 @@ interface ButtonSelector {
   properties: string[];
 }
 
-let plainButtons: Element[];
-let optedOutButton: Element;
+let buttons: Element[];
 let notButtons: Element[];
-
-/** The stylesheet's selectors that the model keeps, by THE REACH above. */
-let buttonSelectors: ButtonSelector[];
 
 beforeEach(() => {
   // The shell `src/App.tsx` renders, with the elements a rule could plausibly
@@ -255,82 +269,82 @@ beforeEach(() => {
         <main>
           <div>
             <button type="button">plain</button>
-            <button type="button" data-unstyled>brings its own skin</button>
             <div>not a button</div>
           </div>
         </main>
       </div>
     </div>`;
 
-  plainButtons = Array.from(
-    document.querySelectorAll("button:not([data-unstyled])"),
-  );
-  optedOutButton = document.querySelector("button[data-unstyled]")!;
+  buttons = Array.from(document.querySelectorAll("button"));
   notButtons = Array.from(document.querySelectorAll("#root, #root *")).filter(
     (element) => element.tagName !== "BUTTON",
   );
-
-  buttonSelectors = parseUnlayeredRules(css).flatMap((rule) =>
-    rule.selectors
-      .map(asMatchableSelector)
-      .filter(
-        (selector) =>
-          selector !== "" &&
-          plainButtons.some((button) => button.matches(selector)) &&
-          !notButtons.some((element) => element.matches(selector)),
-      )
-      .map((selector) => ({ selector, properties: rule.properties })),
-  );
 });
+
+/** The rules that reach a button and nothing else, by THE REACH above. */
+const selectorsReachingButtons = (
+  keep: (rule: StyleRule) => boolean,
+): ButtonSelector[] =>
+  parseRules(css)
+    .filter(keep)
+    .flatMap((rule) =>
+      rule.selectors
+        .map(asMatchableSelector)
+        .filter(
+          (selector) =>
+            selector !== "" &&
+            buttons.some((button) => button.matches(selector)) &&
+            !notButtons.some((element) => element.matches(selector)),
+        )
+        .map((selector) => ({ selector, properties: rule.properties })),
+    );
+
+// A rule declaring nothing of its own paints nothing of its own: it is the
+// outer half of a nested pair, and the nested rule is in the model separately.
+const declaresSomething = ({ properties }: ButtonSelector): boolean =>
+  properties.length > 0;
 
 const isFocusRing = ({ properties }: ButtonSelector): boolean =>
   properties.length > 0 &&
   properties.every((property) => FOCUS_RING_PROPERTIES.has(property));
 
-// A rule declaring nothing of its own paints nothing of its own: it is the
-// outer half of a nested pair, and the nested rule is in the model separately.
-const skinSelectors = (): ButtonSelector[] =>
-  buttonSelectors.filter(
-    (entry) => entry.properties.length > 0 && !isFocusRing(entry),
-  );
-
-const skinPropertiesReaching = (element: Element): string[] => [
-  ...new Set(
-    skinSelectors()
-      .filter(({ selector }) => element.matches(selector))
-      .flatMap(({ properties }) => properties),
-  ),
-];
-
-describe("the button reset's opt-out", () => {
-  it("skins every plain button, so opting out is worth something", () => {
-    // If this ever fails the reset has been neutered app-wide - or moved into a
-    // cascade layer, in which case the design change has landed and this guard
-    // comes off along with every `data-unstyled`.
-    for (const button of plainButtons) {
-      expect(skinPropertiesReaching(button)).toEqual(
-        expect.arrayContaining(["border", "padding", "background-color"]),
-      );
-    }
-  });
-
-  it("lets no skin rule it can see reach a `data-unstyled` button", () => {
-    // What it can see is THE REACH at the top of this file. Named rather than
-    // counted: a failure here has to say which selector let the skin back in,
-    // whatever it was written as.
+describe("the button defaults' cascade layer", () => {
+  it("lets no rule outside a cascade layer paint a button", () => {
+    // The whole point of the change that landed this: an element default has to
+    // lose to the component's own utilities, and it only does if it is layered.
+    // Named rather than counted - a failure here has to say which selector broke
+    // back out, whatever it was written as.
     expect(
-      skinSelectors()
-        .filter(({ selector }) => optedOutButton.matches(selector))
+      selectorsReachingButtons((rule) => rule.layers.length === 0)
+        .filter(declaresSomething)
         .map(({ selector }) => selector),
     ).toEqual([]);
   });
 
-  it("keeps the focus ring reaching every button", () => {
-    const focusRing = buttonSelectors.filter(isFocusRing);
+  it("keeps the skin itself in `@layer base`", () => {
+    // Half one is satisfied by an empty stylesheet, so this is the other half:
+    // the defaults are still here, and still where a utility outranks them.
+    const base = selectorsReachingButtons((rule) =>
+      rule.layers.includes(BASE_LAYER),
+    );
+
+    expect(
+      base.filter((entry) => !isFocusRing(entry)).flatMap((e) => e.properties),
+    ).toEqual(
+      expect.arrayContaining(["border", "padding", "background-color"]),
+    );
+  });
+
+  it("keeps the focus ring in `@layer base`, reaching every button", () => {
+    // The one part of the block that is a real default rather than a skin. No
+    // component overrides it, and a button must not lose it.
+    const focusRing = selectorsReachingButtons((rule) =>
+      rule.layers.includes(BASE_LAYER),
+    ).filter(isFocusRing);
 
     expect(focusRing.length).toBeGreaterThan(0);
     for (const { selector } of focusRing) {
-      for (const button of [...plainButtons, optedOutButton]) {
+      for (const button of buttons) {
         expect(button.matches(selector)).toBe(true);
       }
     }

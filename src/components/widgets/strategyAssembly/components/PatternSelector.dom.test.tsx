@@ -10,12 +10,14 @@ import type { StrategyPattern } from "@/types/grid";
 
 // The selected assembly type used to be conveyed by a border colour and a fill
 // colour and nothing else - and, because the bare `button` reset in
-// `src/index.css` sits outside a cascade layer and beat both utilities, by
+// `src/index.css` sat outside a cascade layer and beat both utilities, by
 // nothing at all as rendered. These assertions pin what replaced it: a name, a
-// programmatic pressed state, a mark that survives with no colour, and the
-// `data-unstyled` opt-out without which the accent border still would not paint.
-// The opt-out's other half - the `:not(...)` in the stylesheet - is pinned by
-// `vite/buttonResetScope.test.ts`, because jsdom cannot see a cascade.
+// programmatic pressed state, and a mark that survives with no colour.
+//
+// The reset is inside `@layer base` now, so the accent border paints on its own
+// and the `data-unstyled` opt-out this component used to carry is gone. That the
+// stylesheet keeps it layered is pinned by `vite/buttonResetLayer.test.ts`,
+// because jsdom applies no author stylesheet and cannot see a cascade.
 
 const renderSelector = (pattern: StrategyPattern = "conditional") => {
   const setStrategyPattern = vi.fn();
@@ -99,16 +101,6 @@ describe("PatternSelector", () => {
       expect(trailing!.className).toBe(leading!.className);
       expect(leading!.textContent).toBe("");
       expect(trailing!.textContent).toBe("");
-    }
-  });
-
-  it("opts both buttons out of the unlayered button reset", () => {
-    renderSelector();
-
-    for (const name of [/Bulk Order/, /Conditional Order/]) {
-      expect(screen.getByRole("button", { name })).toHaveAttribute(
-        "data-unstyled",
-      );
     }
   });
 

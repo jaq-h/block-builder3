@@ -45,7 +45,7 @@ SVG imports work in tests for the same reason.
   under `api/_lib/` instead because they are about the whole repository rather than about a
   neighbouring module: `credentialBoundary.test.ts` builds the client and scans the emitted
   bundle, and `deploymentSurface.test.ts` checks which routes a deploy would publish. Both
-  are `api/`'s responsibility, because the boundary is. `vite/buttonResetScope.test.ts` is
+  are `api/`'s responsibility, because the boundary is. `vite/buttonResetLayer.test.ts` is
   there for the same reason and one more: it has to read `src/index.css` as text, and `src`
   is typechecked without node types while `vite/` has them.
 
@@ -350,28 +350,44 @@ is a grid item and `main` is alone - which put it in the `auto` row and left the
 1440x900. `lg:grid-rows-[1fr]` is what keeps that band of viewport from being
 thrown away. Adding a child to `appContainer` means checking the template again.
 
-**Bare element rules in `src/index.css` still beat every Tailwind utility, and a
-control opts out one at a time.** `button {}` and friends sit outside any cascade
-layer, and unlayered CSS wins over layered CSS regardless of specificity, so a
-matched button ignores its own `px-*`, `border-2`, `rounded-*` and `bg-*`. Moving
-that block into `@layer base` is the real fix and it repaints every button in the
-app - measured, the chart's timeframe buttons drop from 45.19px tall to 22.5px,
-below the 24px WCAG 2.2 SC 2.5.8 minimum, and the palette's blocks go from quiet
-dark squares to solid accent-purple tiles that outweigh the grid they serve. That
-is a design change and belongs to whoever is deciding the design, not to a bug
-fix passing through.
-
-Until then a control that must paint itself carries `data-unstyled`, which the
-reset's `:not([data-unstyled])` stops matching; every button without it renders
-exactly as it always has. `PatternSelector` is the only user today, because
-without it the selected and unselected assembly type resolved to the *same*
-computed border width, border colour and background and the app said nothing
-about which one was in use. Use it for a real need, never as a blanket.
-`vite/buttonResetScope.test.ts` pins the escape hatch, because jsdom applies no
+**The bare element rules in `src/index.css` live in `@layer base`, and there is
+no escape hatch from them.** They are element *defaults*, and a default is
+something a component overrides - which only holds while they are layered.
+Unlayered CSS wins over layered CSS regardless of specificity and every Tailwind
+utility is layered, so for as long as that block sat outside a layer a matched
+button ignored its own `px-*`, `border-2`, `rounded-*` and `bg-*`. **Never write
+a bare `button {}`, `a {}` or `h1 {}` rule outside `@layer base`**;
+`vite/buttonResetLayer.test.ts` fails if one appears, because jsdom applies no
 author stylesheet and no rendering test can see a cascade.
-`executeButtonVariants` and the chart toolbar's `chartToggleButton` predate it
-and still use `!` modifiers, and say why; both mechanisms come off together when
-the app-wide change lands.
+
+**There is exactly one mechanism, and it is "write the utility".** Two lanes
+previously dodged the unlayered reset without knowing about each other - a
+`data-unstyled` opt-out attribute on `PatternSelector`, and `!` modifiers in
+`executeButtonVariants` and `chartToggleButton`. Both are gone, along with the
+`:not(...)` that made the first one work. A control that wants to look different
+now says so in its own utilities and they win. Do not reintroduce either
+mechanism, and do not invent a third: one fact styled two ways is the problem
+this repository keeps paying for, and styling is not exempt from it.
+
+Taking the layer repainted every button to what its own utilities had always
+asked for, and two consequences are owned in the code rather than left as
+folklore:
+
+- **`chartToggleButton` carries `min-h-6`/`min-w-6`, the 24px WCAG 2.2 SC 2.5.8
+  minimum target size.** Padding alone does not reach it: an 11px label with
+  `leading-none` in `py-1` measures 21px tall, which is what every control in
+  both chart toolbar rows rendered at before. `chartHeaderSecondaryRow`'s
+  `min-h` is derived from that floor plus its own padding, so the lazy fallback
+  stays the same height as the real header. Measure a new control rather than
+  reasoning about its classes - `getBoundingClientRect()` in the browser is the
+  check, and `#tv-attr-logo` in `src/index.css` is the same fix applied to the
+  chart library's own attribution link.
+- **`src/components/blocks/block.tsx` is the one deliberate exception to the
+  filled treatment,** and the comment on `buttonVariants` is the authority on
+  why: a block tile's colour *is* its state (palette entry, valid drop target,
+  in hand, drag ghost), so the resting tile keeps a quiet accent tint and the
+  saturated end of the scale is left for the states. It is written in that
+  component's own utilities - no attribute, no `!`.
 
 **Every panel title bar takes its geometry from `panelTitleBar` in
 `src/styles/shared.ts`.** The assembly panel's pattern selector, the chart's title

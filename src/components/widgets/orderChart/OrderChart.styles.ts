@@ -13,25 +13,33 @@ import { panelTitleBar } from "../../../styles/shared";
 // Tab reaches it, Enter and Space operate it, and a screen reader reads its
 // pressed state back without any live region of its own.
 //
-// The `!` modifiers are load-bearing, exactly as they are in
-// `executeButtonVariants`: `src/index.css` still carries the Vite starter's
-// bare `button { ... }` rules, and unlayered CSS beats every Tailwind utility
-// however specific. Without them these buttons keep the starter's `1em` font
-// and `0.6em 1.2em` padding, which is what the timeframes used to render at -
-// two rows of that would spend a quarter of a 400px panel on chrome. Moving
-// that reset into `@layer base` is the real fix and repaints every button in
-// the app, so it stays its own change.
+// Plain utilities, no `!` anywhere. They each used to carry one, because the
+// bare `button { ... }` reset in `src/index.css` sat outside a cascade layer and
+// beat every Tailwind utility however specific - without them these buttons kept
+// the starter's `1em` font and `0.6em 1.2em` padding, and two rows of that spend
+// a quarter of a 400px panel on chrome. The reset is inside `@layer base` now,
+// so these win on their own; see `AGENTS.md` under "Layout and the CSS cascade".
+//
+// `min-h-6` is the WCAG 2.2 SC 2.5.8 minimum target size, 24 CSS px, and it is a
+// floor rather than a height so a control carrying a taller label still grows.
+// Padding alone does not reach it: an 11px label with `leading-none` inside
+// `py-1` and a 1px border measures 21px tall, which is what every control in
+// both toolbar rows rendered at before this change. `min-w-6` is the same floor
+// on the other axis - no label here is narrow enough to need it today, and it is
+// written down so the next abbreviation added cannot quietly breach it.
+// `chartHeaderSecondaryRow`'s `min-h` is derived from this floor.
 export const chartToggleButton = cva(
   [
-    "px-2! py-1! rounded-md! text-[11px]! font-medium! leading-none!",
+    "inline-flex items-center justify-center min-h-6 min-w-6",
+    "px-2 py-1 rounded-md text-[11px] font-medium leading-none",
     "transition-colors duration-150 cursor-pointer whitespace-nowrap",
   ],
   {
     variants: {
       isActive: {
-        true: "text-accent-primary! bg-accent-bg-subtle! border-accent-primary! hover:bg-accent-bg-hover!",
+        true: "text-accent-primary bg-accent-bg-subtle border-accent-primary hover:bg-accent-bg-hover",
         false:
-          "text-text-muted! bg-transparent! border-border-neutral! hover:text-text-primary! hover:bg-accent-bg-hover!",
+          "text-text-muted bg-transparent border-border-neutral hover:text-text-primary hover:bg-accent-bg-hover",
       },
     },
     defaultVariants: { isActive: false },
@@ -65,10 +73,13 @@ export const chartHeaderPrimaryRow = cn(panelTitleBar, "justify-between");
  *
  * `min-h` is what keeps the lazy fallback the same height as the real header:
  * the fallback has captions where this row has buttons, and without a floor the
- * chart body would jump upward the moment the chart chunk lands.
+ * chart body would jump upward the moment the chart chunk lands. It is derived
+ * from what this row holds - `chartToggleButton`'s 24px SC 2.5.8 floor plus this
+ * row's own 6px and 8px padding - so raising that floor raises this with it
+ * rather than leaving the fallback a few pixels short.
  */
 export const chartHeaderSecondaryRow =
-  "flex flex-wrap items-center justify-between gap-3 px-4 py-1.5 pb-2 min-h-[35px]";
+  "flex flex-wrap items-center justify-between gap-3 px-4 py-1.5 pb-2 min-h-[38px]";
 
 export const chartControlGroup = "flex items-center gap-1";
 

@@ -6,13 +6,9 @@
 // `text-text-*` scale the rest of the app uses, so this row sits in the panel
 // chrome rather than beside it.
 //
-// One trap avoided here on purpose: `src/index.css` has a bare `button {}` rule
-// outside any cascade layer, and unlayered CSS beats every Tailwind utility
-// regardless of specificity - which is why `executeButtonVariants` needs `!`
-// modifiers. There is no bare `select {}` rule, so a `<select>` takes these
-// utilities normally. Turning this control into a `<button>` would walk into
-// that trap, and would also give up the keyboard and mobile behaviour a native
-// select brings for free.
+// This stays a native `<select>` rather than becoming a `<button>` with a menu:
+// it brings the keyboard and mobile behaviour of a real picker for free, and
+// nothing here has to reimplement it.
 
 export const marketSelectorRow =
   "shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 bg-bg-overlay border-b border-border-neutral";
