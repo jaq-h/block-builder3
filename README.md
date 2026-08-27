@@ -962,7 +962,7 @@ src/
 │   ├── blockFactory.ts            # Factory for creating block data
 │   ├── grid.ts                    # Grid manipulation helpers
 │   ├── gridAnnouncements.ts       # Every sentence the grid speaks (pure)
-│   ├── liveCandles.ts             # The one fold of closed bars + the forming bar
+│   ├── liveCandles.ts             # The one fold of closed bars + the forming bar, and what a new list appends
 │   ├── marketFormat.ts            # The one owner of every price & quantity format
 │   ├── price.ts                   # Percentage-offset-from-market price formula
 │   └── index.ts

@@ -321,6 +321,14 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   `candles` when the interval rolls over and that bar is final, keeping `candles`
   identity-stable between bar closes; the chart folds the forming bar on top. The forming
   bar counts towards an average, pinned in `movingAverage.ts` next to the EMA seed.
+  **A bar close redraws one bar, not the series.** `candles` growing by a bar is not
+  new data arriving, it is the bar already on the chart being declared final, so
+  `OrderChart` writes that one bar over itself with `update()` and leaves the rest
+  standing. `appendedCandles` in `src/utils/liveCandles.ts` is the one owner of what
+  counts as an extension, and its docblock carries why each case is judged as it is;
+  anything that is not one - a market switch, a corrected backfill, a series holding
+  nothing - still takes the full `setData`. `OrderChart.dom.test.tsx` pins the
+  transition under "a bar close".
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region (`aria-live` and `role="status"` alike).

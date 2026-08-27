@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 
-import { withLatestCandle } from "./liveCandles";
+import { appendedCandles, withLatestCandle } from "./liveCandles";
 import { simpleMovingAverage } from "@widgets/orderChart/indicators";
 
 // =============================================================================
@@ -98,5 +98,68 @@ describe("withLatestCandle", () => {
 
     expect(atFetch.at(-1)).toEqual({ time: 180, value: 20 });
     expect(later.at(-1)).toEqual({ time: 180, value: 30 });
+  });
+});
+
+describe("appendedCandles", () => {
+  it("reports the bars a bar close added, and nothing else", () => {
+    const closed = withLatestCandle(backfill, bar(240, 40));
+    expect(appendedCandles(backfill, closed)).toEqual([bar(240, 40)]);
+  });
+
+  it("reports nothing for a list that has not grown", () => {
+    expect(appendedCandles(backfill, [...backfill])).toEqual([]);
+  });
+
+  // A bar behind the one at the end being written over: a corrected backfill,
+  // not a close. Only a full redraw can carry those values to the series.
+  it("refuses a list whose earlier bars were rebuilt", () => {
+    const rebuilt = [backfill[0], bar(120, 21), backfill[2], bar(240, 40)];
+    expect(appendedCandles(backfill, rebuilt)).toBeNull();
+  });
+
+  // The sequence the live feed produces after every backfill: the bar at the
+  // end is a new object for the same bar, because a tick rewrote the forming
+  // candle before the interval rolled over. That bar is already drawn at that
+  // time, so it is reissued rather than answered with a whole-series redraw.
+  it("reissues a final bar the feed rewrote in place, and the bars after it", () => {
+    const rewritten = bar(180, 31);
+    const closed = withLatestCandle(
+      [backfill[0], backfill[1], rewritten],
+      bar(240, 40),
+    );
+
+    expect(appendedCandles(backfill, closed)).toEqual([
+      rewritten,
+      bar(240, 40),
+    ]);
+  });
+
+  it("reissues a rewritten final bar even when nothing was appended", () => {
+    const rewritten = bar(180, 31);
+
+    expect(
+      appendedCandles(backfill, [backfill[0], backfill[1], rewritten]),
+    ).toEqual([rewritten]);
+  });
+
+  // Rewriting the bar at the end is one thing; a different bar standing where
+  // it was is a different series, and update() cannot express that.
+  it("refuses a final bar whose time has changed", () => {
+    expect(
+      appendedCandles(backfill, [backfill[0], backfill[1], bar(200, 30)]),
+    ).toBeNull();
+  });
+
+  it("refuses a shorter list, which is a different series", () => {
+    expect(appendedCandles(backfill, [bar(60, 10)])).toBeNull();
+    expect(appendedCandles(backfill, [])).toBeNull();
+  });
+
+  // Nothing drawn gaining a whole backfill is the first draw, not a bar close:
+  // the series holds no bar for the arriving ones to be an extension of.
+  it("refuses a series that holds nothing, whatever arrives", () => {
+    expect(appendedCandles([], backfill)).toBeNull();
+    expect(appendedCandles([], [])).toBeNull();
   });
 });
