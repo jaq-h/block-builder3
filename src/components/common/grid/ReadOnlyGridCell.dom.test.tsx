@@ -28,9 +28,11 @@ const limit = (yPosition: number): BlockData => ({
 });
 
 /**
- * Sharing a bulk cell with a Limit, a Stop Loss is stamped with the opposite
- * direction: `shouldBeDescending` keys off the order type there, and only
- * stop-loss families count as the downside zone.
+ * Given the opposite direction from the Limit it shares a cell with, on
+ * purpose: this fixture is pushed straight into the cell rather than through
+ * `addBlocksToCell`, so it is the unstamped grid a card can be handed rather
+ * than what the app produces. `directionForNewCell` decides a cell's scale once,
+ * when its first block lands, and every later arrival is stamped with it.
  */
 const stopLoss = (yPosition: number): BlockData => ({
   id: "s1",

@@ -1149,7 +1149,7 @@ describe("validateOrder", () => {
   // facts that replaced it: no position produces one, and `validateOrder` still
   // rejects one if some future caller hands it one directly.
   it("cannot be made to emit a zero price by any position", () => {
-    for (const yPosition of [50, 75, 100, 1000, Number.NaN]) {
+    for (const yPosition of [50, 75, 100, 1000]) {
       const [order] = mapGridToOrders(
         gridWith([
           { col: 0, row: 1, block: blockData({ yPosition, direction: "downside" }) },
@@ -1160,6 +1160,31 @@ describe("validateOrder", () => {
       expect(Number(order.limit_price)).toBeGreaterThan(0);
       expect(validateOrder(order)).toEqual([]);
     }
+  });
+
+  // A non-finite position is a bug upstream, and the question is what the order
+  // path does with one. `clampOffset` answers it with an offset of zero for the
+  // benefit of the chip, which cannot draw `NaN%` - but zero is the market
+  // price, a perfectly finite and positive number that `validateOrder` accepts,
+  // so absorbing it here would submit an at-market limit order in place of a
+  // corrupt one. `offsetForOrder` keeps it non-finite for exactly this reason.
+  it("refuses a non-finite position rather than pricing it at the market", () => {
+    const [order] = mapGridToOrders(
+      gridWith([
+        {
+          col: 0,
+          row: 1,
+          block: blockData({ yPosition: Number.NaN, direction: "downside" }),
+        },
+      ]),
+      { market: BTC_USD, currentPrice: 76_689, quantity: "0.5" },
+    );
+
+    expect(Number(order.limit_price)).not.toBe(76_689);
+    expect(Number.isFinite(Number(order.limit_price))).toBe(false);
+    expect(validateOrder(order)).toContain(
+      "Limit price must be a finite number",
+    );
   });
 
   it("still rejects a zero price handed straight to it", () => {

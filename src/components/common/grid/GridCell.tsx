@@ -8,7 +8,9 @@ import {
   getCellDisplayMode,
   isDescending as isDescendingDirection,
   legInCell,
+  legOfBlock,
   priceForOffset,
+  type PriceAxisLeg,
 } from "../../../utils";
 import { describeCell } from "../../../utils/blockCommand";
 import { useMarket } from "../../../store/useMarket";
@@ -128,8 +130,19 @@ const GridCell: FC<GridCellProps> = ({
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
-  const hasAxis1Blocks = blocks.some((block) => block.axis === 1);
-  const hasAxis2Blocks = blocks.some((block) => block.axis === 2);
+  // Which column a block is drawn in, which label that column carries and which
+  // icon the slider shows are all one question - the block's leg - and
+  // `legOfBlock` is its owner. Splitting on `block.axis` here was the last
+  // consumer answering axis membership for itself: `axis` has no notion of a
+  // single-axis order type, so a Stop Loss saved at axis 2 and rehydrated as
+  // `axes: ["trigger"]` drew a column labelled "Limit" around a slider whose
+  // accessible name said "trigger price".
+  const triggerBlocks = blocks.filter(
+    (block) => legOfBlock(block) === "trigger",
+  );
+  const limitBlocks = blocks.filter((block) => legOfBlock(block) === "limit");
+  const hasTriggerBlocks = triggerBlocks.length > 0;
+  const hasLimitBlocks = limitBlocks.length > 0;
 
   const rowLabelType: "primary" | "conditional" =
     rowLabel.toLowerCase() === "primary" ? "primary" : "conditional";
@@ -189,7 +202,7 @@ const GridCell: FC<GridCellProps> = ({
 
   const renderAxisContent = (
     axisBlocks: BlockData[],
-    axisNumber: 1 | 2,
+    leg: PriceAxisLeg,
     isSingleAxis: boolean,
     axisLabel: string,
     showPercentageScale: boolean = true,
@@ -205,7 +218,7 @@ const GridCell: FC<GridCellProps> = ({
       <div
         // The element the block positioner is absolutely laid out within, and
         // so the one the vertical drag has to measure to invert that layout.
-        data-axis-track={`${colIndex}-${rowIndex}-${axisNumber}`}
+        data-axis-track={`${colIndex}-${rowIndex}-${leg}`}
         className={getAxisColumnProps(isSingleAxis)}
       >
         {showPercentageScale && renderPercentageScale(isDescending)}
@@ -225,7 +238,7 @@ const GridCell: FC<GridCellProps> = ({
             direction,
           );
           const sliderIcon =
-            block.axis === 1 ? block.triggerIcon : block.limitIcon;
+            leg === "trigger" ? block.triggerIcon : block.limitIcon;
           const dashedProps = getDashedIndicatorProps(
             offset,
             isDescending,
@@ -340,14 +353,11 @@ const GridCell: FC<GridCellProps> = ({
           </div>
           <div className={sliderArea}>
             {renderMarketPrice()}
-            {renderAxisContent(blocks, 2, true, "Limit", true)}
+            {renderAxisContent(blocks, "limit", true, "Limit", true)}
           </div>
         </>
       );
     }
-
-    const axis1Blocks = blocks.filter((block) => block.axis === 1);
-    const axis2Blocks = blocks.filter((block) => block.axis === 2);
 
     return (
       <>
@@ -358,15 +368,21 @@ const GridCell: FC<GridCellProps> = ({
         </div>
         <div className={sliderArea}>
           {renderMarketPrice()}
-          {hasAxis1Blocks &&
-            renderAxisContent(axis1Blocks, 1, !hasAxis2Blocks, "Trigger", true)}
-          {hasAxis2Blocks &&
+          {hasTriggerBlocks &&
             renderAxisContent(
-              axis2Blocks,
-              2,
-              !hasAxis1Blocks,
+              triggerBlocks,
+              "trigger",
+              !hasLimitBlocks,
+              "Trigger",
+              true,
+            )}
+          {hasLimitBlocks &&
+            renderAxisContent(
+              limitBlocks,
+              "limit",
+              !hasTriggerBlocks,
               "Limit",
-              !hasAxis1Blocks,
+              !hasTriggerBlocks,
             )}
         </div>
       </>

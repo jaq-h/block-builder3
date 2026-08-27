@@ -284,14 +284,12 @@ const describePlacement = (
   switch (result.status) {
     case "created":
       return `Placed ${describeSource(source)} in ${describeCell(cell, pattern)}.`;
-    case "moved":
-      return `Moved ${describeSource(source)} to ${describeCell(cell, pattern)}.`;
     // The defect this branch exists for: a drop inside the block's own cell.
     // The grid rightly changed nothing, and saying the cell refused the order
     // contradicts the block sitting in it.
     //
-    // "created" and "moved" above already describe something happening to this
-    // very block, so a released-carry clause there would be noise. This branch,
+    // "created" above already describes something happening to this very
+    // block, so a released-carry clause there would be noise. This branch,
     // "refused" and "gone" below describe nothing happening to it, which is
     // where a user who was carrying that block needs telling that they no
     // longer are - and where silence actively misleads, because the sibling

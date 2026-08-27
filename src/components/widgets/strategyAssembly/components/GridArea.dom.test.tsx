@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { useRef, useState, type FC } from "react";
+import {
+  useRef,
+  useState,
+  type FC,
+  type SVGProps,
+} from "react";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 
 import GridArea from "./GridArea";
@@ -11,6 +16,7 @@ import { StaticContext } from "../contexts/StaticContext";
 import { ORDER_TYPES } from "@data/orderTypes";
 import { clearGrid } from "@utils/grid";
 import { orderConfigFromGrid } from "@utils/blockMapping";
+import { mapGridToOrders } from "@api/orderMapper";
 import { BLOCK_HEIGHT, getBlockTopPx } from "@styles/grid";
 import type {
   BlockData,
@@ -46,9 +52,12 @@ const TRACK_HEIGHT = 181.5;
 const MARKET_PRICE = 100_000;
 
 /**
- * A Stop Loss and a Limit are stamped with OPPOSITE directions when they share
- * a bulk cell: `shouldBeDescending` keys off the order type there, and only
- * stop-loss families count as the downside zone.
+ * Built with OPPOSITE directions on purpose, and pushed straight into the cell
+ * rather than through `addBlocksToCell` - so this is the unstamped grid the
+ * mapping owner has to cope with, not what the app now produces. A cell takes
+ * one scale from `directionForNewCell` the moment its first block lands and
+ * stamps every later arrival with it, so the two would agree if they had gone
+ * in that way.
  */
 const placedStopLoss = (
   yPosition: number,
@@ -319,7 +328,7 @@ const renderPlacedLimit = (yPosition: number) => {
   grid[0][1].push(placedLimit(yPosition));
   render(<Harness initialGrid={grid} />);
 
-  const track = document.querySelector('[data-axis-track="0-1-2"]');
+  const track = document.querySelector('[data-axis-track="0-1-limit"]');
   if (!track) throw new Error("the axis column was not rendered");
   stubRect(track, TRACK_TOP, TRACK_HEIGHT);
 
@@ -613,6 +622,26 @@ describe("GridArea, tapping a placed block", () => {
     fireEvent(slider, pointer("pointerup", centre + 30));
 
     expect(renderedCentre()).toBeCloseTo(centre + 30, 1);
+  });
+
+  // Below `lg` the panel holding the live region is `display: none`, so a
+  // sighted user gets no announcement at all. The visible note used to be shown
+  // for the no-axis refusal only, which left this one - the priced block the
+  // acceptance criteria name specifically - with nothing on screen.
+  it("puts the priced block's rule on screen, worded for the arrow keys", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    tap(slider);
+
+    const note = screen.getByText(/Orders do not move between cells/);
+    expect(note).toHaveTextContent(
+      "Limit stays in the cell it was placed in. Orders do not move between cells - use the arrow keys to change this one's price.",
+    );
+    // Never a removal instruction here: a block on a price axis is wired to the
+    // vertical price drag, so it cannot be dragged off the grid at all.
+    expect(note).not.toHaveTextContent(/remove it/);
+    expect(note.closest("[aria-live]")).toBeNull();
+    expect(note).not.toHaveAttribute("role", "status");
   });
 });
 
@@ -1258,7 +1287,7 @@ const renderMixedCell = (limitY: number, stopLossY: number) => {
   grid[0][1].push(placedLimit(limitY), placedStopLoss(stopLossY));
   render(<Harness initialGrid={grid} pattern="bulk" />);
 
-  const track = document.querySelector('[data-axis-track="0-1-1"]');
+  const track = document.querySelector('[data-axis-track="0-1-trigger"]');
   if (!track) throw new Error("the trigger axis column was not rendered");
   stubRect(track, TRACK_TOP, TRACK_HEIGHT);
 
@@ -1394,7 +1423,7 @@ describe("GridArea, which leg a block is", () => {
       "Entry column, row 2, Stop Loss, Limit",
     );
     expect(
-      document.querySelector('[data-axis-track="0-1-1"]'),
+      document.querySelector('[data-axis-track="0-1-trigger"]'),
     ).not.toBeNull();
     expect(
       screen
@@ -2156,5 +2185,115 @@ describe("GridArea, carrying a block with the mouse", () => {
       "Limit is priced on this axis and cannot be moved to another cell",
     );
     expect(dragOverlaySnapshot().active).toBe(false);
+  });
+});
+
+// =============================================================================
+// A SAVED `axis` THAT DISAGREES WITH THE BLOCK'S LEG
+// =============================================================================
+//
+// The state a reloaded strategy really carries. `gridFromConfig` rebuilds a
+// Stop Loss saved at `axis: 2` through `axesForBlockAxis`, which correctly
+// gives it `axes: ["trigger"]` and leaves the saved `axis` as it was - so the
+// two fields disagree, and everything the cell draws has to follow the leg.
+// Splitting the columns on `axis` drew this block in a column labelled "Limit"
+// around a slider whose accessible name said "trigger price", and pointed the
+// vertical drag's track lookup at a column the block was not in.
+
+const TriggerIcon: FC<SVGProps<SVGSVGElement>> = (props) => (
+  <svg {...props} data-testid="trigger-icon" />
+);
+const LimitIcon: FC<SVGProps<SVGSVGElement>> = (props) => (
+  <svg {...props} data-testid="limit-icon" />
+);
+
+const savedStopLoss = (yPosition: number): BlockData => ({
+  id: "s1",
+  orderType: "stop-loss",
+  label: "Stop Loss",
+  abrv: "SL",
+  allowedRows: [0, 1, 2],
+  // Saved at the limit axis, rehydrated as the trigger leg. The leg is the
+  // truth; this field is what a reload happens to have kept.
+  axis: 2,
+  yPosition,
+  direction: "downside",
+  axes: ["trigger"],
+  triggerIcon: TriggerIcon,
+  limitIcon: LimitIcon,
+});
+
+describe("GridArea, a block whose saved axis disagrees with its leg", () => {
+  const renderSavedStopLoss = (yPosition: number) => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(savedStopLoss(yPosition));
+    render(<Harness initialGrid={grid} />);
+
+    const track = document.querySelector('[data-axis-track="0-1-trigger"]');
+    if (!track) throw new Error("the trigger axis column was not rendered");
+    stubRect(track, TRACK_TOP, TRACK_HEIGHT);
+
+    const slider = screen.getByRole("slider");
+    const blockTop = TRACK_TOP + getBlockTopPx(yPosition, TRACK_HEIGHT, true);
+    stubRect(slider, blockTop, BLOCK_HEIGHT);
+
+    return { grid, slider, centre: blockTop + BLOCK_HEIGHT / 2 };
+  };
+
+  it("draws it as the trigger leg, in the column, the label and the icon alike", () => {
+    const { slider } = renderSavedStopLoss(15);
+
+    expect(
+      document.querySelector('[data-axis-track="0-1-trigger"]'),
+    ).not.toBeNull();
+    expect(document.querySelector('[data-axis-track="0-1-limit"]')).toBeNull();
+    // Scoped to the cell: the palette beside it carries its own "Limit" entry,
+    // and this is a claim about which column this block was drawn in.
+    const drawnCell = within(cell(0, 1) as HTMLElement);
+    expect(drawnCell.getByText("Trigger")).toBeInTheDocument();
+    expect(drawnCell.queryByText("Limit")).not.toBeInTheDocument();
+    expect(drawnCell.getByTestId("trigger-icon")).toBeInTheDocument();
+    expect(drawnCell.queryByTestId("limit-icon")).not.toBeInTheDocument();
+    expect(slider).toHaveAccessibleName(/Stop Loss trigger price/);
+  });
+
+  it("still re-prices it on a vertical drag, because the track lookup agrees", () => {
+    const { slider, centre } = renderSavedStopLoss(15);
+
+    expect(slider).toHaveAttribute("aria-valuenow", "-15");
+
+    fireEvent(slider, pointer("pointerdown", centre));
+    fireEvent(slider, pointer("pointermove", centre + 20));
+    fireEvent(slider, pointer("pointerup", centre + 20));
+
+    // Further down a descending track is further from market, so the magnitude
+    // grows. What matters is that it moved at all: keyed by `axis` the lookup
+    // found no "0-1-2" column and fell through to the only track in the cell,
+    // which happens to work for a single-column cell and silently would not for
+    // a cell drawing two.
+    const moved = Number(slider.getAttribute("aria-valuenow"));
+    expect(moved).toBeLessThan(-15);
+    expect(Number.isFinite(moved)).toBe(true);
+  });
+
+  it("shows the same price on the chip as it sends in the payload", () => {
+    const { grid } = renderSavedStopLoss(15);
+
+    const [order] = mapGridToOrders(grid, {
+      market: BTC_USD,
+      currentPrice: MARKET_PRICE,
+      quantity: "0.5",
+    });
+
+    const expected = MARKET_PRICE * (1 - 15 / 100);
+    expect(Number(order.trigger_price ?? order.triggers?.price)).toBe(expected);
+    expect(
+      screen.getByText(
+        `$${expected.toLocaleString("en-US", {
+          minimumFractionDigits: BTC_USD.priceDecimals,
+          maximumFractionDigits: BTC_USD.priceDecimals,
+        })}`,
+      ),
+    ).toBeInTheDocument();
   });
 });

@@ -49,8 +49,6 @@ export interface CellPosition {
 export type PlacementResult =
   /** A new block was created in the target cell, from the palette. */
   | { status: "created"; blockId: string }
-  /** An existing block left one cell and arrived in another. */
-  | { status: "moved"; blockId: string }
   /** The block was already in the target cell, so nothing changed. */
   | { status: "unchanged"; blockId: string }
   /**

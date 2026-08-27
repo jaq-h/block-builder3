@@ -8,7 +8,9 @@ import {
   getCellDisplayMode,
   isDescending as isDescendingDirection,
   legInCell,
+  legOfBlock,
   priceForOffset,
+  type PriceAxisLeg,
 } from "../../../utils";
 import { useMarket } from "../../../store/useMarket";
 import {
@@ -66,8 +68,15 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
-  const hasAxis1Blocks = blocks.some((block) => block.axis === 1);
-  const hasAxis2Blocks = blocks.some((block) => block.axis === 2);
+  // The same owner the builder cell splits on: `legOfBlock`, never `axis`. An
+  // order card and the cell it was built in must not disagree about which leg
+  // a block is, any more than they may about the direction above.
+  const triggerBlocks = blocks.filter(
+    (block) => legOfBlock(block) === "trigger",
+  );
+  const limitBlocks = blocks.filter((block) => legOfBlock(block) === "limit");
+  const hasTriggerBlocks = triggerBlocks.length > 0;
+  const hasLimitBlocks = limitBlocks.length > 0;
 
   const renderPercentageScale = (isDesc: boolean) => {
     const labels = getScaleLabels(isDesc);
@@ -99,6 +108,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
 
   const renderAxisContent = (
     axisBlocks: BlockData[],
+    leg: PriceAxisLeg,
     isSingleAxis: boolean,
     axisLabel: string,
     showPercentageScale: boolean = true,
@@ -126,7 +136,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
             direction,
           );
           const sliderIcon =
-            block.axis === 1 ? block.triggerIcon : block.limitIcon;
+            leg === "trigger" ? block.triggerIcon : block.limitIcon;
           const dashedProps = getDashedIndicatorProps(
             offset,
             isDescending,
@@ -222,14 +232,11 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
           </div>
           <div className={sliderArea}>
             {renderMarketPrice()}
-            {renderAxisContent(blocks, true, "Limit", true)}
+            {renderAxisContent(blocks, "limit", true, "Limit", true)}
           </div>
         </>
       );
     }
-
-    const axis1Blocks = blocks.filter((block) => block.axis === 1);
-    const axis2Blocks = blocks.filter((block) => block.axis === 2);
 
     return (
       <>
@@ -240,14 +247,21 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
         </div>
         <div className={sliderArea}>
           {renderMarketPrice()}
-          {hasAxis1Blocks &&
-            renderAxisContent(axis1Blocks, !hasAxis2Blocks, "Trigger", true)}
-          {hasAxis2Blocks &&
+          {hasTriggerBlocks &&
             renderAxisContent(
-              axis2Blocks,
-              !hasAxis1Blocks,
+              triggerBlocks,
+              "trigger",
+              !hasLimitBlocks,
+              "Trigger",
+              true,
+            )}
+          {hasLimitBlocks &&
+            renderAxisContent(
+              limitBlocks,
+              "limit",
+              !hasTriggerBlocks,
               "Limit",
-              !hasAxis1Blocks,
+              !hasTriggerBlocks,
             )}
         </div>
       </>

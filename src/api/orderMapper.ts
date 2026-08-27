@@ -18,8 +18,8 @@ import type {
 } from "./types";
 import {
   cellDirection,
-  clampOffset,
-  priceForOffset,
+  offsetForOrder,
+  priceForOrderOffset,
 } from "../utils/blockMapping";
 import {
   formatPriceForAPI,
@@ -118,10 +118,13 @@ const determineSide = (col: number): OrderSide => {
  *
  * Decision D3: the interface is the source of truth. A block at yPosition 25 is
  * 25% away from market, exactly as its label, its price chip and the chart line
- * all say. `priceForOffset` is the mapping owner's one derivation of that -
- * the same call `GridCell` makes for the chip and `orderPriceLines` makes for
- * the chart - so there is no scale factor and no second opinion here about
- * which side of the market the block is on or how far along the axis it sits.
+ * all say. `priceForOrderOffset` is the mapping owner's derivation of that for
+ * a payload - the same formula and the same direction reading `GridCell` uses
+ * for the chip and `orderPriceLines` for the chart - so there is no scale
+ * factor and no second opinion here about which side of the market the block is
+ * on or how far along the axis it sits. It parts company with the display call
+ * on one input only: a non-finite position stays non-finite, so it is refused
+ * downstream rather than drawn at the market price.
  *
  * `direction` is the cell's, stamped on by `extractBlocksFromGrid`, which is
  * the whole of decision D8 as this module sees it. Reading the block's own was
@@ -132,7 +135,7 @@ export const calculateBlockPrice = (
   block: UIBlockData,
   currentPrice: number,
 ): number =>
-  priceForOffset(currentPrice, block.position.yPosition, block.direction);
+  priceForOrderOffset(currentPrice, block.position.yPosition, block.direction);
 
 // Price and quantity formatting live in `src/utils/marketFormat.ts`, which is
 // handed Kraken's own `MarketPrecision` for the pair. They used to be here, and
@@ -171,7 +174,11 @@ export const blockDataToUIBlock = (
       // cannot reach a payload. The 0-100 reading that made a 100% offset - a
       // price of exactly zero - reachable is gone from the drag layer, and this
       // is what stops a saved strategy from carrying one back in.
-      yPosition: clampOffset(block.yPosition),
+      //
+      // `offsetForOrder` rather than `clampOffset` because this is the payload:
+      // a non-finite position stays non-finite so `validateOrder` refuses it,
+      // where the display answer of zero would price it at the market and pass.
+      yPosition: offsetForOrder(block.yPosition),
       axis: block.axis,
     },
     direction,
@@ -678,9 +685,11 @@ export const validateOrder = (
   // drop handler used to write a raw 0-100 reading into the block while the
   // slider and the axis labels ran to 50, so a block dragged to the bottom of
   // its cell was a 100% offset and a price of zero. Positions now flow through
-  // `clampOffset` in `utils/blockMapping.ts` on every path into a payload, so a
-  // zero static price is unreachable rather than merely unlikely. This stays,
-  // because a validator that trusts its callers is not a validator.
+  // `offsetForOrder` in `utils/blockMapping.ts` on every path into a payload,
+  // so a zero static price is unreachable rather than merely unlikely. That
+  // helper deliberately does not absorb a non-finite position the way the
+  // display clamp does, precisely so the finite check below is still reachable.
+  // This stays, because a validator that trusts its callers is not a validator.
   const requirePrice = (
     label: string,
     value?: string,

@@ -675,11 +675,15 @@ piece of work, and the sr-only block instructions deliberately promise removal o
 cell that draws no axis until it lands.
 
 **The refusal is legible, not silent.** Three things say so together and none of them is
-optional: the announcer's `moveRefused` / `staysInCell` sentences, a visible note under the
-grid (`cellLockedNote`, ordinary text - never a second live region), and no cell drawing
-itself as a target while a placed block is dragged (`getActiveAllowedRows` returns none for
-one). A gesture that simply does nothing is indistinguishable from a broken control, which
-is what D9 asks this to avoid.
+optional: the announcer's `moveRefused` sentences, a visible note under the grid
+(`cellLockedNote`, ordinary text - never a second live region), and no cell drawing itself
+as a target while a placed block is dragged (`getActiveAllowedRows` returns none for one).
+A gesture that simply does nothing is indistinguishable from a broken control, which is what
+D9 asks this to avoid. The note is shown for **both** refusals and worded for each: a block
+in a cell drawing no axis is told it can be dragged off the grid, and one on a price axis is
+told about the arrow keys instead, because that is the affordance its render actually wires
+and it has no removal path at all (see the known gap above). Showing one wording for both is
+how the note came to promise a removal the app cannot perform.
 
 **Two closed gaps, recorded because the shape recurs.** Both were one fact derived twice.
 

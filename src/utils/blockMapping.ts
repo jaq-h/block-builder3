@@ -135,8 +135,14 @@ export const MIN_OFFSET_PERCENT = SCALE_CONFIG.MIN_PERCENT;
  * what makes a zero price unreachable rather than merely unlikely: every
  * position flows through here before it is drawn, announced or priced.
  *
- * A non-finite input is a bug upstream, and answering it with the market price
- * itself is the one answer that cannot be mistaken for a real order level.
+ * A non-finite input is a bug upstream, and this is the DISPLAY answer to it: a
+ * chip cannot print `NaN%` and a ruler cannot lay a block out at it, so the
+ * offset collapses to the market price line. That is a safe thing to draw and
+ * an unsafe thing to submit - a limit order at the current market price is a
+ * plausible order that would likely fill - so the order path uses
+ * `offsetForOrder` instead and keeps a non-finite value non-finite all the way
+ * to `validateOrder`. The two are deliberately different and the difference is
+ * only ever about a value no axis could have produced.
  */
 export const clampOffset = (yPosition: number): number => {
   if (!Number.isFinite(yPosition)) return MIN_OFFSET_PERCENT;
@@ -145,6 +151,21 @@ export const clampOffset = (yPosition: number): number => {
     Math.min(MAX_OFFSET_PERCENT, yPosition),
   );
 };
+
+/**
+ * The same range clamp, for a position on its way into a Kraken payload.
+ *
+ * It differs from `clampOffset` in exactly one case, and that case is the whole
+ * reason it exists: a non-finite position is passed straight through rather
+ * than answered with an offset of zero. Collapsing it would price the order at
+ * the market price, which `validateOrder` accepts because it is a perfectly
+ * finite, positive number - so a block carrying a corrupt position would be
+ * submitted as an at-market limit order instead of being refused. Left
+ * non-finite it reaches `validateOrder`'s `Number.isFinite` guard, which is
+ * what that guard is for.
+ */
+export const offsetForOrder = (yPosition: number): number =>
+  Number.isFinite(yPosition) ? clampOffset(yPosition) : yPosition;
 
 // =============================================================================
 // 3 & 4. DIRECTION, AND THE CELL SCALE IT IS
@@ -325,6 +346,19 @@ export function priceForOffset(
         isDescending(direction),
       );
 }
+
+/**
+ * The price the order path sends, from the same formula and the same direction
+ * reading as the chip and the chart line. It splits from `priceForOffset` only
+ * where `offsetForOrder` splits from `clampOffset`: a non-finite position stays
+ * non-finite here, so the price does too and `validateOrder` refuses it.
+ */
+export const priceForOrderOffset = (
+  marketPrice: number,
+  yPosition: number,
+  direction: BlockDirection,
+): number =>
+  priceAtOffset(marketPrice, offsetForOrder(yPosition), isDescending(direction));
 
 /**
  * The offset as a signed number: positive above the market price, negative

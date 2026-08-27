@@ -15,6 +15,7 @@ import {
   cellDirection,
   clampOffset,
   isDescending,
+  legInCell,
   MAX_OFFSET_PERCENT,
   MIN_OFFSET_PERCENT,
   hasConditionalWithoutPrimary,
@@ -48,6 +49,7 @@ import LiveAnnouncer from "../../../common/LiveAnnouncer";
 import { BLOCK_INSTRUCTIONS_ID } from "../../../blocks/block";
 import { useBlockCommand } from "../../../../hooks/useBlockCommand";
 import { useGridAnnouncer } from "../../../../hooks/useGridAnnouncer";
+import type { PickUpRefusal } from "../../../../utils/gridAnnouncements";
 import { useGridData } from "../contexts/GridDataContext";
 import { useDrag } from "../contexts/DragContext";
 import { useHover } from "../contexts/HoverContext";
@@ -170,7 +172,10 @@ const GridArea: FC<GridAreaProps> = ({
   // second live region would talk over `LiveAnnouncer` during the one
   // interaction that fires both, which is exactly what the announcer being the
   // grid's single voice exists to prevent.
-  const [refusedMove, setRefusedMove] = useState<string | null>(null);
+  const [refusedMove, setRefusedMove] = useState<{
+    label: string;
+    reason: Exclude<PickUpRefusal, "noTargets">;
+  } | null>(null);
 
   // The note names an order by its label, so that label is the identity it has
   // to keep: once no block on the grid carries it, the note is talking about
@@ -181,7 +186,9 @@ const GridArea: FC<GridAreaProps> = ({
   useEffect(() => {
     if (!refusedMove) return;
     const stillOnGrid = grid.some((col) =>
-      col.some((cell) => cell.some((block) => block.label === refusedMove)),
+      col.some((cell) =>
+        cell.some((block) => block.label === refusedMove.label),
+      ),
     );
     if (!stillOnGrid) setRefusedMove(null);
   }, [grid, refusedMove]);
@@ -380,7 +387,7 @@ const GridArea: FC<GridAreaProps> = ({
     // `refuseMove` is what a press on a placed block reaches instead, and it
     // both speaks and puts the rule on screen.
     refuseMove: (label, reason) => {
-      if (reason === "staysInCell") setRefusedMove(label);
+      setRefusedMove({ label, reason });
       announcer.report({ kind: "moveRefused", label, reason });
     },
   });
@@ -700,9 +707,16 @@ const GridArea: FC<GridAreaProps> = ({
     const { col, row, block: blockData } = blockInfo;
 
     const cellSelector = `[data-col="${col}"][data-row="${row}"]`;
+    // Keyed by the block's LEG, which is the same key the cell drew the column
+    // under. It used to be keyed by `blockData.axis`, and that was one answer
+    // to axis membership sitting beside the renderer's other one: a block whose
+    // saved `axis` disagreed with its `axes` measured a track it was not drawn
+    // in, and every drag on it jumped. The fallback stays for the cell that
+    // draws a single column.
+    const leg = legInCell(grid[col][row], blockData);
     const trackElement =
       document.querySelector(
-        `${cellSelector} [data-axis-track="${col}-${row}-${blockData.axis}"]`,
+        `${cellSelector} [data-axis-track="${col}-${row}-${leg}"]`,
       ) ?? document.querySelector(`${cellSelector} [data-axis-track]`);
     if (!trackElement) return;
 
@@ -776,7 +790,11 @@ const GridArea: FC<GridAreaProps> = ({
     // rule that refused it rather than as a cell that happens to be full.
     if (cell) {
       const result = keepBlockInItsCell(id, cell);
-      if (result.status === "refused") setRefusedMove(blockInfo.block.label);
+      // Only a free drag reaches here, and `block.tsx` wires one for a cell
+      // that draws no axis, so this refusal is always the removable case.
+      if (result.status === "refused") {
+        setRefusedMove({ label: blockInfo.block.label, reason: "staysInCell" });
+      }
       announcer.report({
         kind: "placement",
         source,
@@ -986,10 +1004,19 @@ const GridArea: FC<GridAreaProps> = ({
         // Plain visible text, not a live region: `LiveAnnouncer` below is the
         // grid's one voice, and a second one would cut it off mid-sentence
         // during the very interaction that fires both.
+        //
+        // Worded per refusal, because the correction differs. A block in a cell
+        // that draws no axis can be dragged off the grid, so it is offered. One
+        // on a price axis cannot - `block.tsx` wires the vertical price drag
+        // instead, which is the removal gap recorded in AGENTS.md - so this
+        // names the arrow keys, the affordance that render really wires, rather
+        // than promising a removal the app has no way to perform.
         <p className={cellLockedNote}>
-          <strong>{refusedMove}</strong> stays in the cell it was placed in.
-          Orders do not move between cells - to put this one somewhere else,
-          drag it off the grid to remove it, then place a new one.
+          <strong>{refusedMove.label}</strong> stays in the cell it was placed
+          in. Orders do not move between cells -{" "}
+          {refusedMove.reason === "onPriceAxis"
+            ? "use the arrow keys to change this one's price."
+            : "to put this one somewhere else, drag it off the grid to remove it, then place a new one."}
         </p>
       )}
       <LiveAnnouncer announcement={announcer.announcement} />
