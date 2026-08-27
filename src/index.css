@@ -249,8 +249,9 @@
    `utilities` layer, so everything here is now a genuine default. Both
    workarounds came off with it; see `AGENTS.md` under "Layout and the CSS
    cascade" for why there is no escape hatch any more, and
-   `vite/buttonResetLayer.test.ts`, which fails if an unlayered element skin
-   comes back.
+   `vite/buttonResetLayer.test.ts`, which asks it of each of `button`, `a`,
+   `body` and `h1` in turn and fails if a bare rule for one of them comes back
+   outside a layer.
 
    Taking the layer repainted every button in the app to whatever its own
    utilities had been asking for all along. Two consequences were owned in the

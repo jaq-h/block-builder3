@@ -356,9 +356,13 @@ something a component overrides - which only holds while they are layered.
 Unlayered CSS wins over layered CSS regardless of specificity and every Tailwind
 utility is layered, so for as long as that block sat outside a layer a matched
 button ignored its own `px-*`, `border-2`, `rounded-*` and `bg-*`. **Never write
-a bare `button {}`, `a {}` or `h1 {}` rule outside `@layer base`**;
-`vite/buttonResetLayer.test.ts` fails if one appears, because jsdom applies no
-author stylesheet and no rendering test can see a cascade.
+a bare `button {}`, `a {}`, `body {}` or `h1 {}` rule outside `@layer base`**;
+`vite/buttonResetLayer.test.ts` asks that of each of those four element types in
+turn and fails if one appears, because jsdom applies no author stylesheet and no
+rendering test can see a cascade. Its reach is stated in full at the top of that
+file, holes included: it models the defaults the app writes for its own markup,
+so a rule scoped by a class, or one selector reaching two of those types at once,
+is outside it.
 
 **There is exactly one mechanism, and it is "write the utility".** Two lanes
 previously dodged the unlayered reset without knowing about each other - a
