@@ -32,9 +32,14 @@ import {
   chartHeader,
   chartHeaderPrimaryRow,
   chartHeaderSecondaryRow,
+  chartIdentityFact,
+  chartIdentityGroup,
+  chartIdentityNotice,
+  chartTimeframeGroup,
   chartToggleButton,
 } from "./OrderChart.styles";
 import { panelHeaderTitle } from "../../../styles/shared";
+import { cn } from "../../../lib/utils";
 
 // =============================================================================
 // CONSTANTS
@@ -230,23 +235,34 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
           background, so the two rows still read as one bar. */}
       <div className={chartHeader}>
         <div className={chartHeaderPrimaryRow}>
-          <div className="flex items-center gap-3">
-            <span className={panelHeaderTitle}>
+          <div className={chartIdentityGroup}>
+            <span className={cn(panelHeaderTitle, chartIdentityFact)}>
               {market.base} / {market.quote}
             </span>
-            <span className="text-[11px] text-text-muted">{priceLabel}</span>
+            <span
+              className={cn(chartIdentityFact, "text-[11px] text-text-muted")}
+            >
+              {priceLabel}
+            </span>
             {/* The manager gives up reconnecting after a fixed number of tries.
                 Without this the app just keeps showing the last price it saw. */}
             {publicStatus === "error" && (
               <span
-                className="text-[11px] text-status-yellow"
+                className={cn(
+                  chartIdentityNotice,
+                  "text-[11px] text-status-yellow",
+                )}
                 title="Reconnection was abandoned. Prices now come from the 30s poll only."
               >
                 Live feed offline
               </span>
             )}
           </div>
-          <div className={chartControlGroup} role="group" aria-label="Timeframe">
+          <div
+            className={chartTimeframeGroup}
+            role="group"
+            aria-label="Timeframe"
+          >
             {TIMEFRAMES.map((tf) => (
               <button
                 key={tf}

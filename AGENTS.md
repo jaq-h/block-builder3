@@ -322,6 +322,15 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   identity-stable between bar closes; the chart folds the forming bar on top. The forming
   bar counts towards an average, pinned in `movingAverage.ts` next to the EMA seed.
 
+The chart's title bar is the one bar carrying controls beside its title, and it is the
+one place `panelTitleBar`'s fixed `h-16` has to be shared out at narrow widths. Which
+child gives up width first is decided in `chartIdentityGroup`'s comment and must not be
+re-decided piecemeal: the symbol and the price are whole or not at all, the offline
+notice truncates, and `chartTimeframeGroup` scrolls what is left over. There is
+deliberately no `min-w-0` on the identity group - the flex automatic minimum size is the
+mechanism holding the price off the first timeframe button. Before that, at 390px, `1W`
+sat outside the panel's `overflow-hidden` and could not be reached by any input.
+
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region (`aria-live` and `role="status"` alike).
 `gridAnnouncements.ts` stays the app's only announcer.
