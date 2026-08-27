@@ -358,11 +358,15 @@ Drag visuals are rendered via a **React Portal** into a dedicated `<div id="drag
 This keeps the grid completely decoupled from pointer-move events during a drag.
 
 Two things put a ghost on the cursor: a pointer drag, and a mouse carry between the click that
-picks a block up and the click that puts it down. They overlap by design - dragging the very
-block being carried starts the drag's ghost before the carry ends - so `startDragOverlay`
-returns a handle and `stopDragOverlay(handle)` clears the ghost only while that handle is
-still the current one. Called with no handle it clears whatever is there, which is what a
-gesture ending and what the dismissal hatch both want.
+picks a block up and the click that puts it down. They overlap by design, and in both
+directions - dragging the very block being carried starts the drag's ghost before the carry
+ends, and a click that lands on some other block runs a whole gesture inside a carry that
+outlives it. So the store keeps every live ghost as a stack and draws the newest one:
+`startDragOverlay` returns a handle, and `stopDragOverlay(handle)` takes away that holder's
+own ghost, uncovering whatever is still live underneath. Called with no handle it empties the
+stack, which is what the dismissal hatch means - it is putting down everything in hand. What
+the stack does not do is notice a holder that goes away without stopping its ghost; ending a
+hold stays the holder's own job.
 
 ### Reducer-Based Store
 
@@ -494,6 +498,13 @@ retargeted to the dragged block, which is inside the surface, so a live gesture 
 cancelled by it. That rests on the capture, which is not guaranteed. Focus is left where the
 user clicked rather than handed back, for the same reason Tab does not hand it back.
 
+One dismissal is one sentence, however many mechanisms it ends. Each of them reports its own
+outcome and each is a settled fact, but a live region holds one message, so two writes in one
+event means the second replaces the first before it has been read. `useGridAnnouncer`'s
+`asOneEvent` collects everything reported while the register is being emptied and speaks once,
+with the facts joined by `describeOutcomes` in the announcement owner - no call site ranks them
+and no call site composes a sentence. Reporting once is unaffected, which is the common case.
+
 The two owners this replaced were not merely untidy. The hatch cleared its own carry while a
 stale gesture kept its window listeners, and those listeners match on pointer id alone; a
 mouse's id is a constant 1, so the `pointerup` completing the very click meant to dismiss the
@@ -544,9 +555,10 @@ The transitions where the two ways in overlap:
 - **A drag started on the block being carried takes the interaction over**, silently, with the
   news folded into the drag's own outcome; see **A drag supersedes a carry** below. The drag
   puts its own ghost up *before* the carry it supersedes ends, so `startDragOverlay` hands back
-  a handle and `stopDragOverlay(handle)` clears a ghost only while it is still the one on
-  screen - otherwise the ending carry would wipe the ghost of the gesture that replaced it and
-  leave a live drag invisible.
+  a handle and `stopDragOverlay(handle)` takes away that holder's own ghost and no other -
+  otherwise the ending carry would wipe the ghost of the gesture that replaced it, and the
+  press of a click on any other block would take the carry's ghost off the cursor and never
+  put it back.
 - **A block drawn on a price axis is refused**, exactly as it is for the keyboard and a finger,
   because a mouse cannot drag one between cells either.
 

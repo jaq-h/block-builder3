@@ -235,10 +235,14 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   the carry's target. `pointToTarget` is **silent** - it fires for every cell a sweep crosses,
   and announcing would be the live region talking over itself. `ActivationOrigin` is
   `keyboard | mouse | touch` for the same reason; pen groups with touch, since what matters is
-  a persistent cursor rather than hover. `startDragOverlay` returns a handle and
-  `stopDragOverlay(handle)` only clears a ghost still on screen: a drag started on the carried
-  block puts its ghost up *before* the carry ends, and a handle-less stop there would leave
-  the live drag invisible.
+  a persistent cursor rather than hover. `dragOverlayStore` keeps every live ghost as a stack
+  and draws the newest, so `startDragOverlay` hands back a handle and `stopDragOverlay(handle)`
+  takes away that holder's own ghost and no other. Both directions need it: a drag started on
+  the carried block puts its ghost up *before* the carry ends, and a click that lands on some
+  other block runs a whole gesture *inside* a carry that outlives it. A handle-less
+  `stopDragOverlay()` empties the stack, and `GridArea`'s dismissal hatch is its one caller,
+  because that is the one thing putting down everything in hand. What the stack does not do is
+  notice a holder that goes away without stopping its ghost.
 - **Every new interactive affordance needs a keyboard path and an announcement**, not just a
   handler. Placement is expressed in terms of a target cell in `GridArea`
   (`placeProviderInCell` / `moveBlockToCell`); the pointer drag and the command model both
@@ -250,6 +254,10 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   caller was about to attempt. Both defects this structure replaced were a message written
   next to the code that was about to act - one false, one silent - and each point fix created
   the next. A new message means a new outcome in that union, not a new `announce` call.
+  One event that ends several things at once is still one message: `releaseBlockInHand`
+  reports an outcome per mechanism, and `useGridAnnouncer`'s `asOneEvent` collects them into a
+  single live-region write, joined by `describeOutcomes` - two writes means the second replaces
+  the first before it has been read.
   A second live region breaks this as surely as a second `announce` does, so no component
   that speaks *about the grid* may carry `aria-live`, `role="status"` or `role="alert"` -
   the two would talk over each other during the one interaction that fires both. That is

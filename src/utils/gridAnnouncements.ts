@@ -308,6 +308,31 @@ const describePlacement = (
 };
 
 /**
+ * Several settled facts about **one** event, as the single thing the live
+ * region is told.
+ *
+ * A live region holds one message, so two writes in one event are one message:
+ * the second replaces the first before a screen reader has read it. That is
+ * the shape `strategyLoaded` already avoids by carrying its two facts in one
+ * outcome - but it can only do that because one caller knows both. A dismissal
+ * click does not: `releaseBlockInHand` ends every mechanism holding a block and
+ * each reports its own outcome, so the facts arrive separately and joining them
+ * is this module's job rather than any caller's.
+ *
+ * Reading order is the order the facts were reported, because each sentence is
+ * already complete on its own and nothing here is entitled to decide that one
+ * of them matters less. The joining rule is only that they arrive as one write.
+ *
+ * A single outcome is worded exactly as `describeOutcome` words it, so a caller
+ * that reports once is unaffected by ever having gone through here.
+ */
+export const describeOutcomes = (
+  outcomes: GridOutcome[],
+  pattern: StrategyPattern,
+): string =>
+  outcomes.map((outcome) => describeOutcome(outcome, pattern)).join(" ");
+
+/**
  * The one function that decides what the user hears. Pure, so every sentence in
  * the app is reachable from a test without a DOM.
  */

@@ -1844,6 +1844,36 @@ describe("GridArea, a dismissal click while a gesture is still in flight", () =>
     expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
   });
 
+  it("speaks once when it ends a stranded gesture and a carry together", () => {
+    // Both mechanisms in hand at the same moment, which takes stranding the
+    // drag FIRST and then picking a block up from the keyboard: a drag
+    // recognised while something is carried releases that carry itself, and a
+    // pointer pick-up would let its own release resolve the stranded gesture on
+    // the way past. One dismissal, two settled facts, and a live region that
+    // holds one message - so they arrive as one write rather than the second
+    // replacing the first before it has been read.
+    const { first } = renderTwoBlocks();
+
+    strandDragOn(first);
+    fireEvent.keyDown(palette("Add Market order"), { key: "Enter" });
+    expect(announcement()).toContain("Picked up Market order");
+
+    fireEvent(document.body, mouse("pointerdown", 700, 400));
+    fireEvent(document.body, mouse("pointerup", 700, 400));
+
+    expect(announcement()).toBe(
+      "Drag cancelled. Market block stayed in Entry column, row 2. " +
+        "Cancelled. Market order returned to the palette.",
+    );
+
+    // And both really ended, rather than only being spoken about: the dragged
+    // block is where it was, and the carried order places nothing.
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    fireEvent(cell(1, 2), pointerAt("pointerdown", 30, 30));
+    fireEvent.click(cell(1, 2));
+    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, empty");
+  });
+
   it("leaves the builder usable: the next drag still places a block", () => {
     render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
 
@@ -2034,6 +2064,49 @@ describe("GridArea, carrying a block with the mouse", () => {
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
     expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Market");
     expect(announcement()).toBe("Moved Market block to Exit column, row 3.");
+  });
+
+  /**
+   * A carry, and one placed block for a stray click to land on. The Market is
+   * in the primary row, so the conditional pattern offers the Limit exactly one
+   * cell - `(1, 0)` - and the Market's own cell is not it.
+   */
+  const renderCarryOverPlacedBlock = () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    clickBlock(palette("Add Limit order"));
+    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Lmt" });
+  };
+
+  it("keeps the carried order on the cursor when a click lands on another block", () => {
+    // The press on that block runs a whole gesture inside the carry, ghost and
+    // all, and the carry outlives it. A gesture that cleared "the" ghost on its
+    // way out would empty the cursor for the rest of the carry, while the grid
+    // went on saying the order was still in hand.
+    renderCarryOverPlacedBlock();
+
+    clickBlock(screen.getByRole("button", { name: /^Market order,/ }));
+
+    expect(announcement()).toBe(
+      "Entry column, primary row cannot take this order. Still carrying Limit order.",
+    );
+    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Lmt" });
+  });
+
+  it("keeps the carried order on the cursor when a second pick-up is refused", () => {
+    // Same shape, reached from the palette: the Market has nowhere to go while
+    // the primary row is taken, so `pickUp` refuses without dispatching and the
+    // Limit is still the thing in hand.
+    renderCarryOverPlacedBlock();
+
+    clickBlock(palette("Add Market order"));
+
+    expect(announcement()).toBe(
+      "Market order cannot be placed anywhere in the grid right now. Still carrying Limit order.",
+    );
+    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Lmt" });
   });
 
   it("hands the interaction to a drag that starts on the block it is carrying", () => {

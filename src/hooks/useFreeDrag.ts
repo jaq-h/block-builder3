@@ -4,6 +4,7 @@ import {
   startDragOverlay,
   updateDragOverlayPosition,
   stopDragOverlay,
+  type DragOverlayHandle,
 } from "../components/common/dragOverlayStore";
 import {
   usePointerGesture,
@@ -74,11 +75,24 @@ export const useFreeDrag = ({
   // without causing any React re-renders during the drag.
   const posRef = useRef({ x: 0, y: 0 });
 
+  // This gesture's own ghost, so it can take that one off the cursor and
+  // nothing else. A press that lands on a block while a mouse carry is live
+  // runs a whole gesture inside that carry - the carry's ghost is older and
+  // still owns the cursor once the press is over - so a handle-less stop here
+  // would empty the cursor for the rest of the carry. See `dragOverlayStore`.
+  const overlayHandleRef = useRef<DragOverlayHandle | null>(null);
+
+  const stopOwnOverlay = () => {
+    const handle = overlayHandleRef.current;
+    overlayHandleRef.current = null;
+    if (handle !== null) stopDragOverlay(handle);
+  };
+
   const { isActive, handlers } = usePointerGesture({
     disabled,
     onDown: ({ x, y }) => {
       posRef.current = { x, y };
-      startDragOverlay(icon, abrv ?? "", x, y);
+      overlayHandleRef.current = startDragOverlay(icon, abrv ?? "", x, y);
       onDragStart?.(id);
     },
     onMove: ({ x, y }) => {
@@ -87,21 +101,21 @@ export const useFreeDrag = ({
     },
     onDragRecognised: () => onDragRecognised?.(id),
     onUp: ({ x, y }, moved, pointerType) => {
-      stopDragOverlay();
+      stopOwnOverlay();
       if (moved) {
         onDragEnd?.(id, x, y);
         return;
       }
       // A click or a tap is the command model's pick-up/place gesture, not a
       // zero-length drag: close the drag that pointer-down opened, then hand
-      // over. The ghost is stopped either way - a carry that wants one back on
-      // the cursor puts up its own, because a carry outlives this gesture and
-      // the ghost has to outlive it too.
+      // over. Only this gesture's own ghost comes off - a carry that was
+      // already live keeps the cursor, and a carry this click is about to start
+      // puts up its own.
       onDragCancel?.(id);
       onActivate?.(id, originForPointerType(pointerType));
     },
     onCancel: (moved) => {
-      stopDragOverlay();
+      stopOwnOverlay();
       onDragCancel?.(id);
       if (moved) onDragAborted?.(id);
     },

@@ -605,10 +605,18 @@ const GridArea: FC<GridAreaProps> = ({
   // them has the block, and because the two answering separately is what let a
   // dismissal click delete one. See `hooks/blockInHand.ts`.
   //
+  // Each of those mechanisms reports its own outcome, and one dismissal is one
+  // event, so they are collected into one live-region write: two writes here
+  // means the second replaces the first before it has been read. `asOneEvent`
+  // changes nothing when only one thing was held, which is the common case.
+  //
   // The two calls after it are cleanup of what a hold leaves *drawn* rather
   // than second opinions about who holds what: the register's own releases
   // already run these for every hold it knew about, and these run for a ghost
-  // or a highlight left behind by a hold it never did.
+  // or a highlight left behind by a hold it never did. The handle-less
+  // `stopDragOverlay()` is deliberate and is the only handle-less stop in the
+  // app: this is putting down everything that is in hand, so there is no ghost
+  // it means to leave standing.
   //
   // Focus is deliberately not handed back - the user has just clicked somewhere
   // else, and `restoreFocus` would drag them back to the block they were
@@ -616,7 +624,7 @@ const GridArea: FC<GridAreaProps> = ({
   const releaseInHandRef = useRef<() => void>(() => {});
   useEffect(() => {
     releaseInHandRef.current = () => {
-      releaseBlockInHand();
+      announcer.asOneEvent(releaseBlockInHand);
       stopDragOverlay();
       endDrag();
       setHoveredProviderId(null);
