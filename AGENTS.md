@@ -457,6 +457,55 @@ drawing a whole axis at lightweight-charts' `precision: 2` default while every c
 it read `n/a` for the same pair. Owned by `bb3-price-format-readiness-owner`; a fix belongs
 in one readiness value the five read, not in a sixth `metadataSettled &&` expression.
 
+## The WebSocket layer
+
+`src/api/krakenWebSocket.ts` is a seam, not a monolith, and the split is the whole design:
+
+- **`socketLifecycle.ts` owns live connection state**, as one explicit state machine per
+  socket: `idle`, `connecting`, `open`, `reconnecting`, `failed`. `CONNECTION_TRANSITIONS`
+  is the whole table and `transition()` throws on an edge that is not in it, so a new call
+  site cannot invent a sixth state out of a boolean. Read that file's header before changing
+  anything about connections; it carries what each exit is for.
+- **`subscriptionRegistry.ts` owns registered intent** - what the app has asked to be
+  subscribed to - and knows nothing about sockets. Intent survives a failed connect, a
+  backoff and the terminal state; only `disconnect()` clears it.
+
+Conflating those two is what produced every lifecycle defect this replaced, so the awkward
+cases now fall out of the model rather than needing a case each:
+
+- **The budget, the timer and the attempt belong to a `SocketLifecycle` instance**, so one
+  socket's flapping cannot spend the other's. The heartbeat is per socket for the same
+  reason: one manager-wide interval driven off the public socket's open meant a public
+  teardown stopped the private socket's pings.
+- **`connect()` answers definitively from every state, `failed` included.** An explicit
+  `connect()` is the one way back from terminal and it hands the socket a fresh budget;
+  nothing automatic reaches that branch, so a socket that gave up stays given up. That is
+  the app's only route back short of a reload, and `subscribe` reaching the connect on a key
+  the registry already holds is what carries a remounting consumer through it.
+- **One attempt, one promise, settled exactly once.** Resolved on entry to `open`, rejected
+  on entry to `reconnecting`, `failed` or `idle`. No exit from `connecting` leaves a caller
+  pending, and `disconnect()` settles by hand what the handlers it just detached would have.
+  Pending order requests are rejected by `onLost` on every exit too, rather than left to
+  their own 30s timeout while the socket they were sent on has already been replaced.
+- **Ordering is structural.** `onOpen` runs *inside* the `open` transition - before the
+  status is announced and before the connect promise resolves - so no observer can see a
+  live socket that has not had its channels replayed. Whether a subscriber still has to send
+  its own frame is answered by `openGeneration` across the await, never by a `readyState`
+  sampled beforehand.
+- **The private token is connection-scoped, and that is enforced rather than assumed.** The
+  mint is the private lifecycle's `prepare`, it is handed an `AbortSignal`, and
+  `getWebSocketToken` passes that straight to `fetch`. `disconnect()` aborts it, so a
+  Kraken token - a live trading credential - is never minted for, nor left behind by, a
+  connection that no longer exists. `hasPrivateCredential()` exists so that invariant is
+  checkable; it returns a boolean and never the token.
+
+Tests split the same way. `socketLifecycle.test.ts` is the machine with no Kraken in it;
+`krakenWebSocket.test.ts` runs the simulated deployment, which is what dev and every public
+deploy actually are; `krakenWebSocket.private.test.ts` mocks `isLiveTradingAvailable` true
+so the credentialed lifecycle is genuinely exercised rather than skipped everywhere.
+`src/test/fakeWebSocket.ts` is the stand-in - see the **Testing** section for why it is
+strict about `send` while CONNECTING.
+
 ## Prices and order types
 
 The invariants the order path depends on, each of which was previously violated in

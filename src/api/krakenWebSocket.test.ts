@@ -480,3 +480,291 @@ describe("KrakenWebSocketManager - switching market", () => {
     expect(unsubscribedChannels(socket)).toEqual(["ohlc:ETH/USD", "ohlc:ETH/USD"]);
   });
 });
+
+// =============================================================================
+// INTENT vs STATE
+// =============================================================================
+//
+// Registered subscription intent and live connection state are two different
+// things held in two different places (`SubscriptionRegistry` and
+// `SocketLifecycle`). Every case below used to need its own special handling
+// because the manager kept one blurred idea of both.
+
+describe("KrakenWebSocketManager - intent and state are separate", () => {
+  it("keeps intent through a failed connect, a backoff and the terminal state", async () => {
+    const ticker = manager.subscribeTicker("BTC/USD");
+    await flush();
+
+    FakeWebSocket.last.dropConnection();
+    await expect(ticker).rejects.toThrow();
+
+    // The connection is retrying; the intent is untouched by that.
+    expect(manager.getConnectionState().public).toBe("reconnecting");
+    expect(manager.getRegisteredChannels()).toEqual(["ticker:BTC/USD"]);
+
+    for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+      await vi.advanceTimersByTimeAsync(delay);
+      FakeWebSocket.last.dropConnection();
+    }
+    await flush();
+
+    expect(manager.getConnectionState().public).toBe("failed");
+    expect(manager.getRegisteredChannels()).toEqual(["ticker:BTC/USD"]);
+  });
+
+  it("names the connection state rather than collapsing it into a status", async () => {
+    expect(manager.getConnectionState().public).toBe("idle");
+
+    const connecting = manager.connectPublic();
+    expect(manager.getConnectionState().public).toBe("connecting");
+
+    FakeWebSocket.last.openConnection();
+    await connecting;
+    expect(manager.getConnectionState().public).toBe("open");
+
+    FakeWebSocket.last.dropConnection();
+    // `idle` and `reconnecting` both report "disconnected" to the app, and are
+    // not the same thing: one is a teardown, the other is a live retry.
+    expect(manager.getConnectionState().public).toBe("reconnecting");
+    expect(manager.getStatus().public).toBe("disconnected");
+
+    manager.disconnect();
+    expect(manager.getConnectionState().public).toBe("idle");
+    expect(manager.getStatus().public).toBe("disconnected");
+  });
+
+  it("clears intent as well as state on an explicit disconnect", async () => {
+    const ticker = manager.subscribeTicker("BTC/USD");
+    await flush();
+    FakeWebSocket.last.openConnection();
+    await ticker;
+
+    expect(manager.getRegisteredChannels()).toEqual(["ticker:BTC/USD"]);
+
+    manager.disconnect();
+
+    expect(manager.getRegisteredChannels()).toEqual([]);
+    expect(manager.getConnectionState().public).toBe("idle");
+  });
+
+  it("holds intent for a channel it has never managed to send", async () => {
+    // Nothing is connected and nothing will be until the socket opens, so the
+    // only record that this channel is wanted is the registry.
+    const ticker = manager.subscribeTicker("ETH/USD").catch(() => {});
+    await flush();
+
+    expect(manager.getConnectionState().public).toBe("connecting");
+    expect(manager.getRegisteredChannels()).toEqual(["ticker:ETH/USD"]);
+
+    FakeWebSocket.last.openConnection();
+    await ticker;
+
+    expect(subscribedChannels(FakeWebSocket.last)).toEqual(["ticker:ETH/USD"]);
+  });
+});
+
+// =============================================================================
+// CONNECT / SUBSCRIBE / REPLAY ORDERING
+// =============================================================================
+
+describe("KrakenWebSocketManager - connect, subscribe and replay ordering", () => {
+  it("has replayed every channel before it announces the connection", async () => {
+    const ticker = manager.subscribeTicker("BTC/USD");
+    const ohlc = manager.subscribeOHLC("BTC/USD", 60);
+    await flush();
+
+    const socket = FakeWebSocket.last;
+    const seenOnConnected: string[][] = [];
+    manager.on("status", (data) => {
+      const event = data as { type: string; status: string };
+      if (event.type === "public" && event.status === "connected") {
+        seenOnConnected.push(subscribedChannels(socket));
+      }
+    });
+
+    socket.openConnection();
+    await Promise.all([ticker, ohlc]);
+
+    // A consumer that reacts to "connected" must never see a socket that has
+    // not had its channels restored - that window is a live connection quietly
+    // subscribed to nothing.
+    expect(seenOnConnected).toEqual([["ticker:BTC/USD", "ohlc:BTC/USD"]]);
+  });
+
+  it("has replayed every channel before a connect promise resolves", async () => {
+    const ticker = manager.subscribeTicker("BTC/USD");
+    await flush();
+    FakeWebSocket.last.openConnection();
+    await ticker;
+
+    FakeWebSocket.last.dropConnection();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const reopened = FakeWebSocket.last;
+    const connecting = manager.connectPublic();
+    reopened.openConnection();
+    await connecting;
+
+    expect(subscribedChannels(reopened)).toEqual(["ticker:BTC/USD"]);
+  });
+
+  it("does not send a frame the replay has already carried", async () => {
+    // The socket is open when this caller starts, so it would ordinarily send
+    // for itself - but the connection is replaced underneath it before the
+    // await returns, and the replay on the new socket carries the frame.
+    const first = manager.subscribeTicker("BTC/USD");
+    await flush();
+    const original = FakeWebSocket.last;
+    original.openConnection();
+    await first;
+
+    const generationBefore = manager.getConnectionState().public;
+    expect(generationBefore).toBe("open");
+
+    original.dropConnection();
+    await vi.advanceTimersByTimeAsync(1000);
+    const reopened = FakeWebSocket.last;
+
+    const second = manager.subscribeOHLC("BTC/USD", 60);
+    reopened.openConnection();
+    await second;
+
+    // Exactly once each, in registration order, from the replay alone.
+    expect(subscribedChannels(reopened)).toEqual([
+      "ticker:BTC/USD",
+      "ohlc:BTC/USD",
+    ]);
+  });
+
+  it("registers intent before it asks for a connection", async () => {
+    // Read synchronously, before any await has had a chance to run: the
+    // registry is written on the way in, not once a socket answers.
+    void manager.subscribeTicker("SOL/USD").catch(() => {});
+    expect(manager.getRegisteredChannels()).toEqual(["ticker:SOL/USD"]);
+    expect(manager.getConnectionState().public).toBe("connecting");
+  });
+});
+
+// =============================================================================
+// TERMINAL STATE
+// =============================================================================
+
+describe("KrakenWebSocketManager - terminal state", () => {
+  const exhaustPublic = async () => {
+    const connecting = manager.connectPublic().catch(() => {});
+    FakeWebSocket.last.openConnection();
+    await connecting;
+    for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+      FakeWebSocket.last.dropConnection();
+      await vi.advanceTimersByTimeAsync(delay);
+    }
+    FakeWebSocket.last.dropConnection();
+    await flush();
+    expect(manager.getConnectionState().public).toBe("failed");
+  };
+
+  it("refuses to reopen on its own, however long it is left", async () => {
+    await exhaustPublic();
+
+    const before = FakeWebSocket.instances.length;
+    await vi.advanceTimersByTimeAsync(3600000);
+
+    expect(FakeWebSocket.instances).toHaveLength(before);
+    expect(manager.getConnectionState().public).toBe("failed");
+    expect(manager.getStatus().public).toBe("error");
+  });
+
+  it("comes back on an explicit connect, with a fresh budget", async () => {
+    await exhaustPublic();
+
+    const recovering = manager.connectPublic().catch(() => {});
+    expect(manager.getConnectionState().public).toBe("connecting");
+
+    // The recovery attempt fails too. It has to be given real retries, or the
+    // way back is only a way back when the very first try succeeds.
+    FakeWebSocket.last.dropConnection();
+    await recovering;
+    expect(manager.getConnectionState().public).toBe("reconnecting");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    FakeWebSocket.last.openConnection();
+    await flush();
+
+    expect(manager.getConnectionState().public).toBe("open");
+  });
+
+  it("comes back for a consumer that resubscribes after giving up", async () => {
+    const ticker = manager.subscribeTicker("BTC/USD");
+    await flush();
+    FakeWebSocket.last.openConnection();
+    await ticker;
+    for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+      FakeWebSocket.last.dropConnection();
+      await vi.advanceTimersByTimeAsync(delay);
+    }
+    FakeWebSocket.last.dropConnection();
+    await flush();
+    expect(manager.getConnectionState().public).toBe("failed");
+
+    const resubscribe = manager.subscribeTicker("BTC/USD");
+    await flush();
+    FakeWebSocket.last.openConnection();
+    await resubscribe;
+
+    expect(manager.getConnectionState().public).toBe("open");
+    expect(subscribedChannels(FakeWebSocket.last)).toEqual(["ticker:BTC/USD"]);
+  });
+
+  it("returns to idle from the terminal state on a disconnect", async () => {
+    await exhaustPublic();
+
+    manager.disconnect();
+
+    expect(manager.getConnectionState().public).toBe("idle");
+    expect(manager.getStatus().public).toBe("disconnected");
+  });
+});
+
+// =============================================================================
+// SIMULATION MODE
+// =============================================================================
+//
+// The default deployment simulates, and `isLiveTradingAvailable()` is false
+// here because no test has told the module otherwise. The private socket must
+// refuse outright rather than open one and discover it has no token - and it
+// must refuse without ever asking the server to mint one.
+
+describe("KrakenWebSocketManager - simulation mode", () => {
+  it("refuses the private socket and never leaves it mid-lifecycle", async () => {
+    await expect(manager.connectPrivate()).rejects.toThrow(
+      "Live trading is not enabled",
+    );
+
+    expect(manager.getConnectionState().private).toBe("idle");
+    expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  it("refuses an order rather than sending it unsigned", async () => {
+    await expect(
+      manager.submitOrder({
+        order_type: "limit",
+        side: "buy",
+        order_qty: "1",
+        symbol: "BTC/USD",
+        limit_price: "1",
+      }),
+    ).rejects.toThrow("Live trading is not enabled");
+
+    expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  it("still runs the public socket normally", async () => {
+    const ticker = manager.subscribeTicker("BTC/USD");
+    await flush();
+    FakeWebSocket.last.openConnection();
+    await ticker;
+
+    expect(manager.getConnectionState().public).toBe("open");
+    expect(manager.getConnectionState().private).toBe("idle");
+  });
+});

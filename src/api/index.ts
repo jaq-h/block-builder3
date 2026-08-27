@@ -48,6 +48,7 @@ export {
   type WebSocketEventHandler,
   type WebSocketErrorEvent,
   type SocketKind,
+  type ConnectionState,
 } from './krakenWebSocket';
 
 // Ticker WebSocket updates

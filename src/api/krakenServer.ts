@@ -44,12 +44,19 @@ const describeFailure = async (
  * Mint a Kraken WebSocket authentication token.
  *
  * The token, unlike the key that produced it, is short-lived and scoped to the
- * socket, which is why it is allowed to cross to the browser at all.
+ * socket, which is why it is allowed to cross to the browser at all. That
+ * scoping is only real if the mint can be called off with the connection:
+ * `signal` is passed straight to `fetch`, so a caller that abandons its
+ * connection attempt cancels the request rather than leaving the server to
+ * mint a live trading credential for a socket that will never exist.
  */
-export const getWebSocketToken = async (): Promise<string> => {
+export const getWebSocketToken = async (
+  signal?: AbortSignal,
+): Promise<string> => {
   const response = await fetch(WS_TOKEN_ENDPOINT, {
     method: "POST",
     headers: API_REQUEST_HEADERS,
+    signal,
   });
 
   if (!response.ok) {
