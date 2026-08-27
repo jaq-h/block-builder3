@@ -343,18 +343,25 @@ describe("normaliseCellDirections", () => {
     ]);
   });
 
-  it("clamps a position a saved strategy carried in from an older scale", () => {
+  // This used to assert the opposite - that a position of 100 came back as
+  // MAX_OFFSET_PERCENT - and that write was how a corrupt position reached the
+  // order path already sanitised. `clampOffset` answers a non-finite value with
+  // zero, which is the market price, so a hydrated grid produced a plausible
+  // at-market order and `validateOrder` had nothing left to refuse. The store
+  // keeps what it was given; consumers clamp what they read.
+  it("leaves the stored position alone, out of range or not", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(block({ yPosition: 100 }));
+    grid[1][1].push(block({ id: "sa-limit-2", yPosition: Number.NaN }));
 
-    expect(normaliseCellDirections(grid)[0][1][0].yPosition).toBe(
-      MAX_OFFSET_PERCENT,
-    );
+    const normalised = normaliseCellDirections(grid);
+    expect(normalised[0][1][0].yPosition).toBe(100);
+    expect(normalised[1][1][0].yPosition).toBeNaN();
+    expect(normalised[0][1][0].yPosition).not.toBe(MAX_OFFSET_PERCENT);
   });
 
-  // A market order has no position to clamp: -1 is how the data says "nowhere
-  // on an axis", and rounding it up to 0 would claim it sits at the market
-  // price.
+  // A market order has no position at all: -1 is how the data says "nowhere on
+  // an axis", and rounding it up to 0 would claim it sits at the market price.
   it("leaves an axis-less block's sentinel position alone", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(marketOrder());
@@ -447,5 +454,16 @@ describe("orderConfigFromGrid", () => {
     expect(orderConfigFromGrid(grid)["sa-limit-1"].yPosition).toBe(
       MAX_OFFSET_PERCENT,
     );
+  });
+
+  // The one value the range clamp must not absorb. A saved config is turned
+  // back into a grid on reload and that grid builds a payload, so answering a
+  // non-finite position with zero here would record a plausible at-market order
+  // that `validateOrder` accepts.
+  it("records a non-finite position as it stands, so the validator sees it", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(block({ yPosition: Number.NaN }));
+
+    expect(orderConfigFromGrid(grid)["sa-limit-1"].yPosition).toBeNaN();
   });
 });

@@ -86,6 +86,31 @@ describe("orderPriceLines", () => {
     expect(lines.find((l) => l.id === "three")!.title).toBe("Exit SL-Lmt-limit");
   });
 
+  // A single-axis type carries no suffix, and the leg has to be read through
+  // `axesForBlockAxis` to get that right. Indexing the order type's axis list
+  // with the saved `axis` reads position 1 of a one-element list for a Stop
+  // Loss saved at `axis: 2` - a state a reloaded strategy really carries - and
+  // calls the trigger leg a limit. A second answer to a question the mapping
+  // owner already answers is the defect this whole change exists to remove.
+  it("reads the leg through the owner, so a saved axis cannot rename it", () => {
+    const lines = orderPriceLines(
+      config({
+        saved: {
+          col: 0,
+          row: 1,
+          type: "stop-loss",
+          axis: 2,
+          yPosition: 15,
+          direction: "downside",
+        },
+      }),
+      MARKET,
+    );
+
+    expect(lines[0].title).toBe("Entry SL");
+    expect(lines[0].title).not.toContain("limit");
+  });
+
   it("marks entry-column orders so they can be drawn in the entry tint", () => {
     const lines = orderPriceLines(
       config({

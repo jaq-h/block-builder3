@@ -1,5 +1,6 @@
 import { COLUMN_HEADERS, ORDER_TYPES } from "@data/orderTypes";
-import { priceForOffset } from "@utils/blockMapping";
+import { axesForBlockAxis } from "@utils/blockFactory";
+import { legOfBlock, priceForOffset } from "@utils/blockMapping";
 import type { OrderConfig } from "@/types/grid";
 
 // =============================================================================
@@ -60,13 +61,19 @@ export const orderPriceLines = (
 
     const typeDef = ORDER_TYPES.find((t) => t.type === order.type);
     const colLabel = COLUMN_HEADERS[order.col] ?? "";
-    // The axis index is 1-based in the config. `axis` and `axes` are kept in
-    // step by construction now - `axesForBlockAxis` is the only thing that
-    // derives one from the other, and nothing rewrites `axis` after a block is
-    // built - so reading the order type's axis list here names the same leg the
-    // grid does. It decides the label only; it never touches the price above.
-    const axisType = typeDef?.axes[(order.axis ?? 1) - 1] ?? "limit";
-    const axisSuffix = typeDef && typeDef.axes.length > 1 ? `-${axisType}` : "";
+    // Through the owners, not by indexing the order type's axis list with the
+    // saved `axis`. `axesForBlockAxis` is the single derivation of axis-to-axes
+    // and `legOfBlock` the single reading of a leg out of it, which is what
+    // every other consumer now takes. Indexing was a second answer to the same
+    // question, and a wrong one for a single-axis type: a Stop Loss saved at
+    // `axis: 2` - a state real reloaded strategies carry - indexes to "limit"
+    // where the block itself is the trigger leg. It decides the label only; it
+    // never touches the price above.
+    const leg = typeDef
+      ? legOfBlock({ axes: axesForBlockAxis(typeDef.axes, order.axis ?? 1) })
+      : null;
+    const axisSuffix =
+      typeDef && typeDef.axes.length > 1 && leg ? `-${leg}` : "";
 
     lines.push({
       id,

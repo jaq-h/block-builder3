@@ -165,32 +165,29 @@ const GridArea: FC<GridAreaProps> = ({
   // Decision D9 asks for the refusal to be *legible* rather than silent: a
   // gesture that simply does nothing is indistinguishable from a broken one.
   // The announcer covers a screen-reader user, and this covers everybody else -
-  // the label of the last order that was asked to change cells, drawn as a note
-  // under the grid until the next gesture starts.
+  // the last order that was asked to change cells, drawn as a note under the
+  // grid until the next gesture starts or the user does what it asks.
   //
   // Ordinary visible text, deliberately: no `aria-live`, no `role="status"`. A
   // second live region would talk over `LiveAnnouncer` during the one
   // interaction that fires both, which is exactly what the announcer being the
   // grid's single voice exists to prevent.
   const [refusedMove, setRefusedMove] = useState<{
+    id: string;
     label: string;
     reason: Exclude<PickUpRefusal, "noTargets">;
   } | null>(null);
 
-  // The note names an order by its label, so that label is the identity it has
-  // to keep: once no block on the grid carries it, the note is talking about
-  // something the user can no longer see. `clearAll`, `reverseBlocks` and a
-  // market switch all replace the grid wholesale without going near the
-  // gestures that reset this, which is how a note naming a cleared-away order
-  // came to sit under an empty grid.
+  // The note is about one block, so the block's id is the identity it keeps:
+  // once that block is off the grid, the note is talking about something the
+  // user can no longer see. `clearAll`, `reverseBlocks` and a market switch all
+  // replace the grid wholesale without going near the gestures that reset this,
+  // which is how a note naming a cleared-away order came to sit under an empty
+  // grid. Keyed on the label instead, two Market orders sharing the grid kept
+  // the note alive after the one it named was dragged off.
   useEffect(() => {
     if (!refusedMove) return;
-    const stillOnGrid = grid.some((col) =>
-      col.some((cell) =>
-        cell.some((block) => block.label === refusedMove.label),
-      ),
-    );
-    if (!stillOnGrid) setRefusedMove(null);
+    if (!findBlockInGrid(grid, refusedMove.id)) setRefusedMove(null);
   }, [grid, refusedMove]);
 
   // ─── Derived values ──────────────────────────────────────────────
@@ -386,9 +383,9 @@ const GridArea: FC<GridAreaProps> = ({
     // (decision D9), so the command model only ever commits palette orders.
     // `refuseMove` is what a press on a placed block reaches instead, and it
     // both speaks and puts the rule on screen.
-    refuseMove: (label, reason) => {
-      setRefusedMove({ label, reason });
-      announcer.report({ kind: "moveRefused", label, reason });
+    refuseMove: (block, reason) => {
+      setRefusedMove({ id: block.id, label: block.label, reason });
+      announcer.report({ kind: "moveRefused", label: block.label, reason });
     },
   });
 
@@ -683,6 +680,10 @@ const GridArea: FC<GridAreaProps> = ({
    * reachable.
    */
   const setBlockPosition = (id: string, yPosition: number) => {
+    // The note tells a priced block's user to change its price with the arrow
+    // keys, and this is that price changing. A message that survives the action
+    // it asked for reads as though the action failed.
+    setRefusedMove(null);
     const clamped = clampOffset(yPosition);
     setGrid((prev) =>
       prev.map((gridCol) =>
@@ -737,6 +738,10 @@ const GridArea: FC<GridAreaProps> = ({
   const handleBlockAdjustPrice = (id: string, delta: number) => {
     const blockInfo = findBlockInGrid(grid, id);
     if (!blockInfo) return;
+
+    // Before the no-op guard below: an arrow press at the end of the axis moves
+    // nothing, and leaving the note up would say the key did not work.
+    setRefusedMove(null);
 
     const { col, row, block } = blockInfo;
     const towardsMarket = isDescending(cellDirection(grid[col][row]))
@@ -793,7 +798,11 @@ const GridArea: FC<GridAreaProps> = ({
       // Only a free drag reaches here, and `block.tsx` wires one for a cell
       // that draws no axis, so this refusal is always the removable case.
       if (result.status === "refused") {
-        setRefusedMove({ label: blockInfo.block.label, reason: "staysInCell" });
+        setRefusedMove({
+          id: blockInfo.block.id,
+          label: blockInfo.block.label,
+          reason: "staysInCell",
+        });
       }
       announcer.report({
         kind: "placement",

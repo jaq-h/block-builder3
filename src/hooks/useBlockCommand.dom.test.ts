@@ -37,7 +37,10 @@ const limitBlock = (overrides: Partial<BlockData> = {}): BlockData => ({
  * the way `GridArea` does and re-exposes the announcement, so every assertion
  * below reads what a screen reader would actually receive.
  */
-type RefuseMove = (label: string, reason: PickUpRefusal) => void;
+type RefuseMove = (
+  block: Pick<BlockData, "id" | "label">,
+  reason: PickUpRefusal,
+) => void;
 
 const renderCommand = (
   grid: GridData,
@@ -56,9 +59,9 @@ const renderCommand = (
       // Wired the way `GridArea` wires it: the refusal is reported to the one
       // announcer, and the owner does whatever else it needs to with the same
       // two facts - which for `GridArea` is putting the rule on screen.
-      refuseMove: (label, reason) => {
-        onRefuse(label, reason);
-        announcer.report({ kind: "moveRefused", label, reason });
+      refuseMove: (block, reason) => {
+        onRefuse(block, reason);
+        announcer.report({ kind: "moveRefused", label: block.label, reason });
       },
     });
     return { ...command, announcement: announcer.announcement };
@@ -412,7 +415,10 @@ describe("useBlockCommand", () => {
       act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(refuseMove).toHaveBeenCalledWith("Stop Loss Limit", "onPriceAxis");
+      expect(refuseMove).toHaveBeenCalledWith(
+        expect.objectContaining({ label: "Stop Loss Limit" }),
+        "onPriceAxis",
+      );
       expect(result.current.announcement.text).toBe(
         "Stop Loss Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
       );
@@ -424,7 +430,10 @@ describe("useBlockCommand", () => {
       act(() => result.current.activateBlock("b1", "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(refuseMove).toHaveBeenCalledWith("Limit", "onPriceAxis");
+      expect(refuseMove).toHaveBeenCalledWith(
+        expect.objectContaining({ label: "Limit" }),
+        "onPriceAxis",
+      );
     });
 
     it("promises no arrow keys in a cell that draws no axis", () => {
@@ -442,7 +451,10 @@ describe("useBlockCommand", () => {
       act(() => result.current.activateBlock(grid[0][1][0].id, "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(refuseMove).toHaveBeenCalledWith("Stop Loss Limit", "staysInCell");
+      expect(refuseMove).toHaveBeenCalledWith(
+        expect.objectContaining({ label: "Stop Loss Limit" }),
+        "staysInCell",
+      );
       expect(result.current.announcement.text).toBe(
         "Stop Loss Limit stays in the cell it was placed in. To put this order somewhere else, remove it and place a new one.",
       );
@@ -460,7 +472,10 @@ describe("useBlockCommand", () => {
       act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(refuseMove).toHaveBeenCalledWith("Market", "staysInCell");
+      expect(refuseMove).toHaveBeenCalledWith(
+        expect.objectContaining({ label: "Market" }),
+        "staysInCell",
+      );
     });
 
     // FORMERLY "moves one of two independent same-type orders sharing a bulk
@@ -478,7 +493,10 @@ describe("useBlockCommand", () => {
       act(() => result.current.activateBlock(first.id, "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(refuseMove).toHaveBeenCalledWith("Market", "staysInCell");
+      expect(refuseMove).toHaveBeenCalledWith(
+        expect.objectContaining({ label: "Market" }),
+        "staysInCell",
+      );
     });
 
     it("refuses a priced block by tap as well as by keyboard", () => {
@@ -489,7 +507,7 @@ describe("useBlockCommand", () => {
 
       expect(result.current.carrying).toBeNull();
       expect(refuseMove).toHaveBeenCalledWith(
-        "Take Profit Limit",
+        expect.objectContaining({ label: "Take Profit Limit" }),
         "onPriceAxis",
       );
     });
@@ -505,7 +523,10 @@ describe("useBlockCommand", () => {
       act(() => result.current.activateBlock(limit.id, "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(refuseMove).toHaveBeenCalledWith("Limit", "onPriceAxis");
+      expect(refuseMove).toHaveBeenCalledWith(
+        expect.objectContaining({ label: "Limit" }),
+        "onPriceAxis",
+      );
     });
 
     it("leaves a placed block alone while a palette order is carried", () => {

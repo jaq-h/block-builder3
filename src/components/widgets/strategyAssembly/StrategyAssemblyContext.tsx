@@ -9,7 +9,6 @@ import type {
 } from "../../../types/grid";
 import {
   axesForBlockAxis,
-  clampOffset,
   clearGrid,
   directionForNewCell,
   normaliseCellDirections,
@@ -28,8 +27,15 @@ import { ORDER_TYPES } from "../../../data/orderTypes";
  *   pointer's x-half, without touching `axes` - so a Stop Loss Limit's trigger
  *   leg comes back as the trigger leg it was.
  * - `normaliseCellDirections` puts the whole grid on the cell-owned scale
- *   (decision D8) and clamps every position, so a strategy saved before either
- *   rule existed is drawn and priced the same way a freshly built one is.
+ *   (decision D8), so a strategy saved before that rule existed is drawn and
+ *   priced the same way a freshly built one is.
+ *
+ * The saved position is copied across as it stands, deliberately. Clamping it
+ * here answered a non-finite value with zero, and zero is the market price - a
+ * finite, positive number `validateOrder` accepts - so a corrupt saved position
+ * came back as a plausible at-market order rather than a refused one. Note that
+ * `?? 0` does not catch it either: `NaN` is not nullish. Consumers clamp what
+ * they read instead: the cells for display, `offsetForOrder` for a payload.
  */
 function gridFromConfig(config: OrderConfig): GridData {
   const g = clearGrid(2, 3);
@@ -50,7 +56,7 @@ function gridFromConfig(config: OrderConfig): GridData {
       abrv: typeDef.abrv,
       allowedRows: typeDef.allowedRows,
       axis,
-      yPosition: clampOffset(entry.yPosition ?? 0),
+      yPosition: entry.yPosition ?? 0,
       direction,
       axes: axesForBlockAxis(typeDef.axes, axis),
     };

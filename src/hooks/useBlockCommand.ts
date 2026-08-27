@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import type {
+  BlockData,
   CellPosition,
   GridData,
   PlacementResult,
@@ -60,11 +61,16 @@ export interface UseBlockCommandOptions {
    * Decision D9: once a block is placed, its cell is where it lives - every
    * block, no carve-outs - so there is no `moveBlock` here any more and the
    * grid-block carry it existed for is gone with it. The owner is handed the
-   * label and the reason rather than a sentence, because it has to do two
+   * block and the reason rather than a sentence, because it has to do two
    * things with them: report the outcome to the announcer, and put the rule on
-   * screen for everyone who is not listening to a live region.
+   * screen for everyone who is not listening to a live region. The id comes
+   * with the label because the note has to outlive nothing: it is taken down
+   * when *that* block leaves the grid, and two orders can share a label.
    */
-  refuseMove: (label: string, reason: Exclude<PickUpRefusal, "noTargets">) => void;
+  refuseMove: (
+    block: Pick<BlockData, "id" | "label">,
+    reason: Exclude<PickUpRefusal, "noTargets">,
+  ) => void;
 }
 
 export interface UseBlockCommandReturn {
@@ -283,7 +289,7 @@ export const useBlockCommand = ({
     // actually wires. A cell with an axis has something else to offer; one
     // without has only "remove it and place a new one".
     refuseMove(
-      found.block.label,
+      found.block,
       cellDrawsPriceAxis(grid[cell.col][cell.row])
         ? "onPriceAxis"
         : "staysInCell",

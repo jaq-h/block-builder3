@@ -688,8 +688,10 @@ export const validateOrder = (
   // `offsetForOrder` in `utils/blockMapping.ts` on every path into a payload,
   // so a zero static price is unreachable rather than merely unlikely. That
   // helper deliberately does not absorb a non-finite position the way the
-  // display clamp does, precisely so the finite check below is still reachable.
-  // This stays, because a validator that trusts its callers is not a validator.
+  // display clamp does, and nothing upstream of it absorbs one either - the
+  // hydration path used to, which is what made this check unreachable while a
+  // comment here claimed it was the last line of defence. This stays, because a
+  // validator that trusts its callers is not a validator.
   const requirePrice = (
     label: string,
     value?: string,

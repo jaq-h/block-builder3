@@ -591,6 +591,40 @@ describe("GridArea, tapping a placed block", () => {
     ).not.toBeInTheDocument();
   });
 
+  // Keyed on the label, a namesake kept this note alive after the block it
+  // named had gone: the note is about one block, so the block's id is the
+  // identity it has to keep. The replacement grid holds a Market too, so a
+  // label lookup still finds one and the note stays up describing a block that
+  // is no longer there.
+  it("takes the note down when the block it names goes, even if a namesake arrives", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    const replacement = clearGrid(2, 3);
+    replacement[1][0].push(placedMarket("b9"));
+    render(
+      <Harness
+        initialGrid={grid}
+        pattern="bulk"
+        gridReplacement={replacement}
+      />,
+    );
+
+    tap(screen.getByRole("button", { name: /^Market order,/ }));
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    // A Market is still on the grid, and it is not the one the note named.
+    expect(
+      screen.getByRole("button", { name: /^Market order,/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
+  });
+
   it("leaves a tap on another cell doing nothing to the grid", () => {
     const { first } = renderTwoBlocks();
 
@@ -642,6 +676,43 @@ describe("GridArea, tapping a placed block", () => {
     expect(note).not.toHaveTextContent(/remove it/);
     expect(note.closest("[aria-live]")).toBeNull();
     expect(note).not.toHaveAttribute("role", "status");
+  });
+
+  // A note that survives the action it asked for reads as though the action
+  // failed. A priced block is wired to the vertical price drag, so neither of
+  // the two gestures this note names passes through any of the resets that
+  // existed when it was first shown for them.
+  it("takes the note down once the arrow keys do what it asked", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    tap(slider);
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+
+    expect(slider).not.toHaveAttribute("aria-valuenow", "-25");
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("takes the note down once a price drag does what it asked", () => {
+    const { slider, centre } = renderPlacedLimit(25);
+
+    tap(slider);
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent(slider, pointer("pointerdown", centre));
+    fireEvent(slider, pointer("pointermove", centre + 20));
+    fireEvent(slider, pointer("pointerup", centre + 20));
+
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
   });
 });
 

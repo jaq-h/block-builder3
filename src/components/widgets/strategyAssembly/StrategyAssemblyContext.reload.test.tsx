@@ -11,7 +11,7 @@ import { render } from "@testing-library/react";
 
 import { StrategyAssemblyProvider } from "@widgets/strategyAssembly/StrategyAssemblyContext";
 import { useGridData } from "@widgets/strategyAssembly/contexts";
-import { mapGridToOrders } from "@api/orderMapper";
+import { mapGridToOrders, validateOrder } from "@api/orderMapper";
 import type { OrderParams } from "@api/types";
 import { orderConfigFromGrid } from "@utils/blockMapping";
 import type { GridData, OrderConfig } from "@/types/grid";
@@ -87,6 +87,31 @@ const savedStopLossLimit: OrderConfig = {
 // =============================================================================
 
 describe("a saved strategy reloaded for editing", () => {
+  // The hydration path is the one most likely to carry a corrupt position, and
+  // it used to be the one that quietly repaired it: `gridFromConfig` clamped on
+  // the way in and `normaliseCellDirections` clamped again, so a non-finite
+  // saved position was already zero - the market price - before the mapper saw
+  // it, and the payload validated cleanly as a plausible at-market order.
+  // `?? 0` does not catch it either, since `NaN` is not nullish.
+  it("refuses a non-finite saved position rather than pricing it at the market", () => {
+    const [order] = ordersFrom({
+      "sa-limit-1": {
+        col: 0,
+        row: 1,
+        type: "limit",
+        axis: 2,
+        yPosition: Number.NaN,
+        direction: "downside",
+      },
+    });
+
+    expect(Number(order.limit_price)).not.toBe(MARKET_PRICE);
+    expect(Number.isFinite(Number(order.limit_price))).toBe(false);
+    expect(validateOrder(order)).toContain(
+      "Limit price must be a finite number",
+    );
+  });
+
   it("gives each leg of a dual-axis order type only its own axis", () => {
     const [trigger, limit] = rehydrate(savedStopLossLimit)[0][1];
 

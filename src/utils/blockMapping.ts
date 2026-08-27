@@ -143,6 +143,13 @@ export const MIN_OFFSET_PERCENT = SCALE_CONFIG.MIN_PERCENT;
  * `offsetForOrder` instead and keeps a non-finite value non-finite all the way
  * to `validateOrder`. The two are deliberately different and the difference is
  * only ever about a value no axis could have produced.
+ *
+ * That split holds only because this is a clamp on READ. Nothing writes it back
+ * into a stored block: `normaliseCellDirections` and the provider's
+ * `gridFromConfig` both used to, which meant a hydrated grid had already
+ * answered a non-finite position with zero before the order path ever saw one,
+ * and the split it thought it was making did not exist. A store keeps the
+ * position it was given; every consumer clamps at the point of use.
  */
 export const clampOffset = (yPosition: number): number => {
   if (!Number.isFinite(yPosition)) return MIN_OFFSET_PERCENT;
@@ -153,7 +160,9 @@ export const clampOffset = (yPosition: number): number => {
 };
 
 /**
- * The same range clamp, for a position on its way into a Kraken payload.
+ * The same range clamp, for a position on any path that can reach a Kraken
+ * payload - the order mapper itself, and the saved config a reload turns back
+ * into a grid.
  *
  * It differs from `clampOffset` in exactly one case, and that case is the whole
  * reason it exists: a non-finite position is passed straight through rather
@@ -163,6 +172,10 @@ export const clampOffset = (yPosition: number): number => {
  * submitted as an at-market limit order instead of being refused. Left
  * non-finite it reaches `validateOrder`'s `Number.isFinite` guard, which is
  * what that guard is for.
+ *
+ * The range half of it stays everywhere, including on the saved config: a
+ * position the axis cannot draw is not a position worth recording. It is only
+ * the non-finite case that must survive intact.
  */
 export const offsetForOrder = (yPosition: number): number =>
   Number.isFinite(yPosition) ? clampOffset(yPosition) : yPosition;
@@ -287,24 +300,28 @@ export const addBlocksToCell = (
 
 /**
  * Bring a grid built elsewhere onto the invariant: every block in a cell
- * carries that cell's direction, and every position is one the axis can draw.
+ * carries that cell's direction.
  *
  * Hydration from a saved strategy and the Active Orders panel both build a grid
  * entry by entry, from records that were written before the cell owned the
  * scale. Running them through here is what stops a reloaded strategy from
  * drawing a cell two different ways.
+ *
+ * Direction and nothing else. It used to clamp `yPosition` into the stored
+ * block as well, which quietly defeated the one guard the order path has
+ * against a corrupt position: `clampOffset` answers a non-finite value with
+ * zero, so a hydrated grid reached the mapper already priced at the market and
+ * `validateOrder` had nothing left to refuse. Every consumer clamps what it
+ * reads - `GridCell` and `ReadOnlyGridCell` for display, `offsetForOrder` for a
+ * payload - so nothing is lost by leaving the store faithful.
  */
 export const normaliseCellDirections = (grid: GridData): GridData =>
   grid.map((column) =>
     column.map((cell) => {
       const direction = cellDirection(cell);
-      return cell.map((block) => {
-        const yPosition =
-          block.axes.length === 0 ? block.yPosition : clampOffset(block.yPosition);
-        return block.direction === direction && block.yPosition === yPosition
-          ? block
-          : { ...block, direction, yPosition };
-      });
+      return cell.map((block) =>
+        block.direction === direction ? block : { ...block, direction },
+      );
     }),
   );
 
@@ -401,7 +418,7 @@ export const orderConfigFromGrid = (grid: GridData): OrderConfig => {
                 row,
                 type: block.orderType,
                 axis: block.axis,
-                yPosition: clampOffset(block.yPosition),
+                yPosition: offsetForOrder(block.yPosition),
                 direction,
               };
       });
