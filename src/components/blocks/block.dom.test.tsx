@@ -28,7 +28,14 @@ const pointer = (
     y = 0,
     pointerId = 1,
     buttons = buttonsFor(type),
-  }: { x?: number; y?: number; pointerId?: number; buttons?: number } = {},
+    pointerType = "mouse",
+  }: {
+    x?: number;
+    y?: number;
+    pointerId?: number;
+    buttons?: number;
+    pointerType?: string;
+  } = {},
 ) => {
   const event = new PointerEvent(type, {
     bubbles: true,
@@ -39,7 +46,7 @@ const pointer = (
   Object.defineProperties(event, {
     pointerId: { value: pointerId },
     isPrimary: { value: true },
-    pointerType: { value: "mouse" },
+    pointerType: { value: pointerType },
     clientX: { value: x },
     clientY: { value: y },
     buttons: { value: buttons },
@@ -53,10 +60,28 @@ const drag = (element: Element, from: [number, number], to: [number, number]) =>
   fireEvent(element, pointer("pointerup", { x: to[0], y: to[1] }));
 };
 
-const tap = (element: Element, at: [number, number] = [10, 10]) => {
-  fireEvent(element, pointer("pointerdown", { x: at[0], y: at[1] }));
-  fireEvent(element, pointer("pointerup", { x: at[0], y: at[1] }));
+/**
+ * Press and release without movement, on the device named. The origin the
+ * block reports comes from the pointer down that opened the gesture, so this
+ * is the only thing that decides whether an activation is a click or a tap.
+ */
+const pressAndRelease = (
+  element: Element,
+  pointerType: string,
+  at: [number, number] = [10, 10],
+) => {
+  fireEvent(
+    element,
+    pointer("pointerdown", { x: at[0], y: at[1], pointerType }),
+  );
+  fireEvent(element, pointer("pointerup", { x: at[0], y: at[1], pointerType }));
 };
+
+const click = (element: Element, at: [number, number] = [10, 10]) =>
+  pressAndRelease(element, "mouse", at);
+
+const tap = (element: Element, at: [number, number] = [10, 10]) =>
+  pressAndRelease(element, "touch", at);
 
 /**
  * jsdom gives every element a zero-sized box at the origin, so the block's own
@@ -228,10 +253,22 @@ describe("Block, as a palette entry", () => {
       />,
     );
 
+    click(screen.getByRole("button"));
+
+    expect(onActivate).toHaveBeenCalledWith("limit", "mouse");
+    expect(onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("names the device the activation came from, so a carry can suit it", () => {
+    // A mouse carry follows the cursor and is described with "click"; a
+    // finger's cannot and is not. The block is the one place that knows which
+    // device opened the gesture, so it is the one place that can say.
+    const onActivate = vi.fn();
+    render(<Block id="limit" abrv="Lmt" label="Limit" onActivate={onActivate} />);
+
     tap(screen.getByRole("button"));
 
-    expect(onActivate).toHaveBeenCalledWith("limit", "pointer");
-    expect(onDragEnd).not.toHaveBeenCalled();
+    expect(onActivate).toHaveBeenCalledWith("limit", "touch");
   });
 
   it("still reports a drop when the pointer is released off-window", () => {
@@ -321,12 +358,13 @@ describe("Block, placed on a price axis", () => {
 
     // A finger lands near the bottom edge and travels 3px before lifting. That
     // gesture is a tap - a pick-up - so the price must not follow it.
-    fireEvent(slider, pointer("pointerdown", { x: 50, y: 215 }));
-    fireEvent(slider, pointer("pointermove", { x: 50, y: 218 }));
-    fireEvent(slider, pointer("pointerup", { x: 50, y: 218 }));
+    const touch = { pointerType: "touch" } as const;
+    fireEvent(slider, pointer("pointerdown", { x: 50, y: 215, ...touch }));
+    fireEvent(slider, pointer("pointermove", { x: 50, y: 218, ...touch }));
+    fireEvent(slider, pointer("pointerup", { x: 50, y: 218, ...touch }));
 
     expect(onVerticalDrag).not.toHaveBeenCalled();
-    expect(onActivate).toHaveBeenCalledWith("b1", "pointer");
+    expect(onActivate).toHaveBeenCalledWith("b1", "touch");
   });
 
   it("carries the block by the point it was grabbed at, not by its centre", () => {
@@ -455,7 +493,19 @@ describe("Block, while being carried", () => {
     tap(screen.getByRole("button"));
 
     // The pointer half of "put it down again" - a finger has no Escape key.
-    expect(onActivate).toHaveBeenCalledWith("limit", "pointer");
+    expect(onActivate).toHaveBeenCalledWith("limit", "touch");
+  });
+
+  it("puts the block back on a second click, the same way", () => {
+    // A mouse has an Escape key within reach, but only while focus is still on
+    // the block - and the whole point of this lane is that the mouse should
+    // not have to reach for the keyboard to undo what a click started.
+    const onActivate = vi.fn();
+    carried({ onActivate });
+
+    click(screen.getByRole("button"));
+
+    expect(onActivate).toHaveBeenCalledWith("limit", "mouse");
   });
 
   it("lets Tab through, so a carried block can never trap the keyboard", () => {

@@ -5,6 +5,7 @@ import { useFreeDrag } from "../../hooks/useFreeDrag";
 import { useVerticalDrag } from "../../hooks/useVerticalDrag";
 import type { SvgIcon } from "../../data/orderTypes";
 import type { CancelOptions } from "../../hooks/useBlockCommand";
+import type { ActivationOrigin } from "../../utils/blockCommand";
 import { SCALE_CONFIG } from "../../styles/grid";
 
 /** The id every block's instructions are described by. Rendered once by GridArea. */
@@ -100,11 +101,13 @@ interface BlockProps {
   onDragRecognised?: (id: string) => void;
   onVerticalDrag?: (id: string, pointerY: number) => void;
   /**
-   * Enter, Space, or a tap without movement. `origin` separates the two
-   * affordances that differ per device: pressing Enter on a block already
-   * being carried places it, while tapping it again puts it back down.
+   * Enter, Space, or a press and release without movement. `origin` separates
+   * the affordances that differ per device: pressing Enter on a block already
+   * being carried places it, while clicking or tapping it again puts it back
+   * down - and a mouse carry is drawn and worded differently from a finger's,
+   * because a mouse leaves a cursor on screen for the block to follow.
    */
-  onActivate?: (id: string, origin: "keyboard" | "pointer") => void;
+  onActivate?: (id: string, origin: ActivationOrigin) => void;
   /** Arrows while carrying: choose another target cell. */
   onCommandMove?: (dCol: number, dRow: number) => void;
   /** Escape while carrying: put the block back. */
@@ -169,7 +172,7 @@ const Block: FC<BlockProps> = ({
       onDragCancel,
       onDragAborted,
       onDragRecognised,
-      onActivate: (blockId) => onActivate?.(blockId, "pointer"),
+      onActivate: (blockId, origin) => onActivate?.(blockId, origin),
     },
   );
 
@@ -179,7 +182,7 @@ const Block: FC<BlockProps> = ({
       disabled: isReadOnly,
       onVerticalDrag,
       onDragRecognised,
-      onActivate: (blockId) => onActivate?.(blockId, "pointer"),
+      onActivate: (blockId, origin) => onActivate?.(blockId, origin),
     });
 
   const isDragging = isFreeDragging || isVertDragging;

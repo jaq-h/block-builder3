@@ -483,6 +483,17 @@ const tap = (element: Element) => {
   fireEvent.click(element, { bubbles: true });
 };
 
+/**
+ * The same gesture on a mouse. `pointerAt` defaults to a finger, and the device
+ * is what decides whether the carry that follows is worded as a click, follows
+ * the cursor, and tracks the cell under it - so a mouse test has to say so.
+ */
+const clickBlock = (element: Element) => {
+  fireEvent(element, pointerAt("pointerdown", 40, 30, { pointerType: "mouse" }));
+  fireEvent(element, pointerAt("pointerup", 40, 30, { pointerType: "mouse" }));
+  fireEvent.click(element, { bubbles: true });
+};
+
 const cell = (col: number, row: number) =>
   document.querySelector(`[data-col="${col}"][data-row="${row}"]`)!;
 
@@ -1736,6 +1747,362 @@ describe("GridArea, replaced under a live drag", () => {
       screen.getByRole("button", { name: "resubmit and reset the panel" }),
     );
 
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+});
+
+// =============================================================================
+// A DISMISSAL CLICK, AND THE GESTURE IT HAS TO END
+// =============================================================================
+//
+// The trace this closes, end to end: a mouse is let go outside the window with
+// no capture in force, so nothing in the page hears the release and the gesture
+// keeps its window listeners. Those listeners match on pointer id alone and a
+// mouse's id is a constant 1. The user sees a ghost welded to the cursor and
+// clicks the chart to be rid of it - and that click's own `pointerup` is
+// matched as the stale gesture's drop, at coordinates that are on no cell, so
+// the block is removed. A dismissal deleted a block.
+//
+// `usePointerGesture` closes the reachable path from inside itself, by ending a
+// gesture on a move that carries no pressed button. These tests dispatch no
+// such move, on purpose: what is being pinned here is the boundary - the
+// dismissal itself ending the gesture - and a test that let the backstop run
+// first would pass with the boundary removed.
+
+describe("GridArea, a dismissal click while a gesture is still in flight", () => {
+  afterEach(() => {
+    stopDragOverlay();
+  });
+
+  const mouse = (type: string, x: number, y: number, buttons = buttonsFor(type)) =>
+    pointerAt(type, x, y, { pointerType: "mouse", buttons });
+
+  /**
+   * A drag whose release nobody heard, left live on purpose: no `pointerup`,
+   * and no move made with the button already up either.
+   */
+  const strandDragOn = (block: Element) => {
+    vi.spyOn(block, "setPointerCapture").mockImplementation(() => {
+      throw new DOMException("NotFoundError", "NotFoundError");
+    });
+    fireEvent(block, mouse("pointerdown", 30, 150));
+    fireEvent(document.body, mouse("pointermove", 900, 900));
+  };
+
+  it("does not delete the block the stranded gesture was dragging", () => {
+    const { first } = renderTwoBlocks();
+    strandDragOn(first);
+
+    // Straight to the click, with no move in between: this is the boundary,
+    // not the backstop.
+    fireEvent(document.body, mouse("pointerdown", 700, 400));
+    fireEvent(document.body, mouse("pointerup", 700, 400));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    expect(announcement()).toBe(
+      "Drag cancelled. Market block stayed in Entry column, row 2.",
+    );
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("takes the stranded gesture's window listeners off, so nothing later resolves as its drop", () => {
+    const { first } = renderTwoBlocks();
+    strandDragOn(first);
+
+    fireEvent(document.body, mouse("pointerdown", 700, 400));
+    fireEvent(document.body, mouse("pointerup", 700, 400));
+    // A second, entirely unrelated click somewhere else on the page. The
+    // gesture is gone, so this is nobody's drop.
+    fireEvent(document.body, mouse("pointerdown", 200, 500));
+    fireEvent(document.body, mouse("pointerup", 200, 500));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    expect(announcement()).toBe(
+      "Drag cancelled. Market block stayed in Entry column, row 2.",
+    );
+  });
+
+  it("ends the carry and the gesture together when both are in hand", () => {
+    // The two owners the register replaced. A palette order picked up by a
+    // click, and then a stranded drag of a placed block: one dismissal, and
+    // neither may be left behind.
+    const { first } = renderTwoBlocks();
+
+    clickBlock(palette("Add Market order"));
+    expect(announcement()).toContain("Picked up Market order");
+
+    strandDragOn(first);
+    fireEvent(document.body, mouse("pointerdown", 700, 400));
+    fireEvent(document.body, mouse("pointerup", 700, 400));
+
+    // The block the stranded drag held is still where it was, and the palette
+    // order is no longer in hand: a click on a legal cell places nothing.
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    fireEvent(cell(1, 2), pointerAt("pointerdown", 30, 30));
+    fireEvent.click(cell(1, 2));
+    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, empty");
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+  });
+
+  it("leaves the builder usable: the next drag still places a block", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+
+    const paletteBlock = palette("Add Market order");
+    strandDragOn(paletteBlock);
+    fireEvent(document.body, mouse("pointerdown", 700, 400));
+    fireEvent(document.body, mouse("pointerup", 700, 400));
+
+    stubRect(cell(1, 0), 100, 200);
+    fireEvent(paletteBlock, mouse("pointerdown", 30, 20));
+    fireEvent(document.body, mouse("pointermove", 30, 150));
+    fireEvent(document.body, mouse("pointerup", 30, 150));
+
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
+  });
+});
+
+// =============================================================================
+// CARRYING A BLOCK WITH THE MOUSE
+// =============================================================================
+//
+// Click to pick up, click to put down. It is the same command model the
+// keyboard and a finger already drive - there is no mouse-only path here - but
+// the mouse is the one device with a cursor on screen between the two clicks,
+// so two things are true for it and for nothing else: the block follows that
+// cursor, and the cell under it is the cell the next click places into.
+//
+// Hold-to-drag is untouched by all of this. It is a second way in rather than a
+// replacement, and the tests above it in this file are its regression suite.
+
+describe("GridArea, carrying a block with the mouse", () => {
+  afterEach(() => {
+    stopDragOverlay();
+  });
+
+  /**
+   * Press and release without moving, then the click a browser appends. The
+   * device is what decides whether this is a click or a tap, so it is stated
+   * rather than defaulted.
+   */
+  const pressAndRelease = (element: Element, pointerType: string) => {
+    fireEvent(element, pointerAt("pointerdown", 40, 30, { pointerType }));
+    fireEvent(element, pointerAt("pointerup", 40, 30, { pointerType }));
+    fireEvent.click(element, { bubbles: true });
+  };
+
+  /** The cursor moves over a cell. React reads its enter events off `mouseover`. */
+  const hover = (col: number, row: number) => fireEvent.mouseOver(cell(col, row));
+
+  const targetCell = () =>
+    document.querySelector("[aria-current='location']")?.getAttribute("aria-label");
+
+  it("picks the order up and puts it on the cursor", () => {
+    renderEmptyGrid();
+
+    clickBlock(palette("Add Limit order"));
+
+    expect(announcement()).toContain("Picked up Limit order");
+    expect(announcement()).toContain("Click a highlighted cell to place it");
+    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Lmt" });
+  });
+
+  it("leaves nothing on the cursor for a finger, which has none", () => {
+    renderEmptyGrid();
+
+    pressAndRelease(palette("Add Limit order"), "touch");
+
+    expect(announcement()).toContain("Picked up Limit order");
+    expect(announcement()).toContain("Tap a highlighted cell to place it");
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("makes the cell under the cursor the cell a click will place into", () => {
+    renderEmptyGrid();
+
+    clickBlock(palette("Add Limit order"));
+    expect(targetCell()).toBe("Entry column, primary row, empty");
+
+    hover(1, 1);
+
+    expect(targetCell()).toBe("Exit column, primary row, empty");
+  });
+
+  it("says nothing while the cursor sweeps across the grid", () => {
+    // Every cell the pointer crosses would otherwise be a live-region write,
+    // and the sweep would talk over the sentence that started the carry. The
+    // arrow keys still report every target they reach; see `pointToTarget`.
+    renderEmptyGrid();
+
+    clickBlock(palette("Add Limit order"));
+    const afterPickUp = announcement();
+
+    hover(1, 1);
+    hover(0, 1);
+
+    expect(announcement()).toBe(afterPickUp);
+  });
+
+  it("ignores a cell the carry never offered", () => {
+    renderEmptyGrid();
+
+    clickBlock(palette("Add Limit order"));
+    // The conditional rows take nothing while the primary row is empty.
+    hover(0, 0);
+
+    expect(targetCell()).toBe("Entry column, primary row, empty");
+  });
+
+  it("leaves a finger's carry pointing where the finger left it", () => {
+    // A tap synthesises a `mouseover` too, so without the origin check the
+    // target would jump to whatever cell the last tap landed on.
+    renderEmptyGrid();
+
+    pressAndRelease(palette("Add Limit order"), "touch");
+    hover(1, 1);
+
+    expect(targetCell()).toBe("Entry column, primary row, empty");
+  });
+
+  it("places the order in the cell the cursor is over", () => {
+    renderEmptyGrid();
+
+    clickBlock(palette("Add Limit order"));
+    hover(1, 1);
+    fireEvent(cell(1, 1), pointerAt("pointerdown", 30, 30, { pointerType: "mouse" }));
+    fireEvent.click(cell(1, 1));
+
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, primary row, Limit",
+    );
+    expect(announcement()).toBe("Placed Limit order in Exit column, primary row.");
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("refuses a cell that cannot take the order, and keeps it in hand", () => {
+    renderEmptyGrid();
+
+    clickBlock(palette("Add Limit order"));
+    fireEvent(cell(0, 0), pointerAt("pointerdown", 30, 30, { pointerType: "mouse" }));
+    fireEvent.click(cell(0, 0));
+
+    expect(announcement()).toBe(
+      "Entry column, upper conditional row cannot take this order. Still carrying Limit order.",
+    );
+    expect(cell(0, 0)).toHaveAttribute(
+      "aria-label",
+      "Entry column, upper conditional row, empty",
+    );
+    // Still in hand, and still on the cursor.
+    expect(dragOverlaySnapshot().active).toBe(true);
+  });
+
+  it("puts the order back on a second click, and takes it off the cursor", () => {
+    renderEmptyGrid();
+
+    clickBlock(palette("Add Limit order"));
+    clickBlock(palette("Add Limit order"));
+
+    expect(announcement()).toBe("Cancelled. Limit order returned to the palette.");
+    expect(dragOverlaySnapshot().active).toBe(false);
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+  });
+
+  it("puts the order back on a click away from the grid, and takes it off the cursor", () => {
+    // The cancellation a mouse can always reach without a keyboard, for a carry
+    // whose source block has scrolled out of sight or been replaced.
+    renderEmptyGrid();
+
+    clickBlock(palette("Add Limit order"));
+    outside(document.body);
+
+    expect(announcement()).toBe("Cancelled. Limit order returned to the palette.");
+    expect(dragOverlaySnapshot().active).toBe(false);
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+  });
+
+  it("carries a placed block, and moves it to the cell the cursor is over", () => {
+    const { first } = renderTwoBlocks();
+
+    clickBlock(first);
+    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Mkt" });
+
+    hover(1, 2);
+    fireEvent(cell(1, 2), pointerAt("pointerdown", 30, 30, { pointerType: "mouse" }));
+    fireEvent.click(cell(1, 2));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Market");
+    expect(announcement()).toBe("Moved Market block to Exit column, row 3.");
+  });
+
+  it("hands the interaction to a drag that starts on the block it is carrying", () => {
+    // The transition the two ways in share. The drag puts its own ghost on the
+    // cursor before the carry it supersedes has ended, so a carry that cleared
+    // "the" ghost on its way out would leave a live drag invisible.
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+    const paletteBlock = palette("Add Market order");
+
+    clickBlock(paletteBlock);
+    fireEvent(paletteBlock, pointerAt("pointerdown", 30, 20, { pointerType: "mouse" }));
+    fireEvent(
+      document.body,
+      pointerAt("pointermove", 30, 150, { pointerType: "mouse" }),
+    );
+
+    // Mid-drag: the carry is gone and the drag's ghost is the one on the cursor.
+    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Mkt" });
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+
+    stubRect(cell(1, 0), 100, 200);
+    fireEvent(document.body, pointerAt("pointerup", 30, 150, { pointerType: "mouse" }));
+
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("takes the block off the cursor when the grid stops holding it", () => {
+    // Clear All replaces the grid without ending the carry - that is the known
+    // carry-lifecycle gap, and it belongs to its own lane. What this pins is
+    // that the ghost does not outlive the block it is drawn from: it comes off
+    // the cursor rather than following it around as a picture of an order that
+    // no longer exists.
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
+
+    clickBlock(screen.getByRole("button", { name: /^Market order,/ }));
+    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Mkt" });
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    expect(dragOverlaySnapshot().active).toBe(false);
+  });
+
+  it("keeps a palette order on the cursor when the grid is replaced", () => {
+    // The palette is not the grid: a Limit order that was never placed still
+    // exists to be placed, so clearing the grid takes nothing out of hand.
+    render(
+      <Harness initialGrid={clearGrid(2, 3)} gridReplacement={clearGrid(2, 3)} />,
+    );
+
+    clickBlock(palette("Add Limit order"));
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Lmt" });
+  });
+
+  it("refuses a block drawn on a price axis, the way every other input does", () => {
+    // A mouse cannot move one by dragging either - the block is wired to the
+    // vertical price drag - so the click path must not offer more than the
+    // drag does.
+    renderPlacedLimit(25);
+
+    clickBlock(screen.getByRole("slider"));
+
+    expect(announcement()).toContain(
+      "Limit is priced on this axis and cannot be moved to another cell",
+    );
     expect(dragOverlaySnapshot().active).toBe(false);
   });
 });

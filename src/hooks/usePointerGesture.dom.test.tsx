@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { useState } from "react";
 import { usePointerGesture, TAP_SLOP_PX } from "./usePointerGesture";
+import { isBlockInHand, releaseBlockInHand } from "./blockInHand";
 import {
   installPointerCapture,
   type PointerCaptureTracker,
@@ -17,6 +18,8 @@ interface Calls {
   move: { x: number; y: number }[];
   recognised: string[];
   up: { point: { x: number; y: number }; moved: boolean }[];
+  /** The device each release named, kept apart so `up` stays comparable. */
+  upPointerType: string[];
   cancel: string[];
   /** `moved` as each cancellation reported it: a tap and a drag differ here. */
   cancelMoved: boolean[];
@@ -28,7 +31,10 @@ const Probe = ({ calls, disabled }: { calls: Calls; disabled?: boolean }) => {
     onDown: (p) => calls.down.push(p),
     onMove: (p) => calls.move.push(p),
     onDragRecognised: () => calls.recognised.push("recognised"),
-    onUp: (point, moved) => calls.up.push({ point, moved }),
+    onUp: (point, moved, pointerType) => {
+      calls.up.push({ point, moved });
+      calls.upPointerType.push(pointerType);
+    },
     onCancel: (moved) => {
       calls.cancel.push("cancelled");
       calls.cancelMoved.push(moved);
@@ -50,7 +56,10 @@ const Probe = ({ calls, disabled }: { calls: Calls; disabled?: boolean }) => {
 const SwappableProbe = ({ calls }: { calls: Calls }) => {
   const [wired, setWired] = useState(true);
   const { isActive, handlers } = usePointerGesture({
-    onUp: (point, moved) => calls.up.push({ point, moved }),
+    onUp: (point, moved, pointerType) => {
+      calls.up.push({ point, moved });
+      calls.upPointerType.push(pointerType);
+    },
     onCancel: (moved) => {
       calls.cancel.push("cancelled");
       calls.cancelMoved.push(moved);
@@ -83,6 +92,7 @@ const emptyCalls = (): Calls => ({
   move: [],
   recognised: [],
   up: [],
+  upPointerType: [],
   cancel: [],
   cancelMoved: [],
 });
@@ -143,6 +153,13 @@ const pointer = (
 
 const target = () => screen.getByTestId("target");
 
+/**
+ * What a click away from the placement surface does: empty the shared register.
+ * Wrapped in `act`, because ending a gesture sets React state and the assertion
+ * that follows reads the render it triggers.
+ */
+const dismiss = () => act(() => void releaseBlockInHand());
+
 let capture: PointerCaptureTracker;
 
 beforeEach(() => {
@@ -151,6 +168,9 @@ beforeEach(() => {
 
 afterEach(() => {
   capture.restore();
+  // Module state shared with `blockInHand`: a gesture a test deliberately left
+  // live must not still be registered when the next one runs.
+  act(() => void releaseBlockInHand());
 });
 
 // =============================================================================
@@ -494,6 +514,88 @@ describe("usePointerGesture", () => {
     });
   });
 
+  // ===========================================================================
+  // THE SHARED REGISTER
+  // ===========================================================================
+  //
+  // A gesture is one of two things that can have a block in the user's hand,
+  // and `blockInHand` is where both of them say so. Emptying it is what a click
+  // away from the placement surface does, and it has to reach a gesture whose
+  // release nobody heard - otherwise that gesture's window listeners survive
+  // the dismissal and match the very `pointerup` that completes it.
+
+  describe("the shared block-in-hand register", () => {
+    it("registers a gesture for as long as it is live", () => {
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      expect(isBlockInHand()).toBe(false);
+      fireEvent(target(), pointer("pointerdown", { x: 30, y: 30 }));
+      expect(isBlockInHand()).toBe(true);
+
+      fireEvent(target(), pointer("pointerup", { x: 30, y: 30 }));
+      expect(isBlockInHand()).toBe(false);
+    });
+
+    it("ends a stale gesture when the register is emptied", () => {
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      // A drag whose release reached nobody: no `pointerup` is dispatched, and
+      // no move carrying `buttons === 0` either, so the hook's own late
+      // notice cannot be what ends this.
+      fireEvent(target(), pointer("pointerdown", { x: 30, y: 30 }));
+      fireEvent(document.body, pointer("pointermove", { x: 400, y: 300 }));
+
+      dismiss();
+
+      expect(calls.cancel).toEqual(["cancelled"]);
+      // A drag had been recognised, so there is an outcome owed to the user.
+      expect(calls.cancelMoved).toEqual([true]);
+      expect(target()).toHaveAttribute("data-active", "false");
+    });
+
+    it("takes the window listeners off with it", () => {
+      // The point of ending it rather than merely forgetting it: the listeners
+      // match on pointer id alone, and a mouse's is a constant 1, so a release
+      // that arrives afterwards would otherwise be resolved as this gesture's
+      // drop at whatever unrelated point it landed on.
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 30, y: 30 }));
+      fireEvent(document.body, pointer("pointermove", { x: 400, y: 300 }));
+      dismiss();
+
+      fireEvent(document.body, pointer("pointerup", { x: 700, y: 400 }));
+
+      expect(calls.up).toEqual([]);
+      expect(calls.cancel).toEqual(["cancelled"]);
+    });
+
+    it("says nothing when the register is emptied with no gesture in flight", () => {
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      dismiss();
+
+      expect(calls.cancel).toEqual([]);
+    });
+
+    it("leaves the next gesture working", () => {
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      fireEvent(target(), pointer("pointerdown", { x: 30, y: 30 }));
+      dismiss();
+
+      fireEvent(target(), pointer("pointerdown", { x: 30, y: 30 }));
+      fireEvent(target(), pointer("pointerup", { x: 31, y: 30 }));
+
+      expect(calls.up).toEqual([{ point: { x: 31, y: 30 }, moved: false }]);
+    });
+  });
+
   describe("tap detection", () => {
     it("treats a release without movement as a tap", () => {
       const calls = emptyCalls();
@@ -562,6 +664,25 @@ describe("usePointerGesture", () => {
       fireEvent(target(), pointer("pointerup", { x: 30, y: 30 }));
 
       expect(calls.recognised).toEqual([]);
+    });
+
+    it("names the device that opened the gesture, not the one that ended it", () => {
+      // A release is worded and drawn differently for a mouse than for a
+      // finger, and the release itself is not where that is decided: one
+      // gesture is one device, from the pointer down that started it.
+      const calls = emptyCalls();
+      render(<Probe calls={calls} />);
+
+      fireEvent(
+        target(),
+        pointer("pointerdown", { x: 30, y: 30, pointerType: "touch" }),
+      );
+      fireEvent(
+        target(),
+        pointer("pointerup", { x: 30, y: 30, pointerType: "mouse" }),
+      );
+
+      expect(calls.upPointerType).toEqual(["touch"]);
     });
   });
 

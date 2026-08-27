@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type {
   CellPosition,
   GridData,
@@ -19,6 +19,7 @@ import {
   type CommandSource,
 } from "../utils/blockCommand";
 import { findBlockInGrid, getCellDisplayMode } from "../utils/grid";
+import { holdBlockInHand } from "./blockInHand";
 import type { GridAnnouncer } from "./useGridAnnouncer";
 
 // =============================================================================
@@ -68,6 +69,17 @@ export interface UseBlockCommandReturn {
   /** A tap on a cell. Does nothing, silently, while nothing is carried. */
   activateCell: (cell: CellPosition) => void;
   moveTarget: (dCol: number, dRow: number) => void;
+  /**
+   * The cursor is over this cell, so it is the cell a click would place into.
+   *
+   * Silent by design, and that is a decision rather than an omission. It fires
+   * on every cell a mouse crosses, so announcing it would be a live region
+   * talking over itself for the length of one sweep across the grid - and the
+   * user it fires for is watching the cursor, which is the feedback. What a
+   * screen-reader user hears is unchanged: the arrow keys still report every
+   * target they reach, through `moveTarget`.
+   */
+  pointToTarget: (cell: CellPosition) => void;
   /** Escape, Tab, or a second tap: the user put the block back. */
   cancel: (options?: CancelOptions) => void;
   /**
@@ -147,7 +159,7 @@ export const useBlockCommand = ({
       });
       return false;
     }
-    dispatch({ type: "pickUp", source, targets, preferred });
+    dispatch({ type: "pickUp", source, targets, preferred, origin });
     // The same choice the reducer makes, so the announcement can never name a
     // cell other than the one that is actually the target.
     const target = initialTarget(targets, preferred) ?? targets[0];
@@ -322,7 +334,7 @@ export const useBlockCommand = ({
     // cell it was just picked up from, so tap-to-pick-up on the grid would do
     // nothing at all. Only this branch consumes the tap: a tap on a block that
     // is *not* the carried one deliberately falls through to its cell.
-    if (carried && origin === "pointer") pointerPickUpRef.current = true;
+    if (carried && origin !== "keyboard") pointerPickUpRef.current = true;
   };
 
   const activateCell = (cell: CellPosition) => {
@@ -343,6 +355,19 @@ export const useBlockCommand = ({
     commit(carrying, cell);
   };
 
+  /**
+   * Only for a carry the mouse started. A finger and a pen fire `mouseenter`
+   * too - the browser synthesises one from the tap that placed the block - so
+   * without this the target would jump to whatever cell the last tap landed on
+   * and the announcement naming it would be stale. The keyboard is excluded for
+   * the plainer reason that a stray mouse crossing the grid must not move a
+   * target the user is stepping through with the arrow keys.
+   */
+  const pointToTarget = (cell: CellPosition) => {
+    if (!carrying || carrying.origin !== "mouse") return;
+    dispatch({ type: "pointAt", target: cell });
+  };
+
   const moveTarget = (dCol: number, dRow: number) => {
     if (!carrying) return;
     const next = commandReducer(state, { type: "moveTarget", dCol, dRow });
@@ -354,6 +379,30 @@ export const useBlockCommand = ({
     report({ kind: "targetChanged", target: next.carrying!.target });
   };
 
+  // The carry's half of the shared register, so one call ends it and any live
+  // pointer gesture together. The release goes through a ref rather than being
+  // re-registered on every render: `cancel` is a fresh closure each time, and a
+  // register entry that is replaced on every render is one more thing that has
+  // to be right for the hatch to work at all.
+  const cancelRef = useRef(cancel);
+  // Written from an effect rather than during render, for the same reason
+  // `usePointerGesture` refreshes its callbacks that way: a ref written during
+  // render is a ref the next render cannot be trusted to have seen.
+  useEffect(() => {
+    cancelRef.current = cancel;
+  });
+  // On whether anything is carried, not on the carry itself: the carry is a
+  // new object every time the target cell changes, and a mouse sweeping the
+  // grid changes it on every cell it crosses.
+  const holdingBlock = carrying !== null;
+  useEffect(() => {
+    if (!holdingBlock) return;
+    // Focus is not handed back. Whatever emptied the register did so because
+    // the user acted somewhere else, and pulling focus to the block they left
+    // is the behaviour Tab already refuses for the same reason.
+    return holdBlockInHand(() => cancelRef.current({ restoreFocus: false }));
+  }, [holdingBlock]);
+
   return {
     carrying,
     isCarrying,
@@ -361,6 +410,7 @@ export const useBlockCommand = ({
     activateBlock,
     activateCell,
     moveTarget,
+    pointToTarget,
     cancel,
     releaseForDrag,
     focusRequest,

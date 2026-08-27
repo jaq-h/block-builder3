@@ -204,10 +204,16 @@ export type GridOutcome =
 const carryReleased = (releasedCarry?: boolean): string =>
   releasedCarry ? ", and is no longer picked up" : "";
 
+// One sentence per input device, naming the gesture that device actually has.
+// A mouse user told to "tap" is being addressed as somebody else, and a mouse
+// is the one device that can also be told the block is following the cursor,
+// because on a mouse it is.
 const CARRY_HELP: Record<ActivationOrigin, string> = {
   keyboard:
     "Use the arrow keys to choose a cell, Enter to place, Escape to cancel.",
-  pointer:
+  mouse:
+    "It follows the cursor. Click a highlighted cell to place it, or click the block again to put it back.",
+  touch:
     "Tap a highlighted cell to place it, or tap the block again to put it back.",
 };
 

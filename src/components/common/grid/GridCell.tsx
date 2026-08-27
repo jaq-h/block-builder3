@@ -10,6 +10,7 @@ import {
 import { describeCell } from "../../../utils/blockCommand";
 import { useMarket } from "../../../store/useMarket";
 import type { CancelOptions } from "../../../hooks/useBlockCommand";
+import type { ActivationOrigin } from "../../../utils/blockCommand";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
 import {
   getInteractiveCellContainerProps,
@@ -61,7 +62,7 @@ interface GridCellProps {
   onBlockDragAborted: (id: string) => void;
   onBlockDragRecognised: (id: string) => void;
   onBlockVerticalDrag: (id: string, pointerY: number) => void;
-  onBlockActivate: (id: string, origin: "keyboard" | "pointer") => void;
+  onBlockActivate: (id: string, origin: ActivationOrigin) => void;
   onBlockCommandMove: (dCol: number, dRow: number) => void;
   onBlockCommandCancel: (options?: CancelOptions) => void;
   onBlockAdjustPrice: (id: string, delta: number) => void;

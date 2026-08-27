@@ -9,6 +9,10 @@ import {
   usePointerGesture,
   type PointerGestureHandlers,
 } from "./usePointerGesture";
+import {
+  originForPointerType,
+  type ActivationOrigin,
+} from "../utils/blockCommand";
 
 interface UseFreeDragOptions {
   id: string;
@@ -16,8 +20,12 @@ interface UseFreeDragOptions {
   abrv?: string;
   onDragStart?: (id: string) => void;
   onDragEnd?: (id: string, x: number, y: number) => void;
-  /** The pointer went down and up without moving: a tap or a click, not a drag. */
-  onActivate?: (id: string) => void;
+  /**
+   * The pointer went down and up without moving: a click or a tap, not a drag.
+   * `origin` names the device, because what a carry started this way looks
+   * like and is described as differs between a mouse and a finger.
+   */
+  onActivate?: (id: string, origin: ActivationOrigin) => void;
   /** The gesture has travelled far enough to be a drag rather than a tap. */
   onDragRecognised?: (id: string) => void;
   /**
@@ -78,16 +86,19 @@ export const useFreeDrag = ({
       updateDragOverlayPosition(x, y);
     },
     onDragRecognised: () => onDragRecognised?.(id),
-    onUp: ({ x, y }, moved) => {
+    onUp: ({ x, y }, moved, pointerType) => {
       stopDragOverlay();
       if (moved) {
         onDragEnd?.(id, x, y);
         return;
       }
-      // A tap is the command model's pick-up/place gesture, not a zero-length
-      // drag: close the drag that pointer-down opened, then hand over.
+      // A click or a tap is the command model's pick-up/place gesture, not a
+      // zero-length drag: close the drag that pointer-down opened, then hand
+      // over. The ghost is stopped either way - a carry that wants one back on
+      // the cursor puts up its own, because a carry outlives this gesture and
+      // the ghost has to outlive it too.
       onDragCancel?.(id);
-      onActivate?.(id);
+      onActivate?.(id, originForPointerType(pointerType));
     },
     onCancel: (moved) => {
       stopDragOverlay();

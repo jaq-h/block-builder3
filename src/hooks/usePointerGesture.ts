@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { holdBlockInHand } from "./blockInHand";
 
 // =============================================================================
 // POINTER GESTURE PRIMITIVE
@@ -60,16 +61,27 @@ import { useEffect, useRef, useState } from "react";
 // listeners make every delivered release heard.
 //
 // So the exits are worth listing exactly, because that residue is what the
-// last two are for. A gesture ends on a release the window heard, on a
+// last three are for. A gesture ends on a release the window heard, on a
 // `pointercancel`, on unmount, on a fresh pointer down on the element while it
-// still carries *this hook's* handlers, and on a move that proves the button
-// is already up. The last two are the unheard release being noticed late, from
-// the two directions the user can reach it from: pressing that element again,
-// or moving the mouse anywhere.
+// still carries *this hook's* handlers, on a move that proves the button is
+// already up, and on the shared register in `blockInHand` being emptied - which
+// is what a click away from the placement surface does. The last three are the
+// unheard release being noticed late, from the three directions the user can
+// reach it from: pressing that element again, moving the mouse anywhere, or
+// clicking somewhere that means "put this down".
 //
-// Those two are not equals, and the difference is the handler swap. `Block`
-// instantiates both `useFreeDrag` and `useVerticalDrag` and wires whichever
-// suits the block's current axis, so a block that gains a price axis after a
+// The register is the one of those three that does not depend on the user
+// reaching this hook at all. `GridArea`'s dismissal hatch hears a pointer down
+// anywhere outside the placement surface and empties the register, so the
+// gesture and the command model's carry end together on one event rather than
+// each being told separately - see `blockInHand` for the defect that cost. It
+// is a boundary rather than a detector: it ends a stale gesture when the user
+// acts, and it has no opinion about when a gesture went stale.
+//
+// The pointer-down and `buttons === 0` exits are not equals, and the
+// difference between those two is the handler swap. `Block` instantiates both
+// `useFreeDrag` and `useVerticalDrag` and wires whichever suits the block's
+// current axis, so a block that gains a price axis after a
 // free-drag gesture went stale hands the next pointer down to the *other*
 // hook, which has no stale gesture of its own to end. The pointer-down exit is
 // per hook instance and stops there; the `buttons === 0` exit is the one that
@@ -79,7 +91,7 @@ import { useEffect, useRef, useState } from "react";
 // it can watch.
 //
 // What that leaves uncovered, stated rather than glossed: between the unheard
-// release and whichever of those two events comes next, the gesture is still
+// release and whichever of those three events comes next, the gesture is still
 // live as far as this hook is concerned, and its overlay is still on the
 // cursor. The first mouse move ends it, so the window is the distance between
 // a release outside the window and the pointer coming back into the page.
@@ -124,8 +136,19 @@ export interface UsePointerGestureOptions {
    * palette, over another panel, or outside the window entirely. `moved` is
    * false when the pointer never travelled beyond `TAP_SLOP_PX`, i.e. this was
    * a tap or a click rather than a drag.
+   *
+   * `pointerType` is the device's own word for itself - "mouse", "touch",
+   * "pen" - taken from the pointer down that opened the gesture rather than
+   * from the release, so one gesture is always one device. It is here because
+   * a release that turns out to be a click means something the caller has to
+   * word and draw differently on a mouse than on a finger: a mouse keeps a
+   * cursor between contacts and a finger does not.
    */
-  onUp?: (point: GesturePoint, moved: boolean) => void;
+  onUp?: (
+    point: GesturePoint,
+    moved: boolean,
+    pointerType: string,
+  ) => void;
   /**
    * Fired when the gesture ends without a release this hook heard: the
    * browser takes the pointer away (`pointercancel`), the element the gesture
@@ -155,8 +178,11 @@ interface ActiveGesture {
   startY: number;
   moved: boolean;
   element: HTMLElement;
+  pointerType: string;
   /** Takes this gesture's window listeners back off again. */
   removeListeners: () => void;
+  /** Takes this gesture back out of the shared `blockInHand` register. */
+  stopHolding: () => void;
 }
 
 /** jsdom has no pointer capture, and a detached element throws. Neither is fatal. */
@@ -220,6 +246,7 @@ export const usePointerGesture = ({
   /** Undo everything pointer down set up. The one place a gesture is torn down. */
   const teardown = (gesture: ActiveGesture): void => {
     gesture.removeListeners();
+    gesture.stopHolding();
     releaseCapture(gesture.element, gesture.pointerId);
     gestureRef.current = null;
   };
@@ -287,9 +314,13 @@ export const usePointerGesture = ({
   const handleUp = (e: PointerEvent) => {
     const gesture = gestureFor(e.pointerId);
     if (!gesture) return;
-    const { moved } = gesture;
+    const { moved, pointerType } = gesture;
     finish();
-    callbacksRef.current.onUp?.({ x: e.clientX, y: e.clientY }, moved);
+    callbacksRef.current.onUp?.(
+      { x: e.clientX, y: e.clientY },
+      moved,
+      pointerType,
+    );
   };
 
   const handleCancel = (e: PointerEvent) => {
@@ -342,18 +373,40 @@ export const usePointerGesture = ({
     view.addEventListener("pointerup", handleUp);
     view.addEventListener("pointercancel", handleCancel);
 
-    gestureRef.current = {
+    const gesture: ActiveGesture = {
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
       element,
+      pointerType: e.pointerType,
       removeListeners: () => {
         view.removeEventListener("pointermove", handleMove);
         view.removeEventListener("pointerup", handleUp);
         view.removeEventListener("pointercancel", handleCancel);
       },
+      // Replaced immediately below; a gesture is never in the register without
+      // knowing how to get back out of it.
+      stopHolding: () => {},
     };
+    gestureRef.current = gesture;
+
+    // The shared register, so a dismissal click ends this gesture and the
+    // command model's carry on one event. `finish()` is what tears the gesture
+    // down, and the cancel that follows is the same one `pointercancel` fires,
+    // so a released gesture reports its outcome exactly as an interrupted one
+    // does - a drag that had begun says the block stayed put, and a press that
+    // was still only a click says nothing.
+    gesture.stopHolding = holdBlockInHand(() => {
+      // Only ever this gesture: a later one on the same hook replaced it, and
+      // ending that one on a register entry its predecessor left behind is the
+      // shape of bug this register exists to remove rather than to add.
+      if (gestureRef.current !== gesture) return;
+      const { moved } = gesture;
+      finish();
+      callbacksRef.current.onCancel?.(moved);
+    });
+
     setIsActive(true);
     // Straight off the props, not through the ref: this is itself a React
     // handler, so it already holds the current render's callbacks - the same
