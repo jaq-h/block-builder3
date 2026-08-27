@@ -521,6 +521,39 @@ describe("useBlockCommand", () => {
     });
   });
 
+  describe("abandoning a carry", () => {
+    // Escape and a second tap both put the block back and want focus with it,
+    // so the palette entry the user left is where they carry on from.
+    it("hands focus back to the palette entry the carry started on", () => {
+      const { result } = setup();
+
+      act(() => result.current.activateProvider("limit", "keyboard"));
+      act(() => result.current.cancel());
+
+      expect(result.current.carrying).toBeNull();
+      expect(result.current.focusRequest).toBe("limit");
+    });
+
+    // Tab is the one that must not. The browser has already moved focus on by
+    // the time the request would be honoured, so restoring it drags the user
+    // back to the entry they just left and swallows the Tab - a focus trap on
+    // the palette. `Block` passes `restoreFocus: false` for exactly this, and
+    // without a test here the branch could be made unconditional and the whole
+    // suite would still pass.
+    it("leaves focus alone when the carry is abandoned by Tab", () => {
+      const { result } = setup();
+
+      act(() => result.current.activateProvider("limit", "keyboard"));
+      act(() => result.current.cancel({ restoreFocus: false }));
+
+      expect(result.current.carrying).toBeNull();
+      expect(result.current.focusRequest).toBeNull();
+      expect(result.current.announcement.text).toBe(
+        "Cancelled. Limit order returned to the palette.",
+      );
+    });
+  });
+
   it("clears the focus request once it has been honoured", () => {
     const { result } = setup();
 

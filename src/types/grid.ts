@@ -65,11 +65,17 @@ export type PlacementResult =
    * a cell the placement rules exclude and misleading for a placed block, which
    * no cell will take because placed blocks do not change cells at all
    * (decision D9). One is about the cell; the other is about the rule.
+   *
+   * Only the rule needs naming, so the member is one value and its absence.
+   * A placement-rules refusal leaves it off and takes the fallthrough sentence
+   * in `describePlacement`, which already words that case correctly - a second
+   * name meaning "the default" would read as a distinction the announcer does
+   * not draw.
    */
   | {
       status: "refused";
       at?: CellPosition;
-      reason?: "placementRules" | "staysInCell";
+      reason?: "staysInCell";
     }
   /**
    * The block named is not on the grid at all - a carry can outlive the grid

@@ -13,12 +13,14 @@ import type { AutoscaleInfo } from "lightweight-charts";
  * be pushed down to.
  *
  * A logarithmic scale has no coordinate for zero or for a negative price, so a
- * range reaching one has no bottom at all. It is reachable: `calculateYPosition`
- * works on a 0-100 scale while the slider and the axis labels use
+ * range reaching one has no bottom at all. It was reachable: `calculateYPosition`
+ * worked on a 0-100 scale while the slider and the axis labels use
  * `SCALE_CONFIG.MAX_PERCENT = 50`, so a block dragged to the very bottom of its
- * cell is a 100% offset - a price of exactly zero. That root cause is in the
- * drag layer and is owned by `bb3-mapping-owner`; this is only the guard that
- * stops it taking the logarithmic chart down with it.
+ * cell was a 100% offset - a price of exactly zero. That reader is gone and
+ * `clampOffset` in `utils/blockMapping.ts` now bounds every position on every
+ * path, so no drag can produce one. This guard stays anyway: it is what stops a
+ * price arriving from anywhere else taking the logarithmic chart down with it,
+ * and a guard that trusts its callers is not one.
  */
 export const MIN_LOG_RANGE_RATIO = 1e-4;
 

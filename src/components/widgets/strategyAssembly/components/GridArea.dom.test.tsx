@@ -553,6 +553,35 @@ describe("GridArea, tapping a placed block", () => {
     regions.forEach((region) => expect(region.contains(note)).toBe(false));
   });
 
+  // Clear All, Reverse Blocks and a market switch all replace the grid without
+  // going near the gestures that reset the note, so the note could outlive the
+  // order it names and sit under an empty grid still saying that order stays in
+  // a cell it is no longer in.
+  it("takes the note down once the order it names is off the grid", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    grid[1][0].push(placedMarket("b2"));
+    render(
+      <Harness
+        initialGrid={grid}
+        pattern="bulk"
+        gridReplacement={clearGrid(2, 3)}
+      />,
+    );
+    const [first] = screen.getAllByRole("button", { name: /^Market order,/ });
+
+    tap(first);
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
+  });
+
   it("leaves a tap on another cell doing nothing to the grid", () => {
     const { first } = renderTwoBlocks();
 

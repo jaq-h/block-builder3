@@ -124,10 +124,6 @@ export const useBlockCommand = ({
 
   const carrying = state.carrying;
 
-  // Set for the instant between a tap that picks a block up and the click the
-  // browser appends to that same tap. See `activateBlock`.
-  const pointerPickUpRef = useRef(false);
-
   // Only a palette order is ever carried, so the key is always an order type.
   const isCarrying = (key: string): boolean =>
     carrying?.source.type === key;
@@ -159,7 +155,6 @@ export const useBlockCommand = ({
   };
 
   const commit = (block: CarriedBlock, cell: CellPosition) => {
-    pointerPickUpRef.current = false;
     // Only a palette order is ever carried, so this is the only commit there
     // is. A placed block never leaves its cell (decision D9), which
     // `CarriedBlock.source` states in the type rather than in a comment.
@@ -199,7 +194,6 @@ export const useBlockCommand = ({
   };
 
   const cancel = ({ restoreFocus = true }: CancelOptions = {}) => {
-    pointerPickUpRef.current = false;
     if (!carrying) return;
     dispatch({ type: "cancel" });
     if (restoreFocus) setFocusRequest(carrying.source.type);
@@ -231,7 +225,6 @@ export const useBlockCommand = ({
    *   said, and the next tap on a cell then does nothing the user can explain.
    */
   const releaseForDrag = (subjectKey: string): boolean => {
-    pointerPickUpRef.current = false;
     if (!carrying) return false;
     const isSameSubject = isCarrying(subjectKey);
     dispatch({ type: "cancel" });
@@ -298,10 +291,6 @@ export const useBlockCommand = ({
   };
 
   const activateCell = (cell: CellPosition) => {
-    if (pointerPickUpRef.current) {
-      pointerPickUpRef.current = false;
-      return;
-    }
     // A click on the grid with nothing carried is not an interaction the user
     // started - it is a click on the page - so it says nothing.
     if (!carrying) return;

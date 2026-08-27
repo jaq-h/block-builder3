@@ -10,7 +10,7 @@
  * and the mapper builds Kraken payloads from it, so the price sent is the price
  * shown. A block at 25% is 25% away from market, not 2.5% (decision D3).
  *
- * The chart's order lines go through `calculatePrice` too, so the price a line
+ * The chart's order lines go through `priceForOffset` too, so the price a line
  * is drawn at is the price the cell shows and the price the mapper sends.
  */
 export const priceAtOffset = (

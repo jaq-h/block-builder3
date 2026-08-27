@@ -308,8 +308,9 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   `toHaveLength(2)` stays green for `scale?: PriceScaleKind` and for a trailing options
   object, which are exactly the regressions it would exist to catch.
   `orderAutoscale.ts` carries the one thing a logarithmic axis genuinely cannot do: show a
-  zero or negative price, which the drag layer's 0-100 vs 50 percent mismatch can still
-  produce. It always returns a provider, never `undefined`: `applyOptions` merges with a
+  zero or negative price, which the drag layer's 0-100 vs 50 percent mismatch used to
+  produce; `clampOffset` closed that, and the guard stays because a guard that trusts its
+  callers is not one. It always returns a provider, never `undefined`: `applyOptions` merges with a
   helper that skips an undefined source value, so `undefined` does not clear a provider,
   it leaves the previous one installed and the chart stretched to a level the user has
   already deleted.
@@ -660,6 +661,18 @@ carve-out. `keepBlockInItsCell` in `GridArea.tsx` is the whole of it - it report
 only, which `CarriedBlock.source: ProviderSource` states in the type rather than in a
 comment. A misplaced order is corrected by removing it (drag it off the grid) and placing a
 new one, until the cell-detail editor ships.
+
+**Known gap: removing a single placed block is not reachable for most of them.**
+`handleDragEnd` -> `removeBlock` is the only per-block removal path in the app, and it fires
+only when a *free* drag ends outside every cell. `block.tsx` wires `useVerticalDrag` instead
+for any block whose cell draws a price axis, so a placed Limit, Stop Loss or Take Profit
+cannot be dragged off the grid at all, and no input method has a keyboard removal path for
+any block type. Clear All is then the only way to remove one, and it destroys the whole
+strategy. This is pre-existing and predates the mapping owner; D9 makes it more visible by
+naming delete-and-rebuild as *the* correction path for a misplaced order. Closing it - a
+removal affordance that works on a priced block and from the keyboard - is filed as its own
+piece of work, and the sr-only block instructions deliberately promise removal only for a
+cell that draws no axis until it lands.
 
 **The refusal is legible, not silent.** Three things say so together and none of them is
 optional: the announcer's `moveRefused` / `staysInCell` sentences, a visible note under the

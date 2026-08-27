@@ -172,6 +172,20 @@ const GridArea: FC<GridAreaProps> = ({
   // grid's single voice exists to prevent.
   const [refusedMove, setRefusedMove] = useState<string | null>(null);
 
+  // The note names an order by its label, so that label is the identity it has
+  // to keep: once no block on the grid carries it, the note is talking about
+  // something the user can no longer see. `clearAll`, `reverseBlocks` and a
+  // market switch all replace the grid wholesale without going near the
+  // gestures that reset this, which is how a note naming a cleared-away order
+  // came to sit under an empty grid.
+  useEffect(() => {
+    if (!refusedMove) return;
+    const stillOnGrid = grid.some((col) =>
+      col.some((cell) => cell.some((block) => block.label === refusedMove)),
+    );
+    if (!stillOnGrid) setRefusedMove(null);
+  }, [grid, refusedMove]);
+
   // ─── Derived values ──────────────────────────────────────────────
   const patternConfig = PATTERN_CONFIGS[strategyPattern];
   const showPrimaryWarning =
@@ -861,8 +875,8 @@ const GridArea: FC<GridAreaProps> = ({
         Press Enter on an order in the palette to pick it up, then use the
         arrow keys to choose a cell and Enter again to place it. Escape returns
         it. A block already on the grid stays in the cell it was placed in: on a
-        price axis the arrow keys move it along that axis, and to put an order
-        in a different cell, remove it and place a new one.
+        price axis the arrow keys move it along that axis, and in a cell that
+        draws no price axis it can be dragged off the grid to remove it.
       </p>
       <div className={contentRow}>
         {/* Provider Column */}

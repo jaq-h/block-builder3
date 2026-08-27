@@ -10,8 +10,8 @@ import { PriceScaleMode } from "lightweight-charts";
 // That distinction is the whole safety argument for shipping this option in a
 // codebase that has spent two days deleting "one fact derived two ways"
 // defects. The grid and the chart share exactly one fact - the price a block
-// represents - and both take it from `priceAtOffset` through `calculatePrice`
-// (see `orderPriceLines.ts`). A price line is placed by handing that price to
+// represents - and both take it from `priceAtOffset` through `priceForOffset`
+// in `utils/blockMapping.ts` (see `orderPriceLines.ts`). A price line is placed by handing that price to
 // the chart, which converts it with whichever mode is set here; the candle at
 // that price converts identically, so a line still lands exactly on the level
 // it names under either mode.
