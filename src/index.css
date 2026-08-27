@@ -322,7 +322,12 @@
    24px floor and keeping the mark at the bottom of it extends the hit area
    upward into the chart's own empty corner and moves nothing on screen. The
    artwork is untouched, which is what the library's attribution requirement is
-   about. */
+   about.
+
+   Unlayered on purpose, and not a counterexample to the rule above: that rule
+   is about element *defaults*, which have to lose to a component's utilities.
+   This is an override of a stylesheet the library injects at runtime, which no
+   utility of ours competes with, and it has to win. */
 #tv-attr-logo {
     display: flex;
     align-items: flex-end;
