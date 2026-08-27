@@ -833,7 +833,9 @@ src/
 │   ├── appRequestHeader.ts        # The header those calls carry (server's copy: api/_lib/loopback.ts)
 │   ├── krakenRest.ts              # Public REST API client
 │   ├── assetMetadata.ts           # Kraken's per-pair rules (precision, tick, lot, minimum)
-│   ├── krakenWebSocket.ts         # WebSocket client for live data (refcounted subscriptions)
+│   ├── krakenWebSocket.ts         # WebSocket client for live data - the seam between the two below
+│   ├── socketLifecycle.ts         # Live connection state, as one state machine per socket
+│   ├── subscriptionRegistry.ts    # Registered subscription intent, refcounted, socket-agnostic
 │   ├── orderMapper.ts             # Maps internal order config → Kraken API format
 │   ├── tickerUpdate.ts            # Parses & merges v2 ticker WebSocket frames
 │   ├── types.ts                   # API-specific type definitions

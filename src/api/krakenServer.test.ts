@@ -37,6 +37,39 @@ describe("getWebSocketToken", () => {
     expect(JSON.stringify(init?.headers ?? {})).not.toContain("API-Sign");
   });
 
+  // The token is a live trading credential with a life of its own once minted.
+  // The caller that asked for it has to be able to call the request off when
+  // the connection it was for goes away, which means the signal has to reach
+  // `fetch` rather than only being checked after the fact.
+  it("hands the abort signal to fetch, so an abandoned mint is cancelled", async () => {
+    const controller = new AbortController();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { token: "tok-1" }));
+
+    await getWebSocketToken(controller.signal);
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(init?.signal).toBe(controller.signal);
+  });
+
+  it("rejects when the mint is aborted in flight", async () => {
+    const controller = new AbortController();
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("The user aborted a request.", "AbortError"));
+          });
+        }),
+    );
+
+    const minting = getWebSocketToken(controller.signal);
+    controller.abort();
+
+    await expect(minting).rejects.toThrow("aborted");
+  });
+
   it("surfaces the server's refusal message", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(503, {
