@@ -329,6 +329,22 @@ Their accessible name is `label: description`, so the visible text stays *inside
 rather than being replaced by it (WCAG 2.5.3 Label in Name): a bare `aria-label` spelling
 out the abbreviation renames "SMA 20" to something a voice-control user cannot say.
 
+**Known gap: the toolbar controls are clipped and unreachable at narrow widths.** At 390px
+the title bar cannot fit the symbol, the price and seven timeframe buttons across
+`panelTitleBar`'s fixed 64px height, so the trailing timeframes sit outside the panel's
+`overflow-hidden`; the indicators strip does the same at 1024px. Nothing scrolls to bring
+either back, so those controls are unreachable rather than merely ugly. It is pre-existing
+on `main` and was never in the button-repaint lane's scope. Owned by GitHub issue #20,
+<https://github.com/jaq-h/block-builder3/issues/20>, which carries the full analysis. One
+approach is already ruled out, and the measurement that ruled it out is invisible on a Mac:
+making each `chartControlGroup` an `overflow-x-auto` scroller was tried and reverted,
+because it clips the focus ring on both axes, and on Windows and most Linux a classic
+space-taking scrollbar grows an auto-height group from a 32px border box to about 47px,
+which breaks `chartHeaderSecondaryRow`'s derived `min-h`. Measure a fresh attempt on a
+classic-scrollbar platform before believing it. Wrapping instead has its own cost:
+`panelTitleBar`'s fixed `h-16` is shared by three panels, so relaxing it here needs a
+deliberate documented exception.
+
 ## Layout and the CSS cascade
 
 Seven traps live in the layout, and each is easy to reintroduce.
