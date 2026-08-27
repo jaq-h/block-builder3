@@ -324,23 +324,11 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   **A bar close redraws one bar, not the series.** `candles` growing by a bar is not
   new data arriving, it is the bar already on the chart being declared final, so
   `OrderChart` writes that one bar over itself with `update()` and leaves the rest
-  standing; `appendedCandles` in `src/utils/liveCandles.ts` is what decides whether a
-  new list is that or a genuinely different series (a market switch, a corrected
-  backfill, the first backfill onto a series holding nothing), and only the latter gets
-  a `setData`. A series with no bars on it is deliberately never an extension, however
-  its empty prefix compares: that is the state `useOHLCData` holds for every unresolved
-  request, so treating it as one would answer every mount, market switch and timeframe
-  change with several hundred per-bar `update()` calls instead of one bulk load. The bar
-  at the end is the one compared by time rather than by identity, and reissued through
-  `update()` when it is a different object, because the feed rewrites exactly that bar in
-  place: after a backfill `latestCandle` is the same object as `candles.at(-1)`, the first
-  tick replaces it, and the rollover folds that new object in as the last element - which
-  on identity alone read as a rebuilt bar and made the first close after every backfill
-  the one close that still redrew everything. An unconditional `setData(candles)`
-  there replaces every bar on the chart sixty times an hour to say that one of them
-  stopped moving. `OrderChart.dom.test.tsx` pins it under "a bar close", against a
-  stand-in series that records what is drawn after every call rather than only at the end
-  and refuses a bar older than its tail, as the library does.
+  standing. `appendedCandles` in `src/utils/liveCandles.ts` is the one owner of what
+  counts as an extension, and its docblock carries why each case is judged as it is;
+  anything that is not one - a market switch, a corrected backfill, a series holding
+  nothing - still takes the full `setData`. `OrderChart.dom.test.tsx` pins the
+  transition under "a bar close".
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region (`aria-live` and `role="status"` alike).
