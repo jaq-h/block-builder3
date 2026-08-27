@@ -664,6 +664,36 @@ describe("OrderChart", () => {
       ]);
     });
 
+    // The transition the real feed produces on every mount, market switch and
+    // timeframe change: `useOHLCData` holds an empty list until the fetch for
+    // that exact pair and interval resolves, and then hands over the whole
+    // backfill at once. A series holding nothing is not a series being
+    // extended, so that is a bulk load rather than several hundred bar closes.
+    it("draws the first backfill in one setData, not a bar at a time", () => {
+      feed.candles = [];
+      feed.latestCandle = null;
+      feed.isLoading = true;
+      const harness = chartState.instance as ReturnType<typeof fakeChart>;
+      const { rerender } = render(<OrderChart orders={{}} />);
+
+      harness.setData.mockClear();
+      harness.update.mockClear();
+
+      feed.candles = backfill;
+      feed.latestCandle = backfill.at(-1)!;
+      feed.isLoading = false;
+      rerender(<OrderChart orders={{}} />);
+
+      expect(harness.setData).toHaveBeenCalledTimes(1);
+      expect(harness.setData.mock.calls[0][0]).toHaveLength(backfill.length);
+
+      // The one update left is the forming bar the live-tick effect writes, not
+      // a per-bar replay of the backfill.
+      expect(harness.update.mock.calls.map(([candle]) => candle.time)).toEqual([
+        backfill.at(-1)!.time,
+      ]);
+    });
+
     it("still redraws in full when the series is not merely extended", () => {
       const { tick, setData } = mount();
 

@@ -156,8 +156,12 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
       drawnRef.current.series === candleSeries ? drawnRef.current.candles : null;
     drawnRef.current = { series: candleSeries, candles };
 
+    // An empty result is an extension that added nothing - the same bars, in
+    // the same order - so the series already shows this list and must be left
+    // standing. Only `null`, meaning "not an extension of what is drawn", is a
+    // reason to redraw.
     const appended = drawn && appendedCandles(drawn, candles);
-    if (appended) {
+    if (appended !== null) {
       for (const bar of appended) candleSeries.update(bar);
       return;
     }

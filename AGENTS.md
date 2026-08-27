@@ -326,7 +326,12 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   `OrderChart` writes that one bar over itself with `update()` and leaves the rest
   standing; `appendedCandles` in `src/utils/liveCandles.ts` is what decides whether a
   new list is that or a genuinely different series (a market switch, a corrected
-  backfill), and only the latter gets a `setData`. An unconditional `setData(candles)`
+  backfill, the first backfill onto a series holding nothing), and only the latter gets
+  a `setData`. A series with no bars on it is deliberately never an extension, however
+  its empty prefix compares: that is the state `useOHLCData` holds for every unresolved
+  request, so treating it as one would answer every mount, market switch and timeframe
+  change with several hundred per-bar `update()` calls instead of one bulk load. An
+  unconditional `setData(candles)`
   there replaces every bar on the chart sixty times an hour to say that one of them
   stopped moving. `OrderChart.dom.test.tsx` pins it under "a bar close", against a
   stand-in series that records what is drawn after every call rather than only at the end.

@@ -122,4 +122,11 @@ describe("appendedCandles", () => {
     expect(appendedCandles(backfill, [bar(60, 10)])).toBeNull();
     expect(appendedCandles(backfill, [])).toBeNull();
   });
+
+  // Nothing drawn gaining a whole backfill is the first draw, not a bar close:
+  // the series holds no bar for the arriving ones to be an extension of.
+  it("refuses a series that holds nothing, whatever arrives", () => {
+    expect(appendedCandles([], backfill)).toBeNull();
+    expect(appendedCandles([], [])).toBeNull();
+  });
 });

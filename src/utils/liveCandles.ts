@@ -71,11 +71,22 @@ export const withLatestCandle = (
  * identity). A bar that has been rebuilt - a corrected backfill, a new market -
  * is deliberately not an extension, and its caller falls back to a full
  * `setData`.
+ *
+ * A series holding nothing is not an extension either, however the prefix
+ * compares: every bar it gains is its first draw rather than a bar close. That
+ * case is the one the feed produces most - `useOHLCData` holds the empty
+ * `NO_CANDLES` for a request that has not resolved, so every mount, market
+ * switch and timeframe change passes through it - and answering it with the
+ * whole backfill would turn one bulk load into a per-bar `update()` for each of
+ * several hundred bars, positioning the time scale by right-edge shifting
+ * rather than by a bulk load. A close always appends onto a series that already
+ * holds the bar that closed.
  */
 export const appendedCandles = (
   drawn: readonly CandlestickData<UTCTimestamp>[],
   next: readonly CandlestickData<UTCTimestamp>[],
 ): CandlestickData<UTCTimestamp>[] | null => {
+  if (!drawn.length) return null;
   if (next.length < drawn.length) return null;
   for (let i = 0; i < drawn.length; i += 1) {
     if (drawn[i] !== next[i]) return null;
