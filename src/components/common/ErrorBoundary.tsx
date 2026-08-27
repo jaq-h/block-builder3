@@ -102,7 +102,11 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         {/* The message itself is the only detail worth putting on screen: a
             stack tells the user nothing, and the console already has it. */}
         <details className="mt-1 max-w-full text-left">
-          <summary className="cursor-pointer text-[11px] text-text-muted">
+          {/* `py-1` is the WCAG 2.2 SC 2.5.8 24px target floor - the same one
+              `chartToggleButton`'s `min-h-6` is derived from. An 11px label at
+              the inherited 1.5 line-height is 16.5px on its own, and a summary
+              is an interactive disclosure control like any button. */}
+          <summary className="cursor-pointer py-1 text-[11px] text-text-muted">
             Technical details
           </summary>
           <pre className="mt-1.5 max-w-full overflow-auto rounded bg-bg-overlay p-2 text-[11px] text-text-muted whitespace-pre-wrap">

@@ -37,14 +37,6 @@ const PatternSelector: FC = function PatternSelector() {
             // The accent border and fill say which assembly type is in use, and
             // `aria-pressed` says it to anything that is not looking at them.
             aria-pressed={isActive}
-            // Without this the bare `button` reset in `src/index.css` - which is
-            // unlayered, and so beats every utility class - paints both buttons
-            // in its own grey 1px skin, and the two render identically: measured
-            // in Chrome, the selected and unselected button came back with the
-            // same border width, border colour and background. See that file for
-            // why the reset is opted out of one control at a time rather than
-            // fixed app-wide here.
-            data-unstyled
             className={patternButton({ isActive })}
             onClick={() => setStrategyPattern(pattern)}
           >

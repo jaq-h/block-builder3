@@ -7,26 +7,52 @@ import type { SvgIcon } from "../../data/orderTypes";
 import type { CancelOptions } from "../../hooks/useBlockCommand";
 import type { ActivationOrigin } from "../../utils/blockCommand";
 import { SCALE_CONFIG } from "../../styles/grid";
+import { BLOCK_TILE_SHAPE } from "./blockTile";
 
 /** The id every block's instructions are described by. Rendered once by GridArea. */
 export const BLOCK_INSTRUCTIONS_ID = "strategy-block-instructions";
 
+// THE ONE DELIBERATE EXCEPTION TO THE APP-WIDE BUTTON TREATMENT.
+//
+// `src/index.css`'s button defaults are layered now, so every button in the app
+// paints whatever its own utilities ask for. This block asked for
+// `bg-accent-primary`, and taking it literally turned the order palette into
+// nine identical squares of solid `#855bfb` - see the PR's before-and-after.
+//
+// That is wrong here specifically, because a block tile is the one surface in
+// this app whose *colour is its state*. A tile has to say, by colour alone at a
+// glance across the panel, whether it is an ordinary palette entry, the valid
+// drop target for the cell under the pointer (`isHighlighted`), the block
+// currently in hand (`isCarrying`), or the ghost left where a free drag began
+// (`isPlaceholder`). Painting the resting state at full accent saturation spends
+// the accent before any of those has anything left to say with it - and the
+// accent is what "active" means everywhere else in the app, on the selected
+// assembly type, the selected timeframe and the selected price scale.
+//
+// So the resting tile keeps a quiet accent-tinted surface and the saturated end
+// of the scale is left free for the states above. This is a design decision
+// about this component, written in its own utilities rather than in a cascade
+// workaround: there is no `data-unstyled` and no `!` modifier here, and adding
+// either back is a regression, not an exception (`AGENTS.md`, "Layout and the
+// CSS cascade").
+//
+// One thing genuinely improved by the layer and must not be undone: `border-2`
+// now paints. The unlayered reset used to flatten it to its own 1px neutral
+// border, so `isHighlighted`'s `border-white-50` drew nothing and the highlight
+// was carried by the breathing glow alone.
 const buttonVariants = cva(
   [
-    "w-10 h-10 flex flex-col justify-center items-center p-[3px]",
-    "border-2 rounded-md select-none",
-    "text-text-primary",
+    ...BLOCK_TILE_SHAPE,
     // Without this the browser claims a finger drag for page scrolling before
     // the first `pointermove` reaches the drag hooks - the whole gesture is
     // then a scroll and the block never moves.
     "touch-none",
-    "[&_svg]:w-5 [&_svg]:h-5 [&_svg]:stroke-current [&_svg]:pointer-events-none",
   ],
   {
     variants: {
       isPlaceholder: {
-        true: "bg-accent-bg-hover cursor-default pointer-events-none opacity-50 border-transparent hover:bg-accent-bg-hover",
-        false: "bg-accent-primary opacity-100 hover:bg-accent-secondary",
+        true: "bg-accent-bg-subtle-light cursor-default pointer-events-none opacity-50 border-transparent hover:bg-accent-bg-subtle-light",
+        false: "bg-accent-bg-subtle opacity-100 hover:bg-accent-bg-hover",
       },
       isHighlighted: {
         true: "border-white-50 animate-block-breathing",

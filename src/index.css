@@ -232,72 +232,108 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-    font-weight: 500;
-    color: var(--accent-color-purple);
-    text-decoration: inherit;
+/* ============================================================================
+   BARE ELEMENT DEFAULTS - inside `@layer base`, so a utility always wins
+   ============================================================================
+
+   These are element defaults, and a default is something a component overrides.
+   That only holds if they are layered: unlayered CSS beats layered CSS whatever
+   the specificity, and every Tailwind utility is layered, so a bare `button {}`
+   written outside a layer wins against that button's own `px-*`, `border-*`,
+   `rounded-*`, `bg-*` and `text-*`. It did, app-wide, for as long as this block
+   sat outside `@layer base` - the strategy pattern selector drew its selected
+   and unselected buttons identically, and two lanes independently worked around
+   it, one with a `[data-unstyled]` opt-out and one with `!` modifiers.
+
+   `@layer base` is where Tailwind's own preflight sits, and it comes before the
+   `utilities` layer, so everything here is now a genuine default. Both
+   workarounds came off with it; see `AGENTS.md` under "Layout and the CSS
+   cascade" for why there is no escape hatch any more, and
+   `vite/buttonResetLayer.test.ts`, which asks it of each of `button`, `a`,
+   `body` and `h1` in turn and fails if a bare rule for one of them comes back
+   outside a layer.
+
+   Taking the layer repainted every button in the app to whatever its own
+   utilities had been asking for all along. Two consequences were owned in the
+   same change: the chart toolbar's `!`-free geometry now clears WCAG 2.2
+   SC 2.5.8's 24px minimum target size (`chartToggleButton`), and the order
+   palette's block tiles keep a quiet surface of their own rather than becoming
+   nine identical accent-purple squares (`src/components/blocks/block.tsx`). */
+@layer base {
+    a {
+        font-weight: 500;
+        color: var(--accent-color-purple);
+        text-decoration: inherit;
+    }
+
+    a:hover {
+        color: var(--outline-color-secondary);
+    }
+
+    body {
+        background-color: var(--ds-bg-color);
+        width: 100%;
+        margin: 0;
+        height: 100%;
+        min-height: 100vh;
+    }
+
+    h1 {
+        font-size: 3.2em;
+        line-height: 1.1;
+    }
+
+    button {
+        border-radius: 8px;
+        border: 1px solid var(--border-color-neutral);
+        padding: 0.6em 1.2em;
+        font-size: 1em;
+        font-weight: 500;
+        font-family: inherit;
+        background-color: rgba(104, 107, 130, 0.1);
+        cursor: pointer;
+        transition: all 0.25s;
+        color: rgba(255, 255, 255, 0.87);
+    }
+
+    button:hover {
+        border-color: var(--accent-color-purple);
+        background-color: rgba(133, 91, 251, 0.15);
+    }
+
+    button:focus,
+    button:focus-visible {
+        outline: 2px solid var(--outline-color-primary);
+        outline-offset: 2px;
+    }
 }
 
-a:hover {
-    color: var(--outline-color-secondary);
-}
+/* ============================================================================
+   THIRD-PARTY: THE LIGHTWEIGHT-CHARTS ATTRIBUTION LINK
+   ============================================================================
 
-body {
-    background-color: var(--ds-bg-color);
-    width: 100%;
-    margin: 0;
-    height: 100%;
-    min-height: 100vh;
-}
+   `#tv-attr-logo` is the "Charting by TradingView" mark the chart library
+   injects into its own pane, and it is a real link. The library draws it as a
+   35x19 SVG, which is below WCAG 2.2 SC 2.5.8's 24px minimum target size. It
+   was found by the target-size sweep this change's chart-toolbar fix came out
+   of; it predates that change and is not something the app can restyle at the
+   component level, since the element is not ours to render.
 
-h1 {
-    font-size: 3.2em;
-    line-height: 1.1;
-}
+   The library anchors it `bottom: 10px; left: 10px`, so growing the box to the
+   24px floor and keeping the mark at the bottom of it extends the hit area
+   upward into the chart's own empty corner and moves nothing on screen. The
+   artwork is untouched, which is what the library's attribution requirement is
+   about.
 
-/* This block is the Vite starter's default button skin, and it sits outside any
-   cascade layer. Unlayered CSS beats layered CSS whatever the specificity, and
-   every Tailwind utility is layered, so for any button it matches it wins: that
-   button's own `px-*`, `border-*`, `rounded-*`, `bg-*` and `text-*` do nothing.
-   That is a real defect and it is app-wide - the fix is to move this block into
-   `@layer base`, which repaints every button in the app and so is a deliberate
-   design change rather than a side effect of somebody's bug fix.
-
-   Until that change is taken on its own terms, `[data-unstyled]` is the way out
-   for one control at a time. A button carrying it is saying "I bring my own
-   skin"; this rule stops matching it and its utilities apply normally. Every
-   button without the attribute renders exactly as it always has.
-
-   Use it only where a control genuinely needs to paint itself - a selected
-   state, a semantic colour - and never as a blanket. When the app-wide change
-   lands, the `:not(...)` and every `data-unstyled` come off together.
-
-   The focus ring is deliberately NOT scoped. It is the one part of this block
-   that is a real default rather than a skin, no component overrides it, and a
-   control that opts out of the skin must not silently opt out of being
-   focusable-visibly. */
-button:not([data-unstyled]) {
-    border-radius: 8px;
-    border: 1px solid var(--border-color-neutral);
-    padding: 0.6em 1.2em;
-    font-size: 1em;
-    font-weight: 500;
-    font-family: inherit;
-    background-color: rgba(104, 107, 130, 0.1);
-    cursor: pointer;
-    transition: all 0.25s;
-    color: rgba(255, 255, 255, 0.87);
-}
-
-button:not([data-unstyled]):hover {
-    border-color: var(--accent-color-purple);
-    background-color: rgba(133, 91, 251, 0.15);
-}
-
-button:focus,
-button:focus-visible {
-    outline: 2px solid var(--outline-color-primary);
-    outline-offset: 2px;
+   Unlayered on purpose, and not a counterexample to the rule above: that rule
+   is about element *defaults*, which have to lose to a component's utilities.
+   This is an override of a stylesheet the library injects at runtime, which no
+   utility of ours competes with, and it has to win. */
+#tv-attr-logo {
+    display: flex;
+    align-items: flex-end;
+    min-height: 24px;
+    min-width: 24px;
 }
 
 * {

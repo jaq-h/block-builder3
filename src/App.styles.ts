@@ -30,32 +30,25 @@ export const navLinkVariants = cva(
   },
 );
 
-// The `!` modifiers are load-bearing, not decoration. `src/index.css` still
-// carries the Vite starter's bare `button { ... }` rules, and because those sit
-// outside any cascade layer they beat every Tailwind utility - which is layered -
-// no matter how specific it is. Without them the app's primary action renders in
-// the generic grey button skin instead of green. The real fix is to move that
-// reset into `@layer base`, which changes how every button in the app paints, so
-// it belongs in its own change rather than riding along here.
-//
-// `[data-unstyled]` is now the per-control way out of that reset, and this
-// button could carry it instead and drop every `!` below for the same rendering.
-// It deliberately has not: swapping the mechanism under the app's primary action
-// buys nothing on its own, and it is part of the app-wide change above rather
-// than of whatever bug fix happens to be passing through.
+// Plain utilities, no `!` anywhere. They used to carry one each, because the
+// bare `button { ... }` reset in `src/index.css` sat outside a cascade layer and
+// so beat every Tailwind utility however specific - without the `!` the app's
+// primary action rendered in the generic grey skin instead of green. That reset
+// is inside `@layer base` now, so these win on their own; see `AGENTS.md` under
+// "Layout and the CSS cascade".
 export const executeButtonVariants = cva(
   [
-    "px-5! py-2.5! text-white! border-none! rounded! text-sm! font-medium!",
+    "px-5 py-2.5 text-white border-none rounded text-sm font-medium",
     // The label carries a live order count, so it must not wrap or re-flow the
     // action bar as that count changes.
     "whitespace-nowrap transition-colors duration-200 flex items-center gap-2",
-    "hover:enabled:bg-status-green-hover! disabled:opacity-70",
+    "hover:enabled:bg-status-green-hover disabled:opacity-70",
   ],
   {
     variants: {
       isSubmitting: {
-        true: "bg-disabled-bg! cursor-not-allowed",
-        false: "bg-status-green! cursor-pointer",
+        true: "bg-disabled-bg cursor-not-allowed",
+        false: "bg-status-green cursor-pointer",
       },
     },
     defaultVariants: {
