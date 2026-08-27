@@ -7,7 +7,12 @@ import {
   type FC,
 } from "react";
 import { LineStyle } from "lightweight-charts";
-import type { IPriceLine } from "lightweight-charts";
+import type {
+  CandlestickData,
+  IPriceLine,
+  ISeriesApi,
+  UTCTimestamp,
+} from "lightweight-charts";
 
 import type { OrderConfig } from "../../../types/grid";
 import { useKrakenAPI } from "../../../hooks/useKrakenAPI";
@@ -17,7 +22,7 @@ import { useMarket } from "../../../store/useMarket";
 import { formatMarketPrice } from "../../../utils/marketFormat";
 import { useIndicatorSeries } from "./useIndicatorSeries";
 import { OVERLAY_INDICATORS } from "./indicators";
-import { withLatestCandle } from "@utils/liveCandles";
+import { appendedCandles, withLatestCandle } from "@utils/liveCandles";
 import { orderPriceLines } from "./orderPriceLines";
 import { orderAutoscaleProvider } from "./orderAutoscale";
 import {
@@ -97,6 +102,13 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
 
   useIndicatorSeries(chart, liveCandles, enabledIndicators);
 
+  // What the candle series currently holds, tagged with the series it was
+  // drawn into, so a rebuilt chart is redrawn in full rather than appended to.
+  const drawnRef = useRef<{
+    series: ISeriesApi<"Candlestick"> | null;
+    candles: readonly CandlestickData<UTCTimestamp>[];
+  }>({ series: null, candles: [] });
+
   // Track price lines so we can remove them on re-render
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const autoScaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,8 +142,26 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   // An empty list is data too, and it has to reach the series: skipping it left
   // the previous market's bars drawn under the new market's header, price label
   // and axis precision - one asset's price history presented as another's.
+  //
+  // A bar close is not that, though, and must not be redrawn as one. It only
+  // appends the bar that just finished - the very bar already on the chart as
+  // the one that was forming - so it is written over itself with `update()` and
+  // the rest of the series is left standing. `setData(candles)` there replaced
+  // the whole series with a list holding no forming bar, and the newest candle
+  // blinked out until the next tick. See `appendedCandles` in `liveCandles.ts`.
   useEffect(() => {
     if (!candleSeries) return;
+
+    const drawn =
+      drawnRef.current.series === candleSeries ? drawnRef.current.candles : null;
+    drawnRef.current = { series: candleSeries, candles };
+
+    const appended = drawn && appendedCandles(drawn, candles);
+    if (appended) {
+      for (const bar of appended) candleSeries.update(bar);
+      return;
+    }
+
     candleSeries.setData(candles);
   }, [candleSeries, candles]);
 

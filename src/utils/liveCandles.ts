@@ -52,3 +52,33 @@ export const withLatestCandle = (
   // complete record of a closed bar, so it wins rather than being rewound.
   return candles;
 };
+
+/**
+ * The bars `next` adds to the end of `drawn`, or `null` when `next` is not an
+ * extension of it.
+ *
+ * This exists for the one transition that made the newest candle blink: at a
+ * bar close `useOHLCData` moves the bar it was writing into `candles`, and
+ * redrawing the series with `setData(candles)` replaces every bar on the chart
+ * with a list that does not yet contain the bar now forming. The chart is left
+ * without it until the next tick arrives, so the newest candle vanishes and
+ * comes back on every close. The bar that closed is already drawn - as the bar
+ * that was forming, at the same time - so the honest redraw is to write that
+ * one bar over itself with `update()` and leave the rest of the series alone.
+ *
+ * Extension is judged by reference identity across the whole prefix, which is
+ * what the fold above produces (`[...candles, latest]` keeps every earlier bar's
+ * identity). A bar that has been rebuilt - a corrected backfill, a new market -
+ * is deliberately not an extension, and its caller falls back to a full
+ * `setData`.
+ */
+export const appendedCandles = (
+  drawn: readonly CandlestickData<UTCTimestamp>[],
+  next: readonly CandlestickData<UTCTimestamp>[],
+): CandlestickData<UTCTimestamp>[] | null => {
+  if (next.length < drawn.length) return null;
+  for (let i = 0; i < drawn.length; i += 1) {
+    if (drawn[i] !== next[i]) return null;
+  }
+  return next.slice(drawn.length);
+};

@@ -139,15 +139,34 @@ const fakeChart = () => {
     }),
   } as unknown as IChartApi;
 
+  /**
+   * What the candle series holds, and a snapshot of it after every single call
+   * the panel makes. The snapshots are what a bar close has to be judged on:
+   * the question is not what the series ends up holding but whether the newest
+   * bar was ever missing from it along the way.
+   */
+  let drawn: CandlestickData<UTCTimestamp>[] = [];
+  const drawnSnapshots: CandlestickData<UTCTimestamp>[][] = [];
+  const snapshot = () => drawnSnapshots.push([...drawn]);
+
   /** Every list the panel has handed the candle series, in order. */
-  const setData = vi.fn();
+  const setData = vi.fn((data: CandlestickData<UTCTimestamp>[]) => {
+    drawn = [...data];
+    snapshot();
+  });
+  const update = vi.fn((candle: CandlestickData<UTCTimestamp>) => {
+    const last = drawn.at(-1);
+    if (last && last.time === candle.time) drawn[drawn.length - 1] = candle;
+    else drawn.push(candle);
+    snapshot();
+  });
   const createPriceLine = vi.fn((options: unknown) => options);
   const removePriceLine = vi.fn();
   const seriesApplyOptions = vi.fn();
 
   const candleSeries = {
     setData,
-    update: vi.fn(),
+    update,
     createPriceLine,
     removePriceLine,
     applyOptions: seriesApplyOptions,
@@ -157,6 +176,11 @@ const fakeChart = () => {
     chart,
     candleSeries,
     setData,
+    update,
+    drawnSnapshots,
+    clearSnapshots: () => {
+      drawnSnapshots.length = 0;
+    },
     createPriceLine,
     removePriceLine,
     seriesApplyOptions,
@@ -596,5 +620,62 @@ describe("OrderChart", () => {
     rerender(<OrderChart orders={{}} />);
     expect(screen.queryByText("Loading chart…")).toBeNull();
     expect(screen.queryByText(/Precision rules unavailable/)).toBeNull();
+  });
+
+  // ===========================================================================
+  // A BAR CLOSE
+  // ===========================================================================
+  //
+  // At a close the feed moves the bar it was writing into `candles` and starts
+  // a new one. Redrawing that with `setData(candles)` throws away every bar on
+  // the chart and puts back a list that stops at the bar which just closed, so
+  // the bar now forming is absent from the series until the next tick arrives -
+  // and the newest candle blinks out and back on every close. What the series
+  // ends up holding is not the question; what it held along the way is.
+  describe("a bar close", () => {
+    it("keeps the forming candle on the series throughout", () => {
+      const { tick, drawnSnapshots, clearSnapshots } = mount();
+
+      // Two ticks in the same bar, then the rollover that closes it.
+      tick(bar(25, 125));
+      const forming = bar(25, 126);
+      tick(forming);
+      clearSnapshots();
+      tick(bar(26, 127));
+
+      expect(drawnSnapshots.length).toBeGreaterThan(0);
+      for (const drawn of drawnSnapshots) {
+        expect(drawn.map((candle) => candle.time)).toContain(forming.time);
+      }
+    });
+
+    it("updates the closed bar in place instead of replacing the series", () => {
+      const { tick, setData, update } = mount();
+
+      tick(bar(25, 125));
+      setData.mockClear();
+      update.mockClear();
+      tick(bar(26, 126));
+
+      expect(setData).not.toHaveBeenCalled();
+      expect(update.mock.calls.map(([candle]) => candle.time)).toEqual([
+        bar(25, 125).time,
+        bar(26, 126).time,
+      ]);
+    });
+
+    it("still redraws in full when the series is not merely extended", () => {
+      const { tick, setData } = mount();
+
+      tick(bar(25, 125));
+      setData.mockClear();
+
+      // A new market: a different list of bars, not an extension of this one.
+      feed.candles = [bar(40, 200)];
+      feed.latestCandle = bar(40, 200);
+      tick(bar(41, 201));
+
+      expect(setData).toHaveBeenCalled();
+    });
   });
 });

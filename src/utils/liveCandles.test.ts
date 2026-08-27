@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 
-import { withLatestCandle } from "./liveCandles";
+import { appendedCandles, withLatestCandle } from "./liveCandles";
 import { simpleMovingAverage } from "@widgets/orderChart/indicators";
 
 // =============================================================================
@@ -98,5 +98,28 @@ describe("withLatestCandle", () => {
 
     expect(atFetch.at(-1)).toEqual({ time: 180, value: 20 });
     expect(later.at(-1)).toEqual({ time: 180, value: 30 });
+  });
+});
+
+describe("appendedCandles", () => {
+  it("reports the bars a bar close added, and nothing else", () => {
+    const closed = withLatestCandle(backfill, bar(240, 40));
+    expect(appendedCandles(backfill, closed)).toEqual([bar(240, 40)]);
+  });
+
+  it("reports nothing for a list that has not grown", () => {
+    expect(appendedCandles(backfill, [...backfill])).toEqual([]);
+  });
+
+  // The forming bar being written over itself: same times, new objects. Only a
+  // full redraw can carry the corrected values, so this is not an extension.
+  it("refuses a list whose existing bars were rebuilt", () => {
+    const rebuilt = [backfill[0], backfill[1], bar(180, 31), bar(240, 40)];
+    expect(appendedCandles(backfill, rebuilt)).toBeNull();
+  });
+
+  it("refuses a shorter list, which is a different series", () => {
+    expect(appendedCandles(backfill, [bar(60, 10)])).toBeNull();
+    expect(appendedCandles(backfill, [])).toBeNull();
   });
 });
