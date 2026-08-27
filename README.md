@@ -541,7 +541,7 @@ the only pointer with a cursor on screen while nothing is pressed:
   click will actually use. It is silent by design: it fires for every cell a cursor crosses, so
   announcing would be a live region talking over itself for the length of one sweep, and the
   user it fires for is watching the cursor. The arrow keys still report every target they
-  reach. It ignores anything that is not a live mouse carry - a tap synthesises `mouseover`
+  reach. It ignores anything that is not a live mouse carry - a tap synthesises `mouseenter`
   too, and a stray cursor must not move a target the arrow keys are stepping through.
 
 The transitions where the two ways in overlap:
@@ -562,7 +562,7 @@ The transitions where the two ways in overlap:
 - **A block drawn on a price axis is refused**, exactly as it is for the keyboard and a finger,
   because a mouse cannot drag one between cells either.
 
-**Command model: keyboard, screen readers and taps.** Focus a block and press Enter - or
+**Command model: keyboard, screen readers, taps and clicks.** Focus a block and press Enter - or
 Space, which a button answers to as well - to pick it up; the arrow keys choose a target
 cell; Enter places it; Escape returns it. Tab is never swallowed - it abandons the carry
 and moves focus on, so a carried block cannot trap the keyboard. On touch the same model
@@ -916,7 +916,8 @@ src/
 │   ├── usePointerGesture.ts       # Pointer primitive (capture, tap vs drag, cancel)
 │   ├── useFreeDrag.ts             # Free-form drag (provider → grid cell)
 │   ├── useVerticalDrag.ts         # Vertical-axis drag (price scale sliding)
-│   ├── useBlockCommand.ts         # Select-then-place command model (keyboard, taps)
+│   ├── useBlockCommand.ts         # Select-then-place command model (keyboard, taps, clicks)
+│   ├── blockInHand.ts             # The one register of "a block is in hand"
 │   ├── useAnnouncer.ts            # Live-region message state
 │   ├── useGridAnnouncer.ts        # The grid's one voice: outcomes in, sentences out
 │   ├── useKrakenAPI.ts            # Kraken API hook (prices, order management)
