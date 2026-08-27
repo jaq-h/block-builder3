@@ -322,27 +322,6 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   identity-stable between bar closes; the chart folds the forming bar on top. The forming
   bar counts towards an average, pinned in `movingAverage.ts` next to the EMA seed.
 
-**This is the narrowest panel in the app, and it holds three groups of controls.**
-`chartControlGroup` is `min-w-0 overflow-x-auto` for all three, so a group scrolls what
-it cannot show; `chartToggleButton` is `shrink-0` so a squeezed button cannot fall under
-the 24px floor. A new control group here takes that constant rather than a bare flex row.
-Both halves were needed: on the base commit `1W` sat outside the panel's
-`overflow-hidden` at 390px and `EMA 20` did at 1024px, clipped, with no scrollbar to
-bring either back. **A scroll container must carry room for the focus ring it clips.**
-`overflow-x: auto` computes `overflow-y` to `auto` as well, and an outline is not part
-of the scrollable overflow region, so a group exactly as tall as its 24px buttons sliced
-the base `outline: 2px` at `outline-offset: 2px` flush with every control in it. That is
-what `p-1 -m-1` on `chartControlGroup` is: 4px of scrollport for the ring, given back on
-the margin box so no geometry moves and `chartHeaderSecondaryRow`'s derived `min-h`
-still holds. Any new scroller wrapping focusable controls owes the same 4px.
-
-In the title bar - the one bar carrying controls beside its title, and the one place
-`panelTitleBar`'s fixed `h-16` has to be shared out - which child gives up width first is
-decided in `chartIdentityGroup`'s comment and must not be re-decided piecemeal: the
-symbol and the price are whole or not at all, and only the offline notice truncates.
-There is deliberately no `min-w-0` on that group; the flex automatic minimum size is what
-holds the price off the first timeframe button.
-
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region (`aria-live` and `role="status"` alike).
 `gridAnnouncements.ts` stays the app's only announcer.

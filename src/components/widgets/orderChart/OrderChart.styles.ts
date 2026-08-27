@@ -84,70 +84,8 @@ export const chartHeaderPrimaryRow = cn(panelTitleBar, "justify-between");
 export const chartHeaderSecondaryRow =
   "flex flex-wrap items-center justify-between gap-3 px-4 py-1.5 pb-2 min-h-[38px]";
 
-/**
- * A named group of chart controls. Every one of them scrolls what it cannot
- * show, and this panel is the narrowest in the app: it holds three such groups
- * and no width to spare, so the alternative is not a tighter layout but a
- * control nobody can reach. Measured on the base commit, `1W` sat outside the
- * panel's `overflow-hidden` at 390px, and `EMA 20` did the same at 1024px -
- * clipped, with no scrollbar anywhere to bring either back.
- *
- * `min-w-0` is what lets a group shrink inside its row: a flex item's automatic
- * minimum size is its content, which is exactly what pushed these past the
- * edge. `overflow-x-auto` then makes the overflow reachable rather than cut
- * off. The buttons inside are `shrink-0` (`chartToggleButton`), so they keep
- * their size and their 24px target floor instead of being squeezed under it.
- *
- * `p-1 -m-1` is what pays for that scroller, and it is not optional. A scroll
- * container clips on both axes - `overflow-x: auto` computes `overflow-y` to
- * `auto` too - and the group is exactly as tall as its 24px buttons, while the
- * focus ring `src/index.css` gives every button is `outline: 2px solid` at
- * `outline-offset: 2px`. An outline is not part of the scrollable overflow
- * region, so without this the ring is sliced flush with the button, top and
- * bottom on all twelve chart controls and at the ends of each strip as well.
- * The 4px of padding puts the whole ring inside the scrollport; the equal
- * negative margin takes it back off the margin box, so the row's geometry -
- * and `chartHeaderSecondaryRow`'s derived `min-h` - is unchanged.
- *
- * A new control group in this panel takes this rather than a bare flex row.
- */
-export const chartControlGroup =
-  "flex items-center gap-1 min-w-0 overflow-x-auto p-1 -m-1";
+export const chartControlGroup = "flex items-center gap-1";
 
-/**
- * The symbol and price at the head of the title bar, and what the group's floor
- * is made of. Which child yields width first is the whole decision here, and
- * three arrangements were measured at 390px before this one:
- *
- * - Nothing shrinks: the timeframe strip is pushed past the panel's
- *   `overflow-hidden` and `1W` cannot be reached at all.
- * - Everything shrinks: the group collapses under its own nowrap content and
- *   the price is drawn over the first timeframe button.
- * - The price shrinks: it truncates to "$8...", which is not a price.
- *
- * So the symbol and the price are `shrink-0` and the group's floor is the two
- * of them; only the offline notice gives up width, and it carries the same
- * sentence in a `title`. Everything past that floor goes to the strip, which
- * scrolls what it cannot show. Numbers stay whole and controls stay reachable.
- *
- * There is deliberately no `min-w-0` here. A flex item's automatic minimum size
- * is its content, and that is the mechanism doing the work: the group stops
- * shrinking at the symbol and the price, while the truncating notice
- * contributes nothing to that floor. `min-w-0` would switch the mechanism off
- * and put the price back on top of the first timeframe button.
- */
-export const chartIdentityGroup = "flex items-center gap-3";
-
-/** The symbol and the price: whole or not at all. */
-export const chartIdentityFact = "shrink-0 whitespace-nowrap";
-
-/** The offline notice: the one thing in the group that gives up width. */
-export const chartIdentityNotice = "truncate";
-
-/**
- * The quiet caption in front of a control group. `shrink-0` and nowrap: it
- * scrolls out of the group with the controls rather than reflowing them, which
- * is the one thing that would push a button under its target floor.
- */
+/** The quiet caption in front of a control group. */
 export const chartControlGroupLabel =
-  "shrink-0 whitespace-nowrap text-[10px] uppercase tracking-wide text-text-dimmed mr-1";
+  "text-[10px] uppercase tracking-wide text-text-dimmed mr-1";
