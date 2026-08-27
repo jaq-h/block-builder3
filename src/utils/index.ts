@@ -24,25 +24,39 @@ export {
   isCellDisabled,
   hasMiddleRowOrder,
   hasConditionalWithoutPrimary,
-  // Cell display mode
-  getCellDisplayMode,
-  isCellDescending,
-  // Price calculations
-  calculatePrice,
+  // Price formatting
   formatPrice,
-  // Scale & position helpers
-  shouldBeDescending,
+  // Column helpers
   getAlignment,
   getColumnHeaderTint,
   getColumnCellTint,
   // DOM position helpers
   findCellAtPosition,
-  calculateYPosition,
-  findAxisAtPosition,
-  findCellAndPositionData,
   // Provider block helpers
   isProviderBlockHighlighted,
 } from "./grid";
+
+// The block-to-price mapping - one owner for axis membership, position,
+// direction and a cell's scale, read by the chip, the chart and the payload.
+export {
+  MAX_OFFSET_PERCENT,
+  MIN_OFFSET_PERCENT,
+  clampOffset,
+  legOfBlock,
+  legInCell,
+  cellDrawsPriceAxis,
+  getCellDisplayMode,
+  cellDirection,
+  directionForNewCell,
+  isDescending,
+  stampCellDirection,
+  addBlocksToCell,
+  normaliseCellDirections,
+  priceForOffset,
+  signedOffset,
+  orderConfigFromGrid,
+  type PriceAxisLeg,
+} from "./blockMapping";
 
 // Price formula shared by the grid display and the order mapper
 export { priceAtOffset } from "./price";
@@ -59,9 +73,7 @@ export {
 export {
   createBlocksFromOrderType,
   axesForBlockAxis,
-  buildOrderConfigEntry,
   shouldShowPercentage,
-  isBlockVerticallyDraggable,
   type BlockCreationContext,
   type CreatedBlocks,
 } from "./blockFactory";
@@ -70,7 +82,6 @@ export {
 export {
   commandReducer,
   validTargetsFor,
-  withOriginCell,
   initialTarget,
   stepTarget,
   samePosition,

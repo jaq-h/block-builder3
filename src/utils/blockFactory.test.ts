@@ -1,9 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import {
-  buildOrderConfigEntry,
   createBlocksFromOrderType,
-  isBlockVerticallyDraggable,
   shouldShowPercentage,
 } from "@utils/blockFactory";
 import type { BlockData } from "@/types/grid";
@@ -272,51 +270,10 @@ describe("shouldShowPercentage", () => {
   });
 });
 
-describe("isBlockVerticallyDraggable", () => {
-  it("allows dragging any block that has a price axis", () => {
-    expect(isBlockVerticallyDraggable(block({ axes: ["limit"] }))).toBe(true);
-    expect(isBlockVerticallyDraggable(block({ axes: ["trigger"] }))).toBe(true);
-  });
-
-  it("pins a market block, which has no price to drag", () => {
-    expect(isBlockVerticallyDraggable(block({ axes: [] }))).toBe(false);
-  });
-});
-
-// =============================================================================
-// ORDER CONFIG ENTRIES
-// =============================================================================
-
-describe("buildOrderConfigEntry", () => {
-  it("records only the cell for an axis-less block", () => {
-    expect(
-      buildOrderConfigEntry(block({ axes: [] }), 0, 1, "market"),
-    ).toEqual({ col: 0, row: 1, type: "market" });
-  });
-
-  it("records the axis, position and direction for a block with a price", () => {
-    expect(
-      buildOrderConfigEntry(
-        block({ axes: ["trigger"], axis: 1, yPosition: 15, direction: "downside" }),
-        1,
-        2,
-        "stop-loss",
-      ),
-    ).toEqual({
-      col: 1,
-      row: 2,
-      type: "stop-loss",
-      axis: 1,
-      yPosition: 15,
-      direction: "downside",
-    });
-  });
-
-  it("takes the type from its argument, not from the block", () => {
-    // Callers pass the grid's notion of the type, which is what gets persisted.
-    expect(
-      buildOrderConfigEntry(block({ orderType: "limit" }), 0, 0, "take-profit")
-        .type,
-    ).toBe("take-profit");
-  });
-});
+// `isBlockVerticallyDraggable` and `buildOrderConfigEntry` were tested here and
+// have moved to the block-to-price mapping owner, as `legInCell` and
+// `orderConfigFromGrid` - see `blockMapping.test.ts`. Both took a block alone,
+// and a block alone cannot see the cell whose scale it is drawn on: the first
+// disagreed with the renderer about whether a limit leg beside a Market order
+// sits on an axis, and the second recorded whatever direction the block
+// happened to carry rather than the one its cell draws.

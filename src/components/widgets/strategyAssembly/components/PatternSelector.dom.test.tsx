@@ -28,7 +28,6 @@ const renderSelector = (pattern: StrategyPattern = "conditional") => {
         orderConfig: {},
         strategyPattern: pattern,
         setGrid: vi.fn(),
-        setOrderConfig: vi.fn(),
         setStrategyPattern,
         clearAll: vi.fn(),
         reverseBlocks: vi.fn(),

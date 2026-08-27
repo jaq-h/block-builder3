@@ -6,12 +6,10 @@ import type {
   BlockData,
   GridData,
   CellPosition,
-  CellDisplayMode,
   StrategyPattern,
 } from "../types/grid";
 import type { OrderTypeDefinition } from "../data/orderTypes";
 import { GRID_CONFIG } from "../data/orderTypes";
-import { priceAtOffset } from "./price";
 import { formatMarketPrice } from "./marketFormat";
 import type { ActiveMarket } from "../types/markets";
 
@@ -26,12 +24,6 @@ export type ProviderBlockData = OrderTypeDefinition;
 // =============================================================================
 
 export const FIRST_PLACEMENT_ROW = GRID_CONFIG.firstPlacementRow;
-
-// Layout constants for position calculations
-const HEADER_HEIGHT = 36;
-const MARKET_PADDING = 20;
-const BLOCK_HEIGHT = 40;
-const MARKET_GAP = 10;
 
 // =============================================================================
 // GRID CREATION & MANIPULATION
@@ -216,62 +208,14 @@ export const hasConditionalWithoutPrimary = (grid: GridData): boolean => {
 };
 
 // =============================================================================
-// CELL DISPLAY MODE
+// PRICE FORMATTING
 // =============================================================================
-
-/** Determine display mode for a cell based on its blocks */
-export const getCellDisplayMode = (blocks: BlockData[]): CellDisplayMode => {
-  if (blocks.length === 0) return "empty";
-
-  const hasNoAxisBlock = blocks.some((block) => block.axes.length === 0);
-  if (hasNoAxisBlock) return "no-axis";
-
-  const hasTriggerAxis = blocks.some((block) => block.axes.includes("trigger"));
-  const hasLimitAxis = blocks.some((block) => block.axes.includes("limit"));
-
-  if (hasTriggerAxis && hasLimitAxis) return "dual-axis";
-  if (hasLimitAxis) return "limit-only";
-
-  return "dual-axis";
-};
-
-/**
- * Which way the price scale runs for a whole cell.
- *
- * Geometry and direction are the two inputs to the same block-to-price mapping,
- * and a cell draws one scale: one market line, one percentage ruler, one set of
- * positioners. In the bulk pattern the blocks sharing a cell can disagree -
- * `shouldBeDescending` keys off the order type there, so a Limit and a Stop
- * Loss placed together are stamped "downside" and "upside" - and a consumer
- * reading its own block rather than the cell would announce a sign the drawn
- * price contradicts and step the arrow keys the wrong way. Every reader inside
- * the builder grid - the drawing, the announced value, the arrow keys and the
- * vertical drag - takes this value. The chart and the orders panel still read
- * the per-order `direction` from `orderConfig`, a divergence that predates this
- * and belongs to the lane that gives the mapping one owner. The blocks keep
- * their own `direction` in the data; this decides which one the grid reads, not
- * what is stored.
- */
-export const isCellDescending = (blocks: BlockData[]): boolean =>
-  blocks[0]?.direction === "downside";
-
-// =============================================================================
-// PRICE CALCULATIONS
-// =============================================================================
-
-/**
- * Calculate price from percentage offset, tolerating a not-yet-loaded market
- * price. The formula itself lives in `priceAtOffset` so the order mapper builds
- * its payloads from the same one.
- */
-export const calculatePrice = (
-  marketPrice: number | null,
-  percentage: number,
-  isDescending: boolean,
-): number | null =>
-  marketPrice === null
-    ? null
-    : priceAtOffset(marketPrice, percentage, isDescending);
+//
+// Which way a cell's scale runs, where a block sits on it and what that is
+// worth all belong to `utils/blockMapping.ts`, the single owner of the
+// block-to-price mapping. This module owns the grid's *structure* - what is
+// where, and which cells will take an order - and deliberately holds no second
+// opinion about any of those four facts.
 
 /**
  * Format a price for display, at the selected pair's own precision.
@@ -289,52 +233,8 @@ export const formatPrice = (
 ): string => formatMarketPrice(price, market);
 
 // =============================================================================
-// SCALE & POSITION HELPERS
+// COLUMN HELPERS
 // =============================================================================
-
-const STOP_LOSS_ORDER_TYPES = new Set([
-  "stop-loss",
-  "stop-loss-limit",
-  "trailing-stop",
-  "trailing-stop-limit",
-]);
-
-/**
- * Whether a block is in the "downside zone" — determines scale direction.
- *
- * Conditional: row 2 is the downside zone (bottom row, stop-loss territory).
- * Bulk: stop-loss order types are the downside zone (rows are unrestricted).
- *
- * Downside zone → positive % for entry, negative % for exit.
- * Upside zone   → negative % for entry, positive % for exit.
- */
-const isDownsideZone = (
-  rowIndex: number,
-  pattern: StrategyPattern | undefined,
-  orderType: string | undefined,
-): boolean => {
-  if (pattern === "bulk" && orderType) {
-    return STOP_LOSS_ORDER_TYPES.has(orderType);
-  } else if (pattern === "conditional") {
-    return rowIndex === 2;
-  } else {
-    return false;
-  }
-};
-
-/** Helper to determine if scale should be descending */
-export const shouldBeDescending = (
-  rowIndex: number,
-  colIndex: number,
-  pattern?: StrategyPattern,
-  orderType?: string,
-): boolean => {
-  // Downside zone: descending for exit (col 1) → sign "-" for exit, "+" for entry
-  // Upside zone:   descending for entry (col 0) → sign "-" for entry, "+" for exit
-  return isDownsideZone(rowIndex, pattern, orderType)
-    ? colIndex === 1
-    : colIndex === 0;
-};
 
 /** Get alignment based on column index */
 export const getAlignment = (colIndex: number): "left" | "right" =>
@@ -371,71 +271,6 @@ export const findCellAtPosition = (
       if (col !== -1 && row !== -1) return { col, row };
     }
   }
-  return null;
-};
-
-// Helper functions for positioning calculations
-const getTrackStart = (isDescending: boolean) =>
-  isDescending ? MARKET_PADDING + MARKET_GAP : 0;
-
-const getTrackEnd = (isDescending: boolean) =>
-  isDescending ? 0 : MARKET_PADDING + MARKET_GAP;
-
-/** Calculate Y position percentage from mouse Y within a cell */
-export const calculateYPosition = (
-  mouseY: number,
-  cellRect: DOMRect,
-  isDescending: boolean = false,
-): number => {
-  const trackTop =
-    cellRect.top +
-    HEADER_HEIGHT +
-    getTrackStart(isDescending) +
-    BLOCK_HEIGHT / 2;
-  const trackBottom =
-    cellRect.bottom - getTrackEnd(isDescending) - BLOCK_HEIGHT / 2;
-  const availableHeight = trackBottom - trackTop;
-
-  const relativeY = mouseY - trackTop;
-  const clampedRelativeY = Math.max(0, Math.min(availableHeight, relativeY));
-
-  return isDescending
-    ? (clampedRelativeY / availableHeight) * 100
-    : 100 - (clampedRelativeY / availableHeight) * 100;
-};
-
-/** Determine which axis based on X position within cell */
-export const findAxisAtPosition = (mouseX: number, cellRect: DOMRect): 1 | 2 =>
-  mouseX - cellRect.left < cellRect.width / 2 ? 1 : 2;
-
-/** Find cell element and calculate position data for a block drop */
-export const findCellAndPositionData = (
-  x: number,
-  y: number,
-  pattern?: StrategyPattern,
-  orderType?: string,
-): { col: number; row: number; axis: 1 | 2; yPosition: number } | null => {
-  const elements = document.querySelectorAll("[data-col][data-row]");
-
-  for (const element of Array.from(elements)) {
-    const rect = element.getBoundingClientRect();
-    if (
-      x >= rect.left &&
-      x <= rect.right &&
-      y >= rect.top &&
-      y <= rect.bottom
-    ) {
-      const col = parseInt(element.getAttribute("data-col") || "-1", 10);
-      const row = parseInt(element.getAttribute("data-row") || "-1", 10);
-      if (col !== -1 && row !== -1) {
-        const axis = findAxisAtPosition(x, rect);
-        const isDescending = shouldBeDescending(row, col, pattern, orderType);
-        const yPosition = calculateYPosition(y, rect, isDescending);
-        return { col, row, axis, yPosition };
-      }
-    }
-  }
-
   return null;
 };
 

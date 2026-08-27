@@ -13,6 +13,7 @@ import { StrategyAssemblyProvider } from "@widgets/strategyAssembly/StrategyAsse
 import { useGridData } from "@widgets/strategyAssembly/contexts";
 import { mapGridToOrders } from "@api/orderMapper";
 import type { OrderParams } from "@api/types";
+import { orderConfigFromGrid } from "@utils/blockMapping";
 import type { GridData, OrderConfig } from "@/types/grid";
 import { BTC_USD } from "@/test/marketFixtures";
 
@@ -111,12 +112,14 @@ describe("a saved strategy reloaded for editing", () => {
   });
 
   // The discriminating case for the single-axis guard: a Stop Loss is
-  // trigger-only, but the axis it is saved at is whichever half of the cell the
-  // drop landed in, so `axis: 2` is a real saved state. Deriving its axes from
-  // that axis would hand it ["limit"], and the mapper would then send a plain
-  // limit order sitting at the stop price with no trigger at all - the same
-  // relabelling this branch exists to remove. A single-axis type keeps its own
-  // axis whatever the saved axis says.
+  // trigger-only, and `axis: 2` is a state real saved strategies carry - the
+  // drop handler used to write the axis from whichever half of the cell the
+  // release landed in, without touching the matching `axes`. That reader is
+  // gone, but the strategies it saved are not. Deriving the axes from such an
+  // axis would hand this block ["limit"], and the mapper would then send a
+  // plain limit order sitting at the stop price with no trigger at all - the
+  // same relabelling this branch exists to remove. A single-axis type keeps its
+  // own axis whatever the saved axis says.
   it("keeps a single-axis stop-loss on its trigger axis when saved at axis 2", () => {
     const savedStopLoss: OrderConfig = {
       "sa-stop-loss-1": {
@@ -155,6 +158,58 @@ describe("a saved strategy reloaded for editing", () => {
     );
 
     expect(collapsed).toEqual([]);
+  });
+
+  // Split 6, stated as the invariant rather than as a workaround for its
+  // absence. `axis` used to be rewritten on every drop from the pointer's
+  // x-half while `axes` was left alone, so a live grid and the same strategy
+  // reloaded could disagree about which leg of a dual-axis order was the
+  // trigger - harmless only while a split leg failed validation, and a silent
+  // wrong payload the moment the two legs are merged into one order. Nothing
+  // rewrites `axis` after a block is built now, and `axesForBlockAxis` is the
+  // one derivation of the pair, so the round trip is the identity.
+  it("comes back as the same legs the live grid held, and the same payload", () => {
+    const live = rehydrate(savedStopLossLimit);
+    const reloaded = rehydrate(orderConfigFromGrid(live));
+
+    const legs = (grid: GridData) =>
+      grid[0][1].map((block) => ({
+        id: block.id,
+        axis: block.axis,
+        axes: block.axes,
+        yPosition: block.yPosition,
+        direction: block.direction,
+      }));
+
+    expect(legs(reloaded)).toEqual(legs(live));
+    expect(legs(reloaded)).toEqual([
+      {
+        id: "sa-stop-loss-limit-1",
+        axis: 1,
+        axes: ["trigger"],
+        yPosition: 15,
+        direction: "downside",
+      },
+      {
+        id: "sa-stop-loss-limit-limit-2",
+        axis: 2,
+        axes: ["limit"],
+        yPosition: 10,
+        direction: "downside",
+      },
+    ]);
+
+    const payload = (grid: GridData) =>
+      mapGridToOrders(grid, {
+        market: BTC_USD,
+        currentPrice: MARKET_PRICE,
+        quantity: "0.5",
+      });
+
+    expect(payload(reloaded)).toEqual(payload(live));
+    expect(payload(live).find((order) => order.triggers)?.triggers?.price).toBe(
+      "66098.4",
+    );
   });
 
   it("sends each reloaded leg the price its own slider was left at", () => {

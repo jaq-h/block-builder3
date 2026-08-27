@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { orderPriceLines } from "./orderPriceLines";
-import { calculatePrice } from "@utils/grid";
+import { priceForOffset } from "@utils/blockMapping";
 import { priceAtOffset } from "@utils/price";
 import type { OrderConfig } from "@/types/grid";
 
@@ -35,11 +35,7 @@ describe("orderPriceLines", () => {
     for (const line of lines) {
       const order = orders[line.id];
       expect(line.price).toBe(
-        calculatePrice(
-          MARKET,
-          order.yPosition!,
-          order.direction === "downside",
-        ),
+        priceForOffset(MARKET, order.yPosition!, order.direction!),
       );
       expect(line.price).toBe(
         priceAtOffset(MARKET, order.yPosition!, order.direction === "downside"),

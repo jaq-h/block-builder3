@@ -10,7 +10,7 @@ import { render, cleanup } from "@testing-library/react";
 import { ActiveOrdersProvider, useActiveOrders } from "@widgets/activeOrders";
 import { StrategyAssemblyProvider } from "@widgets/strategyAssembly/StrategyAssemblyContext";
 import { useGridData } from "@widgets/strategyAssembly/contexts";
-import { getCellDisplayMode } from "@utils/grid";
+import { getCellDisplayMode } from "@utils/blockMapping";
 import type { ActiveOrderEntry, ActiveOrdersConfig } from "@/types/activeOrders";
 import type { GridData, OrderConfig } from "@/types/grid";
 

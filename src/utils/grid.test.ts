@@ -1,16 +1,12 @@
 import { describe, it, expect } from "vitest";
 
 import {
-  calculatePrice,
-  calculateYPosition,
   clearGrid,
   countBlocks,
   createEmptyGrid,
-  findAxisAtPosition,
   findBlockInGrid,
   getAlignment,
   getAllBlocks,
-  getCellDisplayMode,
   getDiagonalCells,
   getOccupiedCells,
   hasAnyBlockBeenPlaced,
@@ -21,9 +17,7 @@ import {
   isProviderBlockHighlighted,
   formatPrice,
   reverseColumns,
-  shouldBeDescending,
 } from "@utils/grid";
-import { priceAtOffset } from "@utils/price";
 import { NO_PRECISION } from "@utils/marketFormat";
 import type { BlockData, GridData } from "@/types/grid";
 import type { ActiveMarket, MarketPrecision } from "@/types/markets";
@@ -58,19 +52,6 @@ const gridWith = (
   );
   return grid;
 };
-
-/** Minimal stand-in for the parts of DOMRect the position helpers read. */
-const rect = (top: number, bottom: number, left = 0, right = 200): DOMRect =>
-  ({
-    top,
-    bottom,
-    left,
-    right,
-    width: right - left,
-    height: bottom - top,
-    x: left,
-    y: top,
-  }) as DOMRect;
 
 // =============================================================================
 // GRID CREATION & INSPECTION
@@ -315,73 +296,12 @@ describe("primary order guards", () => {
 });
 
 // =============================================================================
-// CELL DISPLAY MODE
+// PRICE FORMATTING
 // =============================================================================
-
-describe("getCellDisplayMode", () => {
-  it("reports an empty cell", () => {
-    expect(getCellDisplayMode([])).toBe("empty");
-  });
-
-  it("reports a market block, which has no axes at all", () => {
-    expect(getCellDisplayMode([block({ axes: [] })])).toBe("no-axis");
-  });
-
-  it("lets a single axis-less block win over its axis-bearing neighbours", () => {
-    expect(
-      getCellDisplayMode([block({ axes: ["limit"] }), block({ axes: [] })]),
-    ).toBe("no-axis");
-  });
-
-  it("reports a limit-only cell", () => {
-    expect(getCellDisplayMode([block({ axes: ["limit"] })])).toBe("limit-only");
-  });
-
-  it("reports a cell holding both a trigger and a limit block", () => {
-    expect(
-      getCellDisplayMode([
-        block({ axes: ["trigger"] }),
-        block({ axes: ["limit"] }),
-      ]),
-    ).toBe("dual-axis");
-  });
-
-  // Trigger-only falls through to the same "dual-axis" return as the genuine
-  // dual case; there is no distinct trigger-only mode.
-  it("treats a trigger-only cell as dual-axis", () => {
-    expect(getCellDisplayMode([block({ axes: ["trigger"] })])).toBe("dual-axis");
-  });
-});
-
-// =============================================================================
-// PRICE HELPERS
-// =============================================================================
-
-describe("calculatePrice", () => {
-  it("returns null while the market price is still unknown", () => {
-    expect(calculatePrice(null, 10, false)).toBeNull();
-  });
-
-  it("adds the percentage when ascending and subtracts it when descending", () => {
-    expect(calculatePrice(50_000, 10, false)).toBeCloseTo(55_000, 6);
-    expect(calculatePrice(50_000, 10, true)).toBeCloseTo(45_000, 6);
-  });
-
-  it("returns the market price for a zero offset", () => {
-    expect(calculatePrice(50_000, 0, true)).toBe(50_000);
-  });
-
-  // The percentage is taken at face value, with no damping. The order mapper
-  // used to apply a 0.1 scale factor of its own and send +2.5% for a block the
-  // grid drew at +25%; it now builds on `priceAtOffset`, the same formula this
-  // helper delegates to, so the two cannot diverge again.
-  it("takes the percentage at face value", () => {
-    expect(calculatePrice(50_000, 25, false)).toBeCloseTo(62_500, 6);
-    expect(calculatePrice(50_000, 25, false)).toBe(
-      priceAtOffset(50_000, 25, false),
-    );
-  });
-});
+//
+// The cell display mode, the price formula and the scale direction moved to
+// `blockMapping.test.ts` with the code: they are the block-to-price mapping,
+// which has one owner now, and this file covers the grid's structure.
 
 describe("formatPrice", () => {
   const active = (symbol: string, precision: MarketPrecision): ActiveMarket => ({
@@ -407,45 +327,6 @@ describe("formatPrice", () => {
   });
 });
 
-// =============================================================================
-// SCALE DIRECTION
-// =============================================================================
-
-describe("shouldBeDescending", () => {
-  it("descends on the entry column in the upside zone", () => {
-    expect(shouldBeDescending(0, 0, "conditional")).toBe(true);
-    expect(shouldBeDescending(0, 1, "conditional")).toBe(false);
-    expect(shouldBeDescending(1, 0, "conditional")).toBe(true);
-    expect(shouldBeDescending(1, 1, "conditional")).toBe(false);
-  });
-
-  it("flips to the exit column on the conditional bottom row", () => {
-    expect(shouldBeDescending(2, 0, "conditional")).toBe(false);
-    expect(shouldBeDescending(2, 1, "conditional")).toBe(true);
-  });
-
-  it("keys off the order type rather than the row in the bulk pattern", () => {
-    // Stop-style types are the downside zone wherever they are dropped.
-    expect(shouldBeDescending(0, 1, "bulk", "stop-loss")).toBe(true);
-    expect(shouldBeDescending(0, 1, "bulk", "stop-loss-limit")).toBe(true);
-    expect(shouldBeDescending(0, 1, "bulk", "trailing-stop")).toBe(true);
-    expect(shouldBeDescending(0, 1, "bulk", "trailing-stop-limit")).toBe(true);
-
-    // Everything else stays in the upside zone.
-    expect(shouldBeDescending(2, 1, "bulk", "take-profit")).toBe(false);
-    expect(shouldBeDescending(2, 0, "bulk", "limit")).toBe(true);
-  });
-
-  it("treats every row as upside when no pattern is supplied", () => {
-    expect(shouldBeDescending(2, 0)).toBe(true);
-    expect(shouldBeDescending(2, 1)).toBe(false);
-  });
-
-  it("treats a bulk block with no order type as upside", () => {
-    expect(shouldBeDescending(2, 1, "bulk")).toBe(false);
-  });
-});
-
 describe("getAlignment", () => {
   it("aligns the entry column right and the exit column left", () => {
     expect(getAlignment(0)).toBe("right");
@@ -454,61 +335,25 @@ describe("getAlignment", () => {
 });
 
 // =============================================================================
-// POSITION MATHS
+// POSITION MATHS - deliberately gone
 // =============================================================================
-
-describe("calculateYPosition", () => {
-  // Track geometry, from the layout constants in grid.ts: a 36px cell header,
-  // a 40px block (half of which is reserved at each end so the block stays
-  // inside the cell), and 30px of market padding + gap that sits at the bottom
-  // of an ascending track and at the top of a descending one.
-  //
-  // Ascending  on a cell spanning 0..400: track runs 56 -> 350.
-  // Descending on the same cell:          track runs 86 -> 380.
-  const cell = rect(0, 400);
-
-  it("reads 100% at the top of an ascending track and 0% at the bottom", () => {
-    expect(calculateYPosition(56, cell)).toBe(100);
-    expect(calculateYPosition(350, cell)).toBe(0);
-  });
-
-  it("inverts the scale for a descending track", () => {
-    expect(calculateYPosition(86, cell, true)).toBe(0);
-    expect(calculateYPosition(380, cell, true)).toBe(100);
-  });
-
-  it("reads exactly halfway at the middle of the track", () => {
-    expect(calculateYPosition((56 + 350) / 2, cell)).toBeCloseTo(50, 6);
-    expect(calculateYPosition((86 + 380) / 2, cell, true)).toBeCloseTo(50, 6);
-  });
-
-  it("clamps a pointer dragged past either end of the track", () => {
-    expect(calculateYPosition(-500, cell)).toBe(100);
-    expect(calculateYPosition(5_000, cell)).toBe(0);
-    expect(calculateYPosition(-500, cell, true)).toBe(0);
-    expect(calculateYPosition(5_000, cell, true)).toBe(100);
-  });
-
-  it("is offset-aware: the same pointer reads differently on a scrolled cell", () => {
-    // Cell moved 100px down the page - the same viewport Y is now the top of
-    // the track rather than 100px into it.
-    expect(calculateYPosition(156, rect(100, 500))).toBe(100);
-    expect(calculateYPosition(156, cell)).not.toBe(100);
-  });
-});
-
-describe("findAxisAtPosition", () => {
-  const cell = rect(0, 400, 100, 300);
-
-  it("puts the left half of the cell on axis 1 and the right half on axis 2", () => {
-    expect(findAxisAtPosition(120, cell)).toBe(1);
-    expect(findAxisAtPosition(280, cell)).toBe(2);
-  });
-
-  it("assigns the exact midpoint to axis 2", () => {
-    expect(findAxisAtPosition(200, cell)).toBe(2);
-  });
-});
+//
+// `calculateYPosition` and `findAxisAtPosition` were tested here and are now
+// deleted along with `findCellAndPositionData`, the drop-time reader that was
+// their only caller.
+//
+// **Both suites pinned the wrong behaviour.** `calculateYPosition` was asserted
+// to read 100 at the top of an ascending track, on a 0-100 scale, while the
+// slider and the axis labels have always run to `SCALE_CONFIG.MAX_PERCENT` of
+// 50 - so the expectation certified the reading that made a 100% offset, and
+// therefore a price of exactly zero, reachable from an ordinary drag.
+// `findAxisAtPosition` pinned the drop rewriting a block's `axis` from the
+// pointer's x-half without touching its `axes`, which is what let a live grid
+// and a reloaded one disagree about which leg of a dual-axis order was the
+// trigger. The single mapping between a position and a pixel is
+// `getBlockTopPx` / `positionFromPointer` in `styles/grid.ts`, tested in
+// `styles/grid.test.ts` and end to end in `GridArea.dom.test.tsx`; the clamp
+// that bounds it is `clampOffset`, in `blockMapping.test.ts`.
 
 // =============================================================================
 // PROVIDER COLUMN HIGHLIGHTING

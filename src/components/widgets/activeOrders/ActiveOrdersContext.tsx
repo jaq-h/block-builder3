@@ -7,7 +7,11 @@ import type {
 import type { GridData, CellPosition } from "../../../types/grid";
 import type { AxisType } from "../../../data/orderTypes";
 import { GRID_CONFIG, ORDER_TYPES } from "../../../data/orderTypes";
-import { axesForBlockAxis, shouldBeDescending } from "../../../utils";
+import {
+  axesForBlockAxis,
+  directionForNewCell,
+  normaliseCellDirections,
+} from "../../../utils";
 import { ActiveOrdersContext } from "./ActiveOrdersContextDef";
 
 // =============================================================================
@@ -99,15 +103,21 @@ export const ActiveOrdersProvider: FC<ActiveOrdersProviderProps> = ({
           allowedRows: [order.row],
           axis: order.axis || 1,
           yPosition: order.yPosition || 0,
-          direction: order.direction ??
-            (shouldBeDescending(order.row, order.col, undefined, order.type) ? "downside" as const : "upside" as const),
+          direction:
+            order.direction ??
+            directionForNewCell(order.row, order.col, undefined, order.type),
           axes: axesForOrder(order.type, order.axis),
         };
         newGrid[order.col][order.row].push(block);
       }
     });
 
-    return newGrid;
+    // A cell draws one scale, and every block in it is priced on it (decision
+    // D8). This panel builds its grid entry by entry from records written
+    // before that rule existed, so it goes through the same normaliser the
+    // builder's own hydration does - otherwise an order card could show a price
+    // the cell it was built in never drew.
+    return normaliseCellDirections(newGrid);
   })();
 
   // Combine state and actions

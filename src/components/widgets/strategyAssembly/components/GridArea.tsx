@@ -1,25 +1,32 @@
-import { useEffect, useRef, type FC, type PointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FC,
+  type PointerEvent,
+} from "react";
 import {
   isCellValidForPlacement,
   getAlignment,
   isCellDisabled,
   findBlockInGrid,
   findCellAtPosition,
-  findCellAndPositionData,
-  isCellDescending,
-  shouldBeDescending,
+  addBlocksToCell,
+  cellDirection,
+  clampOffset,
+  isDescending,
+  MAX_OFFSET_PERCENT,
+  MIN_OFFSET_PERCENT,
   hasConditionalWithoutPrimary,
   createBlocksFromOrderType,
-  buildOrderConfigEntry,
 } from "../../../../utils";
 import {
   samePosition,
-  type CommandSource,
+  type ProviderSource,
 } from "../../../../utils/blockCommand";
 import type {
   BlockData,
   CellPosition,
-  GridData,
   PlacementResult,
 } from "../../../../types/grid";
 import {
@@ -28,7 +35,7 @@ import {
   type SvgIcon,
 } from "../../../../data/orderTypes";
 import { PATTERN_CONFIGS } from "../../../../types/grid";
-import { positionFromPointer, SCALE_CONFIG } from "../../../../styles/grid";
+import { positionFromPointer } from "../../../../styles/grid";
 import {
   getDragOverlayPosition,
   startDragOverlay,
@@ -53,6 +60,8 @@ import {
   column,
   getColumnHeaderProps,
   columnHeaderText,
+  gridPane,
+  cellLockedNote,
 } from "../strategyAssembly.styles";
 
 interface GridAreaProps {
@@ -90,26 +99,20 @@ interface GridAreaProps {
 }
 
 /**
- * What the ghost on the cursor should look like for the block currently in
- * hand: the palette entry's own icon for an order type not yet placed, and the
- * placed block's for one already on the grid.
+ * What the ghost on the cursor should look like for the order currently in
+ * hand: the palette entry's own icon.
  *
- * `null` when the grid no longer holds the block, which is a real state rather
- * than a defensive one - Clear All and Reverse Blocks both replace the grid
- * under a live carry - and it is answered by drawing nothing rather than by
- * guessing an icon.
+ * Only a palette order is ever carried - a placed block never changes cells
+ * (decision D9) - so there is one lookup here rather than two. `null` when the
+ * palette does not know the type, which is answered by drawing nothing rather
+ * than by guessing an icon.
  */
 const ghostFor = (
-  source: CommandSource,
+  source: ProviderSource,
   providerBlocks: OrderTypeDefinition[],
-  grid: GridData,
 ): { icon?: SvgIcon; abrv: string } | null => {
-  if (source.kind === "provider") {
-    const provider = providerBlocks.find((entry) => entry.type === source.type);
-    return provider ? { icon: provider.icon, abrv: provider.abrv } : null;
-  }
-  const found = findBlockInGrid(grid, source.id);
-  return found ? { icon: found.block.icon, abrv: found.block.abrv } : null;
+  const provider = providerBlocks.find((entry) => entry.type === source.type);
+  return provider ? { icon: provider.icon, abrv: provider.abrv } : null;
 };
 
 /**
@@ -135,7 +138,7 @@ const GridArea: FC<GridAreaProps> = ({
   onStrategyLoadAnnounced,
 }) => {
   // ─── Context subscriptions ───────────────────────────────────────
-  const { grid, strategyPattern, setGrid, setOrderConfig } = useGridData();
+  const { grid, strategyPattern, setGrid } = useGridData();
 
   const {
     draggingId,
@@ -154,6 +157,20 @@ const GridArea: FC<GridAreaProps> = ({
   } = useHover();
 
   const { providerBlocks, baseId, blockCounterRef } = useStatic();
+
+  // ─── The refusal, on screen ──────────────────────────────────────
+  //
+  // Decision D9 asks for the refusal to be *legible* rather than silent: a
+  // gesture that simply does nothing is indistinguishable from a broken one.
+  // The announcer covers a screen-reader user, and this covers everybody else -
+  // the label of the last order that was asked to change cells, drawn as a note
+  // under the grid until the next gesture starts.
+  //
+  // Ordinary visible text, deliberately: no `aria-live`, no `role="status"`. A
+  // second live region would talk over `LiveAnnouncer` during the one
+  // interaction that fires both, which is exactly what the announcer being the
+  // grid's single voice exists to prevent.
+  const [refusedMove, setRefusedMove] = useState<string | null>(null);
 
   // ─── Derived values ──────────────────────────────────────────────
   const patternConfig = PATTERN_CONFIGS[strategyPattern];
@@ -186,165 +203,72 @@ const GridArea: FC<GridAreaProps> = ({
       return { status: "refused" };
     }
 
-    // Use factory to create blocks, then stamp direction from placement context
-    const { blocks: rawBlocks, nextCounter } = createBlocksFromOrderType(
-      providerBlock,
-      {
-        baseId,
-        counter: blockCounterRef.current,
-      },
-    );
+    const { blocks, nextCounter } = createBlocksFromOrderType(providerBlock, {
+      baseId,
+      counter: blockCounterRef.current,
+    });
     blockCounterRef.current = nextCounter;
-    const blocks = rawBlocks.map((block) => ({
-      ...block,
-      direction: shouldBeDescending(
-        target.row,
-        target.col,
-        strategyPattern,
-        block.orderType,
-      )
-        ? ("downside" as const)
-        : ("upside" as const),
-    }));
-
-    // Update grid
-    setGrid((prev) => {
-      const newGrid = prev.map((col) => col.map((row) => [...row]));
-      blocks.forEach((block) => newGrid[target.col][target.row].push(block));
-      return newGrid;
-    });
-
-    // Update order config
-    setOrderConfig((prev) => {
-      const updated = { ...prev };
-      blocks.forEach((block) => {
-        updated[block.id] = buildOrderConfigEntry(
-          block,
-          target.col,
-          target.row,
-          type,
-        );
-      });
-      return updated;
-    });
 
     const blockId = blocks[0]?.id;
-    return blockId
-      ? { status: "created", blockId }
-      : // The factory produced nothing, so the grid gained nothing either.
-        { status: "refused" };
+    if (!blockId) {
+      // The factory produced nothing, so the grid gains nothing either.
+      return { status: "refused" };
+    }
+
+    // `addBlocksToCell` is the one write path into a cell, and the only thing
+    // that chooses a direction: an occupied cell keeps the scale it already
+    // draws, an empty one takes the scale its first arrival implies, and every
+    // block in the cell is stamped with it. That is decision D8, and it is why
+    // a Stop Loss dropped beside a Limit is priced the way the cell is drawn
+    // rather than the way its order type would have been drawn alone.
+    setGrid((prev) => addBlocksToCell(prev, target, blocks, strategyPattern));
+    setRefusedMove(null);
+
+    return { status: "created", blockId };
   };
 
   /**
-   * Move an existing block to a cell, and report what happened. `axis` and
-   * `yPosition` are supplied by the pointer drag, which reads them off the drop
-   * coordinates; the command model omits them and the block keeps the position
-   * it already had.
+   * A placed block was released over a cell. It never moves.
+   *
+   * Captain decision D9: once a block is placed and priced, its cell is where
+   * it lives - every block, with no per-type carve-out. So this reports rather
+   * than mutates: `unchanged` for a release inside the block's own cell, and
+   * `refused` for any other cell, which the announcer words as the rule it is
+   * and `refusedMove` puts on screen for everyone else. Correcting a misplaced
+   * order means removing it and placing a new one, until the cell-detail editor
+   * ships.
+   *
+   * A cross-cell move is not merely unwired here, it is the one thing this
+   * function exists to say no to. It used to rewrite `axis` and `yPosition`
+   * from the drop coordinates and re-stamp the direction from the target cell,
+   * which is how one leg of a dual-axis order could end up on the opposite side
+   * of the market from its partner.
    */
-  const moveBlockToCell = (
+  const keepBlockInItsCell = (
     id: string,
     target: CellPosition,
-    position?: { axis: 1 | 2; yPosition: number },
   ): PlacementResult => {
     const blockInfo = findBlockInGrid(grid, id);
     // Not a refusal by any cell: a carry can outlive the grid it was started
     // against, and there is then no cell to name in either clause.
     if (!blockInfo) return { status: "gone" };
 
-    const { col: sourceCol, row: sourceRow, block: blockData } = blockInfo;
-    const source = { col: sourceCol, row: sourceRow };
-    const isSameCell = sourceCol === target.col && sourceRow === target.row;
-
-    // Two decisions here, and keeping them apart is the point.
-    //
-    // THE GUARD, below. `!position` is load-bearing scope protection rather
-    // than an oversight: it leaves the control flow of a same-cell release
-    // carrying drop coordinates exactly as it is on main. In the bulk pattern
-    // the placement rules take any cell, so the full move below still runs -
-    // it rewrites `axis` and `yPosition` onto the block and its order config,
-    // and the remove-then-push reorders the cell array, which is what the cell
-    // header reads `blocks[0]` for. That reordering and re-pricing is the
-    // cell-scale family of defects, owned by `bb3-mapping-owner` under the
-    // ruling that direction belongs to the cell and is stamped when the first
-    // block lands. Reconciling it here as well would be a second lane
-    // answering one question, which has already gone wrong on this project
-    // once. So the mutation stays byte-identical, and only what the user is
-    // TOLD is fixed.
-    //
-    // WHAT IS REPORTED, decided independently of that check. A block can never
-    // be refused by the cell it is already sitting in, whatever the placement
-    // rules say about an occupied cell - that is the whole of the defect this
-    // lane exists to close. Every same-cell release reads `unchanged`, on the
-    // refused path and on the mutated path alike; `refused` is left to a
-    // genuinely different target cell and `moved` to a release that really did
-    // change cells.
-    if (isSameCell && !position) {
-      return { status: "unchanged", blockId: id };
-    }
-
-    if (
-      !isCellValidForPlacement(
-        target.col,
-        target.row,
-        blockData.allowedRows,
-        grid,
-        strategyPattern,
-      )
-    ) {
-      return isSameCell
-        ? { status: "unchanged", blockId: id }
-        : { status: "refused", at: source };
-    }
-
-    const updatedBlock: BlockData = {
-      ...blockData,
-      ...(position ?? {}),
-      direction: shouldBeDescending(
-        target.row,
-        target.col,
-        strategyPattern,
-        blockData.orderType,
-      )
-        ? ("downside" as const)
-        : ("upside" as const),
-    };
-
-    setGrid((prev) => {
-      const newGrid = prev.map((col) => col.map((row) => [...row]));
-
-      // Remove only this block from source
-      newGrid[sourceCol][sourceRow] = newGrid[sourceCol][sourceRow].filter(
-        (b) => b.id !== id,
-      );
-
-      // Add to target with updated position
-      newGrid[target.col][target.row].push(updatedBlock);
-
-      return newGrid;
-    });
-
-    // Update order config for this block only
-    setOrderConfig((prev) => {
-      const updated = { ...prev };
-      if (updated[id]) {
-        updated[id] = {
-          ...updated[id],
-          col: target.col,
-          row: target.row,
-          axis: updatedBlock.axis,
-          yPosition: updatedBlock.yPosition,
-          direction: updatedBlock.direction,
-        };
-      }
-      return updated;
-    });
-
-    return isSameCell
+    const at = { col: blockInfo.col, row: blockInfo.row };
+    return samePosition(at, target)
       ? { status: "unchanged", blockId: id }
-      : { status: "moved", blockId: id };
+      : { status: "refused", at, reason: "staysInCell" };
   };
 
-  /** Take a block off the grid entirely - a drag that ended outside it. */
+  /**
+   * Take a block off the grid entirely - a drag that ended outside it.
+   *
+   * This is the *only* way to get an order out of a cell, and under decision D9
+   * it is therefore how a misplaced order is corrected: remove it and place a
+   * new one. The cell's direction is untouched by a removal, because every
+   * block left behind already carries it - that is what stops a Stop Loss from
+   * flipping from `-15.00% $85,000` to `+15.00% $115,000` when the block beside
+   * it is deleted.
+   */
   const removeBlock = (id: string, source: CellPosition) => {
     setGrid((prev) => {
       const newGrid = prev.map((col) => col.map((row) => [...row]));
@@ -352,12 +276,6 @@ const GridArea: FC<GridAreaProps> = ({
         (b) => b.id !== id,
       );
       return newGrid;
-    });
-
-    setOrderConfig((prev) => {
-      const updated = { ...prev };
-      delete updated[id];
-      return updated;
     });
   };
 
@@ -443,15 +361,17 @@ const GridArea: FC<GridAreaProps> = ({
     providerBlocks,
     announcer,
     placeProvider: placeProviderInCell,
-    moveBlock: (id, target) => moveBlockToCell(id, target),
+    // A placed block is never carried, because it never changes cells
+    // (decision D9), so the command model only ever commits palette orders.
+    // `refuseMove` is what a press on a placed block reaches instead, and it
+    // both speaks and puts the rule on screen.
+    refuseMove: (label, reason) => {
+      if (reason === "staysInCell") setRefusedMove(label);
+      announcer.report({ kind: "moveRefused", label, reason });
+    },
   });
 
-  const carryingProviderType =
-    command.carrying?.source.kind === "provider"
-      ? command.carrying.source.type
-      : null;
-  const carryingBlockId =
-    command.carrying?.source.kind === "grid" ? command.carrying.source.id : null;
+  const carryingProviderType = command.carrying?.source.type ?? null;
 
   // ─── The cursor half of a mouse carry ────────────────────────────────
   //
@@ -466,20 +386,18 @@ const GridArea: FC<GridAreaProps> = ({
   // would be an artefact rather than the block; the keyboard has no pointer
   // position at all and its last one would be wherever the mouse was left.
   //
-  // `ghostFor` reads the block being carried out of the same two places the
-  // rest of this component does, so the ghost can never show an icon the grid
-  // and the palette disagree with.
+  // `ghostFor` reads the carried order out of the same palette the rest of this
+  // component does, so the ghost can never show an icon the palette disagrees
+  // with.
   const carriedGhost =
     command.carrying?.origin === "mouse"
-      ? ghostFor(command.carrying.source, providerBlocks, grid)
+      ? ghostFor(command.carrying.source, providerBlocks)
       : null;
-  // Which block is on the cursor, so the effect below runs when the carry
+  // Which order is on the cursor, so the effect below runs when the carry
   // starts and ends rather than on every target change. `null` covers both
-  // "nothing is carried" and "the grid no longer holds what is", which is why
-  // it is derived from the ghost rather than from the source.
-  const carriedGhostKey = carriedGhost
-    ? (carryingProviderType ?? carryingBlockId)
-    : null;
+  // "nothing is carried" and "the palette does not know this type", which is
+  // why it is derived from the ghost rather than from the source.
+  const carriedGhostKey = carriedGhost ? carryingProviderType : null;
 
   useEffect(() => {
     if (!carriedGhost) return;
@@ -521,6 +439,16 @@ const GridArea: FC<GridAreaProps> = ({
 
   // ─── Allowed-row computation ─────────────────────────────────────
 
+  /**
+   * Which rows the gesture in flight could legally place into, for the cell
+   * highlighting.
+   *
+   * A palette order gets its order type's rows. A *placed* block gets none, and
+   * that is the point: it is not going anywhere (decision D9), so lighting up
+   * cells that would take it would be the interface promising a move the drop
+   * is about to refuse. Dragging one now highlights nothing at all, which is
+   * the first half of telling the user why - `refusedMove` is the second.
+   */
   const getActiveAllowedRows = (): number[] => {
     if (draggingFromProvider) {
       const provider = providerBlocks.find(
@@ -532,16 +460,6 @@ const GridArea: FC<GridAreaProps> = ({
       const provider = providerBlocks.find((b) => b.type === hoveredProviderId);
       return provider?.allowedRows || [];
     }
-    if (draggingId) {
-      for (const column of grid) {
-        for (const row of column) {
-          const block = row.find((b) => b.id === draggingId);
-          if (block) {
-            return block.allowedRows;
-          }
-        }
-      }
-    }
     return [];
   };
 
@@ -549,6 +467,7 @@ const GridArea: FC<GridAreaProps> = ({
 
   const handleDragStart = (id: string) => {
     carryReleasedByDragRef.current = false;
+    setRefusedMove(null);
     setDraggingId(id);
   };
 
@@ -662,6 +581,7 @@ const GridArea: FC<GridAreaProps> = ({
 
   const handleProviderDragStart = (type: string) => {
     carryReleasedByDragRef.current = false;
+    setRefusedMove(null);
     setDraggingFromProvider(type);
     setHoveredProviderId(null);
   };
@@ -684,13 +604,17 @@ const GridArea: FC<GridAreaProps> = ({
   });
 
   const handleProviderDragEnd = (type: string, x: number, y: number) => {
-    const positionData = findCellAndPositionData(x, y);
+    // The cell alone. A drop no longer carries a position or an axis with it:
+    // where along the axis a new order starts is the order type's own default,
+    // and which leg it is comes from `axesForBlockAxis`. Reading those off the
+    // drop coordinates was two separate defects - a 0-100 reading written into
+    // a 0-50 axis, and an `axis` rewritten without its matching `axes`.
+    const cell = findCellAtPosition(x, y);
     const source = providerSource(type);
 
     const releasedCarry = carryReleasedByDragRef.current;
 
-    if (positionData) {
-      const cell = { col: positionData.col, row: positionData.row };
+    if (cell) {
       announcer.report({
         kind: "placement",
         source,
@@ -728,23 +652,24 @@ const GridArea: FC<GridAreaProps> = ({
 
   // ─── Vertical drag (slider) ──────────────────────────────────────
 
-  /** Write a new axis position for one block, into both the grid and the config. */
+  /**
+   * Write a new axis position for one block.
+   *
+   * The grid is the only store: the saved `orderConfig` is derived from it by
+   * `orderConfigFromGrid`, so there is no second copy here to keep in step.
+   * `clampOffset` is the mapping owner's, so no gesture can write a position
+   * the axis could not have drawn - which is what made a price of zero
+   * reachable.
+   */
   const setBlockPosition = (id: string, yPosition: number) => {
+    const clamped = clampOffset(yPosition);
     setGrid((prev) =>
       prev.map((gridCol) =>
         gridCol.map((rowArray) =>
-          rowArray.map((b) => (b.id === id ? { ...b, yPosition } : b)),
+          rowArray.map((b) => (b.id === id ? { ...b, yPosition: clamped } : b)),
         ),
       ),
     );
-
-    setOrderConfig((prev) => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        yPosition,
-      },
-    }));
   };
 
   /**
@@ -770,7 +695,7 @@ const GridArea: FC<GridAreaProps> = ({
     const position = positionFromPointer(
       trackElement.getBoundingClientRect(),
       pointerY,
-      isCellDescending(grid[col][row]),
+      isDescending(cellDirection(grid[col][row])),
     );
 
     setBlockPosition(id, Math.round(position * 100) / 100);
@@ -786,10 +711,12 @@ const GridArea: FC<GridAreaProps> = ({
     if (!blockInfo) return;
 
     const { col, row, block } = blockInfo;
-    const towardsMarket = isCellDescending(grid[col][row]) ? -delta : delta;
+    const towardsMarket = isDescending(cellDirection(grid[col][row]))
+      ? -delta
+      : delta;
     const next = Math.max(
-      SCALE_CONFIG.MIN_PERCENT,
-      Math.min(SCALE_CONFIG.MAX_PERCENT, block.yPosition + towardsMarket),
+      MIN_OFFSET_PERCENT,
+      Math.min(MAX_OFFSET_PERCENT, block.yPosition + towardsMarket),
     );
     if (next === block.yPosition) return;
 
@@ -816,12 +743,7 @@ const GridArea: FC<GridAreaProps> = ({
 
   const handleDragEnd = (id: string, x: number, y: number) => {
     const blockInfo = findBlockInGrid(grid, id);
-    const positionData = findCellAndPositionData(
-      x,
-      y,
-      strategyPattern,
-      blockInfo?.block.orderType,
-    );
+    const cell = findCellAtPosition(x, y);
 
     // The block is not on the grid, so there is no fact to report about it.
     if (!blockInfo) {
@@ -836,20 +758,23 @@ const GridArea: FC<GridAreaProps> = ({
     // and it is the gesture a finger reaches for first. What is said comes from
     // the placement primitive's own account of what it did, so a release inside
     // the block's own cell reads as "stayed", not as a refusal by the cell the
-    // block is sitting in.
-    if (positionData) {
-      const { col, row, axis, yPosition } = positionData;
-      const cell = { col, row };
+    // block is sitting in - and a release over a *different* cell reads as the
+    // rule that refused it rather than as a cell that happens to be full.
+    if (cell) {
+      const result = keepBlockInItsCell(id, cell);
+      if (result.status === "refused") setRefusedMove(blockInfo.block.label);
       announcer.report({
         kind: "placement",
         source,
         cell,
-        result: moveBlockToCell(id, cell, { axis, yPosition }),
+        result,
         via: "drag",
         releasedCarry,
       });
     } else {
-      // Dropped outside - remove only this block
+      // Dropped outside - remove only this block. This is the one way an order
+      // leaves a cell, and under decision D9 it is how a misplaced one is put
+      // right: remove it, then place a new one where it belongs.
       removeBlock(id, source.origin);
       announcer.report({ kind: "removed", source, releasedCarry });
     }
@@ -891,7 +816,10 @@ const GridArea: FC<GridAreaProps> = ({
   // ─── Computed values for rendering ───────────────────────────────
 
   const activeAllowedRows = getActiveAllowedRows();
-  const showValidTargets = isDragging || hoveredProviderId !== null;
+  // A placed block being dragged offers no targets at all, so nothing is drawn
+  // as one. `draggingFromProvider` is what makes a drag show targets now.
+  const showValidTargets =
+    draggingFromProvider !== null || hoveredProviderId !== null;
 
   const isValidTarget = (colIndex: number, rowIndex: number): boolean => {
     if (command.carrying) {
@@ -921,18 +849,20 @@ const GridArea: FC<GridAreaProps> = ({
   // ─── Render ──────────────────────────────────────────────────────
 
   return (
-    <div
-      ref={placementSurfaceRef}
-      className={contentWrapper}
-      onPointerMove={handlePointerMove}
-    >
+    <div className={gridPane}>
+      <div
+        ref={placementSurfaceRef}
+        className={contentWrapper}
+        onPointerMove={handlePointerMove}
+      >
       {/* Named once and referenced by every block, so the instructions are
           available to a screen reader without being repeated nine times. */}
       <p id={BLOCK_INSTRUCTIONS_ID} className="sr-only">
-        Press Enter to pick this block up, then use the arrow keys to choose a
-        cell and Enter again to place it. Escape returns it. A block drawn on a
-        price axis stays in its cell; there the arrow keys move it along that
-        axis instead.
+        Press Enter on an order in the palette to pick it up, then use the
+        arrow keys to choose a cell and Enter again to place it. Escape returns
+        it. A block already on the grid stays in the cell it was placed in: on a
+        price axis the arrow keys move it along that axis, and to put an order
+        in a different cell, remove it and place a new one.
       </p>
       <div className={contentRow}>
         {/* Provider Column */}
@@ -1028,7 +958,6 @@ const GridArea: FC<GridAreaProps> = ({
                     onCellActivate={() =>
                       command.activateCell({ col: colIndex, row: rowIndex })
                     }
-                    carryingBlockId={carryingBlockId}
                     focusBlockId={command.focusRequest}
                     onBlockFocusHandled={command.clearFocusRequest}
                   />
@@ -1038,6 +967,17 @@ const GridArea: FC<GridAreaProps> = ({
           })}
         </div>
       </div>
+      </div>
+      {refusedMove && (
+        // Plain visible text, not a live region: `LiveAnnouncer` below is the
+        // grid's one voice, and a second one would cut it off mid-sentence
+        // during the very interaction that fires both.
+        <p className={cellLockedNote}>
+          <strong>{refusedMove}</strong> stays in the cell it was placed in.
+          Orders do not move between cells - to put this one somewhere else,
+          drag it off the grid to remove it, then place a new one.
+        </p>
+      )}
       <LiveAnnouncer announcement={announcer.announcement} />
     </div>
   );

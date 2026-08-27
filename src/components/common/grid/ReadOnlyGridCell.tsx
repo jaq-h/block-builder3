@@ -2,10 +2,13 @@ import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData } from "../../../types/grid";
 import {
-  calculatePrice,
+  cellDirection,
+  clampOffset,
   formatPrice,
   getCellDisplayMode,
-  isCellDescending,
+  isDescending as isDescendingDirection,
+  legInCell,
+  priceForOffset,
 } from "../../../utils";
 import { useMarket } from "../../../store/useMarket";
 import {
@@ -55,7 +58,11 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   const { activeMarket } = useMarket();
 
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = isCellDescending(blocks);
+  // The same cell scale the builder grid draws, from the same owner: an order
+  // card and the cell it was built in must not disagree about which side of the
+  // market it sits on.
+  const direction = cellDirection(blocks);
+  const isDescending = isDescendingDirection(direction);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
@@ -112,32 +119,33 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
         </span>
 
         {axisBlocks.map((block) => {
-          const calculatedPriceValue = calculatePrice(
+          const offset = clampOffset(block.yPosition);
+          const calculatedPriceValue = priceForOffset(
             currentPrice,
-            block.yPosition,
-            isDescending,
+            offset,
+            direction,
           );
           const sliderIcon =
             block.axis === 1 ? block.triggerIcon : block.limitIcon;
           const dashedProps = getDashedIndicatorProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
           );
           const pctProps = getPercentageLabelProps(
-            block.yPosition,
+            offset,
             isDescending,
             sign,
             isSingleAxis,
           );
           const priceProps = getCalculatedPriceLabelProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
             isBuy,
           );
           const posProps = getBlockPositionerProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
           );
@@ -149,7 +157,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
               />
               <div className={pctProps.className} style={pctProps.style}>
                 {pctProps.sign}
-                {block.yPosition.toFixed(2)}%
+                {offset.toFixed(2)}%
               </div>
               <div className={priceProps.className} style={priceProps.style}>
                 {formatPrice(calculatedPriceValue, activeMarket)}
@@ -160,10 +168,9 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
                   label={block.label}
-                  axis={block.axis}
-                  axes={block.axes}
-                  yPosition={block.yPosition}
-                  direction={isDescending ? "downside" : "upside"}
+                  leg={legInCell(blocks, block)}
+                  yPosition={offset}
+                  direction={direction}
                   priceText={formatPrice(calculatedPriceValue, activeMarket)}
                   isReadOnly={true}
                 />
@@ -196,7 +203,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                 icon={block.icon}
                 abrv={block.abrv}
                 label={block.label}
-                axes={block.axes}
+                leg={legInCell(blocks, block)}
                 isReadOnly={true}
               />
             ))}

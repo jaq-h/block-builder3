@@ -18,7 +18,7 @@
 //
 //  1. **Every outcome is a fact, not an intention.** A placement carries a
 //     `PlacementResult` produced by the function that actually mutated the grid
-//     (`placeProviderInCell` / `moveBlockToCell` in `GridArea`), so a sentence
+//     (`placeProviderInCell` / `keepBlockInItsCell` in `GridArea`), so a sentence
 //     can never claim a move, a refusal or a removal that did not happen.
 //  2. **A sentence must still be true after the operation that triggered it.**
 //     Anything said as a gesture *begins* has to survive that gesture. This is
@@ -66,10 +66,18 @@ export type DragEndReason =
 export type PickUpRefusal =
   /** Nowhere on the grid will take this order right now. */
   | "noTargets"
-  /** The cell draws it on a price axis, where nothing moves between cells. */
+  /**
+   * The cell draws it on a price axis. Nothing moves between cells, and this
+   * block has something else the arrow keys can do, so the refusal says so.
+   */
   | "onPriceAxis"
-  /** One leg of a dual-axis order; the two legs may not be separated. */
-  | "dualAxisPartner";
+  /**
+   * A placed block, in a cell that draws no price axis. It stays where it is
+   * for the same reason every placed block does (decision D9), and there is no
+   * axis to offer the arrow keys instead - so this refusal says how to correct
+   * a misplaced order rather than what else to try.
+   */
+  | "staysInCell";
 
 /**
  * Everything that can happen to a block through the carry, the pointer drag or
@@ -293,6 +301,22 @@ const describePlacement = (
     case "unchanged":
       return `${describeSource(source)} stayed in ${describeCell(cell, pattern)}${carryReleased(releasedCarry)}.`;
     case "refused":
+      // Two different refusals, and wording them the same is what made the one
+      // below unreadable. A placed block is not refused BY a cell - no cell
+      // will take it, because a placed block does not change cells at all
+      // (decision D9) - so naming the cell would send the user hunting for a
+      // cell that would say yes.
+      if (result.reason === "staysInCell") {
+        return `${describeSource(source)} stays in the cell it was placed in, so it was not moved to ${describeCell(
+          cell,
+          pattern,
+        )}. To put this order somewhere else, remove it and place a new one. ${wentNowhere(
+          source,
+          pattern,
+          releasedCarry,
+          result.at,
+        )}`;
+      }
       // "any more" only for a carry: the arrow keys walk cells the grid offered
       // at pick-up time, so a refusal there means the grid has changed since. A
       // drag can be released over any cell, and most were never on offer.
@@ -358,7 +382,7 @@ export const describeOutcome = (
     case "moveRefused":
       return outcome.reason === "onPriceAxis"
         ? `${outcome.label} is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.`
-        : `${outcome.label} cannot be moved on its own: its trigger and limit must stay in the same cell.`;
+        : `${outcome.label} stays in the cell it was placed in. To put this order somewhere else, remove it and place a new one.`;
 
     case "targetChanged":
       return `${describeCell(outcome.target, pattern)}, ready to place.`;

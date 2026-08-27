@@ -674,33 +674,27 @@ so there is no way to invent wording next to the code that acts. Two invariants 
 buys, and each had been violated:
 
 - **An outcome is what happened, not what was about to be attempted.** `placeProviderInCell`
-  and `moveBlockToCell` return a `PlacementResult` - `created`, `moved`, `unchanged`, `refused`
-  or `gone` - produced by the code that actually mutated the grid, so a sentence cannot claim
+  and `keepBlockInItsCell` return a `PlacementResult` - `created`, `unchanged`, `refused` or
+  `gone` - produced by the code that actually looked at the grid, so a sentence cannot claim
   a move, a refusal or a removal that did not occur. Deriving it from a nullable id instead is
   how a release inside a block's own cell came to announce *"Entry column, primary row cannot
   take this order. Market block stayed in Entry column, primary row"*: the drop supplied a
   position, the same-cell no-op branch was skipped, and `isCellValidForPlacement` read the
-  block's own occupied cell as illegal. What `moveBlockToCell` **reports** for a same-cell
-  release is now decided independently of that validity check: a block can never be refused by
-  the cell it is already sitting in, so every same-cell release is `unchanged` on the refused
-  path and on the mutated path alike, and reads *"Market block stayed in Entry column, primary
-  row."* `refused` is left to a genuinely different target cell and `moved` to a release that
-  really did change cells. The bulk pattern never showed the defect, because every cell is a
-  legal target there, so `GridArea.dom.test.tsx` pins it on the conditional pattern.
-- **No sentence names a location the grid has not just confirmed.** A carry snapshots the
-  block's cell at pick-up time, and the grid can move that block, or delete it, before the
-  carry is committed. So a refusal carries `at` - where `moveBlockToCell` has just found the
-  block - and the sentence uses that rather than the snapshot, which is what stops a refusal
-  after **Reverse Blocks** naming the column the block was mirrored out of. And "the block is
-  not on the grid" is `gone` rather than `refused`, with a sentence that names no cell at all
-  (*"Market block is no longer on the grid."*), because after **Clear All** there is no cell
-  that would be true. The same holds for a carry that simply ends: `cancel` and
-  `releaseForDrag` each ask the grid where the block is at that moment and pass the answer on
-  the outcome, so *"Cancelled. Market block left in Exit column, primary row."* after a reverse,
-  and *"Cancelled. Market block is no longer on the grid."* after a clear. `restingPlace` never
-  reads the snapshot at all: the rule is enforced by the shape of that function, which has
-  nothing stale in scope to reach for. A palette order is unaffected: it has no origin, and
-  its clause is already *"was not placed."*
+  block's own occupied cell as illegal. A block can never be refused by the cell it is already
+  sitting in, so every same-cell release is `unchanged` and reads *"Market block stayed in
+  Entry column, primary row."* A release over a **different** cell is `refused` with
+  `reason: "staysInCell"`, and its sentence is about the rule rather than about the cell -
+  no cell will take a placed block, so naming one would send the user hunting for a cell that
+  says yes.
+- **No sentence names a location the grid has not just confirmed.** A refusal carries `at` -
+  where `keepBlockInItsCell` has just found the block - and the sentence uses that rather than
+  any snapshot taken when the gesture began, which is what stops a refusal after **Reverse
+  Blocks** naming the column the block was mirrored out of. And "the block is not on the grid"
+  is `gone` rather than `refused`, with a sentence that names no cell at all (*"Market block
+  is no longer on the grid."*), because after **Clear All** there is no cell that would be
+  true. `restingPlace` never reads a snapshot at all: the rule is enforced by the shape of
+  that function, which has nothing stale in scope to reach for. A palette order - the only
+  thing that is ever *carried* - has no origin, and its clause is already *"was not placed."*
 - **A sentence has to still be true after the operation that triggered it.** This is the trap
   the three earlier point fixes fell into: cancelling a carry when a drag began made the
   cancellation silent, and announcing the drag's outcome instead made that announcement false.
@@ -722,8 +716,8 @@ highlight says *you could drop here*, which is not an assertion about where any 
 the moment the user acts on one of those cells the announcement is correct and the carry ends.
 Making it *not misleading* means ending the carry when the grid is replaced under it, and that
 is **carry lifecycle** - it belongs to the command model, not to the announcement layer that
-owns the words and not to `bb3-mapping-owner`. `clearAll` and `setStrategyPattern` are plain
-grid lifecycle; only `reverseBlocks` brushes the mapping lane at all.
+owns the words. It is narrower than it was: only a palette order is carried now, and a palette
+order cannot be cleared away, so the carry can no longer name a block the grid has lost.
 
 The same rule decides one thing outside the announcer: `GridCell` wires its click handler
 unconditionally rather than only while something is carried. Whether a click means anything is
@@ -736,50 +730,34 @@ Announcements go through `LiveAnnouncer`, which alternates between two live regi
 screen reader only reads a region whose content **changed**, so two identical messages in a
 row would otherwise be silent the second time.
 
-**Known gap, bulk pattern only.** A bulk cell holding any axis-less block draws *every*
-block in it without an axis: `getCellDisplayMode` returns `"no-axis"` as soon as one block
-has no axes, and that decides the whole cell. Five things follow, and all are limited to
-that case. They do not share a provenance, so they are listed apart - three inherited, two
-introduced here.
+**The bulk pattern's family of defects, and how it was closed.** A bulk cell holding any
+axis-less block draws *every* block in it without an axis: `cellDrawsPriceAxis` returns false
+as soon as one block has no axes, and that decides the whole cell. Five things used to follow
+from that, and every one of them was the same shape - one fact derived in more than one place.
+They are recorded because the shape recurs, not because any of them is still live.
 
-*Inherited, and present before the pointer/keyboard work.* Mouse free drag reaches a paired
-dual-axis leg in such a cell and can split the order across cells, because the cell draws
-that leg without an axis and `Block` sends anything drawn without one to the free drag.
+- *A paired dual-axis leg could be split across cells by a mouse free drag*, because the cell
+  drew that leg without an axis while `Block` worked out for itself, from `axis` and `axes`,
+  that it was on one. `legInCell` is now the single answer and the cell hands it down; and
+  under decision D9 no placed block changes cells by any input method anyway.
+- *That drop path wrote `yPosition` through `calculateYPosition`*, which returned 0-100
+  against a scale whose maximum is 50 - so a block could render pinned at the 50% end while
+  its label read the raw value, and a 100% offset was a price of exactly zero. The reader is
+  deleted; `clampOffset` bounds every position on every path.
+- *Keyboard and tap pick-up of a paired leg was refused there without offering the arrow
+  keys*, because that render wires none. Still true, and now decided by the same
+  `cellDrawsPriceAxis` the renderer uses, so the two cannot disagree about it.
+- *A same-cell nudge still mutated the grid*: every bulk cell is a legal target, so a release
+  inside a block's own cell fell through to the full move, rewrote `axis` and `yPosition` from
+  the drop coordinates, and reordered the cell array - which changed the cell header, since it
+  renders `blocks[0].label`. Nothing is rewritten or reordered now.
+- *The vertical drag resolved its track by the block's own `axis` field*, which could disagree
+  with the axis column the renderer drew it in. Nothing rewrites `axis` after a block is
+  built, so the two cannot disagree; the fallback that made a miss survivable is kept.
 
-*Also inherited.* That same drop path writes `yPosition` through `calculateYPosition`, which
-returns 0-100 against a scale whose maximum is 50, so a block can render pinned at the 50%
-end while its label reads the raw value.
-
-*Introduced by the pointer/keyboard work.* Keyboard and tap pick-up of a paired dual-axis
-leg is refused in such a cell - there was no keyboard or tap pick-up at all before this
-change, so the refusal could not have been inherited - and it deliberately does not offer
-the arrow keys, because that render wires none.
-
-*Inherited, deliberately left alone here, and owned by `bb3-mapping-owner`.* A same-cell
-nudge in the bulk pattern still **mutates the grid**. Only the reported outcome above changed;
-the mutation is unchanged from `main`. Because every bulk cell is a legal target, a release
-inside a block's own cell falls through to the full move: it rewrites that order's `axis` and
-`yPosition` from the drop coordinates, into the block and its order config, and its
-remove-then-push reorders the cell array - so the cell header, which renders `blocks[0].label`,
-can change from the order that was nudged to the one beside it. That is the cell-scale family
-of defects, owned by `bb3-mapping-owner` under the ruling that direction belongs to the cell
-and is stamped when the first block lands; reconciling it in the announcement lane as well
-would be two lanes answering one question, which is how the display and the payload drifted
-apart before. `GridArea.dom.test.tsx` pins the behaviour as it stands so a later change cannot
-quietly settle it here instead.
-
-*Introduced by the pointer/keyboard work, and now contained.* Unifying the track geometry
-made the vertical drag resolve its track by the block's own `axis` field, which can disagree
-with the axis column the renderer actually drew it in - a Limit stamped `axis: 1` by a drop
-in the left half of a cell is still drawn in that cell's limit column. A miss left the drag
-silently dead, so the order could not be re-priced by mouse or by finger while the arrow
-keys still worked. `handleBlockVerticalDrag` now falls back to whichever axis track the cell
-did render, restoring the property the earlier implementation had of always finding a track.
-The keying disagreement itself remains.
-
-The conditional pattern cannot reach any of it, because an occupied cell is never a valid
-target. The real fix is to give the block-to-price mapping one owner instead of several
-consumers that have to agree, and that is filed as its own piece of work.
+The conditional pattern could never reach any of it, because an occupied cell is never a valid
+target. The fix was the one named at the time: give the block-to-price mapping a single owner
+(`src/utils/blockMapping.ts`) rather than several consumers that have to agree.
 
 Each of the three input methods driving the running app is captured in
 [`docs/screenshots/interaction/`](docs/screenshots/interaction/), which records the commit
@@ -892,7 +870,7 @@ src/
 │       │   ├── useLightweightChart.ts # Chart instance lifecycle
 │       │   ├── useIndicatorSeries.ts  # Line-series lifecycle, derived from the registry
 │       │   ├── priceScale.ts          # Linear/logarithmic choice → PriceScaleMode. Nothing else
-│       │   ├── orderPriceLines.ts     # Grid blocks → price lines, through calculatePrice
+│       │   ├── orderPriceLines.ts     # Grid blocks → price lines, through blockMapping
 │       │   ├── orderAutoscale.ts      # Keeps the order levels inside the visible range
 │       │   ├── indicators/            # Overlay indicators - a pure compute plus a registry entry
 │       │   │   ├── registry.ts            # The one list the toolbar and the series derive from
@@ -960,7 +938,8 @@ src/
 ├── utils/                         # Pure utility functions
 │   ├── blockCommand.ts            # Select-then-place state machine (pure half)
 │   ├── blockFactory.ts            # Factory for creating block data
-│   ├── grid.ts                    # Grid manipulation helpers
+│   ├── blockMapping.ts            # The one owner of axis, position, direction, cell scale
+│   ├── grid.ts                    # Grid structure & placement rules
 │   ├── gridAnnouncements.ts       # Every sentence the grid speaks (pure)
 │   ├── liveCandles.ts             # The one fold of closed bars + the forming bar, and what a new list appends
 │   ├── marketFormat.ts            # The one owner of every price & quantity format

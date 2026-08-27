@@ -6,7 +6,12 @@ import { useVerticalDrag } from "../../hooks/useVerticalDrag";
 import type { SvgIcon } from "../../data/orderTypes";
 import type { CancelOptions } from "../../hooks/useBlockCommand";
 import type { ActivationOrigin } from "../../utils/blockCommand";
-import { SCALE_CONFIG } from "../../styles/grid";
+import type { BlockDirection } from "../../types/grid";
+import {
+  MAX_OFFSET_PERCENT,
+  signedOffset,
+  type PriceAxisLeg,
+} from "../../utils/blockMapping";
 import { BLOCK_TILE_SHAPE } from "./blockTile";
 
 /** The id every block's instructions are described by. Rendered once by GridArea. */
@@ -78,7 +83,7 @@ const PRICE_STEP = 1;
 const PRICE_STEP_LARGE = 5;
 const PRICE_STEP_PAGE = 10;
 /** Clamped by the grid, so this reaches the end of the axis from anywhere. */
-const PRICE_STEP_TO_END = SCALE_CONFIG.MAX_PERCENT * 2;
+const PRICE_STEP_TO_END = MAX_OFFSET_PERCENT * 2;
 
 interface BlockProps {
   id: string;
@@ -86,15 +91,25 @@ interface BlockProps {
   abrv: string;
   /** Order type name, e.g. "Stop Loss Limit". Carries the accessible name. */
   label?: string;
-  axis?: 1 | 2;
+  /**
+   * Which price axis this block is drawn on in the cell rendering it, or
+   * `undefined`/`null` when that cell draws no axis at all.
+   *
+   * Handed down rather than worked out here, and that is the point: this
+   * component used to answer the same question again from `axis` and `axes`,
+   * so in a cell that drew every block flat - a bulk cell holding a Market
+   * order - a limit leg still believed it was on an axis. `legInCell` in
+   * `utils/blockMapping.ts` is the one answer, and it needs the cell to give
+   * it, which this component does not have.
+   */
+  leg?: PriceAxisLeg | null;
   yPosition?: number;
-  axes?: ("trigger" | "limit")[];
   /** "Entry column, primary row" - the position part of the accessible name. */
   cellDescription?: string;
   /** Rendered price at the current position, e.g. "$95,861.25". */
   priceText?: string;
   /** Which way the price scale this block is drawn on runs, from its cell. */
-  direction?: "upside" | "downside";
+  direction?: BlockDirection;
   isHighlighted?: boolean;
   isReadOnly?: boolean;
   /** This block is the one currently picked up by the command model. */
@@ -149,9 +164,8 @@ const Block: FC<BlockProps> = ({
   icon,
   abrv,
   label,
-  axis,
+  leg,
   yPosition,
-  axes = [],
   cellDescription,
   priceText,
   direction = "upside",
@@ -175,11 +189,11 @@ const Block: FC<BlockProps> = ({
 }) => {
   const buttonRef = useRef<HTMLButtonElement>(null);
   // A block sits on a price axis whether or not it can be moved: a read-only
-  // one still has to say what price it represents.
-  const isOnPriceAxis =
-    axis !== undefined && axes.length > 0 && yPosition !== undefined;
-  const isVerticallyDraggable =
-    !isReadOnly && axis !== undefined && axes.length > 0;
+  // one still has to say what price it represents. One derivation, from the leg
+  // the cell handed down - the vertical drag and the accessible slider are two
+  // faces of the same fact and must never be able to disagree about it.
+  const isOnPriceAxis = !!leg && yPosition !== undefined;
+  const isVerticallyDraggable = !isReadOnly && isOnPriceAxis;
   const blockCursor = isReadOnly
     ? "default"
     : isVerticallyDraggable
@@ -324,16 +338,14 @@ const Block: FC<BlockProps> = ({
   const isFreeFormDragging = isFreeDragging;
 
   const name = label ?? abrv;
-  const axisName = axis === 1 ? "trigger" : "limit";
+  const axisName = leg ?? "limit";
   // Signed offset from the market price: positive above it, negative below.
   // That makes the value move the same way as the block does on screen, in
-  // both scale directions, which is what a vertical slider has to do.
+  // both scale directions, which is what a vertical slider has to do. The sign
+  // comes from the mapping owner, so it is the same one the price chip beside
+  // this block was drawn with.
   const signedPercent =
-    yPosition === undefined
-      ? 0
-      : direction === "downside"
-        ? -yPosition
-        : yPosition;
+    yPosition === undefined ? 0 : signedOffset(yPosition, direction);
   const sliderLabel = [
     `${name} ${axisName} price`,
     cellDescription,
@@ -376,10 +388,8 @@ const Block: FC<BlockProps> = ({
         role: "slider",
         "aria-label": sliderLabel,
         "aria-orientation": "vertical",
-        "aria-valuemin":
-          direction === "downside" ? -SCALE_CONFIG.MAX_PERCENT : 0,
-        "aria-valuemax":
-          direction === "downside" ? 0 : SCALE_CONFIG.MAX_PERCENT,
+        "aria-valuemin": direction === "downside" ? -MAX_OFFSET_PERCENT : 0,
+        "aria-valuemax": direction === "downside" ? 0 : MAX_OFFSET_PERCENT,
         "aria-valuenow": Number(signedPercent.toFixed(2)),
         "aria-valuetext": valueText,
       } as const)

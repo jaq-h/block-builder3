@@ -89,11 +89,17 @@ describe("describeOutcome, picking a block up", () => {
     );
   });
 
-  it("promises no arrow keys when refusing a dual-axis leg", () => {
+  // FORMERLY the "dualAxisPartner" refusal, which read "Stop Loss Limit cannot
+  // be moved on its own: its trigger and limit must stay in the same cell."
+  // That special case is gone with the move it guarded: under decision D9 no
+  // placed block changes cells, so the general rule already covers a dual-axis
+  // leg, and a block in a cell with no price axis has no arrow keys to be
+  // offered instead - only "remove it and place a new one".
+  it("says how to correct a misplaced order when there is no axis to offer", () => {
     expect(
-      say({ kind: "moveRefused", label: "Stop Loss Limit", reason: "dualAxisPartner" }),
+      say({ kind: "moveRefused", label: "Market", reason: "staysInCell" }),
     ).toBe(
-      "Stop Loss Limit cannot be moved on its own: its trigger and limit must stay in the same cell.",
+      "Market stays in the cell it was placed in. To put this order somewhere else, remove it and place a new one.",
     );
   });
 });

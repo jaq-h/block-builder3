@@ -9,35 +9,43 @@
 //
 // Everything here is pure. The DOM-facing half lives in `useBlockCommand`.
 
-import type {
-  BlockData,
-  CellPosition,
-  GridData,
-  StrategyPattern,
-} from "../types/grid";
+import type { CellPosition, GridData, StrategyPattern } from "../types/grid";
 import { isCellValidForPlacement } from "./grid";
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-/** Where the block being carried came from. */
-export type CommandSource =
-  | {
-      kind: "provider";
-      /** Order type identifier, e.g. "stop-loss-limit". */
-      type: string;
-      label: string;
-    }
-  | {
-      kind: "grid";
-      id: string;
-      label: string;
-      origin: CellPosition;
-    };
+/**
+ * What a sentence about the grid is about: a palette order type, or a block
+ * already placed in a cell.
+ */
+export type CommandSource = ProviderSource | GridSource;
+
+/** A palette entry - an order type that is not on the grid yet. */
+export interface ProviderSource {
+  kind: "provider";
+  /** Order type identifier, e.g. "stop-loss-limit". */
+  type: string;
+  label: string;
+}
+
+/** A block already on the grid, and the cell the gesture started in. */
+export interface GridSource {
+  kind: "grid";
+  id: string;
+  label: string;
+  origin: CellPosition;
+}
 
 export interface CarriedBlock {
-  source: CommandSource;
+  /**
+   * Always a palette order. A placed block is never carried, because a placed
+   * block never changes cells (decision D9) - so this is narrower than
+   * `CommandSource`, and deliberately: it is the type system holding that rule
+   * rather than a comment asking future code to.
+   */
+  source: ProviderSource;
   /** The cell the block would land in if placed now. */
   target: CellPosition;
   /** Every cell this block may legally be placed in, in reading order. */
@@ -92,10 +100,8 @@ export const IDLE_COMMAND_STATE: CommandState = { carrying: null };
 export type CommandAction =
   | {
       type: "pickUp";
-      source: CommandSource;
+      source: ProviderSource;
       targets: CellPosition[];
-      /** Preferred starting cell, normally the block's own cell. */
-      preferred?: CellPosition | null;
       origin: ActivationOrigin;
     }
   | { type: "moveTarget"; dCol: number; dRow: number }
@@ -139,33 +145,17 @@ export const validTargetsFor = (
 };
 
 /**
- * A block's own cell is always somewhere it may be put back, even though the
- * placement rules read it as occupied. Inserting it keeps reading order, so
- * the arrow keys still walk the grid the way it looks.
- */
-export const withOriginCell = (
-  targets: CellPosition[],
-  origin: CellPosition,
-): CellPosition[] => {
-  if (targets.some((cell) => samePosition(cell, origin))) return targets;
-  const merged = [...targets, origin];
-  merged.sort((a, b) => a.col - b.col || a.row - b.row);
-  return merged;
-};
-
-/**
- * Where a pick-up starts: the block's own cell when that is still a legal
- * target, otherwise the first legal one. `null` means the block cannot be
- * placed anywhere at all, so the pick-up must not happen.
+ * Where a pick-up starts: the first legal cell.
+ *
+ * A carried block is always a palette order now, so there is no cell it "came
+ * from" to prefer. `withOriginCell` used to insert a placed block's own cell
+ * into the target list for exactly that; it went with the cross-cell move
+ * (decision D9), because a carry whose only legal destination is where the
+ * block already sits is not a move, it is a no-op with extra steps.
  */
 export const initialTarget = (
   targets: CellPosition[],
-  preferred?: CellPosition | null,
-): CellPosition | null => {
-  if (targets.length === 0) return null;
-  const match = targets.find((cell) => samePosition(cell, preferred));
-  return match ?? targets[0];
-};
+): CellPosition | null => targets[0] ?? null;
 
 /**
  * Step the target one cell in a direction, considering only legal cells - so
@@ -226,7 +216,7 @@ export const commandReducer = (
 ): CommandState => {
   switch (action.type) {
     case "pickUp": {
-      const target = initialTarget(action.targets, action.preferred);
+      const target = initialTarget(action.targets);
       // A block with nowhere legal to go is not picked up at all, so the user
       // can never get stuck carrying something that cannot be put down.
       if (!target) return state;
@@ -290,43 +280,12 @@ export const describeCell = (
   return `${column} column, ${row} row`;
 };
 
-/**
- * True when this block is one of the two axes of a single dual-axis order:
- * `createBlocksFromOrderType` case 4 puts a trigger block (axis 1) and a limit
- * block (axis 2) of the same order type in one cell, and they only mean
- * anything together. Moving one on its own would split the order across two
- * cells, which flips one leg from buy to sell.
- *
- * In every cell that draws a price axis the pointer drag never offered this
- * either, because a block on an axis is wired to the vertical drag and free
- * drag cannot reach it - so the cell-level pick-up must not offer it.
- *
- * That is not a universal invariant, and the earlier claim that it was is
- * wrong. In the bulk pattern a cell holding any axis-less block draws *every*
- * block in it without an axis (`getCellDisplayMode` returns "no-axis"), so its
- * paired legs fall through to the free drag and a mouse can still split the
- * order there. Refusing the cell-level pick-up does not close that; it is a
- * pre-existing gap in the renderer, filed for the lane that gives the
- * block-to-price mapping a single owner. The conditional pattern cannot reach
- * it, because an occupied cell is never a valid target.
- *
- * Sharing an order type is not enough on its own: the bulk pattern is
- * "multiple independent orders", so two separate Market or Limit orders can sit
- * in one cell. Those share an axis rather than splitting one between them, and
- * a mouse can move them, so the keyboard and a finger must be able to too.
- */
-export const hasDualAxisPartner = (
-  cellBlocks: BlockData[],
-  block: BlockData,
-): boolean =>
-  block.axes.length > 0 &&
-  cellBlocks.some(
-    (other) =>
-      other.id !== block.id &&
-      other.orderType === block.orderType &&
-      other.axes.length > 0 &&
-      other.axis !== block.axis,
-  );
+// `hasDualAxisPartner` lived here, and refused to pick up one leg of a
+// dual-axis order because moving it alone would split the order across two
+// cells and flip one leg from buy to sell. Decision D9 refuses the move for
+// EVERY placed block, so the special case has nothing left to add: the general
+// rule already covers it, and a second guard saying the same thing more
+// narrowly is the shape this repository keeps having to undo.
 
 export const describeSource = (source: CommandSource): string =>
   source.kind === "provider"

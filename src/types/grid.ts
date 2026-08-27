@@ -59,8 +59,18 @@ export type PlacementResult =
    * the sentence names a cell the grid has just confirmed rather than one
    * snapshotted when the block was picked up. A palette order has no `at`,
    * because it is nowhere.
+   *
+   * `reason` separates the two refusals a user experiences quite differently.
+   * Without it the grid says a cell "cannot take this order", which is true of
+   * a cell the placement rules exclude and misleading for a placed block, which
+   * no cell will take because placed blocks do not change cells at all
+   * (decision D9). One is about the cell; the other is about the rule.
    */
-  | { status: "refused"; at?: CellPosition }
+  | {
+      status: "refused";
+      at?: CellPosition;
+      reason?: "placementRules" | "staysInCell";
+    }
   /**
    * The block named is not on the grid at all - a carry can outlive the grid
    * it was started against, and the block may have been cleared away since.

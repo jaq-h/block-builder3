@@ -2,10 +2,13 @@ import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
 import {
-  calculatePrice,
+  cellDirection,
+  clampOffset,
   formatPrice,
   getCellDisplayMode,
-  isCellDescending,
+  isDescending as isDescendingDirection,
+  legInCell,
+  priceForOffset,
 } from "../../../utils";
 import { describeCell } from "../../../utils/blockCommand";
 import { useMarket } from "../../../store/useMarket";
@@ -74,7 +77,6 @@ interface GridCellProps {
    * behind with nothing said about either.
    */
   onCellActivate: () => void;
-  carryingBlockId: string | null;
   focusBlockId: string | null;
   onBlockFocusHandled: () => void;
 }
@@ -106,7 +108,6 @@ const GridCell: FC<GridCellProps> = ({
   onBlockCommandCancel,
   onBlockAdjustPrice,
   onCellActivate,
-  carryingBlockId,
   focusBlockId,
   onBlockFocusHandled,
 }) => {
@@ -117,7 +118,13 @@ const GridCell: FC<GridCellProps> = ({
   const { activeMarket } = useMarket();
 
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = isCellDescending(blocks);
+  // The cell's scale, from the one owner of it. Every chip, every slider and
+  // every announcement in this cell is drawn on this single direction - and so
+  // is the Kraken payload, which reads the same cell through
+  // `extractBlocksFromGrid`. Reading each block's own direction here is what
+  // put `-25.00% $37,500` on screen beside a payload that said 62,500.
+  const direction = cellDirection(blocks);
+  const isDescending = isDescendingDirection(direction);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
@@ -133,8 +140,9 @@ const GridCell: FC<GridCellProps> = ({
   );
 
   // Every block in the cell shares the same command wiring; only the id differs.
+  // No `isCarrying`: a placed block is never carried, because it never changes
+  // cells (decision D9). The palette is the only place a block is held from.
   const commandProps = (blockId: string) => ({
-    isCarrying: carryingBlockId === blockId,
     shouldFocus: focusBlockId === blockId,
     onFocusHandled: onBlockFocusHandled,
     onActivate: onBlockActivate,
@@ -207,32 +215,36 @@ const GridCell: FC<GridCellProps> = ({
         </span>
 
         {axisBlocks.map((block) => {
-          const calculatedPrice = calculatePrice(
+          // One clamped offset for the chip, the ruler, the dashed indicator
+          // and the block itself, so the drawn position and the drawn price can
+          // never come from different numbers.
+          const offset = clampOffset(block.yPosition);
+          const calculatedPrice = priceForOffset(
             currentPrice,
-            block.yPosition,
-            isDescending,
+            offset,
+            direction,
           );
           const sliderIcon =
             block.axis === 1 ? block.triggerIcon : block.limitIcon;
           const dashedProps = getDashedIndicatorProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
           );
           const pctProps = getPercentageLabelProps(
-            block.yPosition,
+            offset,
             isDescending,
             sign,
             isSingleAxis,
           );
           const priceProps = getCalculatedPriceLabelProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
             isBuy,
           );
           const posProps = getBlockPositionerProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
           );
@@ -244,7 +256,7 @@ const GridCell: FC<GridCellProps> = ({
               />
               <div className={pctProps.className} style={pctProps.style}>
                 {pctProps.sign}
-                {block.yPosition.toFixed(2)}%
+                {offset.toFixed(2)}%
               </div>
               <div className={priceProps.className} style={priceProps.style}>
                 {formatPrice(calculatedPrice, activeMarket)}
@@ -255,10 +267,9 @@ const GridCell: FC<GridCellProps> = ({
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
                   label={block.label}
-                  axis={block.axis}
-                  axes={block.axes}
-                  yPosition={block.yPosition}
-                  direction={isDescending ? "downside" : "upside"}
+                  leg={legInCell(blocks, block)}
+                  yPosition={offset}
+                  direction={direction}
                   priceText={formatPrice(calculatedPrice, activeMarket)}
                   onVerticalDrag={onBlockVerticalDrag}
                   onAdjustPrice={onBlockAdjustPrice}
@@ -310,7 +321,7 @@ const GridCell: FC<GridCellProps> = ({
                 icon={block.icon}
                 abrv={block.abrv}
                 label={block.label}
-                axes={block.axes}
+                leg={legInCell(blocks, block)}
                 {...commandProps(block.id)}
               />
             ))}

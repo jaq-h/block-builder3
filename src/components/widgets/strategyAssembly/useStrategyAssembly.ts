@@ -27,7 +27,6 @@ export function useStrategyAssembly(): StrategyAssemblyContextType {
     orderConfig: gridData.orderConfig,
     strategyPattern: gridData.strategyPattern,
     setGrid: gridData.setGrid,
-    setOrderConfig: gridData.setOrderConfig,
     setStrategyPattern: gridData.setStrategyPattern,
     clearAll: gridData.clearAll,
     reverseBlocks: gridData.reverseBlocks,

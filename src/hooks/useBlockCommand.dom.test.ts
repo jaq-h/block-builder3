@@ -12,6 +12,7 @@ import type {
   PlacementResult,
   StrategyPattern,
 } from "@/types/grid";
+import type { PickUpRefusal } from "@utils/gridAnnouncements";
 
 // =============================================================================
 // HARNESS
@@ -36,11 +37,13 @@ const limitBlock = (overrides: Partial<BlockData> = {}): BlockData => ({
  * the way `GridArea` does and re-exposes the announcement, so every assertion
  * below reads what a screen reader would actually receive.
  */
+type RefuseMove = (label: string, reason: PickUpRefusal) => void;
+
 const renderCommand = (
   grid: GridData,
   strategyPattern: StrategyPattern,
   placeProvider: (type: string, cell: { col: number; row: number }) => PlacementResult,
-  moveBlock: (id: string, cell: { col: number; row: number }) => PlacementResult,
+  onRefuse: RefuseMove = () => {},
 ) =>
   renderHook(() => {
     const announcer = useGridAnnouncer(strategyPattern);
@@ -50,7 +53,13 @@ const renderCommand = (
       providerBlocks: ORDER_TYPES,
       announcer,
       placeProvider,
-      moveBlock,
+      // Wired the way `GridArea` wires it: the refusal is reported to the one
+      // announcer, and the owner does whatever else it needs to with the same
+      // two facts - which for `GridArea` is putting the rule on screen.
+      refuseMove: (label, reason) => {
+        onRefuse(label, reason);
+        announcer.report({ kind: "moveRefused", label, reason });
+      },
     });
     return { ...command, announcement: announcer.announcement };
   });
@@ -61,10 +70,7 @@ const renderCommand = (
  * none of which end the carry. The `GridArea` harness stubs those buttons out,
  * so this is the honest place to drive them.
  */
-const renderCommandWithReplaceableGrid = (
-  initialGrid: GridData,
-  moveBlock: () => PlacementResult = () => ({ status: "refused" }),
-) =>
+const renderCommandWithReplaceableGrid = (initialGrid: GridData) =>
   renderHook(
     ({ grid }: { grid: GridData }) => {
       const announcer = useGridAnnouncer("conditional");
@@ -74,7 +80,7 @@ const renderCommandWithReplaceableGrid = (
         providerBlocks: ORDER_TYPES,
         announcer,
         placeProvider: () => ({ status: "refused" }),
-        moveBlock,
+        refuseMove: () => {},
       });
       return { ...command, announcement: announcer.announcement };
     },
@@ -88,21 +94,21 @@ const setup = (
   const placeProvider = vi.fn(
     (): PlacementResult => ({ status: "created", blockId: "new-block-id" }),
   );
-  // The grid the command model talks to reports what it did; this stands in for
-  // a move that really happened, out of the cell the fixtures place blocks in.
-  const moveBlock = vi.fn(
-    (id: string): PlacementResult => ({ status: "moved", blockId: id }),
-  );
+  // A placed block never leaves its cell (decision D9), so the only thing the
+  // command model can do with one is refuse and say so. The owner is what puts
+  // that refusal on screen as well as into the live region, which is why it is
+  // a callback rather than an announcement composed here.
+  const refuseMove = vi.fn<RefuseMove>();
 
-  const view = renderCommand(grid, strategyPattern, placeProvider, moveBlock);
+  const view = renderCommand(grid, strategyPattern, placeProvider, refuseMove);
 
-  return { ...view, placeProvider, moveBlock };
+  return { ...view, placeProvider, refuseMove };
 };
 
 /**
- * The only kind of placed block that moves between cells at all: one the cell
- * draws without a price axis. A mouse cannot move a priced block either, so
- * the carry mechanics are exercised on this one.
+ * A placed block the cell draws without a price axis - a Market order. Nothing
+ * placed moves between cells any more (decision D9); this is the fixture for
+ * the refusal that has no arrow keys to offer instead.
  */
 const axisLessBlock = (overrides: Partial<BlockData> = {}): BlockData => ({
   id: "b1",
@@ -330,55 +336,18 @@ describe("useBlockCommand", () => {
       expect(view.result.current.carrying).toBeNull();
     });
 
-    it("names the cell the grid just confirmed, not the one picked up from", () => {
-      // Reverse Blocks mirrors a placed block into the other column while it is
-      // being carried. The carry's own `origin` is a snapshot from pick-up
-      // time, so a refusal composed from it names a cell the block left. The
-      // grid knows better, and says so on the result it returns.
-      const view = renderCommand(
-        gridWithMovableBlock(),
-        "conditional",
-        () => ({ status: "refused" }),
-        () => ({ status: "refused", at: { col: 1, row: 1 } }),
-      );
-
-      act(() => view.result.current.activateBlock("b1", "keyboard"));
-      act(() => view.result.current.activateBlock("b1", "keyboard"));
-
-      expect(view.result.current.announcement.text).toBe(
-        "Entry column, primary row cannot take this order any more. Market block stayed in Exit column, primary row, and is no longer picked up.",
-      );
-      expect(view.result.current.carrying).toBeNull();
-    });
-
-    it("names no cell at all when the block is no longer on the grid", () => {
-      // Clear All replaces the grid without ending the carry. The block is in
-      // no cell, so any sentence naming one would be false.
-      const view = renderCommand(
-        gridWithMovableBlock(),
-        "conditional",
-        () => ({ status: "refused" }),
-        () => ({ status: "gone" }),
-      );
-
-      act(() => view.result.current.activateBlock("b1", "keyboard"));
-      act(() => view.result.current.activateBlock("b1", "keyboard"));
-
-      expect(view.result.current.announcement.text).toBe(
-        "Market block is no longer on the grid, and is no longer picked up.",
-      );
-      expect(view.result.current.carrying).toBeNull();
-      // A focus request naming a block that does not exist is never honoured,
-      // and would sit waiting for some later block to answer it.
-      expect(view.result.current.focusRequest).toBeNull();
-    });
+    // Two tests stood here that drove a *placed* block's carry to a refusal and
+    // to a "gone" grid, to check which cell each sentence named. Both went with
+    // the carry itself: a placed block is never picked up any more (decision
+    // D9), so the only result the command model can reach for one is the
+    // refusal below. The equivalent wording for a drag - which is what still
+    // reaches a placed block - is pinned in `GridArea.dom.test.tsx`.
 
     it("keeps focus somewhere real when the placement is rejected downstream", () => {
       const grid = clearGrid(2, 3);
       const view = renderCommand(
         grid,
         "conditional",
-        () => ({ status: "refused" }),
         () => ({ status: "refused" }),
       );
 
@@ -391,308 +360,164 @@ describe("useBlockCommand", () => {
     });
   });
 
-  describe("a carry the grid changes under", () => {
-    /** Where Reverse Blocks leaves the same block: the mirrored column. */
-    const gridWithBlockMoved = () => {
-      const grid = clearGrid(2, 3);
-      grid[1][1].push(axisLessBlock());
-      return grid;
-    };
+  // The "a carry the grid changes under" suite stood here: it picked a placed
+  // block up, replaced the grid under it the way Clear All and Reverse Blocks
+  // do, and checked that the sentence named the cell the grid had just
+  // confirmed rather than the pick-up snapshot. There is no placed-block carry
+  // left to outlive a grid (decision D9), and a palette carry names no cell at
+  // all, so the staleness those tests guarded against is unreachable rather
+  // than merely untested. `renderCommandWithReplaceableGrid` is kept for the
+  // palette carry, which still has to survive a grid being swapped under it.
 
-    it("names the cell the block is in now when the carry is cancelled", () => {
+  describe("a palette carry the grid changes under", () => {
+    // Clear All, Reverse Blocks and a pattern switch all replace the grid
+    // without ending the carry. A palette order is nowhere on the grid to begin
+    // with, so the sentence has no cell to get wrong - which is what makes this
+    // the whole of the case now that a placed block is never carried.
+    it("survives the grid being replaced, and still returns to the palette", () => {
       const view = renderCommandWithReplaceableGrid(gridWithMovableBlock());
 
-      act(() => view.result.current.activateBlock("b1", "keyboard"));
+      act(() => view.result.current.activateProvider("limit", "keyboard"));
       expect(view.result.current.carrying?.source).toMatchObject({
-        origin: { col: 0, row: 1 },
+        type: "limit",
       });
 
-      view.rerender({ grid: gridWithBlockMoved() });
-      act(() => view.result.current.cancel());
-
-      expect(view.result.current.announcement.text).toBe(
-        "Cancelled. Market block left in Exit column, primary row.",
-      );
-    });
-
-    it("names no cell at all when the grid no longer holds the block", () => {
-      const view = renderCommandWithReplaceableGrid(gridWithMovableBlock());
-
-      act(() => view.result.current.activateBlock("b1", "keyboard"));
       view.rerender({ grid: clearGrid(2, 3) });
       act(() => view.result.current.cancel());
 
       expect(view.result.current.announcement.text).toBe(
-        "Cancelled. Market block is no longer on the grid.",
+        "Cancelled. Limit order returned to the palette.",
       );
       expect(view.result.current.announcement.text).not.toContain("column");
     });
-
-    it("does the same when a drag supersedes the carry", () => {
-      const moved = renderCommandWithReplaceableGrid(gridWithMovableBlock());
-
-      act(() => moved.result.current.activateBlock("b1", "keyboard"));
-      moved.rerender({ grid: gridWithBlockMoved() });
-      // A different subject, so this release speaks for itself.
-      act(() => {
-        moved.result.current.releaseForDrag("limit");
-      });
-
-      expect(moved.result.current.announcement.text).toBe(
-        "Market block left in Exit column, primary row: a drag took over.",
-      );
-
-      const cleared = renderCommandWithReplaceableGrid(gridWithMovableBlock());
-
-      act(() => cleared.result.current.activateBlock("b1", "keyboard"));
-      cleared.rerender({ grid: clearGrid(2, 3) });
-      act(() => {
-        cleared.result.current.releaseForDrag("limit");
-      });
-
-      expect(cleared.result.current.announcement.text).toBe(
-        "Market block is no longer on the grid: a drag took over.",
-      );
-      expect(cleared.result.current.announcement.text).not.toContain("column");
-    });
   });
 
-  describe("carrying a block that is already on the grid", () => {
-    it("starts on the block's own cell", () => {
-      const { result } = setup(gridWithMovableBlock());
+  describe("a placed block, which never leaves its cell", () => {
+    // Decision D9, and the suite this replaces is the clearest case in the file
+    // of tests that would have quietly certified the old behaviour. It asserted
+    // that Enter on a placed block picked it up, that the arrow keys walked it
+    // to a diagonal and `moveBlock` was called with the new cell, and that a
+    // second Enter put it back - the whole cross-cell move, for every input
+    // method. That capability is gone: once a block is placed and priced, its
+    // cell is where it lives, with no per-block-type carve-out. What is left to
+    // check is that the refusal is a refusal rather than a silence, and that it
+    // names something the user can actually do next.
 
-      act(() => result.current.activateBlock("b1", "keyboard"));
-
-      expect(result.current.carrying?.source).toEqual({
-        kind: "grid",
-        id: "b1",
-        label: "Market",
-        origin: { col: 0, row: 1 },
-      });
-      expect(result.current.carrying?.target).toEqual({ col: 0, row: 1 });
-    });
-
-    it("moves it to the diagonal the placement rule allows", () => {
-      const { result, moveBlock } = setup(gridWithMovableBlock());
-
-      act(() => result.current.activateBlock("b1", "keyboard"));
-      act(() => result.current.moveTarget(1, 0));
-      act(() => result.current.activateBlock("b1", "keyboard"));
-
-      // With this block in the Entry primary cell, the only other legal cell
-      // is the Exit upper conditional - a diagonal.
-      expect(moveBlock).toHaveBeenCalledWith("b1", { col: 1, row: 0 });
-      expect(result.current.focusRequest).toBe("b1");
-    });
-
-    it("can put the block back in its own cell", () => {
-      const { result, moveBlock } = setup(gridWithMovableBlock());
-
-      act(() => result.current.activateBlock("b1", "keyboard"));
-      act(() => result.current.activateBlock("b1", "keyboard"));
-
-      // Its own cell reads as occupied to the placement rules, so it has to be
-      // added back deliberately - otherwise a pick-up could never be undone
-      // with Enter, only with Escape.
-      expect(moveBlock).toHaveBeenCalledWith("b1", { col: 0, row: 1 });
-    });
-
-    it("says where the block was left when the carry is cancelled", () => {
-      const { result } = setup(gridWithMovableBlock());
-
-      act(() => result.current.activateBlock("b1", "keyboard"));
-      act(() => result.current.cancel());
-
-      expect(result.current.carrying).toBeNull();
-      expect(result.current.focusRequest).toBe("b1");
-      expect(result.current.announcement.text).toBe(
-        "Cancelled. Market block left in Entry column, primary row.",
-      );
-    });
-
-    it("refuses to move a block drawn on a price axis, and says why", () => {
+    it("refuses a block drawn on a price axis, and offers the arrow keys", () => {
       const { grid, blocks } = gridWithOrder("stop-loss-limit");
-      const { result, moveBlock } = setup(grid);
+      const { result, refuseMove } = setup(grid);
 
-      // The trigger and the limit share a cell; moving one alone would submit
-      // them as two orders on opposite sides of the market. The cell draws
-      // both on an axis, though, so the reason the user is given is the one
-      // that applies to every block in such a cell - and it names the arrow
-      // keys, which this render really does wire.
       expect(blocks).toHaveLength(2);
 
       act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(moveBlock).not.toHaveBeenCalled();
+      expect(refuseMove).toHaveBeenCalledWith("Stop Loss Limit", "onPriceAxis");
       expect(result.current.announcement.text).toBe(
         "Stop Loss Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
       );
     });
 
-    it("refuses a lone block on a price axis, which has no partner at all", () => {
-      const { result, moveBlock } = setup(gridWithLimit());
+    it("refuses a lone block on a price axis the same way", () => {
+      const { result, refuseMove } = setup(gridWithLimit());
 
       act(() => result.current.activateBlock("b1", "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(moveBlock).not.toHaveBeenCalled();
-      expect(result.current.announcement.text).toBe(
-        "Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
-      );
+      expect(refuseMove).toHaveBeenCalledWith("Limit", "onPriceAxis");
     });
 
     it("promises no arrow keys in a cell that draws no axis", () => {
-      // A bulk cell holding any axis-less block draws every block in it
-      // without an axis, so nothing wires the arrow keys there. Refusing the
-      // move and then naming an affordance that is not present would leave a
+      // A bulk cell holding any axis-less block draws every block in it without
+      // an axis, so nothing wires the arrow keys there. Refusing the move and
+      // then naming an affordance that is not present would leave a
       // screen-reader user reaching for a control this render never built.
+      // `cellDrawsPriceAxis` is the one owner of that question, shared with the
+      // renderer, so the two cannot disagree about it.
       const grid = clearGrid(2, 3);
       grid[0][1].push(...blocksFor("stop-loss-limit", 0));
       grid[0][1].push(...blocksFor("market", 10));
-      const { result, moveBlock } = setup(grid);
+      const { result, refuseMove } = setup(grid);
 
       act(() => result.current.activateBlock(grid[0][1][0].id, "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(moveBlock).not.toHaveBeenCalled();
+      expect(refuseMove).toHaveBeenCalledWith("Stop Loss Limit", "staysInCell");
       expect(result.current.announcement.text).toBe(
-        "Stop Loss Limit cannot be moved on its own: its trigger and limit must stay in the same cell.",
+        "Stop Loss Limit stays in the cell it was placed in. To put this order somewhere else, remove it and place a new one.",
       );
     });
 
-    it("refuses a priced block by tap as well as by keyboard", () => {
-      const { grid, blocks } = gridWithOrder("take-profit-limit");
-      const { result, moveBlock } = setup(grid);
-
-      act(() => result.current.activateBlock(blocks[1].id, "touch"));
-
-      expect(result.current.carrying).toBeNull();
-      expect(moveBlock).not.toHaveBeenCalled();
-      expect(result.current.announcement.text).toContain(
-        "Take Profit Limit is priced on this axis",
-      );
-    });
-
-    it("refuses a single-leg axis order, which a mouse cannot move either", () => {
-      const { grid, blocks } = gridWithOrder("stop-loss");
-      const { result, moveBlock } = setup(grid);
-
-      expect(blocks).toHaveLength(1);
-
-      act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
-
-      expect(result.current.carrying).toBeNull();
-      expect(moveBlock).not.toHaveBeenCalled();
-      expect(result.current.announcement.text).toBe(
-        "Stop Loss is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
-      );
-    });
-
-    it("still picks up a market order, which has no axis at all", () => {
+    // FORMERLY "still picks up a market order, which has no axis at all". A
+    // Market order was the one placed block the model would carry, on the
+    // reasoning that a mouse could free-drag it. Decision D9 was asked exactly
+    // that question - every block, or only the priced ones - and answered every
+    // block, so this now refuses too.
+    it("refuses a market order, which used to be the one block it would carry", () => {
       const { grid, blocks } = gridWithOrder("market");
-      const { result } = setup(grid);
+      const { result, refuseMove } = setup(grid);
 
       act(() => result.current.activateBlock(blocks[0].id, "keyboard"));
 
-      expect(result.current.carrying?.source).toMatchObject({
-        id: blocks[0].id,
-      });
+      expect(result.current.carrying).toBeNull();
+      expect(refuseMove).toHaveBeenCalledWith("Market", "staysInCell");
     });
 
-    it("moves one of two independent same-type orders sharing a bulk cell", () => {
-      // The bulk pattern is "multiple independent orders", so two Market orders
-      // can share a cell. Neither is half of the other, and a mouse can move
-      // them, so the keyboard must be able to as well.
+    // FORMERLY "moves one of two independent same-type orders sharing a bulk
+    // cell", which asserted `moveBlock` was called with the diagonal. Two
+    // independent Market orders really are independent, but D9 has no carve-out
+    // for that either.
+    it("refuses one of two independent same-type orders sharing a bulk cell", () => {
       const grid = clearGrid(2, 3);
       grid[0][1].push(...blocksFor("market", 0), ...blocksFor("market", 10));
       const first = grid[0][1][0];
-      const { result, moveBlock } = setup(grid, "bulk");
+      const { result, refuseMove } = setup(grid, "bulk");
 
       expect(grid[0][1]).toHaveLength(2);
 
       act(() => result.current.activateBlock(first.id, "keyboard"));
-      expect(result.current.carrying?.source).toMatchObject({ id: first.id });
-
-      act(() => result.current.moveTarget(1, 0));
-      act(() => result.current.activateBlock(first.id, "keyboard"));
-
-      expect(moveBlock).toHaveBeenCalledWith(first.id, { col: 1, row: 1 });
-    });
-
-    it("refuses two independent limit orders in a bulk cell for the right reason", () => {
-      // Neither is half of the other, so the refusal must not claim a trigger
-      // and a limit they do not have. They are drawn on the cell's axis, and
-      // that is what stops the move.
-      const grid = clearGrid(2, 3);
-      grid[0][1].push(...blocksFor("limit", 0), ...blocksFor("limit", 10));
-      const second = grid[0][1][1];
-      const { result, moveBlock } = setup(grid, "bulk");
-
-      act(() => result.current.activateBlock(second.id, "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(moveBlock).not.toHaveBeenCalled();
-      expect(result.current.announcement.text).toBe(
-        "Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
+      expect(refuseMove).toHaveBeenCalledWith("Market", "staysInCell");
+    });
+
+    it("refuses a priced block by tap as well as by keyboard", () => {
+      const { grid, blocks } = gridWithOrder("take-profit-limit");
+      const { result, refuseMove } = setup(grid);
+
+      act(() => result.current.activateBlock(blocks[1].id, "touch"));
+
+      expect(result.current.carrying).toBeNull();
+      expect(refuseMove).toHaveBeenCalledWith(
+        "Take Profit Limit",
+        "onPriceAxis",
       );
     });
 
     it("refuses a priced block sharing a bulk cell with a different family", () => {
-      // The sequence that could silently re-price the block left behind: a
-      // cell's scale is its first block's direction, and these two disagree.
+      // The sequence that could silently re-price the block left behind, back
+      // when a move re-stamped the direction from the target cell.
       const grid = clearGrid(2, 3);
       grid[0][1].push(...blocksFor("limit", 0), ...blocksFor("stop-loss", 10));
       const limit = grid[0][1][0];
-      const { result, moveBlock } = setup(grid, "bulk");
+      const { result, refuseMove } = setup(grid, "bulk");
 
       act(() => result.current.activateBlock(limit.id, "keyboard"));
 
       expect(result.current.carrying).toBeNull();
-      expect(moveBlock).not.toHaveBeenCalled();
-      expect(result.current.announcement.text).toContain(
-        "Limit is priced on this axis",
-      );
+      expect(refuseMove).toHaveBeenCalledWith("Limit", "onPriceAxis");
     });
 
-    it("still refuses a dual-axis leg sharing a bulk cell", () => {
-      const grid = clearGrid(2, 3);
-      grid[0][1].push(...blocksFor("stop-loss-limit", 0));
-      const trigger = grid[0][1][0];
-      const { result, moveBlock } = setup(grid, "bulk");
+    it("leaves a placed block alone while a palette order is carried", () => {
+      const { result, placeProvider } = setup(gridWithMovableBlock());
 
-      act(() => result.current.activateBlock(trigger.id, "keyboard"));
-
-      expect(result.current.carrying).toBeNull();
-      expect(moveBlock).not.toHaveBeenCalled();
-    });
-
-    it("does not hand focus back when the carry is abandoned by Tab", () => {
-      const { result } = setup(gridWithMovableBlock());
-
+      act(() => result.current.activateProvider("limit", "keyboard"));
       act(() => result.current.activateBlock("b1", "keyboard"));
-      act(() => result.current.cancel({ restoreFocus: false }));
 
-      // Tab has already moved focus on by the time a focus request would be
-      // honoured; restoring it would drag the user back and swallow the Tab.
-      expect(result.current.carrying).toBeNull();
-      expect(result.current.focusRequest).toBeNull();
-      expect(result.current.announcement.text).toBe(
-        "Cancelled. Market block left in Entry column, primary row.",
-      );
-    });
-
-    it("leaves another block alone while one is being carried", () => {
-      const grid = gridWithMovableBlock();
-      grid[1][0].push(axisLessBlock({ id: "b2", label: "Take Profit" }));
-      const { result, moveBlock } = setup(grid);
-
-      act(() => result.current.activateBlock("b1", "keyboard"));
-      act(() => result.current.activateBlock("b2", "keyboard"));
-
-      // The cell decides where a carried block lands, not the block in it.
-      expect(moveBlock).not.toHaveBeenCalled();
-      expect(result.current.carrying?.source).toMatchObject({ id: "b1" });
+      // The cell decides where a carried order lands, not the block in it - so
+      // a press on some other block is neither a placement nor a refusal.
+      expect(placeProvider).not.toHaveBeenCalled();
+      expect(result.current.carrying?.source).toMatchObject({ type: "limit" });
     });
   });
 
