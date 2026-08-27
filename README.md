@@ -771,7 +771,8 @@ consumers that have to agree, and that is filed as its own piece of work.
 
 Each of the three input methods driving the running app is captured in
 [`docs/screenshots/interaction/`](docs/screenshots/interaction/), which records the commit
-every shot was taken against.
+every shot was taken against - including the mouse driving the command model rather than a
+drag, with a block on the cursor between the two clicks.
 
 ### Error Boundaries
 
