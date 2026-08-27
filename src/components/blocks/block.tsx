@@ -7,6 +7,7 @@ import type { SvgIcon } from "../../data/orderTypes";
 import type { CancelOptions } from "../../hooks/useBlockCommand";
 import type { ActivationOrigin } from "../../utils/blockCommand";
 import { SCALE_CONFIG } from "../../styles/grid";
+import { BLOCK_TILE_SHAPE } from "./blockTile";
 
 /** The id every block's instructions are described by. Rendered once by GridArea. */
 export const BLOCK_INSTRUCTIONS_ID = "strategy-block-instructions";
@@ -41,14 +42,11 @@ export const BLOCK_INSTRUCTIONS_ID = "strategy-block-instructions";
 // was carried by the breathing glow alone.
 const buttonVariants = cva(
   [
-    "w-10 h-10 flex flex-col justify-center items-center p-[3px]",
-    "border-2 rounded-md select-none",
-    "text-text-primary",
+    ...BLOCK_TILE_SHAPE,
     // Without this the browser claims a finger drag for page scrolling before
     // the first `pointermove` reaches the drag hooks - the whole gesture is
     // then a scroll and the block never moves.
     "touch-none",
-    "[&_svg]:w-5 [&_svg]:h-5 [&_svg]:stroke-current [&_svg]:pointer-events-none",
   ],
   {
     variants: {

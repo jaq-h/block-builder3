@@ -98,10 +98,21 @@ export const chartHeaderSecondaryRow =
  * off. The buttons inside are `shrink-0` (`chartToggleButton`), so they keep
  * their size and their 24px target floor instead of being squeezed under it.
  *
+ * `p-1 -m-1` is what pays for that scroller, and it is not optional. A scroll
+ * container clips on both axes - `overflow-x: auto` computes `overflow-y` to
+ * `auto` too - and the group is exactly as tall as its 24px buttons, while the
+ * focus ring `src/index.css` gives every button is `outline: 2px solid` at
+ * `outline-offset: 2px`. An outline is not part of the scrollable overflow
+ * region, so without this the ring is sliced flush with the button, top and
+ * bottom on all twelve chart controls and at the ends of each strip as well.
+ * The 4px of padding puts the whole ring inside the scrollport; the equal
+ * negative margin takes it back off the margin box, so the row's geometry -
+ * and `chartHeaderSecondaryRow`'s derived `min-h` - is unchanged.
+ *
  * A new control group in this panel takes this rather than a bare flex row.
  */
 export const chartControlGroup =
-  "flex items-center gap-1 min-w-0 overflow-x-auto";
+  "flex items-center gap-1 min-w-0 overflow-x-auto p-1 -m-1";
 
 /**
  * The symbol and price at the head of the title bar, and what the group's floor

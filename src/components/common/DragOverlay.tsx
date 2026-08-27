@@ -1,12 +1,14 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { subscribe, getSnapshot, pos } from "./dragOverlayStore";
+import { BLOCK_TILE_SHAPE } from "../blocks/blockTile";
+import { cn } from "../../lib/utils";
 
 // =============================================================================
-// DRAG OVERLAY COMPONENT — rendered via Portal, completely outside #root tree
+// DRAG OVERLAY COMPONENT - rendered via Portal, completely outside #root tree
 // =============================================================================
 
-const HALF_BLOCK = 20; // half of the 40×40 block size
+const HALF_BLOCK = 20; // half of the 40x40 block size
 
 const DragOverlay: React.FC = () => {
   const state = useSyncExternalStore(subscribe, getSnapshot);
@@ -38,7 +40,7 @@ const DragOverlay: React.FC = () => {
     };
   }, [state.active]);
 
-  // Also wire up a direct pointermove → pos mutation so the rAF loop always
+  // Also wire up a direct pointermove -> pos mutation so the rAF loop always
   // has fresh coordinates.  Pointer events rather than mouse events, so the
   // overlay follows a finger as well as a cursor.  This listener lives on
   // `window` so it captures moves even when the pointer is over elements with
@@ -74,15 +76,19 @@ const DragOverlay: React.FC = () => {
         transform: `translate(${pos.x - HALF_BLOCK}px, ${pos.y - HALF_BLOCK}px)`,
       }}
     >
-      {/* Visual clone of Block — matches the buttonVariants styling */}
+      {/* The block tile, drawn at the cursor. Its shape comes from
+          `BLOCK_TILE_SHAPE`, the one owner of those measurements, and only the
+          colour is stated here - deliberately, and deliberately not the tile's.
+          A block in flight is a state, and `buttonVariants` in
+          `src/components/blocks/block.tsx` is the authority for that split: the
+          resting tile keeps a quiet accent tint precisely so the saturated end
+          of the scale is free to mean something, and a ghost on the cursor is
+          one of the things it means. The two colours must not be reconciled. */}
       <div
-        className={[
-          "w-10 h-10 flex flex-col justify-center items-center p-0.75",
-          "border-2 rounded-md select-none",
-          "text-text-primary",
-          "[&_svg]:w-5 [&_svg]:h-5 [&_svg]:stroke-current [&_svg]:pointer-events-none",
+        className={cn(
+          BLOCK_TILE_SHAPE,
           "bg-accent-primary opacity-100 border-transparent",
-        ].join(" ")}
+        )}
       >
         {IconComponent ? (
           <IconComponent width={20} height={20} />
