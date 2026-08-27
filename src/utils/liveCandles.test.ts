@@ -111,11 +111,44 @@ describe("appendedCandles", () => {
     expect(appendedCandles(backfill, [...backfill])).toEqual([]);
   });
 
-  // The forming bar being written over itself: same times, new objects. Only a
-  // full redraw can carry the corrected values, so this is not an extension.
-  it("refuses a list whose existing bars were rebuilt", () => {
-    const rebuilt = [backfill[0], backfill[1], bar(180, 31), bar(240, 40)];
+  // A bar behind the one at the end being written over: a corrected backfill,
+  // not a close. Only a full redraw can carry those values to the series.
+  it("refuses a list whose earlier bars were rebuilt", () => {
+    const rebuilt = [backfill[0], bar(120, 21), backfill[2], bar(240, 40)];
     expect(appendedCandles(backfill, rebuilt)).toBeNull();
+  });
+
+  // The sequence the live feed produces after every backfill: the bar at the
+  // end is a new object for the same bar, because a tick rewrote the forming
+  // candle before the interval rolled over. That bar is already drawn at that
+  // time, so it is reissued rather than answered with a whole-series redraw.
+  it("reissues a final bar the feed rewrote in place, and the bars after it", () => {
+    const rewritten = bar(180, 31);
+    const closed = withLatestCandle(
+      [backfill[0], backfill[1], rewritten],
+      bar(240, 40),
+    );
+
+    expect(appendedCandles(backfill, closed)).toEqual([
+      rewritten,
+      bar(240, 40),
+    ]);
+  });
+
+  it("reissues a rewritten final bar even when nothing was appended", () => {
+    const rewritten = bar(180, 31);
+
+    expect(
+      appendedCandles(backfill, [backfill[0], backfill[1], rewritten]),
+    ).toEqual([rewritten]);
+  });
+
+  // Rewriting the bar at the end is one thing; a different bar standing where
+  // it was is a different series, and update() cannot express that.
+  it("refuses a final bar whose time has changed", () => {
+    expect(
+      appendedCandles(backfill, [backfill[0], backfill[1], bar(200, 30)]),
+    ).toBeNull();
   });
 
   it("refuses a shorter list, which is a different series", () => {

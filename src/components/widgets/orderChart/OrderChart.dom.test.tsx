@@ -154,8 +154,17 @@ const fakeChart = () => {
     drawn = [...data];
     snapshot();
   });
+  // Strict about time the way the library is: `update()` writes the last bar or
+  // starts the next one, and refuses anything older. The panel derives a
+  // sequence of update calls from a diff, so a fake that quietly inserted an
+  // out-of-order bar would stay green for a change that throws in the browser.
   const update = vi.fn((candle: CandlestickData<UTCTimestamp>) => {
     const last = drawn.at(-1);
+    if (last && candle.time < last.time) {
+      throw new Error(
+        `Cannot update oldest data, last time=${last.time}, new time=${candle.time}`,
+      );
+    }
     if (last && last.time === candle.time) drawn[drawn.length - 1] = candle;
     else drawn.push(candle);
     snapshot();
@@ -661,6 +670,32 @@ describe("OrderChart", () => {
       expect(update.mock.calls.map(([candle]) => candle.time)).toEqual([
         bar(25, 125).time,
         bar(26, 126).time,
+      ]);
+    });
+
+    // The first close after a backfill, which is a close like any other and
+    // must not be the one exception to the rule. The backfill leaves
+    // `latestCandle` as the very object sitting at the end of `candles`; the
+    // first tick for that still-forming bar replaces it with a fresh object,
+    // and the rollover then folds that object back in as the last element. On
+    // reference identity alone that reads as a rebuilt bar, which redrew the
+    // whole series once per mount, market switch and timeframe change.
+    it("updates in place at the first close after a backfill too", () => {
+      const { tick, setData, update } = mount();
+
+      // A tick for the bar the backfill left forming: same bar, new object.
+      const forming = bar(24, 130);
+      tick(forming);
+      setData.mockClear();
+      update.mockClear();
+
+      const rolled = bar(25, 125);
+      tick(rolled);
+
+      expect(setData).not.toHaveBeenCalled();
+      expect(update.mock.calls.map(([candle]) => candle.time)).toEqual([
+        forming.time,
+        rolled.time,
       ]);
     });
 

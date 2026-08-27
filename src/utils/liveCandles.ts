@@ -66,11 +66,22 @@ export const withLatestCandle = (
  * that was forming, at the same time - so the honest redraw is to write that
  * one bar over itself with `update()` and leave the rest of the series alone.
  *
- * Extension is judged by reference identity across the whole prefix, which is
- * what the fold above produces (`[...candles, latest]` keeps every earlier bar's
- * identity). A bar that has been rebuilt - a corrected backfill, a new market -
- * is deliberately not an extension, and its caller falls back to a full
- * `setData`.
+ * Extension is judged by reference identity across every bar before the last,
+ * which is what the fold above produces (`[...candles, latest]` keeps every
+ * earlier bar's identity). One of those earlier bars having been rebuilt - a
+ * corrected backfill, a new market - is deliberately not an extension, and its
+ * caller falls back to a full `setData`.
+ *
+ * The bar at the end is compared by time rather than by identity, and reissued
+ * when it is a different object, because the feed rewrites exactly that one bar
+ * in place. After the backfill `latestCandle` is the same object as
+ * `candles.at(-1)`; the first tick for that still-forming bar replaces it with
+ * a fresh object while `candles` keeps its identity, and the next rollover
+ * folds that fresh object back in as the last element. Judged on identity alone
+ * that is a rebuilt bar, so the first close after every backfill - and
+ * therefore after every mount, market switch and timeframe change - redrew the
+ * whole series. Reissuing it is safe: it rewrites a bar at a time the series
+ * already holds, which is what `update()` is for.
  *
  * A series holding nothing is not an extension either, however the prefix
  * compares: every bar it gains is its first draw rather than a bar close. That
@@ -88,8 +99,13 @@ export const appendedCandles = (
 ): CandlestickData<UTCTimestamp>[] | null => {
   if (!drawn.length) return null;
   if (next.length < drawn.length) return null;
-  for (let i = 0; i < drawn.length; i += 1) {
+
+  const last = drawn.length - 1;
+  for (let i = 0; i < last; i += 1) {
     if (drawn[i] !== next[i]) return null;
   }
-  return next.slice(drawn.length);
+
+  if (drawn[last] === next[last]) return next.slice(drawn.length);
+  if (drawn[last].time !== next[last].time) return null;
+  return next.slice(last);
 };
