@@ -3,12 +3,20 @@ import {
   usePointerGesture,
   type PointerGestureHandlers,
 } from "./usePointerGesture";
+import {
+  originForPointerType,
+  type ActivationOrigin,
+} from "../utils/blockCommand";
 
 interface UseVerticalDragOptions {
   id: string;
   onVerticalDrag?: (id: string, pointerY: number) => void;
-  /** The pointer went down and up without moving: a tap or a click, not a drag. */
-  onActivate?: (id: string) => void;
+  /**
+   * The pointer went down and up without moving: a click or a tap, not a drag.
+   * `origin` names the device, because what a carry started this way looks
+   * like and is described as differs between a mouse and a finger.
+   */
+  onActivate?: (id: string, origin: ActivationOrigin) => void;
   /** The gesture has travelled far enough to be a drag rather than a tap. */
   onDragRecognised?: (id: string) => void;
   disabled?: boolean;
@@ -65,8 +73,8 @@ export const useVerticalDrag = ({
       onVerticalDrag?.(id, y - grabOffsetRef.current);
     },
     onDragRecognised: () => onDragRecognised?.(id),
-    onUp: (_point, moved) => {
-      if (!moved) onActivate?.(id);
+    onUp: (_point, moved, pointerType) => {
+      if (!moved) onActivate?.(id, originForPointerType(pointerType));
     },
   });
 

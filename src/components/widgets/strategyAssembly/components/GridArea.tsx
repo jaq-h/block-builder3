@@ -12,16 +12,29 @@ import {
   createBlocksFromOrderType,
   buildOrderConfigEntry,
 } from "../../../../utils";
-import { samePosition } from "../../../../utils/blockCommand";
+import {
+  samePosition,
+  type CommandSource,
+} from "../../../../utils/blockCommand";
 import type {
   BlockData,
   CellPosition,
+  GridData,
   PlacementResult,
 } from "../../../../types/grid";
-import { COLUMN_HEADERS } from "../../../../data/orderTypes";
+import {
+  COLUMN_HEADERS,
+  type OrderTypeDefinition,
+  type SvgIcon,
+} from "../../../../data/orderTypes";
 import { PATTERN_CONFIGS } from "../../../../types/grid";
 import { positionFromPointer, SCALE_CONFIG } from "../../../../styles/grid";
-import { stopDragOverlay } from "../../../common/dragOverlayStore";
+import {
+  getDragOverlayPosition,
+  startDragOverlay,
+  stopDragOverlay,
+} from "../../../common/dragOverlayStore";
+import { releaseBlockInHand } from "../../../../hooks/blockInHand";
 import ProviderColumn from "../../../common/grid/ProviderColumn";
 import GridCell from "../../../common/grid/GridCell";
 import LiveAnnouncer from "../../../common/LiveAnnouncer";
@@ -75,6 +88,29 @@ interface GridAreaProps {
    */
   onStrategyLoadAnnounced?: () => void;
 }
+
+/**
+ * What the ghost on the cursor should look like for the block currently in
+ * hand: the palette entry's own icon for an order type not yet placed, and the
+ * placed block's for one already on the grid.
+ *
+ * `null` when the grid no longer holds the block, which is a real state rather
+ * than a defensive one - Clear All and Reverse Blocks both replace the grid
+ * under a live carry - and it is answered by drawing nothing rather than by
+ * guessing an icon.
+ */
+const ghostFor = (
+  source: CommandSource,
+  providerBlocks: OrderTypeDefinition[],
+  grid: GridData,
+): { icon?: SvgIcon; abrv: string } | null => {
+  if (source.kind === "provider") {
+    const provider = providerBlocks.find((entry) => entry.type === source.type);
+    return provider ? { icon: provider.icon, abrv: provider.abrv } : null;
+  }
+  const found = findBlockInGrid(grid, source.id);
+  return found ? { icon: found.block.icon, abrv: found.block.abrv } : null;
+};
 
 /**
  * GridArea - encapsulates all drag/drop interaction logic and renders the
@@ -417,12 +453,66 @@ const GridArea: FC<GridAreaProps> = ({
   const carryingBlockId =
     command.carrying?.source.kind === "grid" ? command.carrying.source.id : null;
 
+  // ─── The cursor half of a mouse carry ────────────────────────────────
+  //
+  // A mouse user was asked to click instead of hold, so the block has to follow
+  // the cursor between the two clicks exactly as it does during a drag. It is
+  // the same ghost `useFreeDrag` puts up, from the same store, because a second
+  // cursor-following block would be a second answer to "where is the block the
+  // user is holding" - and the drag's ghost is already right.
+  //
+  // Only for a carry the mouse started. A finger and a pen leave nothing on
+  // screen between contacts, so a ghost pinned to where they last touched
+  // would be an artefact rather than the block; the keyboard has no pointer
+  // position at all and its last one would be wherever the mouse was left.
+  //
+  // `ghostFor` reads the block being carried out of the same two places the
+  // rest of this component does, so the ghost can never show an icon the grid
+  // and the palette disagree with.
+  const carriedGhost =
+    command.carrying?.origin === "mouse"
+      ? ghostFor(command.carrying.source, providerBlocks, grid)
+      : null;
+  // Which block is on the cursor, so the effect below runs when the carry
+  // starts and ends rather than on every target change. `null` covers both
+  // "nothing is carried" and "the grid no longer holds what is", which is why
+  // it is derived from the ghost rather than from the source.
+  const carriedGhostKey = carriedGhost
+    ? (carryingProviderType ?? carryingBlockId)
+    : null;
+
+  useEffect(() => {
+    if (!carriedGhost) return;
+    // `dragOverlayStore` still holds the position of the press that picked the
+    // block up - `useFreeDrag` put a ghost there on pointer down and took it
+    // off again on the release - so the carry's ghost starts under the cursor
+    // rather than jumping there on the first move. `DragOverlay` tracks the
+    // pointer itself from then on.
+    const { x, y } = getDragOverlayPosition();
+    const handle = startDragOverlay(carriedGhost.icon, carriedGhost.abrv, x, y);
+    // By handle: dragging the very block being carried starts the drag's own
+    // ghost before this carry ends, and a handle-less stop here would clear the
+    // ghost of the gesture that just superseded it.
+    return () => stopDragOverlay(handle);
+    // Keyed on which block is in hand, not on the carry object: the carry is a
+    // new object every time the target cell changes, and restarting the ghost
+    // on each of those would put it back at the pick-up point mid-sweep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carriedGhostKey]);
+
   // ─── Hover handlers ──────────────────────────────────────────────
 
   const handleGridCellMouseEnter = (colIndex: number, rowIndex: number) => {
     if (draggingId === null && draggingFromProvider === null) {
       setHoveredGridCell({ col: colIndex, row: rowIndex });
     }
+    // The cell under the cursor is the cell a click would place into, so it is
+    // the cell drawn as the target. Without this the target stays where the
+    // pick-up left it and the highlight names a cell the next click will not
+    // use - the model would still place correctly, and the user would have been
+    // shown otherwise. `pointToTarget` ignores anything that is not a live
+    // mouse carry, and says nothing: see its own note.
+    command.pointToTarget({ col: colIndex, row: rowIndex });
   };
 
   const handleGridCellMouseLeave = () => {
@@ -509,15 +599,32 @@ const GridArea: FC<GridAreaProps> = ({
   // ever disagreeing: a click that lands on a legal target is not outside.
   const placementSurfaceRef = useRef<HTMLDivElement>(null);
 
-  // Both mechanisms, on every outside click, because the user cannot tell which
-  // one has the block: the command model's carry, and anything a pointer
-  // gesture left behind. Focus is deliberately not handed back - the user has
-  // just clicked somewhere else, and `restoreFocus` would drag them back to the
-  // block they were leaving, which is the same reason Tab does not restore it.
+  // One release, through the one register. `releaseBlockInHand` ends every
+  // mechanism that has a block in hand - the command model's carry and any
+  // pointer gesture still in flight - because the user cannot tell which of
+  // them has the block, and because the two answering separately is what let a
+  // dismissal click delete one. See `hooks/blockInHand.ts`.
+  //
+  // Each of those mechanisms reports its own outcome, and one dismissal is one
+  // event, so they are collected into one live-region write: two writes here
+  // means the second replaces the first before it has been read. `asOneEvent`
+  // changes nothing when only one thing was held, which is the common case.
+  //
+  // The two calls after it are cleanup of what a hold leaves *drawn* rather
+  // than second opinions about who holds what: the register's own releases
+  // already run these for every hold it knew about, and these run for a ghost
+  // or a highlight left behind by a hold it never did. The handle-less
+  // `stopDragOverlay()` is deliberate and is the only handle-less stop in the
+  // app: this is putting down everything that is in hand, so there is no ghost
+  // it means to leave standing.
+  //
+  // Focus is deliberately not handed back - the user has just clicked somewhere
+  // else, and `restoreFocus` would drag them back to the block they were
+  // leaving, which is the same reason Tab does not restore it.
   const releaseInHandRef = useRef<() => void>(() => {});
   useEffect(() => {
     releaseInHandRef.current = () => {
-      if (command.carrying) command.cancel({ restoreFocus: false });
+      announcer.asOneEvent(releaseBlockInHand);
       stopDragOverlay();
       endDrag();
       setHoveredProviderId(null);
@@ -530,9 +637,16 @@ const GridArea: FC<GridAreaProps> = ({
   // event it produces is retargeted to the dragged block - which is inside the
   // surface - so a live gesture is not cancelled by this, only a ghost one
   // that has already lost its owner. That rests on the capture, which is not
-  // guaranteed. Note the limit of this hatch: it clears the overlay and the
-  // carry, and it does not end a pointer gesture - `usePointerGesture`'s own
-  // exits own that half.
+  // guaranteed.
+  //
+  // What this hatch does and does not answer for. It ends every hold the
+  // register knows about, so a stale gesture's window listeners come off here
+  // and the `pointerup` that completes this very click can no longer be matched
+  // as that gesture's drop. It is still a boundary rather than a detector: it
+  // fires when the user acts, and between an unheard release and that action
+  // the gesture is live and its ghost is on the cursor. The exits in
+  // `usePointerGesture` - the `buttons === 0` transition among them - are what
+  // cover the ways a user reaches that state without clicking away.
   useEffect(() => {
     const onPointerDownAnywhere = (event: globalThis.PointerEvent) => {
       const surface = placementSurfaceRef.current;

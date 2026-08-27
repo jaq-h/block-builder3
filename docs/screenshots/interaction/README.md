@@ -4,13 +4,14 @@ Captured from the running app over the DevTools protocol, so every gesture below
 browser input rather than a synthesised DOM event. Chrome at 1440x900 for the desktop shots
 and 390x844 with touch emulation for the phone ones.
 
-All four were captured against `ad7a372`. Two earlier sets had to be thrown away - the first
+`01`-`04` were captured against `ad7a372`; `05` against `211d648`, which is the commit that
+added the interaction it shows. Two earlier sets had to be thrown away - the first
 recorded prices produced by the vertical-drag mapping this change replaced, and the second
 predated three further behavioural commits. A screenshot that predates the code it claims to
 show is not evidence, so provenance here is stated as a commit rather than as "the final
 code".
 
-**These are evidence of the interaction, not of the current chrome.** The gestures and the
+**`01`-`04` are evidence of the interaction, not of the current chrome.** The gestures and the
 outcomes below still hold, but the panel chrome around them has since been reworked: all
 three panel titles now share one bar geometry, the selected order assembly type carries an
 accent border and a tick rather than looking identical to the unselected one, the grid
@@ -31,6 +32,7 @@ evidence than one that predates the code it claims to show.
 | `02-mouse-desktop.png` | Three legs assembled by dragging with the mouse, with the Entry limit priced by dragging it along its vertical axis. |
 | `03-touch-phone.png` | The same three legs on a 390px viewport, assembled with a finger: tap to pick up, tap a cell to place, and a drag along the price axis. |
 | `04-touch-phone-entry.png` | The same session scrolled back to the Entry column, showing the touch-priced Limit. |
+| `05-mouse-click-carry.png` | The mouse driving the command model rather than a drag: the Entry limit was assembled by clicking the palette entry and then clicking the cell, and a Take Profit is mid-carry - outlined in the palette, drawn on the cursor, over the Exit upper conditional cell that the next click will place it into. Unlike `01`-`04` this one is current chrome, since it postdates the rework the paragraph above describes. |
 
 The phone layout itself is a separate piece of work; these shots are about whether the
 interaction responds at all, which before this change it did not.

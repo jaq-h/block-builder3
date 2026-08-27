@@ -41,8 +41,22 @@ describe("describeOutcome, picking a block up", () => {
 
   it("gives a finger the instructions a finger can follow", () => {
     expect(
-      say({ kind: "pickedUp", source: palette, target: cell, origin: "pointer" }),
+      say({ kind: "pickedUp", source: palette, target: cell, origin: "touch" }),
     ).toContain("Tap a highlighted cell to place it");
+  });
+
+  it("gives a mouse the instructions a mouse can follow", () => {
+    // A mouse user told to "tap" is being addressed as somebody else, and the
+    // block really is on their cursor - which no other device can be told.
+    const said = say({
+      kind: "pickedUp",
+      source: palette,
+      target: cell,
+      origin: "mouse",
+    });
+    expect(said).toContain("It follows the cursor");
+    expect(said).toContain("Click a highlighted cell to place it");
+    expect(said).not.toContain("Tap");
   });
 
   it("says when there is nowhere to put the order at all", () => {

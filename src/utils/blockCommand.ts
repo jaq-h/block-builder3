@@ -42,6 +42,15 @@ export interface CarriedBlock {
   target: CellPosition;
   /** Every cell this block may legally be placed in, in reading order. */
   targets: CellPosition[];
+  /**
+   * How this carry was started. It is held on the carry rather than re-derived
+   * later because the two things that depend on it - the ghost that follows a
+   * cursor, and the cell the cursor points at becoming the target - last for
+   * the whole carry, while the event that could answer the question is one
+   * pointer up at the start of it. Re-deriving it from whatever pointer moved
+   * last is the second derivation this repository's history is made of.
+   */
+  origin: ActivationOrigin;
 }
 
 export interface CommandState {
@@ -50,11 +59,26 @@ export interface CommandState {
 }
 
 /**
- * Which affordance activated a block. They diverge in exactly one place: Enter
- * on a carried block places it, because the keyboard has Escape to cancel with;
- * a second tap on it puts it back down, because a finger does not.
+ * Which affordance activated a block, and on a pointer which kind of device
+ * did it. Three, not two, because the mouse differs from a finger in a way the
+ * model has to answer for rather than gloss: a mouse keeps a cursor on screen
+ * between contacts, so a block it is carrying can follow that cursor and the
+ * instructions have to say "click"; a finger and a pen leave nothing on screen
+ * between contacts, so neither can be true for them. Pen is grouped with touch
+ * because what matters here is a persistent cursor rather than hover.
+ *
+ * The keyboard diverges from both in exactly one place: Enter on a carried
+ * block places it, because the keyboard has Escape to cancel with, while a
+ * second click or tap on it puts it back down, because a pointer does not.
  */
-export type ActivationOrigin = "keyboard" | "pointer";
+export type ActivationOrigin = "keyboard" | "mouse" | "touch";
+
+/**
+ * The origin a pointer gesture reports, from the device's own word for itself.
+ * Anything that is not a mouse is treated as a direct-manipulation contact.
+ */
+export const originForPointerType = (pointerType: string): ActivationOrigin =>
+  pointerType === "mouse" ? "mouse" : "touch";
 
 /** Why a carry ended without the block being placed. */
 export type CarryEndReason =
@@ -72,8 +96,16 @@ export type CommandAction =
       targets: CellPosition[];
       /** Preferred starting cell, normally the block's own cell. */
       preferred?: CellPosition | null;
+      origin: ActivationOrigin;
     }
   | { type: "moveTarget"; dCol: number; dRow: number }
+  /**
+   * Point at a cell without stepping towards it: the mouse names a target
+   * outright rather than walking to one. A cell the carry never offered leaves
+   * the target where it is, so this can no more reach an illegal cell than the
+   * arrow keys can.
+   */
+  | { type: "pointAt"; target: CellPosition }
   | { type: "place" }
   | { type: "cancel" };
 
@@ -199,8 +231,23 @@ export const commandReducer = (
       // can never get stuck carrying something that cannot be put down.
       if (!target) return state;
       return {
-        carrying: { source: action.source, target, targets: action.targets },
+        carrying: {
+          source: action.source,
+          target,
+          targets: action.targets,
+          origin: action.origin,
+        },
       };
+    }
+
+    case "pointAt": {
+      const { carrying } = state;
+      if (!carrying) return state;
+      if (samePosition(action.target, carrying.target)) return state;
+      if (!carrying.targets.some((cell) => samePosition(cell, action.target))) {
+        return state;
+      }
+      return { carrying: { ...carrying, target: action.target } };
     }
 
     case "moveTarget": {

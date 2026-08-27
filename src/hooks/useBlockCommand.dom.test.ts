@@ -169,7 +169,7 @@ describe("useBlockCommand", () => {
     it("gives a finger different instructions from a keyboard", () => {
       const { result } = setup();
 
-      act(() => result.current.activateProvider("limit", "pointer"));
+      act(() => result.current.activateProvider("limit", "touch"));
 
       expect(result.current.announcement.text).toContain(
         "Tap a highlighted cell to place it",
@@ -275,8 +275,8 @@ describe("useBlockCommand", () => {
     it("puts the block back on a second tap instead of placing it", () => {
       const { result, placeProvider } = setup();
 
-      act(() => result.current.activateProvider("limit", "pointer"));
-      act(() => result.current.activateProvider("limit", "pointer"));
+      act(() => result.current.activateProvider("limit", "touch"));
+      act(() => result.current.activateProvider("limit", "touch"));
 
       expect(placeProvider).not.toHaveBeenCalled();
       expect(result.current.carrying).toBeNull();
@@ -288,7 +288,7 @@ describe("useBlockCommand", () => {
     it("places into a tapped cell", () => {
       const { result, placeProvider } = setup();
 
-      act(() => result.current.activateProvider("limit", "pointer"));
+      act(() => result.current.activateProvider("limit", "touch"));
       act(() => result.current.activateCell({ col: 1, row: 1 }));
 
       expect(placeProvider).toHaveBeenCalledWith("limit", { col: 1, row: 1 });
@@ -297,7 +297,7 @@ describe("useBlockCommand", () => {
     it("refuses a tapped cell that cannot take the order", () => {
       const { result, placeProvider } = setup();
 
-      act(() => result.current.activateProvider("limit", "pointer"));
+      act(() => result.current.activateProvider("limit", "touch"));
       act(() => result.current.activateCell({ col: 0, row: 0 }));
 
       expect(placeProvider).not.toHaveBeenCalled();
@@ -565,7 +565,7 @@ describe("useBlockCommand", () => {
       const { grid, blocks } = gridWithOrder("take-profit-limit");
       const { result, moveBlock } = setup(grid);
 
-      act(() => result.current.activateBlock(blocks[1].id, "pointer"));
+      act(() => result.current.activateBlock(blocks[1].id, "touch"));
 
       expect(result.current.carrying).toBeNull();
       expect(moveBlock).not.toHaveBeenCalled();

@@ -204,10 +204,16 @@ export type GridOutcome =
 const carryReleased = (releasedCarry?: boolean): string =>
   releasedCarry ? ", and is no longer picked up" : "";
 
+// One sentence per input device, naming the gesture that device actually has.
+// A mouse user told to "tap" is being addressed as somebody else, and a mouse
+// is the one device that can also be told the block is following the cursor,
+// because on a mouse it is.
 const CARRY_HELP: Record<ActivationOrigin, string> = {
   keyboard:
     "Use the arrow keys to choose a cell, Enter to place, Escape to cancel.",
-  pointer:
+  mouse:
+    "It follows the cursor. Click a highlighted cell to place it, or click the block again to put it back.",
+  touch:
     "Tap a highlighted cell to place it, or tap the block again to put it back.",
 };
 
@@ -300,6 +306,31 @@ const describePlacement = (
       return `${describeSource(source)} is no longer on the grid${carryReleased(releasedCarry)}.`;
   }
 };
+
+/**
+ * Several settled facts about **one** event, as the single thing the live
+ * region is told.
+ *
+ * A live region holds one message, so two writes in one event are one message:
+ * the second replaces the first before a screen reader has read it. That is
+ * the shape `strategyLoaded` already avoids by carrying its two facts in one
+ * outcome - but it can only do that because one caller knows both. A dismissal
+ * click does not: `releaseBlockInHand` ends every mechanism holding a block and
+ * each reports its own outcome, so the facts arrive separately and joining them
+ * is this module's job rather than any caller's.
+ *
+ * Reading order is the order the facts were reported, because each sentence is
+ * already complete on its own and nothing here is entitled to decide that one
+ * of them matters less. The joining rule is only that they arrive as one write.
+ *
+ * A single outcome is worded exactly as `describeOutcome` words it, so a caller
+ * that reports once is unaffected by ever having gone through here.
+ */
+export const describeOutcomes = (
+  outcomes: GridOutcome[],
+  pattern: StrategyPattern,
+): string =>
+  outcomes.map((outcome) => describeOutcome(outcome, pattern)).join(" ");
 
 /**
  * The one function that decides what the user hears. Pure, so every sentence in

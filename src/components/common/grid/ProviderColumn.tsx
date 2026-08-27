@@ -7,6 +7,7 @@ import type {
 } from "../../../types/grid";
 import type { OrderTypeDefinition } from "../../../data/orderTypes";
 import type { CancelOptions } from "../../../hooks/useBlockCommand";
+import type { ActivationOrigin } from "../../../utils/blockCommand";
 import { isProviderBlockHighlighted } from "../../../utils";
 
 // Props interface
@@ -23,8 +24,8 @@ interface ProviderColumnProps {
   onProviderDragRecognised: (type: string) => void;
   onProviderMouseEnter: (type: string) => void;
   onProviderMouseLeave: () => void;
-  /** Enter, Space or a tap: pick this order type up, place it, or put it back. */
-  onProviderActivate: (type: string, origin: "keyboard" | "pointer") => void;
+  /** Enter, Space, a click or a tap: pick this order type up, place it, or put it back. */
+  onProviderActivate: (type: string, origin: ActivationOrigin) => void;
   onCommandMove: (dCol: number, dRow: number) => void;
   onCommandCancel: (options?: CancelOptions) => void;
   /** The order type currently picked up by the command model, if any. */

@@ -357,6 +357,17 @@ Drag visuals are rendered via a **React Portal** into a dedicated `<div id="drag
 
 This keeps the grid completely decoupled from pointer-move events during a drag.
 
+Two things put a ghost on the cursor: a pointer drag, and a mouse carry between the click that
+picks a block up and the click that puts it down. They overlap by design, and in both
+directions - dragging the very block being carried starts the drag's ghost before the carry
+ends, and a click that lands on some other block runs a whole gesture inside a carry that
+outlives it. So the store keeps every live ghost as a stack and draws the newest one:
+`startDragOverlay` returns a handle, and `stopDragOverlay(handle)` takes away that holder's
+own ghost, uncovering whatever is still live underneath. Called with no handle it empties the
+stack, which is what the dismissal hatch means - it is putting down everything in hand. What
+the stack does not do is notice a holder that goes away without stopping its ghost; ending a
+hold stays the holder's own job.
+
 ### Reducer-Based Store
 
 The Orders Store uses a `useReducer` pattern with a clean separation:
@@ -407,7 +418,10 @@ same two placement functions in `GridArea`, expressed in terms of a target **cel
 than a pointer coordinate, so the input methods cannot drift apart.
 
 **Pointer: mouse, touch and pen.** `usePointerGesture` handles the raw gesture on Pointer
-Events, so one code path serves all three devices. Four details are load-bearing:
+Events, so one code path serves all three devices. It reports which device opened each
+gesture, because a mouse is the one pointer that keeps a cursor on screen between contacts
+and the model owes it different words and a different drawing; see **The mouse carries a
+block between two clicks** below. Four details are load-bearing:
 
 - **A gesture starts on an element and ends on the window.** Only `pointerdown` is listened
   for on the element, because it is the only thing that has to know *which* element this is.
@@ -426,10 +440,12 @@ Events, so one code path serves all three devices. Four details are load-bearing
   in force reaches neither the element nor the window, exactly as a `mouseup` never did. That
   leaves one hole the listeners cannot close, so the exits are worth listing exactly: a
   gesture ends on a release the window heard, on a `pointercancel`, on unmount, on a fresh
-  `pointerdown` on the element while it still carries that hook instance's handlers, and on a
-  `pointermove` carrying `buttons === 0`. The last
-  two notice that unheard release from the two directions a user can reach it: pressing the
-  same block again, or moving the mouse anywhere. Only the second covers the handler swap -
+  `pointerdown` on the element while it still carries that hook instance's handlers, on a
+  `pointermove` carrying `buttons === 0`, and on the shared `blockInHand` register being
+  emptied - which is what a click away from the placement surface does. The last three
+  notice that unheard release from the three directions a user can reach it: pressing the
+  same block again, moving the mouse anywhere, or clicking somewhere that means *put this
+  down*. Only the second covers the handler swap -
   `Block` wires `useFreeDrag` or `useVerticalDrag` by the block's axis, so a block that gained
   one since sends its next `pointerdown` to a hook holding no stale gesture, while the stale
   hook still hears every move on its own window listeners. `buttons === 0` is a platform fact rather
@@ -439,9 +455,12 @@ Events, so one code path serves all three devices. Four details are load-bearing
   is a constant 1, so the next `pointerup` anywhere in the page would otherwise be resolved as
   this gesture's drop at that point and delete the block. Only a mouse can reach that at all,
   since touch and pen are implicitly captured to the element they went down on and their
-  release is always delivered. Between an unheard release and the next of those two events the
-  gesture is still live and the ghost is still on the cursor; nothing here watches the capture,
-  because a capture the hook never got is not something it can watch.
+  release is always delivered. Between an unheard release and the next of those three events
+  the gesture is still live and the ghost is still on the cursor; nothing here watches the
+  capture, because a capture the hook never got is not something it can watch. The register
+  is a boundary rather than a detector - it ends a stale gesture when the user acts, and it
+  has no opinion about when a gesture went stale - which is why `buttons === 0` stays: it is
+  the platform-level backstop for a user who never clicks away.
   The distinction is load-bearing, because listening only on the element made the capture the
   single point of failure for every exit:
   `setPointerCapture` can be refused, the browser can drop a capture mid-gesture, and an
@@ -460,29 +479,94 @@ Events, so one code path serves all three devices. Four details are load-bearing
   `usePointerGesture` ends a live gesture on unmount, down the same path a `pointercancel`
   takes: nothing moved.
 
-**Clicking away puts a block down.** A block can be in the user's hand two ways at once as far
-as they can tell - carried by the command model, or left behind by a gesture that lost its
-owner - so one gesture releases both: a click that lands **outside the placement surface**.
-That surface is the element `GridArea` draws, the palette a block is picked up from together
-with the cells it can be put down in, so the boundary is the thing that owns placement rather
-than a panel outline or a coordinate, and a click on a legal target still places the block. It
-is read on `pointerdown` in the capture phase; a drag that is genuinely in flight holds pointer
-capture and every event it produces is retargeted to the dragged block, which is inside the
-surface, so a live gesture is not cancelled by it. That rests on the capture, which is not
-guaranteed. What this hatch does is clear the overlay and the carry; it does not end a pointer
-gesture, so it and `usePointerGesture` are two owners of "a block is in hand" and only the
-hook's own exits end the hook's half. Reconciling them onto one owner belongs to the
-`bb3-mouse-click-carry` lane. Focus is left where the user clicked
-rather than handed back, for the same reason Tab does not hand it back.
+**"A block is in hand" has one owner.** Two mechanisms can put one there, and they are
+genuinely different things rather than two spellings of one: a **pointer gesture**, live only
+while the button or finger is down, and a **command carry**, live between a pick-up and a
+place and outliving the pointer coming off the block. The user cannot tell them apart - what
+they see either way is a block that is not where it was - so `src/hooks/blockInHand.ts` is the
+one register both of them report to, and `releaseBlockInHand()` is the one call that ends
+whatever is held. A third mechanism means registering it there, not adding a third thing for
+every release site to remember.
 
-A release that never travelled more than a few pixels is a **tap**, not a zero-length drop,
-and is handed to the command model instead of the drop handler.
+That register is what the dismissal hatch empties. **Clicking outside the placement surface
+puts a block down**, whichever mechanism has it. The surface is the element `GridArea` draws -
+the palette a block is picked up from together with the cells it can be put down in - so the
+boundary is the thing that owns placement rather than a panel outline or a coordinate, and a
+click on a legal target still places the block. It is read on `pointerdown` in the capture
+phase; a drag that is genuinely in flight holds pointer capture and every event it produces is
+retargeted to the dragged block, which is inside the surface, so a live gesture is not
+cancelled by it. That rests on the capture, which is not guaranteed. Focus is left where the
+user clicked rather than handed back, for the same reason Tab does not hand it back.
 
-**Command model: keyboard, screen readers and taps.** Focus a block and press Enter - or
+One dismissal is one sentence, however many mechanisms it ends. Each of them reports its own
+outcome and each is a settled fact, but a live region holds one message, so two writes in one
+event means the second replaces the first before it has been read. `useGridAnnouncer`'s
+`asOneEvent` collects everything reported while the register is being emptied and speaks once,
+with the facts joined by `describeOutcomes` in the announcement owner - no call site ranks them
+and no call site composes a sentence. Reporting once is unaffected, which is the common case.
+
+The two owners this replaced were not merely untidy. The hatch cleared its own carry while a
+stale gesture kept its window listeners, and those listeners match on pointer id alone; a
+mouse's id is a constant 1, so the `pointerup` completing the very click meant to dismiss the
+ghost was resolved as that gesture's drop, at coordinates on no cell - and `handleDragEnd`'s
+off-grid branch removes the block. A dismissal click silently deleted a block. What the single
+boundary buys, stated exactly: a `pointerdown` the hatch treats as a dismissal takes the stale
+gesture's window listeners off before that click's own release arrives, so nothing later
+resolves as its drop. What it does not buy is noticing an unheard release on its own; that is
+what the gesture's other exits above are for.
+
+A press and release that never travelled more than `TAP_SLOP_PX` (4px) is a **click or a
+tap**, not a zero-length drop, and is handed to the command model instead of the drop handler.
+One threshold for every device, deliberately: it is the same fact - *did this gesture travel* -
+and a second per-device number would be a second derivation of it, which is the shape of most
+of this file's history. A gesture that crosses it is a drag for the rest of its life, even if
+it comes back; a pick-up is only ever resolved at the release, so a single gesture can never be
+a pick-up *and* a drag.
+
+**The mouse carries a block between two clicks.** Click a block to pick it up, click a cell to
+place it - the same command model the keyboard and a finger drive, reached a third way rather
+than reimplemented. Hold-to-drag is untouched; this is a second way in, not a replacement.
+
+Two things are true for a mouse carry and for no other, and both follow from the mouse being
+the only pointer with a cursor on screen while nothing is pressed:
+
+- **The block follows the cursor.** It is the same ghost `useFreeDrag` puts up, from the same
+  `dragOverlayStore`, because a second cursor-following block would be a second answer to
+  *where is the block the user is holding*. A finger and a pen leave nothing on screen between
+  contacts, so a ghost pinned where they last touched would be an artefact; the keyboard has no
+  pointer position at all. `CarriedBlock.origin` records which device started the carry, held
+  on the carry rather than re-derived from whatever moved last.
+- **The cell under the cursor is the cell the next click places into.** `pointToTarget` moves
+  the carry's target on hover, so the highlight and `aria-current="location"` name the cell the
+  click will actually use. It is silent by design: it fires for every cell a cursor crosses, so
+  announcing would be a live region talking over itself for the length of one sweep, and the
+  user it fires for is watching the cursor. The arrow keys still report every target they
+  reach. It ignores anything that is not a live mouse carry - a tap synthesises `mouseenter`
+  too, and a stray cursor must not move a target the arrow keys are stepping through.
+
+The transitions where the two ways in overlap:
+
+- **A click on the carried block itself puts it back**, and so does a click outside the
+  placement surface. Escape works too, since a pointer down focuses the block it lands on, but
+  neither cancellation depends on a keyboard.
+- **A click on a cell the carry never offered is refused and says so**, and the block stays in
+  hand - *"Exit column, upper conditional row cannot take this order. Still carrying Market
+  block."*
+- **A drag started on the block being carried takes the interaction over**, silently, with the
+  news folded into the drag's own outcome; see **A drag supersedes a carry** below. The drag
+  puts its own ghost up *before* the carry it supersedes ends, so `startDragOverlay` hands back
+  a handle and `stopDragOverlay(handle)` takes away that holder's own ghost and no other -
+  otherwise the ending carry would wipe the ghost of the gesture that replaced it, and the
+  press of a click on any other block would take the carry's ghost off the cursor and never
+  put it back.
+- **A block drawn on a price axis is refused**, exactly as it is for the keyboard and a finger,
+  because a mouse cannot drag one between cells either.
+
+**Command model: keyboard, screen readers, taps and clicks.** Focus a block and press Enter - or
 Space, which a button answers to as well - to pick it up; the arrow keys choose a target
 cell; Enter places it; Escape returns it. Tab is never swallowed - it abandons the carry
 and moves focus on, so a carried block cannot trap the keyboard. On touch the same model
-is driven by taps: tap a block, tap a cell.
+is driven by taps: tap a block, tap a cell. On a mouse, by clicks: see above.
 
 The arrow keys step only between cells that were **legal when the carry began**, so the
 target under the arrows is always one the grid has accepted; `commit` re-checks at the
@@ -699,7 +783,8 @@ consumers that have to agree, and that is filed as its own piece of work.
 
 Each of the three input methods driving the running app is captured in
 [`docs/screenshots/interaction/`](docs/screenshots/interaction/), which records the commit
-every shot was taken against.
+every shot was taken against - including the mouse driving the command model rather than a
+drag, with a block on the cursor between the two clicks.
 
 ### Error Boundaries
 
@@ -831,7 +916,8 @@ src/
 │   ├── usePointerGesture.ts       # Pointer primitive (capture, tap vs drag, cancel)
 │   ├── useFreeDrag.ts             # Free-form drag (provider → grid cell)
 │   ├── useVerticalDrag.ts         # Vertical-axis drag (price scale sliding)
-│   ├── useBlockCommand.ts         # Select-then-place command model (keyboard, taps)
+│   ├── useBlockCommand.ts         # Select-then-place command model (keyboard, taps, clicks)
+│   ├── blockInHand.ts             # The one register of "a block is in hand"
 │   ├── useAnnouncer.ts            # Live-region message state
 │   ├── useGridAnnouncer.ts        # The grid's one voice: outcomes in, sentences out
 │   ├── useKrakenAPI.ts            # Kraken API hook (prices, order management)

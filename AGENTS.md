@@ -179,7 +179,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Eight things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Ten things bite in ordinary work:
 
 - **Never add a `window` *mouse* listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events. Mouse events are also suppressed during a drag,
@@ -194,29 +194,55 @@ The README's **Interaction model** section is authoritative. Eight things bite i
   not what delivers the release, and outside the window it is the only thing that does.**
   **The exits, in full, because none of them may be simplified away:** a release the window
   heard, a `pointercancel`, unmount, a fresh `pointerdown` on the element while it still
-  carries *that hook instance's* handlers, and a `pointermove` carrying `buttons === 0`.
-  Unmount is the one that has to be taken by hand, since the window listeners come off with
-  the component; a new drag hook gets it for free and must not re-open the hole by holding
-  gesture state of its own. **What is not covered:** between an unheard release and the next
-  exit, the gesture is still live and its overlay is still on the cursor. Do not "simplify"
-  any of this back into an early return, and do not answer it with a capture watchdog, a timer
-  or a `lostpointercapture` listener: the hook cannot see a capture it never got. The README's
-  **Interaction model** section carries why each exit exists and what the element-only
-  delivery cost; `usePointerGesture.dom.test.tsx` pins it under "a release the element never
-  receives" and `GridArea.dom.test.tsx` under "a release the dragged block never receives".
-- **A click outside the placement surface puts down whatever is in hand.** The surface is the
-  element `GridArea` draws - the palette a block is picked up from and the cells it can be put
-  down in - and it is chosen by that element rather than by a panel outline, so this rule and
-  the drop rules can never disagree about what "on a target" means. It clears **both**
-  mechanisms, because the user cannot tell a command carry from a drag that lost its owner. It
-  listens for `pointerdown` in the capture phase: a drag that is genuinely in flight holds
-  pointer capture and its events are retargeted to the dragged block, which is inside the
-  surface, so a live gesture is not cancelled by it. That rests on the capture, which is not
-  guaranteed. Note what this hatch does **not** do: it clears the overlay and the carry, and
-  it does not end a pointer gesture, so the two are separate owners of "a block is in hand"
-  and only the hook's own exits, above, end the hook's half. Reconciling them onto one owner
-  belongs to `bb3-mouse-click-carry`. Focus is not handed back, for the
-  same reason Tab does not hand it back.
+  carries *that hook instance's* handlers, a `pointermove` carrying `buttons === 0`, and the
+  shared `blockInHand` register being emptied. Unmount is the one that has to be taken by
+  hand, since the window listeners come off with the component; a new drag hook gets it for
+  free and must not re-open the hole by holding gesture state of its own. The register is a
+  boundary rather than a detector - it ends a stale gesture when the user clicks away, and
+  has no opinion about when one went stale - so `buttons === 0` stays as the platform-level
+  backstop for a user who never clicks away, and one making the other redundant in a given
+  trace is not the same as it being redundant. **What is not covered:** between an unheard
+  release and the next exit, the gesture is still live and its overlay is still on the cursor.
+  Do not "simplify" any of this back into an early return, and do not answer it with a capture
+  watchdog, a timer or a `lostpointercapture` listener: the hook cannot see a capture it never
+  got. The README's **Interaction model** section carries why each exit exists and what the
+  element-only delivery cost; `usePointerGesture.dom.test.tsx` pins it under "a release the
+  element never receives" and "the shared block-in-hand register", and
+  `GridArea.dom.test.tsx` under "a release the dragged block never receives".
+- **"A block is in hand" has exactly one owner: `src/hooks/blockInHand.ts`.** A pointer
+  gesture and a command carry both register there and hand over the function that ends them;
+  `releaseBlockInHand()` is the one call that ends whatever is held. Do not add a second
+  thing for a release site to remember - a new mechanism registers there instead. The two
+  cooperating refs this replaced are why: the hatch cleared its own carry while a stale
+  gesture kept window listeners that match on pointer id alone, and a mouse's id is a
+  constant 1, so the `pointerup` completing a dismissal click was resolved as that gesture's
+  drop on no cell and `handleDragEnd` deleted the block.
+- **A click outside the placement surface puts down whatever is in hand**, by emptying that
+  register. The surface is the element `GridArea` draws - the palette a block is picked up
+  from and the cells it can be put down in - and it is chosen by that element rather than by a
+  panel outline, so this rule and the drop rules can never disagree about what "on a target"
+  means. It listens for `pointerdown` in the capture phase: a drag that is genuinely in flight
+  holds pointer capture and its events are retargeted to the dragged block, which is inside
+  the surface, so a live gesture is not cancelled by it. That rests on the capture, which is
+  not guaranteed. Focus is not handed back, for the same reason Tab does not hand it back.
+- **The mouse is a first-class user of the command model: click to pick up, click to place**,
+  and hold-to-drag is unchanged beside it. `TAP_SLOP_PX` (4px) is the one threshold that
+  separates a click from a drag, for every device - a per-device number would be a second
+  derivation of one fact. Two things are true for a *mouse* carry and no other, both gated on
+  `CarriedBlock.origin === "mouse"`, because a mouse is the only pointer with a cursor on
+  screen while nothing is pressed: the block follows that cursor as the same
+  `dragOverlayStore` ghost a drag uses, and `pointToTarget` makes the cell under the cursor
+  the carry's target. `pointToTarget` is **silent** - it fires for every cell a sweep crosses,
+  and announcing would be the live region talking over itself. `ActivationOrigin` is
+  `keyboard | mouse | touch` for the same reason; pen groups with touch, since what matters is
+  a persistent cursor rather than hover. `dragOverlayStore` keeps every live ghost as a stack
+  and draws the newest, so `startDragOverlay` hands back a handle and `stopDragOverlay(handle)`
+  takes away that holder's own ghost and no other. Both directions need it: a drag started on
+  the carried block puts its ghost up *before* the carry ends, and a click that lands on some
+  other block runs a whole gesture *inside* a carry that outlives it. A handle-less
+  `stopDragOverlay()` empties the stack, and `GridArea`'s dismissal hatch is its one caller,
+  because that is the one thing putting down everything in hand. What the stack does not do is
+  notice a holder that goes away without stopping its ghost.
 - **Every new interactive affordance needs a keyboard path and an announcement**, not just a
   handler. Placement is expressed in terms of a target cell in `GridArea`
   (`placeProviderInCell` / `moveBlockToCell`); the pointer drag and the command model both
@@ -228,6 +254,10 @@ The README's **Interaction model** section is authoritative. Eight things bite i
   caller was about to attempt. Both defects this structure replaced were a message written
   next to the code that was about to act - one false, one silent - and each point fix created
   the next. A new message means a new outcome in that union, not a new `announce` call.
+  One event that ends several things at once is still one message: `releaseBlockInHand`
+  reports an outcome per mechanism, and `useGridAnnouncer`'s `asOneEvent` collects them into a
+  single live-region write, joined by `describeOutcomes` - two writes means the second replaces
+  the first before it has been read.
   A second live region breaks this as surely as a second `announce` does, so no component
   that speaks *about the grid* may carry `aria-live`, `role="status"` or `role="alert"` -
   the two would talk over each other during the one interaction that fires both. That is

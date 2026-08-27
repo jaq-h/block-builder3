@@ -8,6 +8,7 @@ import {
   samePosition,
   stepTarget,
   validTargetsFor,
+  type ActivationOrigin,
   type CommandSource,
   type CommandState,
 } from "./blockCommand";
@@ -58,7 +59,8 @@ const carrying = (
     { col: 0, row: 1 },
     { col: 1, row: 1 },
   ],
-): CommandState => ({ carrying: { source, target, targets } });
+  origin: ActivationOrigin = "keyboard",
+): CommandState => ({ carrying: { source, target, targets, origin } });
 
 // =============================================================================
 // TARGET SELECTION
@@ -191,6 +193,7 @@ describe("commandReducer", () => {
 
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
+        origin: "keyboard",
         source: gridSource,
         targets,
         preferred: { col: 1, row: 1 },
@@ -200,12 +203,14 @@ describe("commandReducer", () => {
         source: gridSource,
         target: { col: 1, row: 1 },
         targets,
+        origin: "keyboard",
       });
     });
 
     it("starts at the first legal cell when nothing is preferred", () => {
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
+        origin: "keyboard",
         source: providerSource,
         targets: [
           { col: 1, row: 0 },
@@ -220,6 +225,7 @@ describe("commandReducer", () => {
       // Otherwise the user ends up holding something they cannot put down.
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
+        origin: "keyboard",
         source: providerSource,
         targets: [],
       });
@@ -230,6 +236,7 @@ describe("commandReducer", () => {
     it("replaces what is already being carried", () => {
       const next = commandReducer(carrying(providerSource), {
         type: "pickUp",
+        origin: "keyboard",
         source: gridSource,
         targets: [{ col: 1, row: 2 }],
       });
@@ -310,6 +317,7 @@ describe("commandReducer", () => {
   it("survives a full pick up, move, place cycle", () => {
     let state = commandReducer(IDLE_COMMAND_STATE, {
       type: "pickUp",
+      origin: "keyboard",
       source: providerSource,
       targets: [
         { col: 0, row: 1 },
