@@ -41,21 +41,30 @@ export const headerText = cva("font-semibold text-text-secondary", {
  * the base commit the assembly panel's bar stood 77.69px tall against the chart
  * panel's 66.19px, their contents sat 194.14px apart on the horizontal rail and
  * 2px apart vertically, so what should read as one rule drawn across the app
- * had a step in it. A new panel gets this constant rather than its own copy of
- * the declarations.
+ * had a step in it. A new panel gets `panelTitleBar` below rather than its own
+ * copy of the declarations.
+ *
+ * The rail is everything the bars share except the height: `px-4` puts every
+ * bar's content on the same 16px rail from its own panel's edge, `items-center`
+ * on one centre line, `gap-3` between its pieces, and `shrink-0` so a full
+ * panel cannot squeeze the bar itself. The height is the one thing the two
+ * users of it disagree about, so each states its own.
+ */
+const panelTitleBarRail = "shrink-0 flex items-center gap-3 px-4";
+
+/**
+ * The title bar every desktop panel is drawn to, and the constant a new panel
+ * takes.
  *
  * The height is fixed rather than left to padding so that what a bar happens to
  * carry cannot change where its neighbour's bottom edge lands. `h-16` clears
  * the tallest control any of the bars holds - the two-line pattern button,
- * 51.5px - with room to breathe. `px-4` puts every bar's content on the same
- * 16px rail from its own panel's edge, and `items-center` on one centre line.
+ * 51.5px - with room to breathe.
  *
  * Geometry only: a panel whose header is a single bar wants `panelHeaderBar`
  * below, which adds the rule and the background. The chart panel draws those
  * itself, around a title bar and the toolbar row beneath it, so it takes this.
  */
-const panelTitleBarRail = "shrink-0 flex items-center gap-3 px-4";
-
 export const panelTitleBar = cn(panelTitleBarRail, "h-16");
 
 /**
@@ -67,7 +76,7 @@ export const panelTitleBar = cn(panelTitleBarRail, "h-16");
  * beside the pair drops onto a second line **inside the bar** instead of being
  * drawn outside the panel's `overflow-hidden` and going out of reach. That was
  * the state on `main`: seven timeframe buttons, and at every viewport below
- * 480px and in the 1024-1200px band where the chart panel sits at its 300px
+ * 480px and in the 1024-1100px band where the chart panel sits at its 300px
  * floor, the trailing ones were painted outside the panel with nothing to
  * scroll them back. See `AGENTS.md`, "Layout and the CSS cascade".
  *

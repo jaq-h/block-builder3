@@ -34,14 +34,26 @@ export const chartToggleButton = cva(
     // the floor breaches SC 2.5.8 exactly as a control drawn under it does.
     "inline-flex shrink-0 items-center justify-center min-h-6 min-w-6",
     "px-2 py-1 rounded-md text-[11px] font-medium leading-none",
-    "transition-colors duration-150 cursor-pointer whitespace-nowrap",
+    "transition-colors duration-150 whitespace-nowrap",
+    // The lazy placeholder draws this same control `disabled`, so the pointer
+    // has to be told as plainly as the tab order and the accessibility tree
+    // already are: no hand cursor and no hover feedback on a button that will
+    // do nothing. `@layer base`'s `button:hover` repaints the border and the
+    // background too, and `:hover` matches a disabled element, so each of the
+    // three properties it and the variants below touch needs answering here.
+    // These carry `:disabled:hover`, so they outrank the plain `:hover` they
+    // neutralise on specificity - no `!` and no opt-out attribute, per
+    // `AGENTS.md` under "Layout and the CSS cascade". Nothing here may touch
+    // the box metrics: the placeholder and the real header measure identically
+    // only for as long as they draw the same box.
+    "cursor-pointer disabled:cursor-default",
   ],
   {
     variants: {
       isActive: {
-        true: "text-accent-primary bg-accent-bg-subtle border-accent-primary hover:bg-accent-bg-hover",
+        true: "text-accent-primary bg-accent-bg-subtle border-accent-primary hover:bg-accent-bg-hover disabled:hover:bg-accent-bg-subtle disabled:hover:border-accent-primary",
         false:
-          "text-text-muted bg-transparent border-border-neutral hover:text-text-primary hover:bg-accent-bg-hover",
+          "text-text-muted bg-transparent border-border-neutral hover:text-text-primary hover:bg-accent-bg-hover disabled:hover:text-text-muted disabled:hover:bg-transparent disabled:hover:border-border-neutral",
       },
     },
     defaultVariants: { isActive: false },

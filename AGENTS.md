@@ -309,7 +309,7 @@ The README's **Interaction model** section is authoritative. Twelve things bite 
 
 ## The chart panel
 
-`src/components/widgets/orderChart/` owns the price chart. Three rules keep it honest:
+`src/components/widgets/orderChart/` owns the price chart. Four rules keep it honest:
 
 - **The price scale is presentation and nothing else.** `priceScale.ts` holds the
   vocabulary - the kinds, the buttons offering them, the default - and `priceScaleMode.ts`
@@ -356,6 +356,25 @@ The README's **Interaction model** section is authoritative. Twelve things bite 
   anything that is not one - a market switch, a corrected backfill, a series holding
   nothing - still takes the full `setData`. `OrderChart.dom.test.tsx` pins the
   transition under "a bar close".
+- **The header is one component, and the placeholder is that component.** `ChartHeader.tsx`
+  draws both rows for the real panel and for the `Suspense` fallback in `LazyOrderChart`,
+  which renders it with its `controls` prop omitted: the same buttons at the same sizes,
+  `disabled`, behind `aria-hidden`, and - because `:hover` matches a disabled element and
+  the cursor is honoured on one - drawn by `chartToggleButton` with no hand cursor and no
+  hover feedback, so no input method offers a control that would silently do nothing.
+  That is what makes the swap cost no layout shift, and it is not something a constant
+  can do - what a wrapped row measures depends on the panel's width, so the two headers
+  have to *be* the same markup. `chartHeaderSecondaryRow`'s `min-h-[38px]` was the
+  previous answer and is gone; measured on production builds, the placeholder and the real
+  header stood at 103px against 139px at both 390px and 1024px while that floor was in place
+  and agreeing with itself. They are equal at 390, 1024 and 1440 now.
+- **Nothing `ChartHeader` reaches may import `lightweight-charts` as a value.** It is in the
+  eager chunk, so a value import there puts the app's largest dependency back in the initial
+  payload and undoes the code split silently - the build still succeeds. This is why
+  `priceScaleMode.ts` is a module of its own rather than a function at the foot of
+  `priceScale.ts`: `PriceScaleMode` is an enum, so naming it is a value import.
+  `indicators/types.ts` is safe because its library import is `import type`. The check is a
+  production build plus `grep -c lightweight-charts dist/assets/index-*.js`, which must be 0.
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region (`aria-live` and `role="status"` alike).
@@ -363,25 +382,6 @@ must not reach for a live region (`aria-live` and `role="status"` alike).
 Their accessible name is `label: description`, so the visible text stays *inside* the name
 rather than being replaced by it (WCAG 2.5.3 Label in Name): a bare `aria-label` spelling
 out the abbreviation renames "SMA 20" to something a voice-control user cannot say.
-
-**The header is one component, and the placeholder is that component.** `ChartHeader.tsx`
-draws both rows for the real panel and for the `Suspense` fallback in `LazyOrderChart`,
-which renders it with its `controls` prop omitted: the same buttons at the same sizes,
-`disabled` and behind `aria-hidden`, so nothing is reachable that would silently do
-nothing. That is what makes the swap cost no layout shift, and it is not something a
-constant can do - what a wrapped row measures depends on the panel's width, so the two
-headers have to *be* the same markup. `chartHeaderSecondaryRow`'s `min-h-[38px]` was the
-previous answer and is gone; measured on production builds, the placeholder and the real
-header stood at 103px against 139px at both 390px and 1024px while that floor was in place
-and agreeing with itself. They are equal at 390, 1024 and 1440 now.
-
-**Nothing `ChartHeader` reaches may import `lightweight-charts` as a value.** It is in the
-eager chunk, so a value import there puts the app's largest dependency back in the initial
-payload and undoes the code split silently - the build still succeeds. This is why
-`priceScaleMode.ts` is a module of its own rather than a function at the foot of
-`priceScale.ts`: `PriceScaleMode` is an enum, so naming it is a value import.
-`indicators/types.ts` is safe because its library import is `import type`. The check is a
-production build plus `grep -c lightweight-charts dist/assets/index-*.js`, which must be 0.
 
 ## Layout and the CSS cascade
 
@@ -393,8 +393,11 @@ grows. It does **not** get `overflow-x-auto`. Two things go wrong when it does,
 and the first is invisible on the machines this project is developed on: the
 box's own height then depends on the platform's scrollbar, because an
 auto-height `overflow-x-auto` box grows by the gutter a classic space-taking bar
-needs - about 15px, so a 32px group measures about 47px on Windows and most
-Linux and 32px on macOS overlay scrollbars. The second is that a scrollport
+needs - on the reverted attempt's analysis in issue #20, about 15px, so a 32px
+group measures about 47px on Windows and most Linux and 32px on macOS overlay
+scrollbars. Those two are inherited rather than observed here, and cannot be
+observed here: this project's machines have overlay scrollbars, which is itself
+why the scroller was rejected as unverifiable. The second is that a scrollport
 clips the focus rings of the controls inside it, on both axes: `outline` is not
 part of the border box, so `scroll-into-view` slices the ring of the very
 control the scrolling exists to reach. This was tried on `chartControlGroup` and
@@ -414,9 +417,9 @@ panel's title bar is its only user - the only title bar carrying controls rather
 than a title alone. Seven timeframe buttons could not fit beside the pair and the
 price, and with a fixed height the overflow was *drawn outside the panel's*
 `overflow-hidden`: measured on `main` with the offline warning showing, the
-trailing controls sat up to 139px past the panel edge at every viewport below
-480px, and up to 127px past it in the 1024-1200px band where the chart panel is
-at its 300px floor. Unreachable by any input, with nothing to scroll them back.
+trailing controls sat up to 144.53px past the panel edge at every viewport below
+480px, and up to 132.53px past it in the 1024-1100px band where the chart panel
+is at its 300px floor. Unreachable by any input, with nothing to scroll them back.
 The exception costs nothing where the constant matters: the three title bars are
 only side by side above `lg` - below it the layout is tabbed - and this bar
 measures **exactly 64px at every width from 360px to 1920px**, wrapped or not,
