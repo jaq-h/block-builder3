@@ -13,8 +13,10 @@ import path from "node:path";
  * as the real header, so it is eager - puts the app's largest dependency back
  * into the initial payload. Nothing errors, the build still succeeds, and the
  * only symptom is a slower first paint that nobody attributes to a stray
- * import. `PRICE_SCALE_OPTIONS` was split out of `priceScale.ts` for exactly
- * this reason: `PriceScaleMode` is an enum, so naming it is a value import.
+ * import. `priceScaleMode.ts` was split out of `priceScale.ts` for exactly
+ * this reason: `PriceScaleMode` is an enum, so naming it is a value import, and
+ * the function mapping onto it therefore lives in its own module on the lazy
+ * side while `priceScale.ts` keeps the library-free vocabulary.
  *
  * It reads the artifact rather than the source, for the reason
  * `api/_lib/credentialBoundary.test.ts` gives: whatever a refactor does to the
