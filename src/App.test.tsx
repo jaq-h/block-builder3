@@ -141,6 +141,45 @@ describe("App layout", () => {
     expect([...panelRoot("assembly-panel").classList]).toContain("hidden");
   });
 
+  it("hands focus to the Active Orders tab when the assembly panel's control is used", async () => {
+    const { user } = renderApp();
+
+    const control = within(screen.getByTestId("assembly-panel")).getByRole(
+      "button",
+      { name: "View Active Orders" },
+    );
+    await user.click(control);
+
+    // The control is inside the panel that the switch hides, so leaving focus
+    // where it was drops it to `<body>` and the next Tab restarts from the top
+    // of the document. The tab button is on screen either way and reads
+    // `aria-pressed="true"` once the switch has happened.
+    expect(ordersTab()).toHaveFocus();
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it("commits the switch before focus lands, so the tab is already pressed", async () => {
+    const { user } = renderApp();
+
+    // A screen reader computes name and state when the focus event fires, with
+    // no guarantee of re-announcing an attribute that changes afterwards. If
+    // the state update is left to be batched after the `focus()` call, what is
+    // announced is the tab the user has just left.
+    const tab = ordersTab();
+    let pressedWhenFocused: string | null = null;
+    tab.addEventListener("focus", () => {
+      pressedWhenFocused = tab.getAttribute("aria-pressed");
+    });
+
+    await user.click(
+      within(screen.getByTestId("assembly-panel")).getByRole("button", {
+        name: "View Active Orders",
+      }),
+    );
+
+    expect(pressedWhenFocused).toBe("true");
+  });
+
   it("names the tab bar and marks the selected tab programmatically", async () => {
     const { user } = renderApp();
 

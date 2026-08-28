@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
+import { createRef } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ExecuteTradePanel from "./ExecuteTradePanel";
@@ -16,6 +17,7 @@ const renderPanel = (
   render(
     <ExecuteTradePanel
       showSuccess
+      feedbackRef={createRef<HTMLDivElement>()}
       error={null}
       simulationMessage="Simulation mode"
       isEffectivelySimulation

@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from "react";
+import { flushSync } from "react-dom";
 import StrategyAssembly from "./components/widgets/strategyAssembly/strategyAssembly";
 import { ActiveOrders } from "./components/widgets/activeOrders";
 import DragOverlay from "./components/common/DragOverlay";
@@ -42,6 +43,32 @@ function AppInner() {
   } | null>(null);
   const unavailableAttempt = useRef(0);
 
+  /**
+   * The Active Orders tab button, so activating "View Active Orders" can hand
+   * focus to it.
+   *
+   * That control lives inside the assembly panel and is only rendered below
+   * `lg`, where switching tabs puts `hidden lg:block` on the panel around it -
+   * so the button the user just pressed goes into a `display: none` subtree and
+   * the browser drops focus to `<body>`, restarting the next Tab at the top of
+   * the document. The tab button is the right landing place: it is on screen
+   * either way, and it says where the user now is.
+   *
+   * Saying so is what the `flushSync` is for. The switch is committed before
+   * focus moves, so the button already carries `aria-pressed="true"` when the
+   * focus event fires: a screen reader computes name and state at that moment,
+   * and focusing first would have it announce the stale unpressed tab with no
+   * guarantee of re-announcing when the attribute later changed.
+   */
+  const ordersTabRef = useRef<HTMLButtonElement>(null);
+
+  const showActiveOrders = () => {
+    flushSync(() => setActiveTab("orders"));
+    // The tab bar is not inside the subtree being hidden, so it is mounted and
+    // focusable either side of the switch.
+    ordersTabRef.current?.focus();
+  };
+
   // A strategy that has just been loaded into the builder, held here rather
   // than in the builder because loading one *remounts* the builder: `loadConfig`
   // bumps `strategyKey`, which is the assembly panel's `key`, so a fresh
@@ -59,6 +86,7 @@ function AppInner() {
     orderConfig,
     orderCount,
     showSuccess,
+    feedbackRef,
     strategyKey,
     initialConfig,
     isEditMode,
@@ -177,13 +205,14 @@ function AppInner() {
         onExecute={handleExecuteTrade}
         isSubmitting={isSubmitting}
         showSuccess={showSuccess}
+        feedbackRef={feedbackRef}
         error={error}
         simulationMessage={simulationMessage}
         isEffectivelySimulation={isEffectivelySimulation}
         canToggle={canToggle}
         isSimulationMode={isSimulationMode}
         onToggleSimulationMode={toggleSimulationMode}
-        onViewActiveOrders={() => setActiveTab("orders")}
+        onViewActiveOrders={showActiveOrders}
         isEditMode={isEditMode}
         strategyMarketUnavailable={strategyMarketUnavailable}
         strategyLoaded={strategyLoaded}
@@ -259,6 +288,7 @@ function AppInner() {
           Strategy Builder
         </button>
         <button
+          ref={ordersTabRef}
           type="button"
           aria-pressed={activeTab === "orders"}
           onClick={() => setActiveTab("orders")}

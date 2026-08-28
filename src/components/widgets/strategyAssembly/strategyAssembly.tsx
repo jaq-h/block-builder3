@@ -1,4 +1,4 @@
-import type { FC } from "react";
+import type { FC, RefObject } from "react";
 import type { OrderConfig, StrategyPattern } from "../../../types/grid";
 import { useKrakenAPI } from "../../../hooks";
 import { StrategyAssemblyProvider } from "./StrategyAssemblyContext";
@@ -19,6 +19,8 @@ interface StrategyAssemblyProps {
   onExecute?: () => void;
   isSubmitting?: boolean;
   showSuccess?: boolean;
+  /** The feedback strip's element, required; see `ExecuteTradePanel`. */
+  feedbackRef: RefObject<HTMLDivElement | null>;
   error?: string | null;
   simulationMessage?: string;
   isEffectivelySimulation?: boolean;
@@ -82,6 +84,7 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
   onExecute,
   isSubmitting,
   showSuccess,
+  feedbackRef,
   error,
   simulationMessage,
   isEffectivelySimulation,
@@ -133,6 +136,7 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
       {showFeedback && (
         <ExecuteTradePanel
           showSuccess={showSuccess ?? false}
+          feedbackRef={feedbackRef}
           error={error ?? null}
           simulationMessage={simulationMessage ?? ""}
           isEffectivelySimulation={isEffectivelySimulation ?? true}

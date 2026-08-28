@@ -1,4 +1,4 @@
-import type { FC } from "react";
+import type { FC, RefObject } from "react";
 import ToolsIcon from "../../../../assets/icons/tools.svg?react";
 import CheckIcon from "../../../../assets/icons/check.svg?react";
 import ArrowRightIcon from "../../../../assets/icons/arrow-right.svg?react";
@@ -16,6 +16,19 @@ import { cn } from "../../../../lib/utils";
 
 interface ExecuteTradePanelProps {
   showSuccess: boolean;
+  /**
+   * The feedback strip's element, handed back to whoever owns the success
+   * message's time limit. The limit may not remove the strip while it holds
+   * the focused element - the "View Active Orders" control below is focusable,
+   * and taking it away mid-Tab drops focus to `<body>`.
+   *
+   * Required, at every hop it is drilled through. An unfilled ref is not a
+   * degraded guard, it is no guard: the owner reads `null` when the limit
+   * falls due and dismisses unconditionally, which is the behaviour this
+   * replaced. Making it optional let that be reintroduced by deleting one
+   * line, with nothing to typecheck and nothing to fail.
+   */
+  feedbackRef: RefObject<HTMLDivElement | null>;
   error: string | null;
   simulationMessage: string;
   isEffectivelySimulation: boolean;
@@ -34,6 +47,7 @@ interface ExecuteTradePanelProps {
 
 const ExecuteTradePanel: FC<ExecuteTradePanelProps> = ({
   showSuccess,
+  feedbackRef,
   error,
   simulationMessage,
   isEffectivelySimulation,
@@ -43,7 +57,7 @@ const ExecuteTradePanel: FC<ExecuteTradePanelProps> = ({
   onViewActiveOrders,
 }) => {
   return (
-    <div className={executeButtonContainer}>
+    <div className={executeButtonContainer} ref={feedbackRef}>
       {/* Simulation Mode Badge + Toggle */}
       <div className={simulationModeContainer}>
         <div
