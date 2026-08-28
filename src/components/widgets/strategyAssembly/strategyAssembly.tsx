@@ -24,9 +24,9 @@ interface StrategyAssemblyProps {
   isEffectivelySimulation?: boolean;
   canToggle?: boolean;
   isSimulationMode?: boolean;
-  onToggleSimulationMode?: () => void;
+  onToggleSimulationMode: () => void;
   /** Switches the app to the Active Orders panel; see `ExecuteTradePanel`. */
-  onViewActiveOrders?: () => void;
+  onViewActiveOrders: () => void;
   isEditMode?: boolean;
   /**
    * A strategy the builder refused to load, because the market it was placed on
@@ -130,7 +130,7 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
         isSubmitting={isSubmitting}
         isEditMode={isEditMode}
       />
-      {showFeedback && onToggleSimulationMode && onViewActiveOrders && (
+      {showFeedback && (
         <ExecuteTradePanel
           showSuccess={showSuccess ?? false}
           error={error ?? null}

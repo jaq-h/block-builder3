@@ -282,9 +282,11 @@ beforeEach(() => {
   // The shell `src/App.tsx` renders, with the elements a rule could plausibly
   // be scoped by: the app mounts into `#root` (see `src/main.tsx`), which holds
   // one container, and that holds the visually hidden `h1`, the tab `nav` and
-  // `main`. The buttons and the links sit where the app's own do - `NavBar`'s
-  // in the nav, `ExecuteTradePanel`'s inside `main` - so a rule written under
-  // any of those ancestors reaches these too.
+  // `main`. The buttons and the links sit where the app's own do - the tab
+  // bar's buttons in the nav (see `src/App.tsx`), `ExecuteTradePanel`'s inside
+  // `main` - so a rule written under any of those ancestors reaches these too.
+  // The nav carries no `<a>` today; it stays in the fixture because a bare
+  // `a {}` rule written under it would still reach one.
   document.body.innerHTML = `
     <div id="root">
       <div>
