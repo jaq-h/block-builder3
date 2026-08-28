@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import type { OrderConfig } from "../types/grid";
 import { useOrdersStore } from "../store";
 import { useTradingMode } from "./useTradingMode";
@@ -14,6 +15,14 @@ export interface UseTradeExecutionReturn {
   orderCount: number;
   /** Whether a success message should be displayed */
   showSuccess: boolean;
+  /**
+   * Attach this to the feedback strip that carries the success message.
+   *
+   * The dismissal consults it: a time limit may not take away content the user
+   * is currently interacting with, so while the strip holds the focused
+   * element the message stays up and goes once focus leaves it.
+   */
+  feedbackRef: RefObject<HTMLDivElement | null>;
   /** Key that increments on successful submit - used to force-reset StrategyAssembly */
   strategyKey: number;
   /** Initial config to seed StrategyAssembly with (e.g. loaded from active orders) */
@@ -49,35 +58,79 @@ export interface UseTradeExecutionReturn {
 /**
  * How long the post-submission success message stays on screen.
  *
- * The message carries a focusable control ("View Active Orders"), so removing it
- * on a timer is content the user may be in the middle of reaching. WCAG 2.2.1
- * asks for at least 20s for a time limit like this one, and 3s - what this was
- * while the message was never rendered at all - took the control away mid-Tab.
+ * A reasonable default rather than a compliance figure: 3s - what this was
+ * while the message was never rendered at all - is not enough time to read a
+ * confirmation, let alone Tab to the "View Active Orders" control it carries.
+ * Nothing about 20s makes a time limit permissible on its own; WCAG 2.2.1's
+ * own 20 seconds is the minimum *warning* window in the Extend exception, not
+ * an allowance for a 20s limit. What keeps this limit from removing content
+ * the user is interacting with is the focus guard in the dismissal effect
+ * below, which is the rule the number cannot buy.
  */
 const SUCCESS_MESSAGE_TIMEOUT_MS = 20_000;
 
 export function useTradeExecution(): UseTradeExecutionReturn {
   const [orderConfig, setOrderConfig] = useState<OrderConfig>({});
-  const [showSuccess, setShowSuccess] = useState(false);
+  /**
+   * The success message, held as the submission that raised it rather than as
+   * a boolean. Two submissions inside the time limit are two messages, and a
+   * boolean cannot tell them apart - the dismissal below is keyed on this, so
+   * the second submission restarts the limit instead of inheriting what is
+   * left of the first one's.
+   */
+  const [successToken, setSuccessToken] = useState<number | null>(null);
+  const showSuccess = successToken !== null;
   const [strategyKey, setStrategyKey] = useState(0);
   const [initialConfig, setInitialConfig] = useState<OrderConfig | undefined>(undefined);
   const [isEditMode, setIsEditMode] = useState(false);
 
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
+
   /**
-   * The pending success-message dismissal, so there is exactly one in flight.
-   * Two submissions three seconds apart used to leave the first one's timer
-   * running, and it then cleared the *second* message early.
+   * The one owner of the success message's dismissal.
+   *
+   * It is an effect keyed on the message itself, so there is never more than
+   * one pending dismissal and every transition out of a message cancels it -
+   * a new submission, a strategy loaded for edit, a config change, unmount.
+   * Three hand-written cancel sites and a ref used to carry that, and the one
+   * that was missing (`loadConfig`) was invisible because no route back to a
+   * second message happened to pass through it.
+   *
+   * The limit does not fire while the strip holds focus. Removing content the
+   * user is on is the failure the tab switch's focus handoff exists to avoid,
+   * and it is reachable here too: the message carries a focusable control, and
+   * unmounting it mid-Tab drops focus to `<body>`. Moving focus instead would
+   * be a change of context the user never asked for, so the message simply
+   * stays up and goes when focus leaves the strip.
    */
-  const dismissTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (successToken === null) return;
 
-  const cancelPendingDismissal = useCallback(() => {
-    if (dismissTimer.current !== undefined) {
-      clearTimeout(dismissTimer.current);
-      dismissTimer.current = undefined;
-    }
-  }, []);
+    let strip: HTMLElement | null = null;
 
-  useEffect(() => cancelPendingDismissal, [cancelPendingDismissal]);
+    const handleFocusOut = (event: FocusEvent) => {
+      const next = event.relatedTarget;
+      if (strip && next instanceof Node && strip.contains(next)) return;
+      strip?.removeEventListener("focusout", handleFocusOut);
+      strip = null;
+      setSuccessToken(null);
+    };
+
+    const timer = setTimeout(() => {
+      const current = feedbackRef.current;
+      if (current && current.contains(document.activeElement)) {
+        strip = current;
+        strip.addEventListener("focusout", handleFocusOut);
+        return;
+      }
+      setSuccessToken(null);
+    }, SUCCESS_MESSAGE_TIMEOUT_MS);
+
+    return () => {
+      clearTimeout(timer);
+      strip?.removeEventListener("focusout", handleFocusOut);
+    };
+  }, [successToken]);
 
   const {
     submitOrders,
@@ -115,8 +168,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
   const handleConfigChange = (config: OrderConfig) => {
     setOrderConfig(config);
     // Clear any previous success message when config changes
-    cancelPendingDismissal();
-    setShowSuccess(false);
+    setSuccessToken(null);
     clearError();
   };
 
@@ -124,7 +176,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     setInitialConfig(config);
     setIsEditMode(true);
     setOrderConfig({});
-    setShowSuccess(false);
+    setSuccessToken(null);
     clearError();
     setStrategyKey((prev) => prev + 1);
   };
@@ -135,16 +187,11 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     const success = await submitOrders(orderConfig);
 
     if (success) {
-      setShowSuccess(true);
+      setSuccessToken((previous) => (previous ?? 0) + 1);
       setIsEditMode(false);
       setInitialConfig(undefined);
       setOrderConfig({});
       setStrategyKey((prev) => prev + 1);
-      cancelPendingDismissal();
-      dismissTimer.current = setTimeout(() => {
-        dismissTimer.current = undefined;
-        setShowSuccess(false);
-      }, SUCCESS_MESSAGE_TIMEOUT_MS);
     }
   };
 
@@ -152,6 +199,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     orderConfig,
     orderCount,
     showSuccess,
+    feedbackRef,
     strategyKey,
     initialConfig,
     isEditMode,

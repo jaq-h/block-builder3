@@ -1,4 +1,4 @@
-import type { FC } from "react";
+import type { FC, RefObject } from "react";
 import ToolsIcon from "../../../../assets/icons/tools.svg?react";
 import CheckIcon from "../../../../assets/icons/check.svg?react";
 import ArrowRightIcon from "../../../../assets/icons/arrow-right.svg?react";
@@ -16,6 +16,13 @@ import { cn } from "../../../../lib/utils";
 
 interface ExecuteTradePanelProps {
   showSuccess: boolean;
+  /**
+   * The feedback strip's element, handed back to whoever owns the success
+   * message's time limit. The limit may not remove the strip while it holds
+   * the focused element - the "View Active Orders" control below is focusable,
+   * and taking it away mid-Tab drops focus to `<body>`.
+   */
+  feedbackRef?: RefObject<HTMLDivElement | null>;
   error: string | null;
   simulationMessage: string;
   isEffectivelySimulation: boolean;
@@ -34,6 +41,7 @@ interface ExecuteTradePanelProps {
 
 const ExecuteTradePanel: FC<ExecuteTradePanelProps> = ({
   showSuccess,
+  feedbackRef,
   error,
   simulationMessage,
   isEffectivelySimulation,
@@ -43,7 +51,7 @@ const ExecuteTradePanel: FC<ExecuteTradePanelProps> = ({
   onViewActiveOrders,
 }) => {
   return (
-    <div className={executeButtonContainer}>
+    <div className={executeButtonContainer} ref={feedbackRef}>
       {/* Simulation Mode Badge + Toggle */}
       <div className={simulationModeContainer}>
         <div
