@@ -172,8 +172,9 @@ One module crosses that boundary deliberately: `ChartHeader.tsx`, which the real
 loading placeholder both render, so the two are the same markup and the swap costs no layout
 shift. That puts it in the eager chunk, so **nothing it reaches may import `lightweight-charts`
 as a value** - which is why the enum mapping lives in `priceScaleMode.ts`, imported only from
-the lazy side, while `priceScale.ts` holds the library-free vocabulary. The check is a
-production build plus `grep -c lightweight-charts dist/assets/index-*.js`, which must be 0.
+the lazy side, while `priceScale.ts` holds the library-free vocabulary. That rule is enforced
+rather than documented: `vite/eagerChunk.test.ts` runs a production build and fails if the
+eager chunk carries the library.
 
 ---
 

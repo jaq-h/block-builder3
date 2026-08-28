@@ -46,9 +46,13 @@ SVG imports work in tests for the same reason.
   under `api/_lib/` instead because they are about the whole repository rather than about a
   neighbouring module: `credentialBoundary.test.ts` builds the client and scans the emitted
   bundle, and `deploymentSurface.test.ts` checks which routes a deploy would publish. Both
-  are `api/`'s responsibility, because the boundary is. `vite/buttonResetLayer.test.ts` is
-  there for the same reason and one more: it has to read `src/index.css` as text, and `src`
-  is typechecked without node types while `vite/` has them.
+  are `api/`'s responsibility, because the boundary is. `vite/` holds two more on the same
+  principle - a repository-wide test sits with whatever owns the fact, not with its subject.
+  `vite/eagerChunk.test.ts` scans a production build for `lightweight-charts` in the eager
+  chunk, because which module lands in which chunk is the Vite build's business rather than
+  the chart's. `vite/buttonResetLayer.test.ts` is there for that reason and one more: it has
+  to read `src/index.css` as text, and `src` is typechecked without node types while `vite/`
+  has them - which is the second reason the bundle scan is there too.
 
 A test may deliberately assert **current, wrong** behaviour, commented
 `CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. None are live today;
@@ -86,6 +90,7 @@ justifies every entry in them. Four facts bite during ordinary work:
   not apply these headers because they live in `vercel.json`, not in the app; `npx vercel dev` does.
 - **The chart panel is code-split.** Import it from the `orderChart` barrel, never from
   `./OrderChart` directly, or `lightweight-charts` lands back in the initial chunk.
+  `vite/eagerChunk.test.ts` enforces this against the emitted bundle.
 - **`api/` is a set of serverless functions, and the SPA rewrite excludes it.** Handlers take
   Node's `IncomingMessage`/`ServerResponse` so the same module runs on Vercel, on the Vite dev
   server and in the tests. Nothing there reads a request body, which is the one place those three
@@ -373,8 +378,15 @@ The README's **Interaction model** section is authoritative. Twelve things bite 
   payload and undoes the code split silently - the build still succeeds. This is why
   `priceScaleMode.ts` is a module of its own rather than a function at the foot of
   `priceScale.ts`: `PriceScaleMode` is an enum, so naming it is a value import.
-  `indicators/types.ts` is safe because its library import is `import type`. The check is a
-  production build plus `grep -c lightweight-charts dist/assets/index-*.js`, which must be 0.
+  `indicators/types.ts` is safe because its library import is `import type`. **This is
+  enforced, not documented: `vite/eagerChunk.test.ts` builds and fails if the eager chunk
+  carries the library.** It takes "eager" from the build's own manifest - the entry chunk plus
+  what it statically imports, transitively - rather than from `dist/assets/index-*.js`, so a
+  new shared chunk is covered without being named, and it scans for the strings the library
+  emits into its own minified output rather than for the package specifier, which minification
+  removes. It also asserts those markers are *present* in a lazy chunk, so a build that dropped
+  the library or a release that renamed a marker fails the file instead of passing an absence
+  check that has stopped meaning anything.
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region (`aria-live` and `role="status"` alike).
