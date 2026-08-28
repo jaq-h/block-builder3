@@ -1,18 +1,16 @@
 import { lazy, Suspense, type FC } from "react";
 import type { OrderConfig } from "../../../types/grid";
-import {
-  chartControlGroupLabel,
-  chartHeader,
-  chartHeaderPrimaryRow,
-  chartHeaderSecondaryRow,
-} from "./OrderChart.styles";
-import { panelHeaderTitle } from "../../../styles/shared";
-import { useMarket } from "../../../store/useMarket";
+import ChartHeader from "./ChartHeader";
 
 // `lightweight-charts` is only ever reachable from this panel, and it is by far
 // the largest single dependency in the bundle. Loading it behind `lazy()` keeps
 // it - and the chart code that uses it - out of the initial payload, so the
 // strategy builder is interactive before the charting library has been fetched.
+//
+// `ChartHeader` above is imported eagerly on purpose, and it is why
+// `priceScaleMode.ts` exists as a module of its own: the header must be able to
+// draw before the chart chunk lands, so nothing it reaches may pull the library
+// in. See `AGENTS.md` under "The chart panel".
 const OrderChartImpl = lazy(() => import("./OrderChart"));
 
 interface LazyOrderChartProps {
@@ -25,38 +23,28 @@ interface LazyOrderChartProps {
  * panel's frame and its "Loading chart…" treatment so the swap costs no layout
  * shift and no visible change of style.
  *
- * The pair is read from the market context rather than named here. It used to
- * say "BTC / USD" outright, which was invisible while the app had one market
- * and becomes a placeholder announcing the wrong pair the moment it has five.
+ * The header is the *same component* the real panel renders, with its controls
+ * omitted - not a second header built to match. Two hand-written headers is
+ * exactly how they came to differ: once either row wrapped, the real one stood
+ * 139px tall at a 1024px viewport against this one's 103px, and the chart body
+ * jumped 36px the moment the chunk landed - the same 36px jump it made at
+ * 390px. Height is not something a constant can hold equal here, because what a
+ * wrapped row measures depends on the panel's width; sharing the markup holds it
+ * equal by construction.
+ *
+ * The pair is read from the market context by `ChartHeader` rather than named
+ * here. It used to say "BTC / USD" outright, which was invisible while the app
+ * had one market and becomes a placeholder announcing the wrong pair the moment
+ * it has five.
  */
-const ChartFallback: FC = () => {
-  const { market } = useMarket();
-
-  return (
-    <div className="flex flex-col h-full bg-bg-primary border-b border-border-neutral">
-      {/* Both header rows are reproduced, empty. The real header is two rows
-          tall, and a one-row placeholder would jump the chart body upward the
-          moment the chunk lands. */}
-      <div className={chartHeader}>
-        <div className={chartHeaderPrimaryRow}>
-          <div className="flex items-center gap-3">
-            <span className={panelHeaderTitle}>
-              {market.base} / {market.quote}
-            </span>
-            <span className="text-[11px] text-text-muted">Loading…</span>
-          </div>
-        </div>
-        <div className={chartHeaderSecondaryRow} aria-hidden="true">
-          <span className={chartControlGroupLabel}>Indicators</span>
-          <span className={chartControlGroupLabel}>Scale</span>
-        </div>
-      </div>
-      <div className="flex-1 min-h-0 flex items-center justify-center">
-        <p className="text-[11px] text-text-muted opacity-60">Loading chart…</p>
-      </div>
+const ChartFallback: FC = () => (
+  <div className="flex flex-col h-full bg-bg-primary border-b border-border-neutral">
+    <ChartHeader priceLabel="Loading…" />
+    <div className="flex-1 min-h-0 flex items-center justify-center">
+      <p className="text-[11px] text-text-muted opacity-60">Loading chart…</p>
     </div>
-  );
-};
+  </div>
+);
 
 const LazyOrderChart: FC<LazyOrderChartProps> = ({ orders }) => (
   <Suspense fallback={<ChartFallback />}>

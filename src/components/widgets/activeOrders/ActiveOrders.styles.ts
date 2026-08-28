@@ -18,8 +18,10 @@ export const columnsWrapper = "flex flex-1 h-full gap-1.5";
 // HEADER
 // =============================================================================
 
-// The same bar the chart panel above it and the assembly panel beside it use,
-// so all three sit at one height with their titles on one rail.
+// The same single bar the assembly panel beside it uses. The chart panel above
+// takes `wrappingPanelTitleBar` instead - the one documented exception to the
+// fixed height, at the same height and on the same rail - so all three titles
+// still line up. `src/styles/shared.ts` owns why.
 export const header = panelHeaderBar;
 
 export const headerTextClass = cn("m-0", panelHeaderTitle);

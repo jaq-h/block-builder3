@@ -21,31 +21,13 @@ import { useLightweightChart } from "./useLightweightChart";
 import { useMarket } from "../../../store/useMarket";
 import { formatMarketPrice } from "../../../utils/marketFormat";
 import { useIndicatorSeries } from "./useIndicatorSeries";
-import { OVERLAY_INDICATORS } from "./indicators";
 import { appendedCandles, withLatestCandle } from "@utils/liveCandles";
 import { orderPriceLines } from "./orderPriceLines";
 import { orderAutoscaleProvider } from "./orderAutoscale";
-import {
-  DEFAULT_PRICE_SCALE,
-  PRICE_SCALE_OPTIONS,
-  priceScaleMode,
-  type PriceScaleKind,
-} from "./priceScale";
-import {
-  chartControlGroup,
-  chartControlGroupLabel,
-  chartHeader,
-  chartHeaderPrimaryRow,
-  chartHeaderSecondaryRow,
-  chartToggleButton,
-} from "./OrderChart.styles";
-import { panelHeaderTitle } from "../../../styles/shared";
-
-// =============================================================================
-// CONSTANTS
-// =============================================================================
-
-const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1D", "1W"];
+import { DEFAULT_PRICE_SCALE, type PriceScaleKind } from "./priceScale";
+import { priceScaleMode } from "./priceScaleMode";
+import ChartHeader from "./ChartHeader";
+import { DEFAULT_TIMEFRAME } from "./timeframes";
 
 // =============================================================================
 // TYPES
@@ -70,7 +52,7 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
     pollInterval: 30000,
   });
 
-  const [activeTimeframe, setActiveTimeframe] = useState("1W");
+  const [activeTimeframe, setActiveTimeframe] = useState(DEFAULT_TIMEFRAME);
   const [priceScale, setPriceScale] =
     useState<PriceScaleKind>(DEFAULT_PRICE_SCALE);
   const [enabledIndicators, setEnabledIndicators] = useState<
@@ -257,107 +239,22 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
 
   return (
     <div className="flex flex-col h-full bg-bg-primary border-b border-border-neutral">
-      {/* Header. It is two rows: a title bar and a toolbar under it. The title
-          bar's geometry is `panelTitleBar`, shared with the assembly and Active
-          Orders panels, so all three panel titles sit on one height, one rail
-          and one centre line. The block, not the rows, carries the rule and the
-          background, so the two rows still read as one bar. */}
-      <div className={chartHeader}>
-        <div className={chartHeaderPrimaryRow}>
-          <div className="flex items-center gap-3">
-            <span className={panelHeaderTitle}>
-              {market.base} / {market.quote}
-            </span>
-            <span className="text-[11px] text-text-muted">{priceLabel}</span>
-            {/* The manager gives up reconnecting after a fixed number of tries.
-                Without this the app just keeps showing the last price it saw. */}
-            {publicStatus === "error" && (
-              <span
-                className="text-[11px] text-status-yellow"
-                title="Reconnection was abandoned. Prices now come from the 30s poll only."
-              >
-                Live feed offline
-              </span>
-            )}
-          </div>
-          <div className={chartControlGroup} role="group" aria-label="Timeframe">
-            {TIMEFRAMES.map((tf) => (
-              <button
-                key={tf}
-                type="button"
-                // Without this the active timeframe is a colour and nothing else.
-                aria-pressed={tf === activeTimeframe}
-                onClick={() => setActiveTimeframe(tf)}
-                className={chartToggleButton({
-                  isActive: tf === activeTimeframe,
-                })}
-              >
-                {tf}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className={chartHeaderSecondaryRow}>
-          {/* Every control here is a toggle button carrying `aria-pressed`, so
-              its own state change is what a screen reader reads back. Nothing
-              in this panel writes to a live region: the grid's announcer in
-              `src/utils/gridAnnouncements.ts` is the app's single owner of
-              spoken sentences, and a second one here would talk over it. */}
-          <div className={chartControlGroup} role="group" aria-label="Indicators">
-            <span className={chartControlGroupLabel} aria-hidden="true">
-              Indicators
-            </span>
-            {OVERLAY_INDICATORS.map((indicator) => (
-              <button
-                key={indicator.id}
-                type="button"
-                aria-pressed={enabledIndicators.has(indicator.id)}
-                // The visible label is kept inside the accessible name rather
-                // than replaced by it: WCAG 2.5.3 Label in Name, so someone
-                // driving the app by voice can say the words they can see.
-                aria-label={`${indicator.label}: ${indicator.description}`}
-                onClick={() => toggleIndicator(indicator.id)}
-                className={chartToggleButton({
-                  isActive: enabledIndicators.has(indicator.id),
-                })}
-              >
-                {/* The swatch is the only thing tying a button to its line. */}
-                <span
-                  aria-hidden="true"
-                  className="inline-block w-2 h-0.5 mr-1.5 align-middle rounded-full"
-                  style={{ backgroundColor: indicator.color }}
-                />
-                {indicator.label}
-              </button>
-            ))}
-          </div>
-
-          <div
-            className={chartControlGroup}
-            role="group"
-            aria-label="Price scale"
-          >
-            <span className={chartControlGroupLabel} aria-hidden="true">
-              Scale
-            </span>
-            {PRICE_SCALE_OPTIONS.map((option) => (
-              <button
-                key={option.kind}
-                type="button"
-                aria-pressed={priceScale === option.kind}
-                aria-label={`${option.label}: ${option.description}`}
-                onClick={() => setPriceScale(option.kind)}
-                className={chartToggleButton({
-                  isActive: priceScale === option.kind,
-                })}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* The header is `ChartHeader`, shared with the placeholder in
+          `LazyOrderChart` so the two measure the same at every width. */}
+      <ChartHeader
+        priceLabel={priceLabel}
+        // The manager gives up reconnecting after a fixed number of tries.
+        // Without this the app just keeps showing the last price it saw.
+        isFeedOffline={publicStatus === "error"}
+        controls={{
+          activeTimeframe,
+          onSelectTimeframe: setActiveTimeframe,
+          enabledIndicators,
+          onToggleIndicator: toggleIndicator,
+          priceScale,
+          onSelectPriceScale: setPriceScale,
+        }}
+      />
 
       {/* Chart body */}
       <div className="flex-1 min-h-0 relative">

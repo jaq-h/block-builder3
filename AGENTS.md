@@ -309,10 +309,11 @@ The README's **Interaction model** section is authoritative. Twelve things bite 
 
 ## The chart panel
 
-`src/components/widgets/orderChart/` owns the price chart. Two rules keep it honest:
+`src/components/widgets/orderChart/` owns the price chart. Four rules keep it honest:
 
-- **The price scale is presentation and nothing else.** `priceScale.ts` maps the
-  linear/logarithmic choice onto the library's `PriceScaleMode` and stops there. No price,
+- **The price scale is presentation and nothing else.** `priceScale.ts` holds the
+  vocabulary - the kinds, the buttons offering them, the default - and `priceScaleMode.ts`
+  maps that choice onto the library's `PriceScaleMode` and stops there. No price,
   no order and no grid position is derived from it, which is the whole reason the
   logarithmic option is safe here: the grid and the chart share exactly one fact, the price,
   and both take it from `priceForOffset`. They share no coordinate space - the grid's axis
@@ -355,6 +356,25 @@ The README's **Interaction model** section is authoritative. Twelve things bite 
   anything that is not one - a market switch, a corrected backfill, a series holding
   nothing - still takes the full `setData`. `OrderChart.dom.test.tsx` pins the
   transition under "a bar close".
+- **The header is one component, and the placeholder is that component.** `ChartHeader.tsx`
+  draws both rows for the real panel and for the `Suspense` fallback in `LazyOrderChart`,
+  which renders it with its `controls` prop omitted: the same buttons at the same sizes,
+  `disabled`, behind `aria-hidden`, and - because `:hover` matches a disabled element and
+  the cursor is honoured on one - drawn by `chartToggleButton` with no hand cursor and no
+  hover feedback, so no input method offers a control that would silently do nothing.
+  That is what makes the swap cost no layout shift, and it is not something a constant
+  can do - what a wrapped row measures depends on the panel's width, so the two headers
+  have to *be* the same markup. `chartHeaderSecondaryRow`'s `min-h-[38px]` was the
+  previous answer and is gone; measured on production builds, the placeholder and the real
+  header stood at 103px against 139px at both 390px and 1024px while that floor was in place
+  and agreeing with itself. They are equal at 390, 1024 and 1440 now.
+- **Nothing `ChartHeader` reaches may import `lightweight-charts` as a value.** It is in the
+  eager chunk, so a value import there puts the app's largest dependency back in the initial
+  payload and undoes the code split silently - the build still succeeds. This is why
+  `priceScaleMode.ts` is a module of its own rather than a function at the foot of
+  `priceScale.ts`: `PriceScaleMode` is an enum, so naming it is a value import.
+  `indicators/types.ts` is safe because its library import is `import type`. The check is a
+  production build plus `grep -c lightweight-charts dist/assets/index-*.js`, which must be 0.
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region (`aria-live` and `role="status"` alike).
@@ -363,25 +383,50 @@ Their accessible name is `label: description`, so the visible text stays *inside
 rather than being replaced by it (WCAG 2.5.3 Label in Name): a bare `aria-label` spelling
 out the abbreviation renames "SMA 20" to something a voice-control user cannot say.
 
-**Known gap: the toolbar controls are clipped and unreachable at narrow widths.** At 390px
-the title bar cannot fit the symbol, the price and seven timeframe buttons across
-`panelTitleBar`'s fixed 64px height, so the trailing timeframes sit outside the panel's
-`overflow-hidden`; the indicators strip does the same at 1024px. Nothing scrolls to bring
-either back, so those controls are unreachable rather than merely ugly. It is pre-existing
-on `main` and was never in the button-repaint lane's scope. Owned by GitHub issue #20,
-<https://github.com/jaq-h/block-builder3/issues/20>, which carries the full analysis. One
-approach is already ruled out, and the measurement that ruled it out is invisible on a Mac:
-making each `chartControlGroup` an `overflow-x-auto` scroller was tried and reverted,
-because it clips the focus ring on both axes, and on Windows and most Linux a classic
-space-taking scrollbar grows an auto-height group from a 32px border box to about 47px,
-which breaks `chartHeaderSecondaryRow`'s derived `min-h`. Measure a fresh attempt on a
-classic-scrollbar platform before believing it. Wrapping instead has its own cost:
-`panelTitleBar`'s fixed `h-16` is shared by three panels, so relaxing it here needs a
-deliberate documented exception.
-
 ## Layout and the CSS cascade
 
-Ten traps live in the layout, and each is easy to reintroduce.
+Fourteen traps live in the layout, and each is easy to reintroduce.
+
+**The app's chrome wraps; it never scrolls.** A row of controls - a toolbar, a
+title bar, a tab strip - that cannot fit its width gets `flex-wrap`, and the row
+grows. It does **not** get `overflow-x-auto`. Two things go wrong when it does,
+and the first is invisible on the machines this project is developed on: the
+box's own height then depends on the platform's scrollbar, because an
+auto-height `overflow-x-auto` box grows by the gutter a classic space-taking bar
+needs - on the reverted attempt's analysis in issue #20, about 15px, so a 32px
+group measures about 47px on Windows and most Linux and 32px on macOS overlay
+scrollbars. Those two are inherited rather than observed here, and cannot be
+observed here: this project's machines have overlay scrollbars, which is itself
+why the scroller was rejected as unverifiable. The second is that a scrollport
+clips the focus rings of the controls inside it, on both axes: `outline` is not
+part of the border box, so `scroll-into-view` slices the ring of the very
+control the scrolling exists to reach. This was tried on `chartControlGroup` and
+reverted. **Scrolling remains correct for content**, and every `overflow-auto`
+in `src/` is that kind: a region whose height a parent already fixes - the
+Active Orders card list, the assembly panel's content - so its own content does
+not decide its size. The consequence, and the reason there is no
+`scrollbar-width`, `scrollbar-gutter` or `::-webkit-scrollbar` rule anywhere:
+the app never puts a scrollbar somewhere its width could change a layout, so it
+never has to style one. `ChartHeader.dom.test.tsx` pins the chart's control
+groups against both halves of this.
+
+**`panelTitleBar`'s `h-16` has exactly one exception, and it is written down
+next to the constant.** `wrappingPanelTitleBar` in `src/styles/shared.ts` is the
+same rail with the height relaxed to a floor and wrapping allowed, and the chart
+panel's title bar is its only user - the only title bar carrying controls rather
+than a title alone. Seven timeframe buttons could not fit beside the pair and the
+price, and with a fixed height the overflow was *drawn outside the panel's*
+`overflow-hidden`: measured on `main` with the offline warning showing, the
+trailing controls sat up to 144.53px past the panel edge at every viewport below
+480px, and up to 132.53px past it in the 1024-1100px band where the chart panel
+is at its 300px floor. Unreachable by any input, with nothing to scroll them back.
+The exception costs nothing where the constant matters: the three title bars are
+only side by side above `lg` - below it the layout is tabbed - and this bar
+measures **exactly 64px at every width from 360px to 1920px**, wrapped or not,
+because two lines come to 20px of text plus a 12px row gap plus a 24px control,
+which is 56px and inside the floor. Only at 320px does it exceed 64, and there no
+two panels share a screen. The assembly and Active Orders bars take
+`panelTitleBar` unchanged. A new panel takes `panelTitleBar`, not this.
 
 **The desktop shell only has a height above `lg`.** `body`/`#root` are
 content-sized, so `h-full` resolves to `auto` unless something above it commits to
@@ -430,9 +475,9 @@ folklore:
 - **`chartToggleButton` carries `min-h-6`/`min-w-6`, the 24px WCAG 2.2 SC 2.5.8
   minimum target size.** Padding alone does not reach it: an 11px label with
   `leading-none` in `py-1` measures 21px tall, which is what every control in
-  both chart toolbar rows rendered at before. `chartHeaderSecondaryRow`'s
-  `min-h` is derived from that floor plus its own padding, so the lazy fallback
-  stays the same height as the real header. Measure a new control rather than
+  both chart toolbar rows rendered at before. It is the floor for a control, and
+  nothing else derives from it: the lazy fallback matches the real header's
+  height by being the same component, not by any row floor. Measure a new control rather than
   reasoning about its classes - `getBoundingClientRect()` in the browser is the
   check, and `#tv-attr-logo` in `src/index.css` is the same fix applied to the
   chart library's own attribution link.
@@ -457,16 +502,19 @@ folklore:
   cannot leave the other behind.
 
 **Every panel title bar takes its geometry from `panelTitleBar` in
-`src/styles/shared.ts`.** The assembly panel's pattern selector, the chart's title
-row and the Active Orders title all use it, so all three titles share one height,
-one 16px rail and one centre line. Two bars that merely agreed is how they came to
-disagree by 11.5px in height and 194.14px on the rail. `panelHeaderBar` is that
-geometry plus the bottom border and the background, for a panel whose header is a
-single bar: the assembly panel and Active Orders. The chart panel is not that
-shape - it carries a toolbar row under its title bar, so its header block is
-taller than the other two and `chartHeader` draws the border and the background
-around both rows. It is the title bars that line up, not the header blocks. A new
-panel takes the constant rather than its own copy.
+`src/styles/shared.ts`, or from its one documented exception.** The assembly
+panel's pattern selector and the Active Orders title take the constant itself;
+the chart's title row takes `wrappingPanelTitleBar`, the exception above, which
+is the same rail with the height relaxed to a floor. All three titles still share
+one height, one 16px rail and one centre line, which is what the rule is for.
+Two bars that merely agreed is how they came to disagree by 11.5px in height and
+194.14px on the rail. `panelHeaderBar` is that geometry plus the bottom border and
+the background, for a panel whose header is a single bar: the assembly panel and
+Active Orders. The chart panel is not that shape - it carries a toolbar row under
+its title bar, so its header block is taller than the other two and `chartHeader`
+draws the border and the background around both rows. It is the title bars that
+line up, not the header blocks. A new panel takes `panelTitleBar` rather than its
+own copy, and not the exception - that one is spoken for.
 
 **A scrolling panel scrolls with `overflow-auto`, and is bounded by its row
 rather than by a number.** `overflow-scroll` reserves and draws a bar on both

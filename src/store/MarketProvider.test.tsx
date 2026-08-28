@@ -410,6 +410,14 @@ describe("MarketProvider after a failed request", () => {
         String(BTC_USD.priceDecimals),
       );
     });
+    // The rules being on screen is not yet the provider having finished with
+    // them: the render that shows them commits one task before the effect that
+    // takes the focus and online listeners back off, and `waitFor` watches the
+    // DOM, so it can return inside that window. Flush it, or the listeners the
+    // load was supposed to retire are still attached when the events below
+    // fire - which is a second request for an answer already in hand, and the
+    // exact defect this test exists to catch reported as a flake.
+    await act(async () => {});
     const afterLoad = fetchSpy.mock.calls.length;
 
     await act(async () => {

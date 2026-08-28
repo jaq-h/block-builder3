@@ -58,9 +58,11 @@ export const columnsWrapper = "flex flex-1 gap-1.5";
 // =============================================================================
 
 // The assembly panel's own panel header. Its geometry - height, rail, border,
-// background - comes from `panelHeaderBar` so that it and the chart panel's
-// header stay one continuous rule across the two columns; only what this bar
-// carries is written here.
+// background - comes from `panelHeaderBar`, so its title sits at the same
+// height and on the same rail as the chart panel's title bar beside it. It is
+// the title bars that line up, not the header blocks: the chart's carries a
+// toolbar row under its title and draws its own rule around both. Only what
+// this bar carries is written here; `src/styles/shared.ts` owns the geometry.
 export const patternSelectorRow = cn(panelHeaderBar, "gap-2");
 
 export const patternButton = cva(
