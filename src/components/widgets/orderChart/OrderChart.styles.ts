@@ -87,8 +87,9 @@ export const chartHeaderPrimaryRow = cn(
  * is: both are now the same component (`ChartHeader`), so they measure equal by
  * construction at every width. A constant could not have done it anyway - what
  * a wrapped row measures depends on the panel's width, and at a 1024px viewport
- * the real header stood 166px against the placeholder's 102px while the floor
- * was in place and agreeing with itself.
+ * the real header stood 139px against the placeholder's 103px while the floor
+ * was in place and agreeing with itself, a 36px jump - the same one it made at
+ * 390px.
  */
 export const chartHeaderSecondaryRow =
   "flex flex-wrap items-center justify-between gap-3 px-4 py-1.5 pb-2";

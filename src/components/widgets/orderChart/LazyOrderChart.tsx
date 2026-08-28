@@ -26,10 +26,11 @@ interface LazyOrderChartProps {
  * The header is the *same component* the real panel renders, with its controls
  * omitted - not a second header built to match. Two hand-written headers is
  * exactly how they came to differ: once either row wrapped, the real one stood
- * 166px tall at a 1024px viewport against this one's 102px, and the chart body
- * jumped 64px the moment the chunk landed. Height is not something a constant
- * can hold equal here, because what a wrapped row measures depends on the
- * panel's width; sharing the markup holds it equal by construction.
+ * 139px tall at a 1024px viewport against this one's 103px, and the chart body
+ * jumped 36px the moment the chunk landed - the same 36px jump it made at
+ * 390px. Height is not something a constant can hold equal here, because what a
+ * wrapped row measures depends on the panel's width; sharing the markup holds it
+ * equal by construction.
  *
  * The pair is read from the market context by `ChartHeader` rather than named
  * here. It used to say "BTC / USD" outright, which was invisible while the app

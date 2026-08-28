@@ -26,11 +26,12 @@ import {
 // than by a number kept in step by hand.
 //
 // They were two hand-written headers, and they measured differently the moment
-// either row wrapped: at a 1024px viewport the real header stood 166px tall
-// against the placeholder's 102px, so the chart body jumped 64px upward the
-// instant the chunk landed. `chartHeaderSecondaryRow`'s `min-h` was the previous
-// answer, and a floor cannot be one - what a wrapped row measures depends on the
-// panel's width, not on a constant.
+// either row wrapped: at a 1024px viewport the real header stood 139px tall
+// against the placeholder's 103px, so the chart body jumped 36px the instant
+// the chunk landed, and the same 36px jump was there at 390px.
+// `chartHeaderSecondaryRow`'s `min-h` was the previous answer, and a floor
+// cannot be one - what a wrapped row measures depends on the panel's width, not
+// on a constant.
 //
 // **Nothing here may import `lightweight-charts`, directly or transitively.**
 // This module is reached from the eager chunk, so a value import of the library
