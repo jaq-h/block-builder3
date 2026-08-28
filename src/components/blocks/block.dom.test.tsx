@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import Block, { BLOCK_INSTRUCTIONS_ID } from "./block";
 import { getSnapshot } from "@common/dragOverlayStore";
+import type { PriceAxisLeg } from "@utils/blockMapping";
 import {
   installPointerCapture,
   type PointerCaptureTracker,
@@ -459,22 +460,110 @@ describe("Block, the removal it offers", () => {
       />,
     );
 
-  it("names the order and its cell, so two of a kind are told apart", () => {
+  it("names the order, its leg and its cell, so two of a kind are told apart", () => {
     placed({ onRemove: vi.fn() });
 
     expect(
       screen.getByRole("button", {
-        name: "Remove Limit order, Entry column, primary row",
+        name: "Remove Limit limit order, Entry column, primary row",
       }),
     ).toBeInTheDocument();
+  });
+
+  // The two legs of a dual-axis order type carry the SAME label and sit in the
+  // SAME cell - `createBlocksFromOrderType` gives both "Stop Loss Limit" - so
+  // without the leg both controls are named identically and a screen-reader or
+  // voice-control user cannot tell which one they are about to destroy.
+  it("separates the two legs of one order type by their leg", () => {
+    const legName = (leg: PriceAxisLeg) => {
+      const { unmount } = render(
+        <Block
+          id={`b-${leg}`}
+          abrv="SLL"
+          label="Stop Loss Limit"
+          leg={leg}
+          yPosition={25}
+          direction="upside"
+          cellDescription="Entry column, primary row"
+          onRemove={vi.fn()}
+        />,
+      );
+      const name = screen
+        .getByRole("button", { name: /^Remove / })
+        .getAttribute("aria-label");
+      unmount();
+      return name;
+    };
+
+    expect(legName("trigger")).toBe(
+      "Remove Stop Loss Limit trigger order, Entry column, primary row",
+    );
+    expect(legName("limit")).toBe(
+      "Remove Stop Loss Limit limit order, Entry column, primary row",
+    );
+  });
+
+  // `legInCell` answers nothing for a cell that draws no axis - a Market order
+  // in a bulk cell - and the name must not invent one. This component must
+  // never work the answer out again from `axis` or `axes`; the cell is the only
+  // thing that can answer it.
+  it("names no leg for a block its cell draws on no axis at all", () => {
+    render(
+      <Block
+        id="m1"
+        abrv="Mkt"
+        label="Market"
+        leg={null}
+        cellDescription="Entry column, row 2"
+        onRemove={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /^Remove / }),
+    ).toHaveAttribute("aria-label", "Remove Market order, Entry column, row 2");
   });
 
   it("removes on a click, for a block no drag could take off the grid", () => {
     const onRemove = vi.fn();
     placed({ onRemove });
 
-    fireEvent.click(screen.getByRole("button", { name: /^Remove Limit order/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Remove Limit limit order/ }));
 
+    expect(onRemove).toHaveBeenCalledWith("b1");
+  });
+
+  // THE CONTROL REMOVES ON `click` AND ON NOTHING ELSE.
+  //
+  // It overlaps the tile's top-right corner, so a press meant to start a drag
+  // can land on it. In a browser that press destroys nothing: `click` fires at
+  // the nearest common ancestor of the pointer-down and pointer-up targets, so
+  // a press that travels away fires no click on the control at all.
+  //
+  // That behaviour cannot be reproduced here - jsdom neither synthesises
+  // `click` from pointer events nor implements the common-ancestor target
+  // algorithm - so asserting "no removal" after firing pointer events alone
+  // would pass on jsdom's missing click and prove nothing. What IS testable is
+  // the component's own wiring, which is the thing that could regress: the
+  // control must carry no pointer handler that removes. The click above and the
+  // pointer sequence below are asserted as a pair, so the test can only pass
+  // when removal is bound to `click` and to nothing else.
+  it("removes on no pointer event, so a press that travels away destroys nothing", () => {
+    const onRemove = vi.fn();
+    placed({ onRemove });
+    const remove = screen.getByRole("button", {
+      name: /^Remove Limit limit order/,
+    });
+
+    fireEvent(remove, pointer("pointerdown", { x: 0, y: 0 }));
+    fireEvent(remove, pointer("pointermove", { x: 80, y: 80 }));
+    fireEvent(remove, pointer("pointerup", { x: 80, y: 80 }));
+
+    expect(onRemove).not.toHaveBeenCalled();
+
+    // The same control, the same render: a genuine click still removes, so the
+    // assertion above is about the handler and not about a dead control.
+    fireEvent.click(remove);
     expect(onRemove).toHaveBeenCalledWith("b1");
   });
 
@@ -509,7 +598,7 @@ describe("Block, the removal it offers", () => {
   it("is on screen without a cursor ever having been near it", () => {
     placed({ onRemove: vi.fn() });
 
-    const remove = screen.getByRole("button", { name: /^Remove Limit order/ });
+    const remove = screen.getByRole("button", { name: /^Remove Limit limit order/ });
     expect(remove).not.toHaveClass("hidden");
     // 24px, the WCAG 2.2 SC 2.5.8 minimum target size, and `p-0` is what makes
     // that number real: the layered `button` default is `padding: 0.6em 1.2em`,

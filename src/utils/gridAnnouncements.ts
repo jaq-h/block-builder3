@@ -35,6 +35,7 @@ import {
   type CommandSource,
   type GridSource,
 } from "./blockCommand";
+import type { PriceAxisLeg } from "./blockMapping";
 import type {
   CellPosition,
   PlacementResult,
@@ -141,7 +142,21 @@ export type GridOutcome =
    * also what lets the sentence name the cell without a fallback: a grid source
    * always carries one.
    */
-  | { kind: "removed"; source: GridSource; releasedCarry?: boolean }
+  | {
+      kind: "removed";
+      source: GridSource;
+      /**
+       * Which price axis the cell drew this block on, from `legInCell` - the
+       * one owner of that question - or absent for a cell that draws no axis.
+       *
+       * A dual-axis order type places two blocks in one cell under one label,
+       * so the cell alone tells them apart no better than the label does. This
+       * is the same leg the block's own remove control is named with, so what
+       * the user pressed and what they then hear are one fact.
+       */
+      leg?: PriceAxisLeg | null;
+      releasedCarry?: boolean;
+    }
   | {
       kind: "dragEnded";
       source: CommandSource;
@@ -427,11 +442,16 @@ export const describeOutcome = (
     // safe to read here where `carryEnded` may not read it - the removal looks
     // the block up in the grid it is about to write, so the cell is one the grid
     // confirmed a moment ago rather than one snapshotted at pick-up time.
+    //
+    // The leg for the same reason one step further in: the two legs of a
+    // dual-axis order share a label AND a cell, so the cell tells them apart no
+    // better than the label does.
     case "removed":
-      return `Removed ${describeSource(outcome.source)} from ${describeCell(
-        outcome.source.origin,
-        pattern,
-      )}.`;
+      return `Removed ${describeSource(
+        outcome.leg
+          ? { ...outcome.source, label: `${outcome.source.label} ${outcome.leg}` }
+          : outcome.source,
+      )} from ${describeCell(outcome.source.origin, pattern)}.`;
 
     case "dragEnded":
       return outcome.reason === "offGrid"

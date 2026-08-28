@@ -628,7 +628,43 @@ describe("useBlockCommand", () => {
 
       expect(removeFromGrid).toHaveBeenCalledWith("b1");
       expect(result.current.announcement.text).toBe(
-        "Removed Limit block from Entry column, primary row.",
+        "Removed Limit limit block from Entry column, primary row.",
+      );
+    });
+
+    // The leg, because the cell cannot separate what shares it: a dual-axis
+    // order type puts two blocks in one cell under one label, so "Removed Stop
+    // Loss Limit block from Entry column, primary row" was said identically for
+    // either leg and the survivor is half an order. `legInCell` is asked of the
+    // block's own cell rather than derived here, so the sentence names the same
+    // leg the control the user pressed was named with.
+    it("names which leg of a dual-axis order went", () => {
+      const { grid, blocks } = gridWithOrder("stop-loss-limit");
+      const { result } = setup(grid);
+      const trigger = blocks.find((block) => block.axes.includes("trigger"))!;
+      const limit = blocks.find((block) => block.axes.includes("limit"))!;
+
+      act(() => result.current.removeBlock(trigger.id));
+      expect(result.current.announcement.text).toBe(
+        "Removed Stop Loss Limit trigger block from Entry column, primary row.",
+      );
+
+      act(() => result.current.removeBlock(limit.id));
+      expect(result.current.announcement.text).toBe(
+        "Removed Stop Loss Limit limit block from Entry column, primary row.",
+      );
+    });
+
+    // A cell that draws no axis has no leg to name, and `legInCell` answers
+    // nothing for one. The sentence must not invent a leg from the block's own
+    // `axes`, which is the second derivation `blockMapping` exists to prevent.
+    it("names no leg for a block in a cell that draws no axis", () => {
+      const { result } = setup(gridWithMovableBlock());
+
+      act(() => result.current.removeBlock("b1"));
+
+      expect(result.current.announcement.text).toBe(
+        "Removed Market block from Entry column, primary row.",
       );
     });
 

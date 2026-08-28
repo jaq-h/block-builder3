@@ -352,6 +352,28 @@ describe("describeOutcome, a drag that ends without a placement", () => {
     );
   });
 
+  // The two legs of a dual-axis order type share a label AND a cell, so neither
+  // names the one that went. The leg is the only thing left, and it is the same
+  // leg the block's own remove control is named with.
+  it("names the leg a removed block was drawn on, where its cell drew one", () => {
+    const stopLossLimit = { ...placed, label: "Stop Loss Limit" };
+
+    expect(say({ kind: "removed", source: stopLossLimit, leg: "trigger" })).toBe(
+      "Removed Stop Loss Limit trigger block from Entry column, primary row.",
+    );
+    expect(say({ kind: "removed", source: stopLossLimit, leg: "limit" })).toBe(
+      "Removed Stop Loss Limit limit block from Entry column, primary row.",
+    );
+  });
+
+  // A cell that draws no axis has no leg to give, and the sentence must not
+  // invent one: `legInCell` answers `null` there and the block keeps its name.
+  it("names no leg for a block whose cell draws no axis", () => {
+    expect(say({ kind: "removed", source: placed, leg: null })).toBe(
+      "Removed Market block from Entry column, primary row.",
+    );
+  });
+
   it("says a palette drag released off the grid created nothing", () => {
     expect(say({ kind: "dragEnded", source: palette, reason: "offGrid" })).toBe(
       "Released outside the grid. Market order was not placed.",

@@ -650,8 +650,22 @@ cost of one hit-testing rule for both drags rather than two.
 The Remove control is **rendered rather than revealed on hover**: a control shown on
 `:hover` exists for a mouse and for nothing else, and parity across mouse, keyboard and
 touch is what this affordance is for. It is a 24px target (WCAG 2.2 SC 2.5.8), quiet at rest
-and red under the cursor or the focus ring, and it names the order and its cell
-("Remove Limit order, Entry column, primary row") so two orders of one type are told apart.
+and red under the cursor or the focus ring, and it names the order, its leg and its cell
+("Remove Limit limit order, Entry column, primary row") so two orders of one type are told
+apart - and so are the **two legs of one order**, which share a label *and* a cell and which
+nothing else could separate. The removal sentence carries the same leg ("Removed Stop Loss
+Limit trigger block from Entry column, primary row."). The leg appears only where the cell
+really draws the block on a price axis, and it comes from `legInCell` - the same owner the
+slider's name takes it from, so what was pressed and what is then heard are one fact. A
+Market order in a bulk cell keeps "Remove Market order, Entry column, row 2".
+
+It removes on **`click`** and on no pointer event. The control overlaps the tile's top-right
+corner, so a press aimed at starting a drag can land on it - and a browser fires `click` at
+the nearest common ancestor of the pointer-down and pointer-up targets, so a press that
+travels away fires none and destroys nothing. That press is inert in the other direction
+too: the control is a sibling drawn over the tile rather than a descendant, so no drag
+starts either. A *tap* on that corner does remove the block, which is the accepted cost of a
+routine operation D9 makes the correction path; see `AGENTS.md` for the tradeoff in full.
 
 Removal writes through `removeBlockFromGrid` in `src/utils/grid.ts`, which takes the block
 out **and clears every `linkedBlockId` that named it**, in one function. That pairing is not

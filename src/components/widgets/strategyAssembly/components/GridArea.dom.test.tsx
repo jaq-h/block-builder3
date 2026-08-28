@@ -14,8 +14,9 @@ import { GridDataContext } from "../contexts/GridDataContext";
 import { DragContext } from "../contexts/DragContext";
 import { HoverContext } from "../contexts/HoverContext";
 import { StaticContext } from "../contexts/StaticContext";
-import { ORDER_TYPES } from "@data/orderTypes";
+import { getOrderType, ORDER_TYPES } from "@data/orderTypes";
 import { clearGrid } from "@utils/grid";
+import { createBlocksFromOrderType } from "@utils/blockFactory";
 import {
   addBlocksToCell,
   orderConfigFromGrid,
@@ -732,7 +733,7 @@ describe("GridArea, tapping a placed block", () => {
     expect(note).toHaveTextContent(/Remove button/);
     expect(
       screen.getByRole("button", {
-        name: "Remove Limit order, Entry column, primary row",
+        name: "Remove Limit limit order, Entry column, primary row",
       }),
     ).toBeInTheDocument();
   });
@@ -832,6 +833,11 @@ describe("GridArea, tapping a placed block", () => {
 // misplaced order, which is a correction path the product did not have.
 
 describe("GridArea, removing a placed block", () => {
+  /**
+   * `name` is the order's label plus its leg where its cell draws one - the
+   * same pairing the slider beside it is named with - and the label alone where
+   * the cell draws no axis at all.
+   */
   const removeControl = (name: string) =>
     screen.getByRole("button", { name: new RegExp(`^Remove ${name} order,`) });
 
@@ -853,7 +859,7 @@ describe("GridArea, removing a placed block", () => {
     fireEvent.keyDown(slider, { key: "Delete" });
 
     expect(announcement()).toBe(
-      "Removed Limit block from Entry column, primary row.",
+      "Removed Limit limit block from Entry column, primary row.",
     );
   });
 
@@ -881,11 +887,11 @@ describe("GridArea, removing a placed block", () => {
   it("removes a priced block on a mouse click of its own control", () => {
     renderPlacedLimit(25);
 
-    clickBlock(removeControl("Limit"));
+    clickBlock(removeControl("Limit limit"));
 
     expect(screen.queryByRole("slider")).not.toBeInTheDocument();
     expect(announcement()).toBe(
-      "Removed Limit block from Entry column, primary row.",
+      "Removed Limit limit block from Entry column, primary row.",
     );
   });
 
@@ -895,7 +901,7 @@ describe("GridArea, removing a placed block", () => {
   it("removes a priced block on a tap of its own control", () => {
     renderPlacedLimit(25);
 
-    tap(removeControl("Limit"));
+    tap(removeControl("Limit limit"));
 
     expect(screen.queryByRole("slider")).not.toBeInTheDocument();
   });
@@ -914,6 +920,54 @@ describe("GridArea, removing a placed block", () => {
 
     expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, empty");
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+  });
+
+  // THE HARDEST PAIR TO TELL APART, AND THE ONE THE CELL CANNOT SEPARATE.
+  //
+  // `createBlocksFromOrderType` gives both legs of a dual-axis order type the
+  // same `label` and puts them in the SAME cell, so the label plus the cell
+  // names neither of them: both controls read "Remove Stop Loss Limit order,
+  // Entry column, primary row" and both removals said the same sentence. A
+  // screen-reader or voice-control user could not tell which leg they were
+  // about to destroy, nor which one had gone - and the survivor is half an
+  // order. Built with the real factory, because the duplicate label is its
+  // doing rather than a fixture's.
+  it("separates the two legs of one dual-axis order, in the control and in what it says", () => {
+    const place = () => {
+      const definition = getOrderType("stop-loss-limit");
+      if (!definition) throw new Error("stop-loss-limit is not a palette entry");
+      const grid = addBlocksToCell(
+        clearGrid(2, 3),
+        { col: 0, row: 1 },
+        createBlocksFromOrderType(definition, { baseId: "t", counter: 0 }).blocks,
+        "conditional",
+      );
+      return render(<Harness initialGrid={grid} pattern="conditional" />);
+    };
+
+    const { unmount } = place();
+    expect(
+      screen.getByRole("button", {
+        name: "Remove Stop Loss Limit trigger order, Entry column, primary row",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Remove Stop Loss Limit limit order, Entry column, primary row",
+      }),
+    ).toBeInTheDocument();
+
+    tap(removeControl("Stop Loss Limit trigger"));
+    expect(announcement()).toBe(
+      "Removed Stop Loss Limit trigger block from Entry column, primary row.",
+    );
+    unmount();
+
+    place();
+    tap(removeControl("Stop Loss Limit limit"));
+    expect(announcement()).toBe(
+      "Removed Stop Loss Limit limit block from Entry column, primary row.",
+    );
   });
 
   // The block that was focused is the block being removed, so leaving focus
@@ -987,7 +1041,7 @@ describe("GridArea, removing a placed block", () => {
 
     expect(screen.getByText(limitPrice(15))).toBeInTheDocument();
 
-    tap(removeControl("Limit"));
+    tap(removeControl("Limit limit"));
 
     expect(screen.queryByText(limitPrice(25))).toBeNull();
     expect(screen.getByText(limitPrice(15))).toBeInTheDocument();

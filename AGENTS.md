@@ -827,6 +827,45 @@ box below its own padding - without it the 24px WCAG 2.2 SC 2.5.8 target measure
 in Chrome, wider than the 40px tile it sits on. Measure a new control rather than reasoning
 about its classes.
 
+**Its name and the removal sentence both carry the block's LEG, and from one owner.**
+`createBlocksFromOrderType` gives both legs of a dual-axis order type the same `label` and
+puts them in the same cell, so the label plus the cell names neither of them: two controls
+read "Remove Stop Loss Limit order, Entry column, primary row" and either removal said the
+same sentence, leaving a screen-reader or voice-control user unable to tell which leg they
+destroyed and holding half an order. The name is `Remove <label> <leg> order, <cell>` and
+the sentence is "Removed Stop Loss Limit trigger block from Entry column, primary row."
+The leg appears **only where the cell really draws the block on a price axis** - a Market
+order in a bulk cell keeps "Remove Market order, <cell>" - and it comes from `legInCell` in
+`blockMapping.ts`, the one owner of axis membership, asked by `GridCell` for the control and
+by `removeBlock` for the `removed` outcome. Neither may re-derive it from `axis` or `axes`.
+`Block` derives the control's name and the slider's from one `legName`, so the two names a
+block carries cannot drift.
+
+**The control fires on `click`, and must never be given a pointer-down handler.** Two
+behaviours of the tile's top-right corner follow from that, and both are deliberate - do not
+"fix" either:
+
+1. **A tap landing on the 16x16 region where the control overlaps the tile REMOVES the
+   block** rather than selecting it. Accepted, not overlooked: D9 makes delete-and-rebuild
+   the sanctioned correction for a misplaced block, so removal is routine rather than rare,
+   and taxing every pointer removal with an arm-then-confirm second press to guard an
+   extreme-corner mis-tap is the wrong trade - the cost of the mistake is re-placing one
+   block, not lost work. An undo affordance would be a new product surface. Offsetting the
+   control would move it into the percentage chip and the price label, which were verified
+   clear; shrinking the visible disc keeps the same 24px hit area while hiding it.
+2. **A press that BEGINS on the control and drags away is inert**: nothing is removed and
+   the block does not drag. The control is a sibling drawn on top of the tile rather than a
+   descendant, so the tile's `onPointerDown` never fires. Left as it is - forwarding the
+   gesture into `useFreeDrag`/`useVerticalDrag` would reach into the gesture layer this file
+   guards most heavily, for a non-destructive annoyance.
+
+The click-only rule is what makes 2 inert rather than dangerous: the browser fires `click` at
+the nearest common ancestor of the pointer-down and pointer-up targets, so a press aimed at
+the corner that travels away fires none at all. `block.dom.test.tsx` pins it under "removes
+on no pointer event" - jsdom neither synthesises `click` from pointer events nor implements
+that target algorithm, so the test asserts the component's wiring in a pair with the click
+that does remove, rather than resting on jsdom's missing click.
+
 **The refusal is legible, not silent.** Three things say so together and none of them is
 optional: the announcer's `moveRefused` sentences, a visible note under the grid
 (`cellLockedNote`, ordinary text - never a second live region), and no cell drawing itself

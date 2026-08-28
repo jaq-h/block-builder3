@@ -398,7 +398,18 @@ const Block: FC<BlockProps> = ({
   const isFreeFormDragging = isFreeDragging;
 
   const name = label ?? abrv;
-  const axisName = leg ?? "limit";
+  // The block, named so that the two legs of one dual-axis order type can be
+  // told apart. `createBlocksFromOrderType` gives both legs of a Stop Loss
+  // Limit the same `label` and puts them in the same cell, so the label plus
+  // the cell names neither of them - the leg is the only thing left. Derived
+  // once, because the slider's name and the remove control's name are two names
+  // for one block and two derivations of that is how they come to disagree.
+  //
+  // `leg` is null wherever the cell draws no price axis at all - a Market order
+  // in a bulk cell - and that block keeps its plain name. Its one owner is
+  // `legInCell` in `utils/blockMapping.ts`, which the cell has already asked;
+  // this component must not work it out again from `axis` or `axes`.
+  const legName = leg ? `${name} ${leg}` : name;
   // Signed offset from the market price: positive above it, negative below.
   // That makes the value move the same way as the block does on screen, in
   // both scale directions, which is what a vertical slider has to do. The sign
@@ -406,10 +417,7 @@ const Block: FC<BlockProps> = ({
   // this block was drawn with.
   const signedPercent =
     yPosition === undefined ? 0 : signedOffset(yPosition, direction);
-  const sliderLabel = [
-    `${name} ${axisName} price`,
-    cellDescription,
-  ]
+  const sliderLabel = [`${legName} price`, cellDescription]
     .filter(Boolean)
     .join(", ");
   // At the market price itself there is no direction to sign, and "+0.00%"
@@ -487,12 +495,22 @@ const Block: FC<BlockProps> = ({
         <button
           type="button"
           // Named for the order rather than for the glyph, and carrying the
-          // cell, because two cells can hold orders of the same type and a
-          // list of identical "Remove" buttons names none of them.
-          aria-label={`Remove ${name} order${
+          // leg and the cell, because two cells can hold orders of the same
+          // type and one cell can hold both legs of the same order - a list of
+          // identical "Remove" buttons names none of them. `legName` is the
+          // same name the slider beside it takes.
+          aria-label={`Remove ${legName} order${
             cellDescription ? `, ${cellDescription}` : ""
           }`}
           className={removeButton}
+          // ON `click`, DELIBERATELY, AND NEVER ON A POINTER EVENT.
+          //
+          // The control overlaps the tile's top-right corner, so a press aimed
+          // at starting a drag can land on it. A press that then travels away
+          // fires no click at all - the browser fires `click` at the nearest
+          // common ancestor of the pointer-down and pointer-up targets - so
+          // that gesture destroys nothing. Giving this an `onPointerDown` would
+          // turn every such press into a deleted order, with no undo.
           onClick={(e) => {
             // The cell listens for a click to place whatever is in hand.
             // Removing a block is not placing one, so this click stops here -

@@ -19,7 +19,7 @@ import {
   type ProviderSource,
 } from "../utils/blockCommand";
 import { findBlockInGrid } from "../utils/grid";
-import { cellDrawsPriceAxis } from "../utils/blockMapping";
+import { cellDrawsPriceAxis, legInCell } from "../utils/blockMapping";
 import type { PickUpRefusal } from "../utils/gridAnnouncements";
 import { holdBlockInHand } from "./blockInHand";
 import type { GridAnnouncer } from "./useGridAnnouncer";
@@ -278,6 +278,13 @@ export const useBlockCommand = ({
       origin: { col: found.col, row: found.row },
     };
 
+    // Which leg of its order type this was, if its cell drew it on a price
+    // axis at all. A dual-axis order type puts two blocks in one cell under one
+    // label, so the sentence needs it to name the one that went - and this is
+    // the block's own cell, asked of `legInCell`, the one owner of that
+    // question and the same one that named the control the user just pressed.
+    const leg = legInCell(grid[found.col][found.row], found.block);
+
     removeFromGrid(id);
     // Only when the palette really offers that order type. A focus request
     // naming nothing on screen is never honoured and sits waiting for whatever
@@ -285,7 +292,7 @@ export const useBlockCommand = ({
     if (providerBlocks.some((entry) => entry.type === found.block.orderType)) {
       setFocusRequest(found.block.orderType);
     }
-    report({ kind: "removed", source, releasedCarry });
+    report({ kind: "removed", source, leg, releasedCarry });
   };
 
   const cancel = ({ restoreFocus = true }: CancelOptions = {}) => {
