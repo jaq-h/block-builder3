@@ -53,6 +53,7 @@ export {
   stampCellDirection,
   addBlocksToCell,
   normaliseCellDirections,
+  reverseGrid,
   priceForOffset,
   priceForOrderOffset,
   signedOffset,

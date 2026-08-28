@@ -317,13 +317,29 @@ export const addBlocksToCell = (
  */
 export const normaliseCellDirections = (grid: GridData): GridData =>
   grid.map((column) =>
-    column.map((cell) => {
-      const direction = cellDirection(cell);
-      return cell.map((block) =>
-        block.direction === direction ? block : { ...block, direction },
-      );
-    }),
+    column.map((cell) => stampCellDirection(cell, cellDirection(cell))),
   );
+
+/**
+ * Swap the entry and exit columns, and flip the scale every cell draws.
+ *
+ * The flip belongs to the cell rather than to each block in it, so it goes
+ * through `stampCellDirection` like every other write of a direction: a grid
+ * that arrived unstamped comes out of a reverse on the invariant rather than
+ * carrying its old disagreement into the mirrored column.
+ *
+ * It lives here rather than in the provider that calls it because a cell's
+ * direction is this module's fact, and a caller spelling out its own flip is
+ * the second derivation this module exists to remove.
+ */
+export const reverseGrid = (grid: GridData): GridData => {
+  const flipped = (direction: BlockDirection): BlockDirection =>
+    direction === "downside" ? "upside" : "downside";
+  const flipCell = (cell: BlockData[]): BlockData[] =>
+    stampCellDirection(cell, flipped(cellDirection(cell)));
+
+  return [grid[1].map(flipCell), grid[0].map(flipCell)];
+};
 
 // =============================================================================
 // THE DERIVED ANSWER EVERY CONSUMER ACTUALLY WANTS

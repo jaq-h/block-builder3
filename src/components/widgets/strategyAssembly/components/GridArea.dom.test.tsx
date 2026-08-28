@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  useEffect,
   useRef,
   useState,
   type FC,
@@ -15,8 +16,8 @@ import { HoverContext } from "../contexts/HoverContext";
 import { StaticContext } from "../contexts/StaticContext";
 import { ORDER_TYPES } from "@data/orderTypes";
 import { clearGrid } from "@utils/grid";
-import { orderConfigFromGrid } from "@utils/blockMapping";
-import { mapGridToOrders } from "@api/orderMapper";
+import { orderConfigFromGrid, reverseGrid } from "@utils/blockMapping";
+import { mapGridToOrders, validateOrder } from "@api/orderMapper";
 import { BLOCK_HEIGHT, getBlockTopPx } from "@styles/grid";
 import type {
   BlockData,
@@ -140,6 +141,16 @@ const Harness: FC<{
    * clicking it is one of the things that puts a carried block down.
    */
   outsideControl?: boolean;
+  /**
+   * Publishes the grid the provider is holding after every change.
+   *
+   * What is drawn and what is stored are deliberately not the same for a
+   * position no axis could have produced: display clamps a non-finite one to
+   * the market line so nothing prints `NaN%`, while the store keeps it intact
+   * so `validateOrder` still refuses the payload. Only the stored value can
+   * tell those two apart, and only the stored value reaches Kraken.
+   */
+  onGrid?: (grid: GridData) => void;
 }> = ({
   initialGrid,
   pattern = "conditional",
@@ -148,6 +159,7 @@ const Harness: FC<{
   refuseStrategyOn,
   strategyLoaded,
   outsideControl,
+  onGrid,
 }) => {
   const [selected, setSelected] = useState<{
     market: Market;
@@ -176,6 +188,10 @@ const Harness: FC<{
   // Held in state rather than read from the prop, so the grid can clear it the
   // way `App` does once it has spoken.
   const [loaded, setLoaded] = useState(strategyLoaded ?? null);
+
+  useEffect(() => {
+    onGrid?.(grid);
+  }, [grid, onGrid]);
 
   return (
     <MarketContext.Provider
@@ -693,6 +709,40 @@ describe("GridArea, tapping a placed block", () => {
     fireEvent.keyDown(slider, { key: "ArrowUp" });
 
     expect(slider).not.toHaveAttribute("aria-valuenow", "-25");
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
+  });
+
+  // Reverse Blocks swaps the entry and exit columns and keeps every block's id,
+  // so the block the note names is still on the grid - in the other column. The
+  // note is a claim about a block IN A CELL, and keyed on the id alone it went
+  // on insisting the order stays where it was placed while the order visibly
+  // changed cells.
+  it("takes the note down when Reverse Blocks moves the order to the other column", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(
+      <Harness
+        initialGrid={grid}
+        pattern="bulk"
+        gridReplacement={reverseGrid(grid)}
+      />,
+    );
+
+    tap(screen.getByRole("button", { name: /^Market order,/ }));
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    // The order is still on the grid, and it is in the other column now.
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, row 2, Market",
+    );
     expect(
       screen.queryByText(/Orders do not move between cells/),
     ).not.toBeInTheDocument();
@@ -2366,5 +2416,84 @@ describe("GridArea, a block whose saved axis disagrees with its leg", () => {
         })}`,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// A STORED POSITION NO AXIS COULD HAVE PRODUCED
+// =============================================================================
+//
+// The principle this whole lane settled on is CLAMP ON READ, NEVER DESTROY
+// INFORMATION ON WRITE: display collapses a non-finite position onto the market
+// line so nothing prints `NaN%`, and the store keeps it intact so
+// `validateOrder`'s `Number.isFinite` guard still has something to refuse.
+//
+// The arrow keys were the last write site breaking it. `NaN + 1` is `NaN`, it
+// walks through `Math.max`/`Math.min` untouched, and the no-op guard comparing
+// it to itself is false - so one press wrote a clamped 0 into the grid, which
+// is the market price, and the corrupt order became a plausible at-market limit
+// order that validated cleanly. A press on a block with no usable position now
+// does nothing at all, because inventing a position the user never chose is the
+// guessing this mapping exists to prevent.
+
+describe("GridArea, arrow keys on a block whose stored position is corrupt", () => {
+  const renderCorruptLimit = () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedLimit(Number.NaN));
+    let stored: GridData = grid;
+    render(
+      <Harness
+        initialGrid={grid}
+        onGrid={(published) => {
+          stored = published;
+        }}
+      />,
+    );
+
+    const track = document.querySelector('[data-axis-track="0-1-limit"]');
+    if (!track) throw new Error("the axis column was not rendered");
+    stubRect(track, TRACK_TOP, TRACK_HEIGHT);
+
+    return {
+      slider: screen.getByRole("slider"),
+      storedPosition: () => stored[0][1][0].yPosition,
+      payload: () =>
+        mapGridToOrders(stored, {
+          market: BTC_USD,
+          currentPrice: MARKET_PRICE,
+          quantity: "0.5",
+        }),
+    };
+  };
+
+  it("draws it on the market line rather than printing a number it cannot", () => {
+    const { slider, storedPosition } = renderCorruptLimit();
+
+    expect(slider).toHaveAttribute("aria-valuenow", "0");
+    expect(Number.isFinite(storedPosition())).toBe(false);
+  });
+
+  it("leaves the position alone, so the payload is still refused", () => {
+    const { slider, storedPosition, payload } = renderCorruptLimit();
+
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+
+    // Not 0, which is what the clamp used to write here: 0 is an offset of
+    // nothing, which prices the order at the market and validates cleanly.
+    expect(Number.isFinite(storedPosition())).toBe(false);
+
+    const [order] = payload();
+    expect(Number.isFinite(Number(order.limit_price))).toBe(false);
+    expect(validateOrder(order)).toContain(
+      "Limit price must be a finite number",
+    );
+  });
+
+  it("still prices a block whose position the axis can express", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+
+    expect(slider).not.toHaveAttribute("aria-valuenow", "-25");
   });
 });

@@ -13,9 +13,9 @@ import {
   findCellAtPosition,
   addBlocksToCell,
   cellDirection,
-  clampOffset,
   isDescending,
   legInCell,
+  offsetForOrder,
   MAX_OFFSET_PERCENT,
   MIN_OFFSET_PERCENT,
   hasConditionalWithoutPrimary,
@@ -174,20 +174,30 @@ const GridArea: FC<GridAreaProps> = ({
   // grid's single voice exists to prevent.
   const [refusedMove, setRefusedMove] = useState<{
     id: string;
+    at: CellPosition;
     label: string;
     reason: Exclude<PickUpRefusal, "noTargets">;
   } | null>(null);
 
-  // The note is about one block, so the block's id is the identity it keeps:
-  // once that block is off the grid, the note is talking about something the
-  // user can no longer see. `clearAll`, `reverseBlocks` and a market switch all
-  // replace the grid wholesale without going near the gestures that reset this,
-  // which is how a note naming a cleared-away order came to sit under an empty
-  // grid. Keyed on the label instead, two Market orders sharing the grid kept
-  // the note alive after the one it named was dragged off.
+  // The note is a claim about one block IN ONE CELL - "this order stays where
+  // it was placed" - so it holds only while that pairing does. Both halves are
+  // load-bearing:
+  //
+  // - The id, because the note is about one block: once it is off the grid the
+  //   note describes something the user can no longer see. `clearAll`,
+  //   `reverseBlocks` and a market switch all replace the grid wholesale
+  //   without going near the gestures that reset this, which is how a note
+  //   naming a cleared-away order came to sit under an empty grid. Keyed on the
+  //   label instead, two Market orders sharing the grid kept the note alive
+  //   after the one it named was dragged off.
+  // - The cell, because `reverseBlocks` swaps the columns while keeping every
+  //   block's id, so the block is still found while it visibly moves to the
+  //   other column - and the note went on insisting it stays in the cell it was
+  //   placed in, beside a block that had just changed cells.
   useEffect(() => {
     if (!refusedMove) return;
-    if (!findBlockInGrid(grid, refusedMove.id)) setRefusedMove(null);
+    const found = findBlockInGrid(grid, refusedMove.id);
+    if (!found || !samePosition(found, refusedMove.at)) setRefusedMove(null);
   }, [grid, refusedMove]);
 
   // ─── Derived values ──────────────────────────────────────────────
@@ -383,8 +393,8 @@ const GridArea: FC<GridAreaProps> = ({
     // (decision D9), so the command model only ever commits palette orders.
     // `refuseMove` is what a press on a placed block reaches instead, and it
     // both speaks and puts the rule on screen.
-    refuseMove: (block, reason) => {
-      setRefusedMove({ id: block.id, label: block.label, reason });
+    refuseMove: (block, at, reason) => {
+      setRefusedMove({ id: block.id, at, label: block.label, reason });
       announcer.report({ kind: "moveRefused", label: block.label, reason });
     },
   });
@@ -675,16 +685,24 @@ const GridArea: FC<GridAreaProps> = ({
    *
    * The grid is the only store: the saved `orderConfig` is derived from it by
    * `orderConfigFromGrid`, so there is no second copy here to keep in step.
-   * `clampOffset` is the mapping owner's, so no gesture can write a position
+   * `offsetForOrder` is the mapping owner's, so no gesture can write a position
    * the axis could not have drawn - which is what made a price of zero
    * reachable.
+   *
+   * `offsetForOrder` rather than `clampOffset`, because this is a WRITE. The
+   * range half is the same in both; the difference is that a non-finite value
+   * is passed through instead of being answered with zero, which is the market
+   * price and a perfectly plausible order. Clamping on write here was the last
+   * place in the app that turned a corrupt position into a submittable one, and
+   * it took only one arrow press to do it. Display still clamps at render, so
+   * nothing draws `NaN%`.
    */
   const setBlockPosition = (id: string, yPosition: number) => {
     // The note tells a priced block's user to change its price with the arrow
     // keys, and this is that price changing. A message that survives the action
     // it asked for reads as though the action failed.
     setRefusedMove(null);
-    const clamped = clampOffset(yPosition);
+    const clamped = offsetForOrder(yPosition);
     setGrid((prev) =>
       prev.map((gridCol) =>
         gridCol.map((rowArray) =>
@@ -734,10 +752,20 @@ const GridArea: FC<GridAreaProps> = ({
    * The keyboard half of the price axis. `delta` is in percentage points
    * towards a *higher price*, so the block always moves the way the arrow
    * points regardless of which side of the market it sits on.
+   *
+   * A block whose stored position is not a finite number is left exactly as it
+   * is. There is no position to nudge from - `NaN + 1` is `NaN`, and it walks
+   * straight through `Math.max`/`Math.min` and through the no-op guard below,
+   * which is false for `NaN` against itself - so the only thing an arrow press
+   * could do is invent a position the user never chose. Inventing one is the
+   * guessing this whole mapping exists to prevent, and it is worse than doing
+   * nothing: the invented value is finite, so it sails past `validateOrder` and
+   * the corrupt order is submitted at the market price instead of refused.
    */
   const handleBlockAdjustPrice = (id: string, delta: number) => {
     const blockInfo = findBlockInGrid(grid, id);
     if (!blockInfo) return;
+    if (!Number.isFinite(blockInfo.block.yPosition)) return;
 
     // Before the no-op guard below: an arrow press at the end of the axis moves
     // nothing, and leaving the note up would say the key did not work.
@@ -800,6 +828,7 @@ const GridArea: FC<GridAreaProps> = ({
       if (result.status === "refused") {
         setRefusedMove({
           id: blockInfo.block.id,
+          at: { col: blockInfo.col, row: blockInfo.row },
           label: blockInfo.block.label,
           reason: "staysInCell",
         });

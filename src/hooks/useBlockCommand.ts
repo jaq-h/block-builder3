@@ -63,12 +63,20 @@ export interface UseBlockCommandOptions {
    * grid-block carry it existed for is gone with it. The owner is handed the
    * block and the reason rather than a sentence, because it has to do two
    * things with them: report the outcome to the announcer, and put the rule on
-   * screen for everyone who is not listening to a live region. The id comes
-   * with the label because the note has to outlive nothing: it is taken down
-   * when *that* block leaves the grid, and two orders can share a label.
+   * screen for everyone who is not listening to a live region.
+   *
+   * The block comes with the cell it is in, because the rule being refused is
+   * about that pairing: the note says this order stays *here*, so it has to be
+   * taken down when the block is no longer here - gone from the grid, or moved
+   * to the other column by Reverse Blocks, which keeps every id. The id comes
+   * with the label for the same reason a cell does: two orders can share a
+   * label, and the note is about one of them. This model has already found the
+   * block, so it hands the cell over rather than leaving the owner to look it
+   * up again and keep a second null check in step.
    */
   refuseMove: (
     block: Pick<BlockData, "id" | "label">,
+    at: CellPosition,
     reason: Exclude<PickUpRefusal, "noTargets">,
   ) => void;
 }
@@ -290,6 +298,7 @@ export const useBlockCommand = ({
     // without has only "remove it and place a new one".
     refuseMove(
       found.block,
+      cell,
       cellDrawsPriceAxis(grid[cell.col][cell.row])
         ? "onPriceAxis"
         : "staysInCell",

@@ -13,6 +13,7 @@ import {
   legOfBlock,
   normaliseCellDirections,
   orderConfigFromGrid,
+  reverseGrid,
   priceForOffset,
   signedOffset,
   stampCellDirection,
@@ -367,6 +368,45 @@ describe("normaliseCellDirections", () => {
     grid[0][1].push(marketOrder());
 
     expect(normaliseCellDirections(grid)[0][1][0].yPosition).toBe(-1);
+  });
+});
+
+describe("reverseGrid", () => {
+  it("swaps the entry and exit columns and flips the scale each cell draws", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(block({ direction: "downside" }));
+    grid[1][0].push(stopLoss({ direction: "upside" }));
+
+    const reversed = reverseGrid(grid);
+
+    expect(reversed[1][1].map((b) => b.id)).toEqual(["sa-limit-1"]);
+    expect(cellDirection(reversed[1][1])).toBe("upside");
+    expect(reversed[0][0].map((b) => b.id)).toEqual(["sa-stop-loss-1"]);
+    expect(cellDirection(reversed[0][0])).toBe("downside");
+  });
+
+  // The flip goes through `stampCellDirection` rather than being applied block
+  // by block, so a cell that arrived disagreeing with itself comes out of a
+  // reverse on the one-scale-per-cell invariant instead of carrying the
+  // disagreement into the mirrored column.
+  it("brings an unstamped cell onto one scale rather than flipping each block", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(block({ direction: "downside" }));
+    grid[0][1].push(stopLoss({ direction: "upside" }));
+
+    const reversed = reverseGrid(grid);
+
+    expect(reversed[1][1].map((b) => b.direction)).toEqual([
+      "upside",
+      "upside",
+    ]);
+  });
+
+  it("leaves the stored position alone, out of range or not", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(block({ yPosition: Number.NaN }));
+
+    expect(reverseGrid(grid)[1][1][0].yPosition).toBeNaN();
   });
 });
 

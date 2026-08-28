@@ -13,6 +13,7 @@ import {
   directionForNewCell,
   normaliseCellDirections,
   orderConfigFromGrid,
+  reverseGrid,
 } from "../../../utils";
 import { ORDER_TYPES } from "../../../data/orderTypes";
 
@@ -139,19 +140,14 @@ export function StrategyAssemblyProvider({
    * Swap the entry and exit columns, and flip which side of the market every
    * cell reads from.
    *
-   * The flip is applied to every block in a cell, so the cell keeps one scale
-   * either way - the invariant `cellDirection` rests on. The saved config
-   * follows on its own, because it is derived from this grid.
+   * The flip itself is `reverseGrid`, the mapping owner's, because it rewrites
+   * the one fact that module owns for every cell on the grid - so the cell
+   * keeps one scale either way, which is the invariant `cellDirection` rests
+   * on. The saved config follows on its own, because it is derived from this
+   * grid.
    */
   const reverseBlocks = () => {
-    const flipDirection = (d: BlockDirection): BlockDirection =>
-      d === "downside" ? "upside" : "downside";
-    const flipCell = (cell: BlockData[]) =>
-      cell.map((b) => ({ ...b, direction: flipDirection(b.direction) }));
-    setGrid((prev) => [
-      prev[1].map(flipCell),
-      prev[0].map(flipCell),
-    ]);
+    setGrid(reverseGrid);
   };
 
   // ─── Context values ────────────────────────────────────────────────

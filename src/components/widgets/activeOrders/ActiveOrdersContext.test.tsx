@@ -11,6 +11,8 @@ import { ActiveOrdersProvider, useActiveOrders } from "@widgets/activeOrders";
 import { StrategyAssemblyProvider } from "@widgets/strategyAssembly/StrategyAssemblyContext";
 import { useGridData } from "@widgets/strategyAssembly/contexts";
 import { getCellDisplayMode } from "@utils/blockMapping";
+import { mapGridToOrders } from "@api/orderMapper";
+import { BTC_USD } from "@/test/marketFixtures";
 import type { ActiveOrderEntry, ActiveOrdersConfig } from "@/types/activeOrders";
 import type { GridData, OrderConfig } from "@/types/grid";
 
@@ -134,6 +136,23 @@ describe("the grid the Active Orders panel derives from submitted orders", () =>
     expect(getCellDisplayMode(orders[0][1])).toBe(
       getCellDisplayMode(assembly[0][1]),
     );
+  });
+
+  // The card, the grid and the payload are three consumers of one fact, and the
+  // card was the last one deriving it from `axis` alone. All three now read
+  // `legForOrder`, so the Kraken payload for this saved order carries a trigger
+  // price and no limit price - which is what "Trigger" on the card claims.
+  it("prices it as its trigger leg in the Kraken payload", () => {
+    const grid = ordersGrid(submitted());
+
+    const [order] = mapGridToOrders(grid, {
+      market: BTC_USD,
+      currentPrice: 100_000,
+      quantity: "0.5",
+    });
+
+    expect(Number(order.trigger_price ?? order.triggers?.price)).toBe(85_000);
+    expect(order.limit_price).toBeUndefined();
   });
 
   it("still shows an order whose type is not in the palette", () => {

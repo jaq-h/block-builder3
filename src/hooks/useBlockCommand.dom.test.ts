@@ -8,6 +8,7 @@ import { createBlocksFromOrderType } from "@utils/blockFactory";
 import { getOrderType, ORDER_TYPES } from "@data/orderTypes";
 import type {
   BlockData,
+  CellPosition,
   GridData,
   PlacementResult,
   StrategyPattern,
@@ -39,6 +40,7 @@ const limitBlock = (overrides: Partial<BlockData> = {}): BlockData => ({
  */
 type RefuseMove = (
   block: Pick<BlockData, "id" | "label">,
+  at: CellPosition,
   reason: PickUpRefusal,
 ) => void;
 
@@ -59,8 +61,8 @@ const renderCommand = (
       // Wired the way `GridArea` wires it: the refusal is reported to the one
       // announcer, and the owner does whatever else it needs to with the same
       // two facts - which for `GridArea` is putting the rule on screen.
-      refuseMove: (block, reason) => {
-        onRefuse(block, reason);
+      refuseMove: (block, at, reason) => {
+        onRefuse(block, at, reason);
         announcer.report({ kind: "moveRefused", label: block.label, reason });
       },
     });
@@ -417,6 +419,7 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(refuseMove).toHaveBeenCalledWith(
         expect.objectContaining({ label: "Stop Loss Limit" }),
+        { col: 0, row: 1 },
         "onPriceAxis",
       );
       expect(result.current.announcement.text).toBe(
@@ -432,6 +435,7 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(refuseMove).toHaveBeenCalledWith(
         expect.objectContaining({ label: "Limit" }),
+        { col: 0, row: 1 },
         "onPriceAxis",
       );
     });
@@ -453,6 +457,7 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(refuseMove).toHaveBeenCalledWith(
         expect.objectContaining({ label: "Stop Loss Limit" }),
+        { col: 0, row: 1 },
         "staysInCell",
       );
       expect(result.current.announcement.text).toBe(
@@ -474,6 +479,7 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(refuseMove).toHaveBeenCalledWith(
         expect.objectContaining({ label: "Market" }),
+        { col: 0, row: 1 },
         "staysInCell",
       );
     });
@@ -495,12 +501,17 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(refuseMove).toHaveBeenCalledWith(
         expect.objectContaining({ label: "Market" }),
+        { col: 0, row: 1 },
         "staysInCell",
       );
     });
 
     it("refuses a priced block by tap as well as by keyboard", () => {
-      const { grid, blocks } = gridWithOrder("take-profit-limit");
+      // Placed away from the default cell on purpose: the cell handed to
+      // `refuseMove` is the one the block is actually in, and the note the
+      // owner draws from it is taken down as soon as the block is not there
+      // any more.
+      const { grid, blocks } = gridWithOrder("take-profit-limit", 1, 2);
       const { result, refuseMove } = setup(grid);
 
       act(() => result.current.activateBlock(blocks[1].id, "touch"));
@@ -508,6 +519,7 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(refuseMove).toHaveBeenCalledWith(
         expect.objectContaining({ label: "Take Profit Limit" }),
+        { col: 1, row: 2 },
         "onPriceAxis",
       );
     });
@@ -525,6 +537,7 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying).toBeNull();
       expect(refuseMove).toHaveBeenCalledWith(
         expect.objectContaining({ label: "Limit" }),
+        { col: 0, row: 1 },
         "onPriceAxis",
       );
     });
