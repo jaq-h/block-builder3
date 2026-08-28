@@ -385,7 +385,7 @@ out the abbreviation renames "SMA 20" to something a voice-control user cannot s
 
 ## Layout and the CSS cascade
 
-Twelve traps live in the layout, and each is easy to reintroduce.
+Fourteen traps live in the layout, and each is easy to reintroduce.
 
 **The app's chrome wraps; it never scrolls.** A row of controls - a toolbar, a
 title bar, a tab strip - that cannot fit its width gets `flex-wrap`, and the row
@@ -502,16 +502,19 @@ folklore:
   cannot leave the other behind.
 
 **Every panel title bar takes its geometry from `panelTitleBar` in
-`src/styles/shared.ts`.** The assembly panel's pattern selector, the chart's title
-row and the Active Orders title all use it, so all three titles share one height,
-one 16px rail and one centre line. Two bars that merely agreed is how they came to
-disagree by 11.5px in height and 194.14px on the rail. `panelHeaderBar` is that
-geometry plus the bottom border and the background, for a panel whose header is a
-single bar: the assembly panel and Active Orders. The chart panel is not that
-shape - it carries a toolbar row under its title bar, so its header block is
-taller than the other two and `chartHeader` draws the border and the background
-around both rows. It is the title bars that line up, not the header blocks. A new
-panel takes the constant rather than its own copy.
+`src/styles/shared.ts`, or from its one documented exception.** The assembly
+panel's pattern selector and the Active Orders title take the constant itself;
+the chart's title row takes `wrappingPanelTitleBar`, the exception above, which
+is the same rail with the height relaxed to a floor. All three titles still share
+one height, one 16px rail and one centre line, which is what the rule is for.
+Two bars that merely agreed is how they came to disagree by 11.5px in height and
+194.14px on the rail. `panelHeaderBar` is that geometry plus the bottom border and
+the background, for a panel whose header is a single bar: the assembly panel and
+Active Orders. The chart panel is not that shape - it carries a toolbar row under
+its title bar, so its header block is taller than the other two and `chartHeader`
+draws the border and the background around both rows. It is the title bars that
+line up, not the header blocks. A new panel takes `panelTitleBar` rather than its
+own copy, and not the exception - that one is spoken for.
 
 **A scrolling panel scrolls with `overflow-auto`, and is bounded by its row
 rather than by a number.** `overflow-scroll` reserves and draws a bar on both
