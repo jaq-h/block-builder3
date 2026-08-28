@@ -20,6 +20,7 @@ import {
   hasConditionalWithoutPrimary,
   createBlocksFromOrderType,
   findDropCell,
+  removeBlockFromGrid,
 } from "../../../../utils";
 import {
   samePosition,
@@ -288,23 +289,20 @@ const GridArea: FC<GridAreaProps> = ({
   };
 
   /**
-   * Take a block off the grid entirely - a drag that ended outside it.
+   * Take a block off the grid entirely, links to it included.
    *
-   * This is the *only* way to get an order out of a cell, and under decision D9
-   * it is therefore how a misplaced order is corrected: remove it and place a
-   * new one. The cell's direction is untouched by a removal, because every
-   * block left behind already carries it - that is what stops a Stop Loss from
-   * flipping from `-15.00% $85,000` to `+15.00% $115,000` when the block beside
-   * it is deleted.
+   * This is the grid's half of the app's one removal: the command model owns
+   * the operation - who asked, what is said, where focus lands - and this owns
+   * the write. `removeBlockFromGrid` is where the write itself lives, so the
+   * filtering and the link clearing cannot come apart; see its own note for why
+   * a removal that leaves a dangling `linkedBlockId` behind would hand the user
+   * a strategy the mapper rightly refuses and no control that mends it.
+   *
+   * It takes no cell. The id is enough, and a cell travelling beside it is one
+   * more pair of facts to keep in step.
    */
-  const removeBlock = (id: string, source: CellPosition) => {
-    setGrid((prev) => {
-      const newGrid = prev.map((col) => col.map((row) => [...row]));
-      newGrid[source.col][source.row] = newGrid[source.col][source.row].filter(
-        (b) => b.id !== id,
-      );
-      return newGrid;
-    });
+  const removeBlockFromCell = (id: string) => {
+    setGrid((prev) => removeBlockFromGrid(prev, id));
   };
 
   // ─── Command model (select, arrows, place) ───────────────────────
@@ -389,6 +387,7 @@ const GridArea: FC<GridAreaProps> = ({
     providerBlocks,
     announcer,
     placeProvider: placeProviderInCell,
+    removeFromGrid: removeBlockFromCell,
     // A placed block is never carried, because it never changes cells
     // (decision D9), so the command model only ever commits palette orders.
     // `refuseMove` is what a press on a placed block reaches instead, and it
@@ -854,11 +853,13 @@ const GridArea: FC<GridAreaProps> = ({
         releasedCarry,
       });
     } else {
-      // Dropped outside - remove only this block. This is the one way an order
-      // leaves a cell, and under decision D9 it is how a misplaced one is put
-      // right: remove it, then place a new one where it belongs.
-      removeBlock(id, source.origin);
-      announcer.report({ kind: "removed", source, releasedCarry });
+      // Dropped outside - remove only this block, through the command model's
+      // one removal rather than a branch of its own. It is no longer the ONLY
+      // way an order leaves a cell: Delete, Backspace and each block's own
+      // remove control reach the same operation, which is what finally makes
+      // decision D9's correction path - remove it, then place a new one -
+      // available to a block drawn on a price axis.
+      command.removeBlock(id, { releasedCarry });
     }
 
     endDrag();
@@ -948,8 +949,8 @@ const GridArea: FC<GridAreaProps> = ({
         Press Enter on an order in the palette to pick it up, then use the
         arrow keys to choose a cell and Enter again to place it. Escape returns
         it. A block already on the grid stays in the cell it was placed in: on a
-        price axis the arrow keys move it along that axis, and in a cell that
-        draws no price axis it can be dragged off the grid to remove it.
+        price axis the arrow keys move it along that axis, and Delete or
+        Backspace removes it, as does its own Remove button.
       </p>
       <div className={contentRow}>
         {/* Provider Column */}
@@ -1042,6 +1043,7 @@ const GridArea: FC<GridAreaProps> = ({
                     onBlockCommandMove={command.moveTarget}
                     onBlockCommandCancel={command.cancel}
                     onBlockAdjustPrice={handleBlockAdjustPrice}
+                    onBlockRemove={command.removeBlock}
                     onCellActivate={() =>
                       command.activateCell({ col: colIndex, row: rowIndex })
                     }
@@ -1060,18 +1062,21 @@ const GridArea: FC<GridAreaProps> = ({
         // grid's one voice, and a second one would cut it off mid-sentence
         // during the very interaction that fires both.
         //
-        // Worded per refusal, because the correction differs. A block in a cell
-        // that draws no axis can be dragged off the grid, so it is offered. One
-        // on a price axis cannot - `block.tsx` wires the vertical price drag
-        // instead, which is the removal gap recorded in AGENTS.md - so this
-        // names the arrow keys, the affordance that render really wires, rather
-        // than promising a removal the app has no way to perform.
+        // Both refusals now end in the same correction, because both blocks now
+        // have it: the Remove button on the block, or Delete on it, takes any
+        // placed order off the grid whichever drag hook its cell wired. Only
+        // the extra clause differs, and it is the affordance that render really
+        // wires - the arrow keys exist for a block on a price axis and for no
+        // other. This note used to promise a drag-off removal to the one half
+        // of the grid that had it and name only the arrow keys to the half that
+        // had no removal at all.
         <p className={cellLockedNote}>
           <strong>{refusedMove.label}</strong> stays in the cell it was placed
           in. Orders do not move between cells -{" "}
           {refusedMove.reason === "onPriceAxis"
-            ? "use the arrow keys to change this one's price."
-            : "to put this one somewhere else, drag it off the grid to remove it, then place a new one."}
+            ? "use the arrow keys to change this one's price, or remove it and place a new one."
+            : "to put this one somewhere else, remove it and place a new one."}{" "}
+          Remove it with its Remove button, or with Delete while it has focus.
         </p>
       )}
       <LiveAnnouncer announcement={announcer.announcement} />

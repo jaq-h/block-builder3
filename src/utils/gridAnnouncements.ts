@@ -33,6 +33,7 @@ import {
   type ActivationOrigin,
   type CarryEndReason,
   type CommandSource,
+  type GridSource,
 } from "./blockCommand";
 import type {
   CellPosition,
@@ -133,7 +134,14 @@ export type GridOutcome =
       via: PlacementVia;
       releasedCarry?: boolean;
     }
-  | { kind: "removed"; source: CommandSource; releasedCarry?: boolean }
+  /**
+   * One placed block was taken off the grid. `GridSource` rather than
+   * `CommandSource`, because only a placed block can be removed - a palette
+   * entry is an order type, and there is nothing there to take away. That is
+   * also what lets the sentence name the cell without a fallback: a grid source
+   * always carries one.
+   */
+  | { kind: "removed"; source: GridSource; releasedCarry?: boolean }
   | {
       kind: "dragEnded";
       source: CommandSource;
@@ -377,10 +385,15 @@ export const describeOutcome = (
           : ""
       }`;
 
+    // Both refusals now end in the same correction, because both blocks now
+    // have it: Delete removes any placed block, whichever drag hook its cell
+    // wired. Only the first clause differs, and it is the affordance the render
+    // really offers - a block on a price axis has the arrow keys as well, and a
+    // block in a cell that draws no axis has nothing else to be told about.
     case "moveRefused":
       return outcome.reason === "onPriceAxis"
-        ? `${outcome.label} is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.`
-        : `${outcome.label} stays in the cell it was placed in. To put this order somewhere else, remove it and place a new one.`;
+        ? `${outcome.label} is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price, or Delete to remove it and place a new one.`
+        : `${outcome.label} stays in the cell it was placed in. To put this order somewhere else, press Delete to remove it and place a new one.`;
 
     case "targetChanged":
       return `${describeCell(outcome.target, pattern)}, ready to place.`;
@@ -408,8 +421,17 @@ export const describeOutcome = (
         outcome.releasedCarry,
       );
 
+    // The cell, because a removal is the one outcome with nothing left on screen
+    // to say which block it was about: a bulk cell can hold two Limits, and
+    // "Removed Limit block from the grid" names neither of them. `origin` is
+    // safe to read here where `carryEnded` may not read it - the removal looks
+    // the block up in the grid it is about to write, so the cell is one the grid
+    // confirmed a moment ago rather than one snapshotted at pick-up time.
     case "removed":
-      return `Removed ${describeSource(outcome.source)} from the grid.`;
+      return `Removed ${describeSource(outcome.source)} from ${describeCell(
+        outcome.source.origin,
+        pattern,
+      )}.`;
 
     case "dragEnded":
       return outcome.reason === "offGrid"

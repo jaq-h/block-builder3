@@ -72,6 +72,13 @@ interface GridCellProps {
   onBlockCommandCancel: (options?: CancelOptions) => void;
   onBlockAdjustPrice: (id: string, delta: number) => void;
   /**
+   * Take one block off the grid: its own remove control, or Delete/Backspace
+   * on it. Wired for every block this cell draws, axis or no axis - the point
+   * of the affordance is that removal no longer depends on which drag hook a
+   * block happened to get.
+   */
+  onBlockRemove: (id: string) => void;
+  /**
    * A click landed on this cell. It is wired unconditionally: whether a click
    * means anything is the command model's decision, and a cell that silently
    * drops the click when it believes nothing is carried is a second opinion on
@@ -109,6 +116,7 @@ const GridCell: FC<GridCellProps> = ({
   onBlockCommandMove,
   onBlockCommandCancel,
   onBlockAdjustPrice,
+  onBlockRemove,
   onCellActivate,
   focusBlockId,
   onBlockFocusHandled,
@@ -166,6 +174,7 @@ const GridCell: FC<GridCellProps> = ({
     onDragCancel: onBlockDragCancel,
     onDragAborted: onBlockDragAborted,
     onDragRecognised: onBlockDragRecognised,
+    onRemove: onBlockRemove,
     cellDescription,
   });
 

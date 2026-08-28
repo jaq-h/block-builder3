@@ -632,21 +632,34 @@ by the one it arrived in. Only a **palette order** is ever carried, which
 `unchanged` for a release in the block's own cell and `refused` for any other, and mutates
 nothing.
 
-**A misplaced order is corrected by removing it and placing a new one**, and removing one is
-pointer-only today: `removeBlock` is reached from one place, the `else` branch of
-`handleDragEnd`, which only a free drag released outside every cell can get to. Since a drop is
-decided by the block's edges, "outside every cell" means the released tile overlaps none of
-them, so the gutters between cells no longer remove a block - the deliberate cost of one
-hit-testing rule for both drags rather than two, and the wording the app itself uses,
-*drag it off the grid*, still holds. The command model has no delete transition at all, and
-`activateCell` can only name a grid cell, so a keyboard or a tap cannot remove one block.
-**A block whose cell draws a price axis cannot be dragged off the grid either** - `Block`
-routes it to the vertical price drag instead - so **Clear All** is the only way to remove one,
-and it destroys the whole strategy. That gap is pre-existing rather than introduced by D9,
-which only makes it more visible by naming delete-and-rebuild as *the* correction path;
-closing it needs a removal affordance that works on a priced block and from the keyboard, and
-is filed as its own work. The sr-only block instructions promise removal only where it
-actually exists until it lands.
+**A misplaced order is corrected by removing it and placing a new one**, so removal is D9's
+other half rather than a convenience, and it is **one operation with one owner**:
+`removeBlock` on the command model. Three affordances reach it and there is no fourth -
+**Delete or Backspace** on a focused block, that block's own **Remove control**, and a free
+drag released clear of every cell. Every input method has all the removal it needs, which is
+the point: it used to be the `else` branch of `handleDragEnd` and nothing else, and `Block`
+routes a block whose cell draws a price axis to the vertical price drag instead of the free
+drag - so a placed Limit, Stop Loss or Take Profit could not be removed by *any* input
+method, mouse included, and **Clear All**, which destroys the whole strategy, was the only
+way out.
+
+Since a drop is decided by the block's edges, "clear of every cell" means the released tile
+overlaps none of them, so the gutters between cells do not remove a block - the deliberate
+cost of one hit-testing rule for both drags rather than two.
+
+The Remove control is **rendered rather than revealed on hover**: a control shown on
+`:hover` exists for a mouse and for nothing else, and parity across mouse, keyboard and
+touch is what this affordance is for. It is a 24px target (WCAG 2.2 SC 2.5.8), quiet at rest
+and red under the cursor or the focus ring, and it names the order and its cell
+("Remove Limit order, Entry column, primary row") so two orders of one type are told apart.
+
+Removal writes through `removeBlockFromGrid` in `src/utils/grid.ts`, which takes the block
+out **and clears every `linkedBlockId` that named it**, in one function. That pairing is not
+tidiness: `mapGridToOrders` refuses a grid whose link names a block that is not on it rather
+than emitting the primary order with its protective close silently gone, and reachable
+removal is precisely what could otherwise have produced that state. Focus then lands on the
+palette entry the order came from - the element that was focused is the one being removed,
+and the palette is where "place a new one" begins.
 
 **The refusal is legible rather than silent**, because a press that does nothing is
 indistinguishable from a broken control. Three things say so together: the announcer's
@@ -654,10 +667,10 @@ indistinguishable from a broken control. Three things say so together: the annou
 region), and no cell drawing itself as a target while a placed block is dragged. The note and
 the sentence are worded per case, and the case is decided by `cellDrawsPriceAxis` - the same
 owner the renderer uses to decide whether to draw an axis at all, so the affordance a refusal
-names is one that render really wired. A block on a price axis is pointed at the **arrow
-keys**, which move it along that axis; one in a cell that draws **no** axis - a bulk cell
-holding an axis-less block - is told to drag it off the grid and place a new one, which is the
-only case where that is true.
+names is one that render really wired. Both cases now end in the same correction - remove it
+and place a new one - because both blocks now have one; what differs is the extra clause, and
+a block on a price axis is additionally pointed at the **arrow keys**, which move it along
+that axis and which no other block has.
 
 **The price axis** is a block's most important property, so it is reachable every way too: a
 pointer drags the block up and down its axis, and on the keyboard it behaves as a real

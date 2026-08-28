@@ -85,7 +85,7 @@ describe("describeOutcome, picking a block up", () => {
     expect(
       say({ kind: "moveRefused", label: "Limit", reason: "onPriceAxis" }),
     ).toBe(
-      "Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
+      "Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price, or Delete to remove it and place a new one.",
     );
   });
 
@@ -99,7 +99,7 @@ describe("describeOutcome, picking a block up", () => {
     expect(
       say({ kind: "moveRefused", label: "Market", reason: "staysInCell" }),
     ).toBe(
-      "Market stays in the cell it was placed in. To put this order somewhere else, remove it and place a new one.",
+      "Market stays in the cell it was placed in. To put this order somewhere else, press Delete to remove it and place a new one.",
     );
   });
 });
@@ -297,7 +297,7 @@ describe("describeOutcome, what the grid actually did", () => {
       }),
     ).toBe("Placed Market order in Exit column, upper conditional row.");
     expect(say({ kind: "removed", source: placed, releasedCarry: true })).toBe(
-      "Removed Market block from the grid.",
+      "Removed Market block from Entry column, primary row.",
     );
   });
 
@@ -348,7 +348,7 @@ describe("describeOutcome, what the grid actually did", () => {
 describe("describeOutcome, a drag that ends without a placement", () => {
   it("says a block dragged off the grid was removed", () => {
     expect(say({ kind: "removed", source: placed })).toBe(
-      "Removed Market block from the grid.",
+      "Removed Market block from Entry column, primary row.",
     );
   });
 

@@ -16,6 +16,7 @@ import {
   isCellValidForPlacement,
   isProviderBlockHighlighted,
   formatPrice,
+  removeBlockFromGrid,
   reverseColumns,
 } from "@utils/grid";
 import { NO_PRECISION } from "@utils/marketFormat";
@@ -159,6 +160,110 @@ describe("reverseColumns", () => {
 
     expect(countBlocks(grid)).toBe(1);
     expect(countBlocks(reversed)).toBe(2);
+  });
+});
+
+// =============================================================================
+// REMOVAL
+// =============================================================================
+
+describe("removeBlockFromGrid", () => {
+  it("takes the named block out and leaves the rest of the cell standing", () => {
+    const kept = block({ id: "kept" });
+    const grid = gridWith([
+      { col: 0, row: 1, block: block({ id: "doomed" }) },
+      { col: 0, row: 1, block: kept },
+      { col: 1, row: 0, block: block({ id: "elsewhere" }) },
+    ]);
+
+    const after = removeBlockFromGrid(grid, "doomed");
+
+    expect(after[0][1]).toEqual([kept]);
+    expect(countBlocks(after)).toBe(2);
+  });
+
+  // The whole reason the removal and the link clearing are one function. The
+  // mapper REFUSES a grid whose `linkedBlockId` names a block that is not on it
+  // (`assertLinksAreFlat` in `api/orderMapper.ts`), and that refusal is correct:
+  // emitting the primary alone would send an entry order with its protective
+  // close silently gone. So a removal that only filtered would hand the user a
+  // strategy nothing in the app could submit and no control could mend.
+  it("clears a link that named the block it removed", () => {
+    const grid = gridWith([
+      {
+        col: 0,
+        row: 1,
+        block: block({ id: "primary", linkedBlockId: "conditional" }),
+      },
+      { col: 0, row: 0, block: block({ id: "conditional" }) },
+    ]);
+
+    const after = removeBlockFromGrid(grid, "conditional");
+
+    expect(findBlockInGrid(after, "primary")!.block.linkedBlockId).toBeUndefined();
+  });
+
+  // Dropped rather than set to `undefined`: the key's absence is what "no
+  // conditional close" means everywhere else, and an explicit `undefined` is a
+  // second spelling of the same fact for a serialiser to disagree about.
+  it("drops the link key rather than leaving it holding undefined", () => {
+    const grid = gridWith([
+      {
+        col: 0,
+        row: 1,
+        block: block({ id: "primary", linkedBlockId: "conditional" }),
+      },
+      { col: 0, row: 0, block: block({ id: "conditional" }) },
+    ]);
+
+    const after = removeBlockFromGrid(grid, "conditional");
+
+    expect(findBlockInGrid(after, "primary")!.block).not.toHaveProperty(
+      "linkedBlockId",
+    );
+  });
+
+  it("clears every link that named it, from any cell", () => {
+    const grid = gridWith([
+      { col: 0, row: 1, block: block({ id: "a", linkedBlockId: "target" }) },
+      { col: 1, row: 1, block: block({ id: "b", linkedBlockId: "target" }) },
+      { col: 0, row: 0, block: block({ id: "target" }) },
+    ]);
+
+    const after = removeBlockFromGrid(grid, "target");
+
+    expect(findBlockInGrid(after, "a")!.block.linkedBlockId).toBeUndefined();
+    expect(findBlockInGrid(after, "b")!.block.linkedBlockId).toBeUndefined();
+  });
+
+  it("leaves a link that named some other block exactly as it was", () => {
+    const grid = gridWith([
+      { col: 0, row: 1, block: block({ id: "a", linkedBlockId: "kept" }) },
+      { col: 0, row: 0, block: block({ id: "kept" }) },
+      { col: 1, row: 1, block: block({ id: "doomed" }) },
+    ]);
+
+    const after = removeBlockFromGrid(grid, "doomed");
+
+    expect(findBlockInGrid(after, "a")!.block.linkedBlockId).toBe("kept");
+  });
+
+  it("does not mutate the grid it was given", () => {
+    const grid = gridWith([
+      { col: 0, row: 1, block: block({ id: "a", linkedBlockId: "doomed" }) },
+      { col: 0, row: 0, block: block({ id: "doomed" }) },
+    ]);
+
+    removeBlockFromGrid(grid, "doomed");
+
+    expect(countBlocks(grid)).toBe(2);
+    expect(findBlockInGrid(grid, "a")!.block.linkedBlockId).toBe("doomed");
+  });
+
+  it("leaves a grid holding no such block alone", () => {
+    const grid = gridWith([{ col: 0, row: 1 }]);
+
+    expect(countBlocks(removeBlockFromGrid(grid, "never-placed"))).toBe(1);
   });
 });
 

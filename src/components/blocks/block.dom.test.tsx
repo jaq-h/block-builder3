@@ -436,6 +436,123 @@ describe("Block, placed on a price axis", () => {
 // THE COMMAND MODEL, FROM THE KEYBOARD
 // =============================================================================
 
+// =============================================================================
+// REMOVAL
+// =============================================================================
+//
+// Wired for a placed block and for nothing else: a palette entry is an order
+// type rather than an order, so there is nothing there to take away.
+
+describe("Block, the removal it offers", () => {
+  const placed = (props: Record<string, unknown> = {}) =>
+    render(
+      <Block
+        id="b1"
+        abrv="Lmt"
+        label="Limit"
+        leg="limit"
+        yPosition={25}
+        direction="upside"
+        cellDescription="Entry column, primary row"
+        priceText="$95,861.25"
+        {...props}
+      />,
+    );
+
+  it("names the order and its cell, so two of a kind are told apart", () => {
+    placed({ onRemove: vi.fn() });
+
+    expect(
+      screen.getByRole("button", {
+        name: "Remove Limit order, Entry column, primary row",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("removes on a click, for a block no drag could take off the grid", () => {
+    const onRemove = vi.fn();
+    placed({ onRemove });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Remove Limit order/ }));
+
+    expect(onRemove).toHaveBeenCalledWith("b1");
+  });
+
+  it("removes on Delete and on Backspace alike", () => {
+    const onRemove = vi.fn();
+    placed({ onRemove });
+
+    const slider = screen.getByRole("slider");
+    fireEvent.keyDown(slider, { key: "Delete" });
+    fireEvent.keyDown(slider, { key: "Backspace" });
+
+    expect(onRemove).toHaveBeenCalledTimes(2);
+    expect(onRemove).toHaveBeenNthCalledWith(2, "b1");
+  });
+
+  // The arrow keys are the block's other keyboard affordance, and the two must
+  // not have taken each other's keys.
+  it("leaves the arrow keys to the price axis", () => {
+    const onRemove = vi.fn();
+    const onAdjustPrice = vi.fn();
+    placed({ onRemove, onAdjustPrice });
+
+    fireEvent.keyDown(screen.getByRole("slider"), { key: "ArrowUp" });
+
+    expect(onAdjustPrice).toHaveBeenCalled();
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  // A control shown on `:hover` exists for a mouse and for nothing else, and
+  // parity across mouse, keyboard and touch is the point of this affordance -
+  // so it is rendered rather than revealed, and a finger can reach it.
+  it("is on screen without a cursor ever having been near it", () => {
+    placed({ onRemove: vi.fn() });
+
+    const remove = screen.getByRole("button", { name: /^Remove Limit order/ });
+    expect(remove).not.toHaveClass("hidden");
+    // 24px, the WCAG 2.2 SC 2.5.8 minimum target size, and `p-0` is what makes
+    // that number real: the layered `button` default is `padding: 0.6em 1.2em`,
+    // which a border-box `width` cannot shrink below, so without it the control
+    // measured 40.375px wide in Chrome - wider than the 40px tile it sits on.
+    // jsdom applies no author stylesheet, so the class list is what a rendering
+    // test can pin; the measurement itself was taken in a browser.
+    expect(remove).toHaveClass("p-0", "w-6", "h-6");
+  });
+
+  it("offers none on a palette entry, which holds no order to remove", () => {
+    render(<Block id="limit" abrv="Lmt" label="Limit" />);
+
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+  });
+
+  it("does nothing on Delete when no removal is wired", () => {
+    const onActivate = vi.fn();
+    placed({ onActivate });
+
+    fireEvent.keyDown(screen.getByRole("slider"), { key: "Delete" });
+
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it("offers none on a read-only block, which is information rather than a control", () => {
+    render(
+      <Block
+        id="b1"
+        abrv="Lmt"
+        label="Limit"
+        leg="limit"
+        yPosition={25}
+        direction="downside"
+        isReadOnly
+        onRemove={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
 describe("Block, while being carried", () => {
   const carried = (props: Record<string, unknown> = {}) =>
     render(

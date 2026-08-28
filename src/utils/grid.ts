@@ -81,6 +81,42 @@ export const findBlockInGrid = (
   return null;
 };
 
+/**
+ * Take one block off the grid, and clear every link that pointed at it.
+ *
+ * The one removal path in the app, and the two halves are deliberately in one
+ * function rather than in two that agree. `linkedBlockId` names a block by id,
+ * so a removal that only filters leaves a *dangle* - a primary order naming a
+ * conditional close that is no longer on the grid - and `assertLinksAreFlat` in
+ * `api/orderMapper.ts` rightly refuses the whole strategy for it rather than
+ * emitting the primary with its protective close silently gone. That refusal is
+ * correct and stays; what must not exist is a removal that produces the state it
+ * refuses, because the user would then be stuck with a strategy they cannot
+ * submit and no control that mends it.
+ *
+ * The link is dropped rather than nulled: the key's absence is what "no
+ * conditional close" means everywhere else, and an explicit `undefined` is a
+ * second spelling of it for `orderConfigFromGrid` and every serialiser to
+ * disagree about.
+ *
+ * A cell's direction is untouched, because every block left behind already
+ * carries it (decision D8) - that is what stops a Stop Loss flipping from
+ * `-15.00% $85,000` to `+15.00% $115,000` when the block beside it goes.
+ */
+export const removeBlockFromGrid = (grid: GridData, id: string): GridData =>
+  grid.map((column) =>
+    column.map((cell) =>
+      cell
+        .filter((block) => block.id !== id)
+        .map((block) => {
+          if (block.linkedBlockId !== id) return block;
+          const cleared = { ...block };
+          delete cleared.linkedBlockId;
+          return cleared;
+        }),
+    ),
+  );
+
 /** Get all blocks from the grid as a flat array */
 export const getAllBlocks = (grid: GridData): BlockData[] => {
   const blocks: BlockData[] = [];

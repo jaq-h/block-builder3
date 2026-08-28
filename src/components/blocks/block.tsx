@@ -13,6 +13,7 @@ import {
   type PriceAxisLeg,
 } from "../../utils/blockMapping";
 import { BLOCK_TILE_SHAPE } from "./blockTile";
+import XIcon from "../../assets/icons/x.svg?react";
 
 /** The id every block's instructions are described by. Rendered once by GridArea. */
 export const BLOCK_INSTRUCTIONS_ID = "strategy-block-instructions";
@@ -85,6 +86,46 @@ const PRICE_STEP_PAGE = 10;
 /** Clamped by the grid, so this reaches the end of the axis from anywhere. */
 const PRICE_STEP_TO_END = MAX_OFFSET_PERCENT * 2;
 
+// THE POINTER'S REMOVAL AFFORDANCE, AND THE ONLY ONE MOST BLOCKS HAVE.
+//
+// Dragging a block clear of the grid removes it, and for a long time that was
+// the whole story - which meant it was no story at all for the majority of the
+// grid: a cell that draws a price axis wires `useVerticalDrag` instead of
+// `useFreeDrag`, so a placed Limit, Stop Loss or Take Profit could not be
+// dragged off at all and Clear All, which destroys the entire strategy, was the
+// only way to be rid of one. Decision D9 made that gap load-bearing by naming
+// delete-and-rebuild as *the* way to correct a misplaced order.
+//
+// It is rendered rather than revealed, and that is the decision the whole task
+// turns on. A control shown on `:hover` exists for a mouse and for nothing
+// else: a finger has no hover, and the sticky `:hover` a tap leaves behind on
+// some browsers is an accident rather than an affordance. Parity across mouse,
+// keyboard and touch is the point here, so the control is simply there, for all
+// three, at all times.
+//
+// `w-6 h-6` is 24px, the WCAG 2.2 SC 2.5.8 minimum target size, and it is the
+// same floor `chartToggleButton` carries for the same reason. The colour is
+// quiet at rest and turns red under the cursor or the focus ring: a grid full
+// of red dots would spend, on the least-used control on screen, exactly the
+// visual weight the block tiles need for saying what they are.
+const removeButton = cn(
+  "absolute -top-2 -right-2 z-2",
+  // `p-0` is load-bearing, not tidiness. `src/index.css`'s layered `button`
+  // default is `padding: 0.6em 1.2em`, and under `box-sizing: border-box` a
+  // `width` cannot shrink a box below its own padding and border - so `w-6`
+  // asked for 24px and the button measured 40.375px wide in Chrome, wider than
+  // the 40px tile it sits on. The app has exactly one mechanism for a control
+  // that wants to look different, and it is stating the utility (`AGENTS.md`,
+  // "Layout and the CSS cascade"); this is that, and `BLOCK_TILE_SHAPE`'s own
+  // `p-[3px]` is the same move for the same reason.
+  "p-0 w-6 h-6 flex items-center justify-center rounded-full cursor-pointer",
+  "border border-border-neutral bg-bg-column text-white-70",
+  "transition-colors duration-150",
+  "hover:bg-status-red-bg-strong hover:border-status-red-border hover:text-text-primary",
+  "focus-visible:bg-status-red-bg-strong focus-visible:border-status-red-border focus-visible:text-text-primary",
+  "[&_svg]:w-3 [&_svg]:h-3 [&_svg]:stroke-current [&_svg]:pointer-events-none",
+);
+
 interface BlockProps {
   id: string;
   icon?: SvgIcon;
@@ -155,6 +196,13 @@ interface BlockProps {
   onCommandCancel?: (options?: CancelOptions) => void;
   /** Arrows on a placed block: move it along the price axis, towards higher prices. */
   onAdjustPrice?: (id: string, delta: number) => void;
+  /**
+   * Take this block off the grid. Passed for a *placed* block only - a palette
+   * entry is an order type rather than an order, so there is nothing there to
+   * remove - which is what decides whether this component draws the remove
+   * control and whether Delete and Backspace do anything on it.
+   */
+  onRemove?: (id: string) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }
@@ -184,6 +232,7 @@ const Block: FC<BlockProps> = ({
   onCommandMove,
   onCommandCancel,
   onAdjustPrice,
+  onRemove,
   onMouseEnter,
   onMouseLeave,
 }) => {
@@ -279,6 +328,17 @@ const Block: FC<BlockProps> = ({
         default:
           return;
       }
+    }
+
+    // Both keys, because a block is a thing in a place and the platforms differ
+    // about which one deletes it. Before Enter and Space rather than after,
+    // since neither of those can match here and reading order is what a later
+    // reader checks. `preventDefault` on Backspace is not decoration: an
+    // ancestor scroller or an older browser can still read it as "go back".
+    if (onRemove && (e.key === "Delete" || e.key === "Backspace")) {
+      e.preventDefault();
+      onRemove(id);
+      return;
     }
 
     if (e.key === "Enter" || e.key === " ") {
@@ -423,6 +483,28 @@ const Block: FC<BlockProps> = ({
       >
         {iconContent}
       </button>
+      {onRemove && (
+        <button
+          type="button"
+          // Named for the order rather than for the glyph, and carrying the
+          // cell, because two cells can hold orders of the same type and a
+          // list of identical "Remove" buttons names none of them.
+          aria-label={`Remove ${name} order${
+            cellDescription ? `, ${cellDescription}` : ""
+          }`}
+          className={removeButton}
+          onClick={(e) => {
+            // The cell listens for a click to place whatever is in hand.
+            // Removing a block is not placing one, so this click stops here -
+            // without it, deleting a block while carrying a palette order
+            // would delete the block AND drop the carried order into its cell.
+            e.stopPropagation();
+            onRemove(id);
+          }}
+        >
+          <XIcon />
+        </button>
+      )}
     </div>
   );
 };
