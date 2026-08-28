@@ -627,15 +627,19 @@ nothing.
 
 **A misplaced order is corrected by removing it and placing a new one**, and removing one is
 pointer-only today: `removeBlock` is reached from one place, the `else` branch of
-`handleDragEnd`, which only a free drag released outside every cell can get to. The command
-model has no delete transition at all, and `activateCell` can only name a grid cell, so a
-keyboard or a tap cannot remove one block. **A block whose cell draws a price axis cannot be
-dragged off the grid either** - `Block` routes it to the vertical price drag instead - so
-**Clear All** is the only way to remove one, and it destroys the whole strategy. That gap is
-pre-existing rather than introduced by D9, which only makes it more visible by naming
-delete-and-rebuild as *the* correction path; closing it needs a removal affordance that works
-on a priced block and from the keyboard, and is filed as its own work. The sr-only block
-instructions promise removal only where it actually exists until it lands.
+`handleDragEnd`, which only a free drag released outside every cell can get to. Since a drop is
+decided by the block's edges, "outside every cell" means the released tile overlaps none of
+them, so the gutters between cells no longer remove a block - the deliberate cost of one
+hit-testing rule for both drags rather than two, and the wording the app itself uses,
+*drag it off the grid*, still holds. The command model has no delete transition at all, and
+`activateCell` can only name a grid cell, so a keyboard or a tap cannot remove one block.
+**A block whose cell draws a price axis cannot be dragged off the grid either** - `Block`
+routes it to the vertical price drag instead - so **Clear All** is the only way to remove one,
+and it destroys the whole strategy. That gap is pre-existing rather than introduced by D9,
+which only makes it more visible by naming delete-and-rebuild as *the* correction path;
+closing it needs a removal affordance that works on a priced block and from the keyboard, and
+is filed as its own work. The sr-only block instructions promise removal only where it
+actually exists until it lands.
 
 **The refusal is legible rather than silent**, because a press that does nothing is
 indistinguishable from a broken control. Three things say so together: the announcer's
@@ -976,6 +980,7 @@ src/
 │   ├── blockCommand.ts            # Select-then-place state machine (pure half)
 │   ├── blockFactory.ts            # Factory for creating block data
 │   ├── blockMapping.ts            # The one owner of axis, position, direction, cell scale
+│   ├── dropTarget.ts              # The one owner of which cell a released block lands in
 │   ├── grid.ts                    # Grid structure & placement rules
 │   ├── gridAnnouncements.ts       # Every sentence the grid speaks (pure)
 │   ├── liveCandles.ts             # The one fold of closed bars + the forming bar, and what a new list appends
