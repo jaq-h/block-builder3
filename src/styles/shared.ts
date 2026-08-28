@@ -41,20 +41,19 @@ export const headerText = cva("font-semibold text-text-secondary", {
  * the base commit the assembly panel's bar stood 77.69px tall against the chart
  * panel's 66.19px, their contents sat 194.14px apart on the horizontal rail and
  * 2px apart vertically, so what should read as one rule drawn across the app
- * had a step in it. A new panel gets `panelTitleBar` below rather than its own
- * copy of the declarations.
+ * had a step in it.
  *
  * The rail is everything the bars share except the height: `px-4` puts every
  * bar's content on the same 16px rail from its own panel's edge, `items-center`
  * on one centre line, `gap-3` between its pieces, and `shrink-0` so a full
- * panel cannot squeeze the bar itself. The height is the one thing the two
- * users of it disagree about, so each states its own.
+ * panel cannot squeeze the bar itself.
  */
 const panelTitleBarRail = "shrink-0 flex items-center gap-3 px-4";
 
 /**
- * The title bar every desktop panel is drawn to, and the constant a new panel
- * takes.
+ * The rail at its fixed height, and the constant a new panel takes rather than
+ * its own copy of the declarations. The assembly panel and the Active Orders
+ * panel are its users, both of them through `panelHeaderBar` below.
  *
  * The height is fixed rather than left to padding so that what a bar happens to
  * carry cannot change where its neighbour's bottom edge lands. `h-16` clears
@@ -62,8 +61,10 @@ const panelTitleBarRail = "shrink-0 flex items-center gap-3 px-4";
  * 51.5px - with room to breathe.
  *
  * Geometry only: a panel whose header is a single bar wants `panelHeaderBar`
- * below, which adds the rule and the background. The chart panel draws those
- * itself, around a title bar and the toolbar row beneath it, so it takes this.
+ * below, which is this geometry plus the rule and the background. The chart
+ * panel is neither - it takes `wrappingPanelTitleBar` below, the one documented
+ * exception to the fixed height, and draws the rule and the background itself
+ * around both of its rows.
  */
 export const panelTitleBar = cn(panelTitleBarRail, "h-16");
 
