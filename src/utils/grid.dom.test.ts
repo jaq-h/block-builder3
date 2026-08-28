@@ -5,7 +5,7 @@
 // from grid.test.ts because the rest of that module is pure and runs in node.
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-import { findCellAndPositionData, findCellAtPosition } from "@utils/grid";
+import { findCellAtPosition } from "@utils/grid";
 
 // =============================================================================
 // FIXTURES
@@ -104,62 +104,10 @@ describe("findCellAtPosition", () => {
   });
 });
 
-describe("findCellAndPositionData", () => {
-  it("resolves the cell, the axis and the slider position in one pass", () => {
-    mountCells([ENTRY_MIDDLE]);
-
-    // Left half of the cell is axis 1; y=56 is the top of an ascending track.
-    expect(findCellAndPositionData(50, 56, "conditional", "take-profit")).toEqual(
-      { col: 0, row: 1, axis: 1, yPosition: 0 },
-    );
-  });
-
-  it("picks the axis from which half of the cell the pointer is in", () => {
-    mountCells([ENTRY_MIDDLE]);
-
-    expect(findCellAndPositionData(50, 200)?.axis).toBe(1);
-    expect(findCellAndPositionData(150, 200)?.axis).toBe(2);
-  });
-
-  it("flips the slider direction with the column, on the same pointer", () => {
-    mountCells([ENTRY_MIDDLE, { ...ENTRY_MIDDLE, col: 1, left: 200 }]);
-
-    // Entry (col 0) runs descending in the upside zone, exit (col 1) ascending,
-    // so the identical pointer height reads as opposite percentages.
-    const entry = findCellAndPositionData(50, 200, "conditional", "limit");
-    const exit = findCellAndPositionData(250, 200, "conditional", "limit");
-
-    expect(entry?.col).toBe(0);
-    expect(exit?.col).toBe(1);
-    expect(entry?.yPosition).toBeGreaterThan(0);
-    expect(exit?.yPosition).toBeGreaterThan(0);
-    expect(entry?.yPosition).not.toBeCloseTo(exit?.yPosition ?? 0, 3);
-  });
-
-  it("uses the order type rather than the row to pick direction in the bulk pattern", () => {
-    mountCells([ENTRY_MIDDLE]);
-
-    const takeProfit = findCellAndPositionData(50, 200, "bulk", "take-profit");
-    const stopLoss = findCellAndPositionData(50, 200, "bulk", "stop-loss");
-
-    expect(takeProfit?.yPosition).not.toBeCloseTo(stopLoss?.yPosition ?? 0, 3);
-  });
-
-  it("clamps a pointer near the cell edge into the 0-100 range", () => {
-    mountCells([ENTRY_MIDDLE]);
-
-    const top = findCellAndPositionData(50, 0);
-    const bottom = findCellAndPositionData(50, 400);
-
-    expect(top?.yPosition).toBeGreaterThanOrEqual(0);
-    expect(top?.yPosition).toBeLessThanOrEqual(100);
-    expect(bottom?.yPosition).toBeGreaterThanOrEqual(0);
-    expect(bottom?.yPosition).toBeLessThanOrEqual(100);
-  });
-
-  it("returns null for a drop outside the grid", () => {
-    mountCells([ENTRY_MIDDLE]);
-
-    expect(findCellAndPositionData(500, 200)).toBeNull();
-  });
-});
+// `findCellAndPositionData` was tested here and is gone. It read a cell, an
+// axis and a slider position off one drop, and two of those three were wrong:
+// the position came from `calculateYPosition` on a 0-100 scale while the axis
+// runs to 50, and the axis was taken from which half of the cell the pointer
+// was in without touching the block's matching `axes`. A drop now resolves a
+// cell and nothing else - `findCellAtPosition`, above - and the tests that
+// pinned the other two are recorded in `grid.test.ts` under "POSITION MATHS".

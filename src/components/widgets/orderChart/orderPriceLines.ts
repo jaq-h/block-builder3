@@ -1,5 +1,6 @@
 import { COLUMN_HEADERS, ORDER_TYPES } from "@data/orderTypes";
-import { calculatePrice } from "@utils/grid";
+import { axesForBlockAxis } from "@utils/blockFactory";
+import { legOfBlock, priceForOffset } from "@utils/blockMapping";
 import type { OrderConfig } from "@/types/grid";
 
 // =============================================================================
@@ -12,12 +13,12 @@ import type { OrderConfig } from "@/types/grid";
 // argument, the scale could change the number, and the chart and the grid
 // would be free to disagree about what a block is worth.
 //
-// The price itself comes from `calculatePrice`, which is the same call the
-// grid cell makes for its price chip (`GridCell.tsx`) and which delegates to
-// `priceAtOffset`, the shared owner of "percentage offset from market" that
-// the order mapper builds Kraken payloads from. The chart used to inline its
-// own copy of that formula; `orderPriceLines.test.ts` now pins the chart's
-// price to the grid's, so a fourth copy cannot appear unnoticed.
+// The price itself comes from `priceForOffset`, which is the same call the
+// grid cell makes for its price chip (`GridCell.tsx`) and the order mapper
+// makes for a Kraken payload - the mapping owner in `utils/blockMapping.ts`.
+// The chart used to inline its own copy of the formula;
+// `orderPriceLines.test.ts` now pins the chart's price to the grid's, so a
+// fourth copy cannot appear unnoticed.
 
 export interface OrderPriceLine {
   /** The grid block this line stands for. */
@@ -33,13 +34,13 @@ export interface OrderPriceLine {
 /**
  * Every block on the grid that has been given a price, as a line to draw.
  *
- * The side of the market comes from the block's own `direction`, never from
- * re-deriving one from its row or column - decision D3. Under the bulk pattern
- * a cell can hold blocks with opposite directions and the grid cell draws them
- * all on `blocks[0]`'s scale, so a bulk cell's chip and this line can still
- * disagree. That divergence predates this module, is documented in the project
- * memory as a known gap, and is owned by `bb3-mapping-owner` together with the
- * chip and the payload; it is deliberately not decided here.
+ * The side of the market comes from the entry's `direction`, never from
+ * re-deriving one from its row or column - decision D3. That direction is the
+ * *cell's* (decision D8): `orderConfigFromGrid` stamps every entry in a cell
+ * with the scale that cell draws, so a bulk cell holding a Limit and a Stop
+ * Loss puts both this line and the chip on the same side of the market. They
+ * used to disagree - `-25.00% $37,500` on the chip against a line at 62,500 -
+ * because the cell drew on `blocks[0]` while this read each order's own field.
  */
 export const orderPriceLines = (
   orders: OrderConfig,
@@ -52,22 +53,27 @@ export const orderPriceLines = (
   for (const [id, order] of Object.entries(orders)) {
     if (order.yPosition === undefined) continue;
 
-    const price = calculatePrice(
+    const price = priceForOffset(
       marketPrice,
       order.yPosition,
-      order.direction === "downside",
+      order.direction ?? "upside",
     );
-    if (price === null) continue;
 
     const typeDef = ORDER_TYPES.find((t) => t.type === order.type);
     const colLabel = COLUMN_HEADERS[order.col] ?? "";
-    // The axis index is 1-based in the config. This mapping reads the order
-    // type's own axis list rather than the block's, because `OrderConfigEntry`
-    // carries no `axes` - the same derivation the chart has always used, and
-    // part of the `axis`/`axes` gap owned by `bb3-mapping-owner`. It decides
-    // the label only; it never touches the price above.
-    const axisType = typeDef?.axes[(order.axis ?? 1) - 1] ?? "limit";
-    const axisSuffix = typeDef && typeDef.axes.length > 1 ? `-${axisType}` : "";
+    // Through the owners, not by indexing the order type's axis list with the
+    // saved `axis`. `axesForBlockAxis` is the single derivation of axis-to-axes
+    // and `legOfBlock` the single reading of a leg out of it, which is what
+    // every other consumer now takes. Indexing was a second answer to the same
+    // question, and a wrong one for a single-axis type: a Stop Loss saved at
+    // `axis: 2` - a state real reloaded strategies carry - indexes to "limit"
+    // where the block itself is the trigger leg. It decides the label only; it
+    // never touches the price above.
+    const leg = typeDef
+      ? legOfBlock({ axes: axesForBlockAxis(typeDef.axes, order.axis ?? 1) })
+      : null;
+    const axisSuffix =
+      typeDef && typeDef.axes.length > 1 && leg ? `-${leg}` : "";
 
     lines.push({
       id,

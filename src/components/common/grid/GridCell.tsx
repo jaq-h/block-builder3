@@ -2,10 +2,15 @@ import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
 import {
-  calculatePrice,
+  cellDirection,
+  clampOffset,
   formatPrice,
   getCellDisplayMode,
-  isCellDescending,
+  isDescending as isDescendingDirection,
+  legInCell,
+  legOfBlock,
+  priceForOffset,
+  type PriceAxisLeg,
 } from "../../../utils";
 import { describeCell } from "../../../utils/blockCommand";
 import { useMarket } from "../../../store/useMarket";
@@ -74,7 +79,6 @@ interface GridCellProps {
    * behind with nothing said about either.
    */
   onCellActivate: () => void;
-  carryingBlockId: string | null;
   focusBlockId: string | null;
   onBlockFocusHandled: () => void;
 }
@@ -106,7 +110,6 @@ const GridCell: FC<GridCellProps> = ({
   onBlockCommandCancel,
   onBlockAdjustPrice,
   onCellActivate,
-  carryingBlockId,
   focusBlockId,
   onBlockFocusHandled,
 }) => {
@@ -117,12 +120,29 @@ const GridCell: FC<GridCellProps> = ({
   const { activeMarket } = useMarket();
 
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = isCellDescending(blocks);
+  // The cell's scale, from the one owner of it. Every chip, every slider and
+  // every announcement in this cell is drawn on this single direction - and so
+  // is the Kraken payload, which reads the same cell through
+  // `extractBlocksFromGrid`. Reading each block's own direction here is what
+  // put `-25.00% $37,500` on screen beside a payload that said 62,500.
+  const direction = cellDirection(blocks);
+  const isDescending = isDescendingDirection(direction);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
-  const hasAxis1Blocks = blocks.some((block) => block.axis === 1);
-  const hasAxis2Blocks = blocks.some((block) => block.axis === 2);
+  // Which column a block is drawn in, which label that column carries and which
+  // icon the slider shows are all one question - the block's leg - and
+  // `legOfBlock` is its owner. Splitting on `block.axis` here was the last
+  // consumer answering axis membership for itself: `axis` has no notion of a
+  // single-axis order type, so a Stop Loss saved at axis 2 and rehydrated as
+  // `axes: ["trigger"]` drew a column labelled "Limit" around a slider whose
+  // accessible name said "trigger price".
+  const triggerBlocks = blocks.filter(
+    (block) => legOfBlock(block) === "trigger",
+  );
+  const limitBlocks = blocks.filter((block) => legOfBlock(block) === "limit");
+  const hasTriggerBlocks = triggerBlocks.length > 0;
+  const hasLimitBlocks = limitBlocks.length > 0;
 
   const rowLabelType: "primary" | "conditional" =
     rowLabel.toLowerCase() === "primary" ? "primary" : "conditional";
@@ -133,8 +153,9 @@ const GridCell: FC<GridCellProps> = ({
   );
 
   // Every block in the cell shares the same command wiring; only the id differs.
+  // No `isCarrying`: a placed block is never carried, because it never changes
+  // cells (decision D9). The palette is the only place a block is held from.
   const commandProps = (blockId: string) => ({
-    isCarrying: carryingBlockId === blockId,
     shouldFocus: focusBlockId === blockId,
     onFocusHandled: onBlockFocusHandled,
     onActivate: onBlockActivate,
@@ -181,7 +202,7 @@ const GridCell: FC<GridCellProps> = ({
 
   const renderAxisContent = (
     axisBlocks: BlockData[],
-    axisNumber: 1 | 2,
+    leg: PriceAxisLeg,
     isSingleAxis: boolean,
     axisLabel: string,
     showPercentageScale: boolean = true,
@@ -197,7 +218,7 @@ const GridCell: FC<GridCellProps> = ({
       <div
         // The element the block positioner is absolutely laid out within, and
         // so the one the vertical drag has to measure to invert that layout.
-        data-axis-track={`${colIndex}-${rowIndex}-${axisNumber}`}
+        data-axis-track={`${colIndex}-${rowIndex}-${leg}`}
         className={getAxisColumnProps(isSingleAxis)}
       >
         {showPercentageScale && renderPercentageScale(isDescending)}
@@ -207,32 +228,36 @@ const GridCell: FC<GridCellProps> = ({
         </span>
 
         {axisBlocks.map((block) => {
-          const calculatedPrice = calculatePrice(
+          // One clamped offset for the chip, the ruler, the dashed indicator
+          // and the block itself, so the drawn position and the drawn price can
+          // never come from different numbers.
+          const offset = clampOffset(block.yPosition);
+          const calculatedPrice = priceForOffset(
             currentPrice,
-            block.yPosition,
-            isDescending,
+            offset,
+            direction,
           );
           const sliderIcon =
-            block.axis === 1 ? block.triggerIcon : block.limitIcon;
+            leg === "trigger" ? block.triggerIcon : block.limitIcon;
           const dashedProps = getDashedIndicatorProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
           );
           const pctProps = getPercentageLabelProps(
-            block.yPosition,
+            offset,
             isDescending,
             sign,
             isSingleAxis,
           );
           const priceProps = getCalculatedPriceLabelProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
             isBuy,
           );
           const posProps = getBlockPositionerProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
           );
@@ -244,7 +269,7 @@ const GridCell: FC<GridCellProps> = ({
               />
               <div className={pctProps.className} style={pctProps.style}>
                 {pctProps.sign}
-                {block.yPosition.toFixed(2)}%
+                {offset.toFixed(2)}%
               </div>
               <div className={priceProps.className} style={priceProps.style}>
                 {formatPrice(calculatedPrice, activeMarket)}
@@ -255,10 +280,9 @@ const GridCell: FC<GridCellProps> = ({
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
                   label={block.label}
-                  axis={block.axis}
-                  axes={block.axes}
-                  yPosition={block.yPosition}
-                  direction={isDescending ? "downside" : "upside"}
+                  leg={legInCell(blocks, block)}
+                  yPosition={offset}
+                  direction={direction}
                   priceText={formatPrice(calculatedPrice, activeMarket)}
                   onVerticalDrag={onBlockVerticalDrag}
                   onAdjustPrice={onBlockAdjustPrice}
@@ -310,7 +334,7 @@ const GridCell: FC<GridCellProps> = ({
                 icon={block.icon}
                 abrv={block.abrv}
                 label={block.label}
-                axes={block.axes}
+                leg={legInCell(blocks, block)}
                 {...commandProps(block.id)}
               />
             ))}
@@ -329,14 +353,11 @@ const GridCell: FC<GridCellProps> = ({
           </div>
           <div className={sliderArea}>
             {renderMarketPrice()}
-            {renderAxisContent(blocks, 2, true, "Limit", true)}
+            {renderAxisContent(blocks, "limit", true, "Limit", true)}
           </div>
         </>
       );
     }
-
-    const axis1Blocks = blocks.filter((block) => block.axis === 1);
-    const axis2Blocks = blocks.filter((block) => block.axis === 2);
 
     return (
       <>
@@ -347,15 +368,21 @@ const GridCell: FC<GridCellProps> = ({
         </div>
         <div className={sliderArea}>
           {renderMarketPrice()}
-          {hasAxis1Blocks &&
-            renderAxisContent(axis1Blocks, 1, !hasAxis2Blocks, "Trigger", true)}
-          {hasAxis2Blocks &&
+          {hasTriggerBlocks &&
             renderAxisContent(
-              axis2Blocks,
-              2,
-              !hasAxis1Blocks,
+              triggerBlocks,
+              "trigger",
+              !hasLimitBlocks,
+              "Trigger",
+              true,
+            )}
+          {hasLimitBlocks &&
+            renderAxisContent(
+              limitBlocks,
+              "limit",
+              !hasTriggerBlocks,
               "Limit",
-              !hasAxis1Blocks,
+              !hasTriggerBlocks,
             )}
         </div>
       </>

@@ -3,7 +3,7 @@
  * Maps UI block data from the Strategy Assembly grid to Kraken order parameters
  */
 
-import type { BlockData, GridData } from "../types/grid";
+import type { BlockData, BlockDirection, GridData } from "../types/grid";
 import type {
   OrderParams,
   OrderType,
@@ -16,7 +16,11 @@ import type {
   UIBlockData,
   OrderBuildContext,
 } from "./types";
-import { priceAtOffset } from "../utils/price";
+import {
+  cellDirection,
+  offsetForOrder,
+  priceForOrderOffset,
+} from "../utils/blockMapping";
 import {
   formatPriceForAPI,
   formatQuantityForAPI,
@@ -114,19 +118,24 @@ const determineSide = (col: number): OrderSide => {
  *
  * Decision D3: the interface is the source of truth. A block at yPosition 25 is
  * 25% away from market, exactly as its label, its price chip and the chart line
- * all say, so this calls the same `priceAtOffset` the grid cell renders from
- * and reads the same `direction` the cell renders from. There is no scale
- * factor and no second opinion about which side of the market the block is on.
+ * all say. `priceForOrderOffset` is the mapping owner's derivation of that for
+ * a payload - the same formula and the same direction reading `GridCell` uses
+ * for the chip and `orderPriceLines` for the chart - so there is no scale
+ * factor and no second opinion here about which side of the market the block is
+ * on or how far along the axis it sits. It parts company with the display call
+ * on one input only: a non-finite position stays non-finite, so it is refused
+ * downstream rather than drawn at the market price.
+ *
+ * `direction` is the cell's, stamped on by `extractBlocksFromGrid`, which is
+ * the whole of decision D8 as this module sees it. Reading the block's own was
+ * what let a bulk cell draw `-25.00% $37,500` while this built a payload at
+ * 62,500 from the identical block.
  */
 export const calculateBlockPrice = (
   block: UIBlockData,
   currentPrice: number,
 ): number =>
-  priceAtOffset(
-    currentPrice,
-    block.position.yPosition,
-    block.direction === "downside",
-  );
+  priceForOrderOffset(currentPrice, block.position.yPosition, block.direction);
 
 // Price and quantity formatting live in `src/utils/marketFormat.ts`, which is
 // handed Kraken's own `MarketPrecision` for the pair. They used to be here, and
@@ -144,6 +153,12 @@ export const blockDataToUIBlock = (
   block: BlockData,
   col: number,
   row: number,
+  /**
+   * The scale the cell this block sits in draws, from `cellDirection`. It is
+   * passed in rather than read off the block because only the caller can see
+   * the cell, and the cell is what owns the direction (decision D8).
+   */
+  direction: BlockDirection,
 ): UIBlockData => {
   return {
     id: block.id,
@@ -155,10 +170,18 @@ export const blockDataToUIBlock = (
     position: {
       col,
       row,
-      yPosition: block.yPosition,
+      // Clamped by the mapping owner, so a position no axis could have drawn
+      // cannot reach a payload. The 0-100 reading that made a 100% offset - a
+      // price of exactly zero - reachable is gone from the drag layer, and this
+      // is what stops a saved strategy from carrying one back in.
+      //
+      // `offsetForOrder` rather than `clampOffset` because this is the payload:
+      // a non-finite position stays non-finite so `validateOrder` refuses it,
+      // where the display answer of zero would price it at the market and pass.
+      yPosition: offsetForOrder(block.yPosition),
       axis: block.axis,
     },
-    direction: block.direction,
+    direction,
     axes: block.axes,
     linkedBlockId: block.linkedBlockId,
   };
@@ -341,8 +364,12 @@ export const extractBlocksFromGrid = (grid: GridData): UIBlockData[] => {
 
   grid.forEach((column, colIndex) => {
     column.forEach((cell, rowIndex) => {
+      // One direction per cell, read once, applied to every block in it. This
+      // is where the payload joins the price chip and the chart line: all three
+      // now ask `cellDirection` rather than each reading a block's own field.
+      const direction = cellDirection(cell);
       cell.forEach((block) => {
-        blocks.push(blockDataToUIBlock(block, colIndex, rowIndex));
+        blocks.push(blockDataToUIBlock(block, colIndex, rowIndex, direction));
       });
     });
   });
@@ -653,11 +680,18 @@ export const validateOrder = (
   // module's exported validation entry point, so a wrong guard is a trap for
   // the next caller rather than a harmless dead branch.
   //
-  // This is the last line of defence, not the fix. The real bug is upstream:
-  // `calculateYPosition` works on a 0-100 scale while the slider and the axis
-  // labels use SCALE_CONFIG.MAX_PERCENT = 50, and the drop handler writes the
-  // unclamped result straight into the block. That lives in the drag layer and
-  // is owned by bb3-mapping-owner.
+  // This is the last line of defence, and it is now genuinely the last one
+  // rather than the only one. The upstream bug it was written for is fixed: the
+  // drop handler used to write a raw 0-100 reading into the block while the
+  // slider and the axis labels ran to 50, so a block dragged to the bottom of
+  // its cell was a 100% offset and a price of zero. Positions now flow through
+  // `offsetForOrder` in `utils/blockMapping.ts` on every path into a payload,
+  // so a zero static price is unreachable rather than merely unlikely. That
+  // helper deliberately does not absorb a non-finite position the way the
+  // display clamp does, and nothing upstream of it absorbs one either - the
+  // hydration path used to, which is what made this check unreachable while a
+  // comment here claimed it was the last line of defence. This stays, because a
+  // validator that trusts its callers is not a validator.
   const requirePrice = (
     label: string,
     value?: string,

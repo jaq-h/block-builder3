@@ -19,13 +19,13 @@ export type { StrategyPattern, OrderConfig };
 
 export interface GridDataState {
   grid: GridData;
+  /** Derived from `grid` by `orderConfigFromGrid`; there is no setter. */
   orderConfig: OrderConfig;
   strategyPattern: StrategyPattern;
 }
 
 export interface GridDataActions {
   setGrid: React.Dispatch<React.SetStateAction<GridData>>;
-  setOrderConfig: React.Dispatch<React.SetStateAction<OrderConfig>>;
   setStrategyPattern: React.Dispatch<React.SetStateAction<StrategyPattern>>;
   clearAll: () => void;
   reverseBlocks: () => void;
@@ -93,6 +93,7 @@ export type StrategyAssemblyContextType = GridDataContextType &
 export interface StrategyAssemblyState {
   // Business state
   grid: GridData;
+  /** Derived from `grid` by `orderConfigFromGrid`; there is no setter. */
   orderConfig: OrderConfig;
   strategyPattern: StrategyPattern;
 
@@ -111,7 +112,6 @@ export interface StrategyAssemblyState {
 
 export interface StrategyAssemblyActions {
   setGrid: React.Dispatch<React.SetStateAction<GridData>>;
-  setOrderConfig: React.Dispatch<React.SetStateAction<OrderConfig>>;
   setStrategyPattern: React.Dispatch<React.SetStateAction<StrategyPattern>>;
   setDraggingId: React.Dispatch<React.SetStateAction<string | null>>;
   setDraggingFromProvider: React.Dispatch<React.SetStateAction<string | null>>;

@@ -89,11 +89,17 @@ describe("describeOutcome, picking a block up", () => {
     );
   });
 
-  it("promises no arrow keys when refusing a dual-axis leg", () => {
+  // FORMERLY the "dualAxisPartner" refusal, which read "Stop Loss Limit cannot
+  // be moved on its own: its trigger and limit must stay in the same cell."
+  // That special case is gone with the move it guarded: under decision D9 no
+  // placed block changes cells, so the general rule already covers a dual-axis
+  // leg, and a block in a cell with no price axis has no arrow keys to be
+  // offered instead - only "remove it and place a new one".
+  it("says how to correct a misplaced order when there is no axis to offer", () => {
     expect(
-      say({ kind: "moveRefused", label: "Stop Loss Limit", reason: "dualAxisPartner" }),
+      say({ kind: "moveRefused", label: "Market", reason: "staysInCell" }),
     ).toBe(
-      "Stop Loss Limit cannot be moved on its own: its trigger and limit must stay in the same cell.",
+      "Market stays in the cell it was placed in. To put this order somewhere else, remove it and place a new one.",
     );
   });
 });
@@ -207,14 +213,6 @@ describe("describeOutcome, what the grid actually did", () => {
     ).toBe("Placed Market order in Exit column, upper conditional row.");
   });
 
-  it("says an existing block moved, the same way for a tap and for a drag", () => {
-    const moved: PlacementResult = { status: "moved", blockId: "b1" };
-    expect(placement(moved, "carry")).toBe(
-      "Moved Market block to Exit column, upper conditional row.",
-    );
-    expect(placement(moved, "drag")).toBe(placement(moved, "carry"));
-  });
-
   it("says a block that went nowhere stayed where it is", () => {
     // The defect this module was built for: a release inside the block's own
     // cell. Nothing changed, and the cell holding the block did not refuse it.
@@ -283,21 +281,21 @@ describe("describeOutcome, what the grid actually did", () => {
     );
   });
 
-  it("leaves a move to speak for itself, since it names the block already", () => {
-    // "created", "moved" and "removed" already describe something happening to
-    // the very block that was carried, so repeating that it is no longer in
-    // hand is noise rather than news.
-    const moved: PlacementResult = { status: "moved", blockId: "b1" };
+  it("leaves a placement to speak for itself, since it names the block already", () => {
+    // "created" and "removed" already describe something happening to the very
+    // block that was carried, so repeating that it is no longer in hand is
+    // noise rather than news. The "moved" outcome used to be the third of
+    // these; decision D9 removed the capability, so the variant went with it.
     expect(
       say({
         kind: "placement",
-        source: placed,
+        source: palette,
         cell,
-        result: moved,
+        result: { status: "created", blockId: "b1" },
         via: "drag",
         releasedCarry: true,
       }),
-    ).toBe("Moved Market block to Exit column, upper conditional row.");
+    ).toBe("Placed Market order in Exit column, upper conditional row.");
     expect(say({ kind: "removed", source: placed, releasedCarry: true })).toBe(
       "Removed Market block from the grid.",
     );

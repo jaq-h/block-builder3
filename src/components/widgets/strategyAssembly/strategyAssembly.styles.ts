@@ -21,6 +21,23 @@ export const container = "h-full flex flex-col max-w-[700px] bg-bg-primary";
 // one level in, in `contentRow`, where its height is free to grow.
 export const contentWrapper = "flex-1 min-h-0 overflow-auto py-1.5";
 
+// The grid pane: the scrolling placement surface above, and the cell-locked
+// note below it. A flex column so the note is `shrink-0` and the scroller keeps
+// a bounded height - putting the note *inside* `contentWrapper` would have made
+// it scroll away, and `contentRow`'s `min-h-full` would have overflowed the
+// panel by the note's own height the moment it appeared.
+export const gridPane = "flex-1 min-h-0 flex flex-col";
+
+// A placed order was asked to change cells, and it does not (decision D9). It
+// is ordinary visible text rather than a live region: `LiveAnnouncer` is the
+// grid's one voice, and a second would cut it off. Same palette as the primary
+// order warning inside a cell, because it is the same kind of message.
+// Flush with the grid pane's own edges, so it lines up with the palette column
+// on the left and the Exit column on the right rather than floating 6px inside
+// them. The pane carries no horizontal padding, so no margin is the alignment.
+export const cellLockedNote =
+  "shrink-0 mt-1.5 px-3 py-2 rounded-lg border border-dashed border-accent-outline bg-accent-bg-subtle-light text-[11px] leading-snug text-accent-primary";
+
 // At least fills the viewport above, and grows past it when the grid is taller
 // than the space available - which is what turns the clipping into a scroll.
 export const contentRow = "flex min-h-full gap-1.5";

@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import type {
+  BlockData,
   CellPosition,
   GridData,
   PlacementResult,
@@ -8,17 +9,17 @@ import type {
 import type { OrderTypeDefinition } from "../data/orderTypes";
 import {
   commandReducer,
-  hasDualAxisPartner,
   IDLE_COMMAND_STATE,
   initialTarget,
   samePosition,
   validTargetsFor,
-  withOriginCell,
   type ActivationOrigin,
   type CarriedBlock,
-  type CommandSource,
+  type ProviderSource,
 } from "../utils/blockCommand";
-import { findBlockInGrid, getCellDisplayMode } from "../utils/grid";
+import { findBlockInGrid } from "../utils/grid";
+import { cellDrawsPriceAxis } from "../utils/blockMapping";
+import type { PickUpRefusal } from "../utils/gridAnnouncements";
 import { holdBlockInHand } from "./blockInHand";
 import type { GridAnnouncer } from "./useGridAnnouncer";
 
@@ -54,8 +55,30 @@ export interface UseBlockCommandOptions {
   announcer: GridAnnouncer;
   /** Commit a new block from the palette, and report what the grid did. */
   placeProvider: (type: string, cell: CellPosition) => PlacementResult;
-  /** Commit a move of an existing block, and report what the grid did. */
-  moveBlock: (id: string, cell: CellPosition) => PlacementResult;
+  /**
+   * A placed block was activated, and it is not going anywhere.
+   *
+   * Decision D9: once a block is placed, its cell is where it lives - every
+   * block, no carve-outs - so there is no `moveBlock` here any more and the
+   * grid-block carry it existed for is gone with it. The owner is handed the
+   * block and the reason rather than a sentence, because it has to do two
+   * things with them: report the outcome to the announcer, and put the rule on
+   * screen for everyone who is not listening to a live region.
+   *
+   * The block comes with the cell it is in, because the rule being refused is
+   * about that pairing: the note says this order stays *here*, so it has to be
+   * taken down when the block is no longer here - gone from the grid, or moved
+   * to the other column by Reverse Blocks, which keeps every id. The id comes
+   * with the label for the same reason a cell does: two orders can share a
+   * label, and the note is about one of them. This model has already found the
+   * block, so it hands the cell over rather than leaving the owner to look it
+   * up again and keep a second null check in step.
+   */
+  refuseMove: (
+    block: Pick<BlockData, "id" | "label">,
+    at: CellPosition,
+    reason: Exclude<PickUpRefusal, "noTargets">,
+  ) => void;
 }
 
 export interface UseBlockCommandReturn {
@@ -64,7 +87,11 @@ export interface UseBlockCommandReturn {
   isCarrying: (key: string) => boolean;
   /** Enter, Space or a tap on a palette entry. */
   activateProvider: (type: string, origin: ActivationOrigin) => void;
-  /** Enter, Space or a tap on a placed block. */
+  /**
+   * Enter, Space or a tap on a placed block. It is never picked up - a placed
+   * block stays in its cell (decision D9) - so this only ever reports the
+   * refusal, or places whatever palette order is already in hand.
+   */
   activateBlock: (id: string, origin: ActivationOrigin) => void;
   /** A tap on a cell. Does nothing, silently, while nothing is carried. */
   activateCell: (cell: CellPosition) => void;
@@ -103,7 +130,7 @@ export const useBlockCommand = ({
   providerBlocks,
   announcer,
   placeProvider,
-  moveBlock,
+  refuseMove,
 }: UseBlockCommandOptions): UseBlockCommandReturn => {
   const [state, dispatch] = useReducer(commandReducer, IDLE_COMMAND_STATE);
   const [focusRequest, setFocusRequest] = useState<string | null>(null);
@@ -111,43 +138,17 @@ export const useBlockCommand = ({
 
   const carrying = state.carrying;
 
-  // Set for the instant between a tap that picks a block up and the click the
-  // browser appends to that same tap. See `activateBlock`.
-  const pointerPickUpRef = useRef(false);
-
-  const isCarrying = (key: string): boolean => {
-    if (!carrying) return false;
-    return carrying.source.kind === "provider"
-      ? carrying.source.type === key
-      : carrying.source.id === key;
-  };
-
-  /** The element focus returns to when a carry is cancelled. */
-  const sourceKey = (source: CommandSource): string =>
-    source.kind === "provider" ? source.type : source.id;
-
-  /**
-   * Where the grid says this block is, right now. `CommandSource.origin` is a
-   * pick-up-time snapshot and the grid can be replaced under a live carry, so
-   * every sentence that names a carried block's cell is composed from this
-   * instead. `undefined` means the grid no longer holds the block at all.
-   */
-  const confirmedCell = (source: CommandSource): CellPosition | undefined => {
-    if (source.kind !== "grid") return undefined;
-    const found = findBlockInGrid(grid, source.id);
-    return found ? { col: found.col, row: found.row } : undefined;
-  };
+  // Only a palette order is ever carried, so the key is always an order type.
+  const isCarrying = (key: string): boolean =>
+    carrying?.source.type === key;
 
   /** True when the block was actually picked up, false when it was refused. */
   const pickUp = (
-    source: CommandSource,
+    source: ProviderSource,
     allowedRows: number[],
-    preferred: CellPosition | null,
     origin: ActivationOrigin,
   ): boolean => {
-    let targets = validTargetsFor(allowedRows, grid, strategyPattern);
-    // A placed block can always go back where it came from.
-    if (preferred) targets = withOriginCell(targets, preferred);
+    const targets = validTargetsFor(allowedRows, grid, strategyPattern);
     if (targets.length === 0) {
       // Nothing was dispatched, so a carry this pick-up was trying to swap out
       // is still live - and the refusal is the only place that can say so.
@@ -159,20 +160,19 @@ export const useBlockCommand = ({
       });
       return false;
     }
-    dispatch({ type: "pickUp", source, targets, preferred, origin });
+    dispatch({ type: "pickUp", source, targets, origin });
     // The same choice the reducer makes, so the announcement can never name a
     // cell other than the one that is actually the target.
-    const target = initialTarget(targets, preferred) ?? targets[0];
+    const target = initialTarget(targets) ?? targets[0];
     report({ kind: "pickedUp", source, target, origin });
     return true;
   };
 
   const commit = (block: CarriedBlock, cell: CellPosition) => {
-    pointerPickUpRef.current = false;
-    const result =
-      block.source.kind === "provider"
-        ? placeProvider(block.source.type, cell)
-        : moveBlock(block.source.id, cell);
+    // Only a palette order is ever carried, so this is the only commit there
+    // is. A placed block never leaves its cell (decision D9), which
+    // `CarriedBlock.source` states in the type rather than in a comment.
+    const result = placeProvider(block.source.type, cell);
 
     // The grid can disagree with the targets snapshotted at pick-up time - it
     // may have been emptied or filled since - so what is said comes from what
@@ -187,7 +187,7 @@ export const useBlockCommand = ({
         break;
       case "refused":
         dispatch({ type: "cancel" });
-        setFocusRequest(sourceKey(block.source));
+        setFocusRequest(block.source.type);
         break;
       default:
         dispatch({ type: "place" });
@@ -208,15 +208,13 @@ export const useBlockCommand = ({
   };
 
   const cancel = ({ restoreFocus = true }: CancelOptions = {}) => {
-    pointerPickUpRef.current = false;
     if (!carrying) return;
     dispatch({ type: "cancel" });
-    if (restoreFocus) setFocusRequest(sourceKey(carrying.source));
+    if (restoreFocus) setFocusRequest(carrying.source.type);
     report({
       kind: "carryEnded",
       source: carrying.source,
       reason: "cancelled",
-      at: confirmedCell(carrying.source),
     });
   };
 
@@ -241,7 +239,6 @@ export const useBlockCommand = ({
    *   said, and the next tap on a cell then does nothing the user can explain.
    */
   const releaseForDrag = (subjectKey: string): boolean => {
-    pointerPickUpRef.current = false;
     if (!carrying) return false;
     const isSameSubject = isCarrying(subjectKey);
     dispatch({ type: "cancel" });
@@ -250,7 +247,6 @@ export const useBlockCommand = ({
       kind: "carryEnded",
       source: carrying.source,
       reason: "superseded",
-      at: confirmedCell(carrying.source),
     });
     return false;
   };
@@ -270,7 +266,6 @@ export const useBlockCommand = ({
     pickUp(
       { kind: "provider", type, label: provider.label },
       provider.allowedRows,
-      null,
       origin,
     );
   };
@@ -279,6 +274,8 @@ export const useBlockCommand = ({
     if (carrying) {
       // A block that is not the one being carried belongs to a cell, and the
       // cell decides - so the carried block lands there rather than swapping.
+      // Nothing placed is ever carried, so `isCarrying` can only be true of a
+      // palette entry, whose key is an order type rather than a block id.
       if (!isCarrying(id)) return;
       if (origin === "keyboard") commit(carrying, carrying.target);
       else cancel();
@@ -288,60 +285,27 @@ export const useBlockCommand = ({
     if (!found) return;
     const cell = { col: found.col, row: found.row };
 
-    // A block drawn on a price axis does not move between cells at all. A mouse
-    // cannot move one either - `Block` routes anything rendered on an axis to
-    // the vertical drag, so the free drag never applies to it - and this model
-    // gives the keyboard and a finger the same capability as the mouse, not a
-    // larger one. The cell's display mode is what decides whether a block is
-    // drawn on an axis, so it is what decides this too: a cell holding any
-    // axis-less block draws *every* block in it without one.
+    // A placed block does not move between cells, by any input method
+    // (decision D9). This model used to pick one up and walk it to another
+    // cell, which is the capability that has gone; what is left is telling the
+    // user so, because a press that silently does nothing is indistinguishable
+    // from a broken control.
     //
-    // Refusing silently would make Enter look broken, so each refusal says what
-    // the block can still do - and only what this render actually wires.
-    const cellBlocks = grid[cell.col][cell.row];
-    if (getCellDisplayMode(cellBlocks) !== "no-axis") {
-      report({
-        kind: "moveRefused",
-        label: found.block.label,
-        reason: "onPriceAxis",
-      });
-      return;
-    }
-
-    // No axis in this render, so the arrow keys are not wired and cannot be
-    // offered. One leg of a dual-axis order still cannot travel on its own: it
-    // would leave its partner behind and the two halves would be submitted as
-    // two orders on opposite sides of the market.
-    if (hasDualAxisPartner(cellBlocks, found.block)) {
-      report({
-        kind: "moveRefused",
-        label: found.block.label,
-        reason: "dualAxisPartner",
-      });
-      return;
-    }
-
-    const carried = pickUp(
-      { kind: "grid", id, label: found.block.label, origin: cell },
-      found.block.allowedRows,
+    // Which refusal depends on whether this cell draws a price axis, and that
+    // question has exactly one owner - `cellDrawsPriceAxis` - shared with the
+    // renderer, so the arrow keys offered here are the arrow keys `Block`
+    // actually wires. A cell with an axis has something else to offer; one
+    // without has only "remove it and place a new one".
+    refuseMove(
+      found.block,
       cell,
-      origin,
+      cellDrawsPriceAxis(grid[cell.col][cell.row])
+        ? "onPriceAxis"
+        : "staysInCell",
     );
-
-    // The browser appends a click to every tap, and it bubbles from the block
-    // to the cell holding it - which, now that something is carried, is a live
-    // placement target. Left alone it puts the block straight back down in the
-    // cell it was just picked up from, so tap-to-pick-up on the grid would do
-    // nothing at all. Only this branch consumes the tap: a tap on a block that
-    // is *not* the carried one deliberately falls through to its cell.
-    if (carried && origin !== "keyboard") pointerPickUpRef.current = true;
   };
 
   const activateCell = (cell: CellPosition) => {
-    if (pointerPickUpRef.current) {
-      pointerPickUpRef.current = false;
-      return;
-    }
     // A click on the grid with nothing carried is not an interaction the user
     // started - it is a click on the page - so it says nothing.
     if (!carrying) return;

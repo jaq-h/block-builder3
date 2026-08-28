@@ -114,3 +114,52 @@ describe("a strategy whose market is no longer on offer", () => {
     });
   });
 });
+
+// =============================================================================
+// WHICH LEG A CARD NAMES
+// =============================================================================
+//
+// The card was the last consumer deriving the leg from `axis` alone, and it
+// disagreed with every other one for a state a reload pins as real: a Stop Loss
+// is trigger-only, so a save that recorded `axis: 2` for it came back labelled
+// "Limit" here while the grid drew it in the trigger column and the payload
+// sent a `triggers.price`. `legForOrder` is the one owner all three now read.
+
+describe("the leg an order card names", () => {
+  // One order, so one card: whatever leg is on screen is this order's.
+  const cardFor = (overrides: Partial<ActiveOrderEntry> & { id: string }) =>
+    render(
+      <OrdersStoreProvider>
+        <ActiveOrders
+          initialOrders={{ [overrides.id]: entry(overrides) }}
+          onEditGroup={vi.fn()}
+        />
+      </OrdersStoreProvider>,
+    );
+
+  it("calls a stop loss saved at axis 2 its trigger leg", () => {
+    cardFor({ id: "sa-stop-loss-1", type: "stop-loss", axis: 2 });
+
+    expect(screen.getByText("Stop Loss")).toBeInTheDocument();
+    expect(screen.getByText("Trigger")).toBeInTheDocument();
+    expect(screen.queryByText("Limit")).toBeNull();
+  });
+
+  it("still calls the limit leg of a dual-axis order type a limit", () => {
+    cardFor({
+      id: "sa-stop-loss-limit-limit-2",
+      type: "stop-loss-limit",
+      axis: 2,
+    });
+
+    expect(screen.getByText("Limit")).toBeInTheDocument();
+    expect(screen.queryByText("Trigger")).toBeNull();
+  });
+
+  it("names no leg at all for an order that carries no price", () => {
+    cardFor({ id: "sa-market-1", type: "market", axis: undefined });
+
+    expect(screen.queryByText("Trigger")).toBeNull();
+    expect(screen.queryByText("Limit")).toBeNull();
+  });
+});

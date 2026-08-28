@@ -49,8 +49,6 @@ export interface CellPosition {
 export type PlacementResult =
   /** A new block was created in the target cell, from the palette. */
   | { status: "created"; blockId: string }
-  /** An existing block left one cell and arrived in another. */
-  | { status: "moved"; blockId: string }
   /** The block was already in the target cell, so nothing changed. */
   | { status: "unchanged"; blockId: string }
   /**
@@ -59,8 +57,24 @@ export type PlacementResult =
    * the sentence names a cell the grid has just confirmed rather than one
    * snapshotted when the block was picked up. A palette order has no `at`,
    * because it is nowhere.
+   *
+   * `reason` separates the two refusals a user experiences quite differently.
+   * Without it the grid says a cell "cannot take this order", which is true of
+   * a cell the placement rules exclude and misleading for a placed block, which
+   * no cell will take because placed blocks do not change cells at all
+   * (decision D9). One is about the cell; the other is about the rule.
+   *
+   * Only the rule needs naming, so the member is one value and its absence.
+   * A placement-rules refusal leaves it off and takes the fallthrough sentence
+   * in `describePlacement`, which already words that case correctly - a second
+   * name meaning "the default" would read as a distinction the announcer does
+   * not draw.
    */
-  | { status: "refused"; at?: CellPosition }
+  | {
+      status: "refused";
+      at?: CellPosition;
+      reason?: "staysInCell";
+    }
   /**
    * The block named is not on the grid at all - a carry can outlive the grid
    * it was started against, and the block may have been cleared away since.

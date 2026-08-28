@@ -2,10 +2,15 @@ import { Fragment, type FC } from "react";
 import Block from "../../blocks/block";
 import type { BlockData } from "../../../types/grid";
 import {
-  calculatePrice,
+  cellDirection,
+  clampOffset,
   formatPrice,
   getCellDisplayMode,
-  isCellDescending,
+  isDescending as isDescendingDirection,
+  legInCell,
+  legOfBlock,
+  priceForOffset,
+  type PriceAxisLeg,
 } from "../../../utils";
 import { useMarket } from "../../../store/useMarket";
 import {
@@ -55,12 +60,23 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   const { activeMarket } = useMarket();
 
   const displayMode = getCellDisplayMode(blocks);
-  const isDescending = isCellDescending(blocks);
+  // The same cell scale the builder grid draws, from the same owner: an order
+  // card and the cell it was built in must not disagree about which side of the
+  // market it sits on.
+  const direction = cellDirection(blocks);
+  const isDescending = isDescendingDirection(direction);
   const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
-  const hasAxis1Blocks = blocks.some((block) => block.axis === 1);
-  const hasAxis2Blocks = blocks.some((block) => block.axis === 2);
+  // The same owner the builder cell splits on: `legOfBlock`, never `axis`. An
+  // order card and the cell it was built in must not disagree about which leg
+  // a block is, any more than they may about the direction above.
+  const triggerBlocks = blocks.filter(
+    (block) => legOfBlock(block) === "trigger",
+  );
+  const limitBlocks = blocks.filter((block) => legOfBlock(block) === "limit");
+  const hasTriggerBlocks = triggerBlocks.length > 0;
+  const hasLimitBlocks = limitBlocks.length > 0;
 
   const renderPercentageScale = (isDesc: boolean) => {
     const labels = getScaleLabels(isDesc);
@@ -92,6 +108,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
 
   const renderAxisContent = (
     axisBlocks: BlockData[],
+    leg: PriceAxisLeg,
     isSingleAxis: boolean,
     axisLabel: string,
     showPercentageScale: boolean = true,
@@ -112,32 +129,33 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
         </span>
 
         {axisBlocks.map((block) => {
-          const calculatedPriceValue = calculatePrice(
+          const offset = clampOffset(block.yPosition);
+          const calculatedPriceValue = priceForOffset(
             currentPrice,
-            block.yPosition,
-            isDescending,
+            offset,
+            direction,
           );
           const sliderIcon =
-            block.axis === 1 ? block.triggerIcon : block.limitIcon;
+            leg === "trigger" ? block.triggerIcon : block.limitIcon;
           const dashedProps = getDashedIndicatorProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
           );
           const pctProps = getPercentageLabelProps(
-            block.yPosition,
+            offset,
             isDescending,
             sign,
             isSingleAxis,
           );
           const priceProps = getCalculatedPriceLabelProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
             isBuy,
           );
           const posProps = getBlockPositionerProps(
-            block.yPosition,
+            offset,
             isDescending,
             isSingleAxis,
           );
@@ -149,7 +167,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
               />
               <div className={pctProps.className} style={pctProps.style}>
                 {pctProps.sign}
-                {block.yPosition.toFixed(2)}%
+                {offset.toFixed(2)}%
               </div>
               <div className={priceProps.className} style={priceProps.style}>
                 {formatPrice(calculatedPriceValue, activeMarket)}
@@ -160,10 +178,9 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
                   label={block.label}
-                  axis={block.axis}
-                  axes={block.axes}
-                  yPosition={block.yPosition}
-                  direction={isDescending ? "downside" : "upside"}
+                  leg={legInCell(blocks, block)}
+                  yPosition={offset}
+                  direction={direction}
                   priceText={formatPrice(calculatedPriceValue, activeMarket)}
                   isReadOnly={true}
                 />
@@ -196,7 +213,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                 icon={block.icon}
                 abrv={block.abrv}
                 label={block.label}
-                axes={block.axes}
+                leg={legInCell(blocks, block)}
                 isReadOnly={true}
               />
             ))}
@@ -215,14 +232,11 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
           </div>
           <div className={sliderArea}>
             {renderMarketPrice()}
-            {renderAxisContent(blocks, true, "Limit", true)}
+            {renderAxisContent(blocks, "limit", true, "Limit", true)}
           </div>
         </>
       );
     }
-
-    const axis1Blocks = blocks.filter((block) => block.axis === 1);
-    const axis2Blocks = blocks.filter((block) => block.axis === 2);
 
     return (
       <>
@@ -233,14 +247,21 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
         </div>
         <div className={sliderArea}>
           {renderMarketPrice()}
-          {hasAxis1Blocks &&
-            renderAxisContent(axis1Blocks, !hasAxis2Blocks, "Trigger", true)}
-          {hasAxis2Blocks &&
+          {hasTriggerBlocks &&
             renderAxisContent(
-              axis2Blocks,
-              !hasAxis1Blocks,
+              triggerBlocks,
+              "trigger",
+              !hasLimitBlocks,
+              "Trigger",
+              true,
+            )}
+          {hasLimitBlocks &&
+            renderAxisContent(
+              limitBlocks,
+              "limit",
+              !hasTriggerBlocks,
               "Limit",
-              !hasAxis1Blocks,
+              !hasTriggerBlocks,
             )}
         </div>
       </>

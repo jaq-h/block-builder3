@@ -26,7 +26,6 @@ const renderToolbar = (ui: ReactElement) => {
     orderConfig: {},
     strategyPattern: "conditional",
     setGrid: vi.fn(),
-    setOrderConfig: vi.fn(),
     setStrategyPattern: vi.fn(),
     clearAll,
     reverseBlocks,

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { useRef, useState, type FC } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FC,
+  type SVGProps,
+} from "react";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 
 import GridArea from "./GridArea";
@@ -10,6 +16,8 @@ import { HoverContext } from "../contexts/HoverContext";
 import { StaticContext } from "../contexts/StaticContext";
 import { ORDER_TYPES } from "@data/orderTypes";
 import { clearGrid } from "@utils/grid";
+import { orderConfigFromGrid, reverseGrid } from "@utils/blockMapping";
+import { mapGridToOrders, validateOrder } from "@api/orderMapper";
 import { BLOCK_HEIGHT, getBlockTopPx } from "@styles/grid";
 import type {
   BlockData,
@@ -17,7 +25,6 @@ import type {
   GridData,
   StrategyPattern,
 } from "@/types/grid";
-import type { OrderConfig } from "@/types/grid";
 import {
   installPointerCapture,
   type PointerCaptureTracker,
@@ -46,9 +53,12 @@ const TRACK_HEIGHT = 181.5;
 const MARKET_PRICE = 100_000;
 
 /**
- * A Stop Loss and a Limit are stamped with OPPOSITE directions when they share
- * a bulk cell: `shouldBeDescending` keys off the order type there, and only
- * stop-loss families count as the downside zone.
+ * Built with OPPOSITE directions on purpose, and pushed straight into the cell
+ * rather than through `addBlocksToCell` - so this is the unstamped grid the
+ * mapping owner has to cope with, not what the app now produces. A cell takes
+ * one scale from `directionForNewCell` the moment its first block lands and
+ * stamps every later arrival with it, so the two would agree if they had gone
+ * in that way.
  */
 const placedStopLoss = (
   yPosition: number,
@@ -131,6 +141,16 @@ const Harness: FC<{
    * clicking it is one of the things that puts a carried block down.
    */
   outsideControl?: boolean;
+  /**
+   * Publishes the grid the provider is holding after every change.
+   *
+   * What is drawn and what is stored are deliberately not the same for a
+   * position no axis could have produced: display clamps a non-finite one to
+   * the market line so nothing prints `NaN%`, while the store keeps it intact
+   * so `validateOrder` still refuses the payload. Only the stored value can
+   * tell those two apart, and only the stored value reaches Kraken.
+   */
+  onGrid?: (grid: GridData) => void;
 }> = ({
   initialGrid,
   pattern = "conditional",
@@ -139,13 +159,16 @@ const Harness: FC<{
   refuseStrategyOn,
   strategyLoaded,
   outsideControl,
+  onGrid,
 }) => {
   const [selected, setSelected] = useState<{
     market: Market;
     precision: MarketPrecision;
   }>({ market: findMarket("BTC/USD")!, precision: BTC_USD });
   const [grid, setGrid] = useState<GridData>(initialGrid);
-  const [orderConfig, setOrderConfig] = useState<OrderConfig>({});
+  // Derived, the way `StrategyAssemblyProvider` derives it: the grid is the
+  // store and the saved config is a projection of it.
+  const orderConfig = orderConfigFromGrid(grid);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [draggingFromProvider, setDraggingFromProvider] = useState<
     string | null
@@ -165,6 +188,10 @@ const Harness: FC<{
   // Held in state rather than read from the prop, so the grid can clear it the
   // way `App` does once it has spoken.
   const [loaded, setLoaded] = useState(strategyLoaded ?? null);
+
+  useEffect(() => {
+    onGrid?.(grid);
+  }, [grid, onGrid]);
 
   return (
     <MarketContext.Provider
@@ -187,7 +214,6 @@ const Harness: FC<{
         orderConfig,
         strategyPattern: pattern,
         setGrid,
-        setOrderConfig,
         setStrategyPattern: vi.fn(),
         clearAll: vi.fn(),
         reverseBlocks: vi.fn(),
@@ -318,7 +344,7 @@ const renderPlacedLimit = (yPosition: number) => {
   grid[0][1].push(placedLimit(yPosition));
   render(<Harness initialGrid={grid} />);
 
-  const track = document.querySelector('[data-axis-track="0-1-2"]');
+  const track = document.querySelector('[data-axis-track="0-1-limit"]');
   if (!track) throw new Error("the axis column was not rendered");
   stubRect(track, TRACK_TOP, TRACK_HEIGHT);
 
@@ -505,107 +531,127 @@ const announcement = () =>
     .join("");
 
 describe("GridArea, tapping a placed block", () => {
-  it("picks the block up and keeps it carried through the trailing click", () => {
+  // Six tests stood here, and every one of them pinned the cross-cell move that
+  // decision D9 has now refused for every input method: a tap picked a placed
+  // block up, a tap on another cell placed it there, and the announcements said
+  // "Moved Market block to Exit column, row 1". They were correct about the
+  // behaviour of the day and would have quietly certified it as intended.
+  //
+  // What replaces them is the same gestures reaching a refusal that is legible
+  // rather than silent - in the live region, and on screen for everybody else.
+
+  it("refuses to carry a placed block, and says how to correct a misplaced one", () => {
     const { first } = renderTwoBlocks();
 
     tap(first);
 
-    expect(announcement()).toContain("Picked up Market block");
-    expect(announcement()).not.toContain("Placed");
-    // The cell the block would land in if placed now: proof a carry is live.
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-  });
-
-  it("puts the block back down on a second tap, once", () => {
-    const { first } = renderTwoBlocks();
-
-    tap(first);
-    tap(first);
-
-    expect(announcement()).toBe(
-      "Cancelled. Market block left in Entry column, row 2.",
+    expect(announcement()).toContain(
+      "Market stays in the cell it was placed in",
     );
+    expect(announcement()).not.toContain("Picked up");
+    // No carry, so no cell is offering itself as a destination.
     expect(cell(0, 1)).not.toHaveAttribute("aria-current");
-    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Market",
+    );
   });
 
-  it("places the carried block when a block in another cell is tapped", () => {
-    const { first, second } = renderTwoBlocks();
+  // The refusal has to be visible, not only announced: below `lg` the panel
+  // holding the live region can be `display: none`, and a sighted user gets no
+  // live region at all.
+  it("puts the rule on screen as ordinary text, not in a second live region", () => {
+    const { first } = renderTwoBlocks();
 
     tap(first);
-    // A tap on a block that is not the carried one falls through to its cell,
-    // which is what decides where the carried block lands.
-    tap(second);
 
-    // The same fact - a placed block changed cells - however the user reached
-    // it. This said "Placed ... in" while a drag of the same block said
-    // "Moved ... to"; the wording now comes from what the grid did, so the tap
-    // path and the drag path cannot describe one event two ways.
-    expect(announcement()).toBe(
-      "Moved Market block to Exit column, row 1.",
-    );
-    expect(cell(1, 0)).toHaveAttribute(
-      "aria-label",
-      "Exit column, row 1, Market, Market",
-    );
-    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    const note = screen.getByText(/Orders do not move between cells/);
+    expect(note).toBeInTheDocument();
+    expect(note.closest("[aria-live]")).toBeNull();
+    expect(note).not.toHaveAttribute("role", "status");
+    // `LiveAnnouncer` renders the grid's one voice as an alternating pair of
+    // regions, and this note is in neither of them - a second live region would
+    // cut the announcer off mid-sentence during the very gesture that fires
+    // both.
+    const regions = screen.getAllByRole("status");
+    expect(regions).toHaveLength(2);
+    regions.forEach((region) => expect(region.contains(note)).toBe(false));
   });
 
-  it("places the carried block when an empty cell is tapped", () => {
+  // Clear All, Reverse Blocks and a market switch all replace the grid without
+  // going near the gestures that reset the note, so the note could outlive the
+  // order it names and sit under an empty grid still saying that order stays in
+  // a cell it is no longer in.
+  it("takes the note down once the order it names is off the grid", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    grid[1][0].push(placedMarket("b2"));
+    render(
+      <Harness
+        initialGrid={grid}
+        pattern="bulk"
+        gridReplacement={clearGrid(2, 3)}
+      />,
+    );
+    const [first] = screen.getAllByRole("button", { name: /^Market order,/ });
+
+    tap(first);
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
+  });
+
+  // Keyed on the label, a namesake kept this note alive after the block it
+  // named had gone: the note is about one block, so the block's id is the
+  // identity it has to keep. The replacement grid holds a Market too, so a
+  // label lookup still finds one and the note stays up describing a block that
+  // is no longer there.
+  it("takes the note down when the block it names goes, even if a namesake arrives", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    const replacement = clearGrid(2, 3);
+    replacement[1][0].push(placedMarket("b9"));
+    render(
+      <Harness
+        initialGrid={grid}
+        pattern="bulk"
+        gridReplacement={replacement}
+      />,
+    );
+
+    tap(screen.getByRole("button", { name: /^Market order,/ }));
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    // A Market is still on the grid, and it is not the one the note named.
+    expect(
+      screen.getByRole("button", { name: /^Market order,/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leaves a tap on another cell doing nothing to the grid", () => {
     const { first } = renderTwoBlocks();
 
     tap(first);
     fireEvent.click(cell(1, 2));
 
-    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Market");
-    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
-  });
-
-  it("releases the carry when a drag starts on another block", () => {
-    const { first, second } = renderTwoBlocks();
-
-    tap(first);
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-
-    // A nudge drag on the OTHER block, released inside its own cell, with the
-    // click a browser appends to every gesture. That click bubbles into a cell
-    // that is a live placement target while anything is carried - so without
-    // the drag releasing the carry, dragging this block moves the other one.
-    stubRect(cell(1, 0), 100, 200);
-    fireEvent(second, pointerAt("pointerdown", 30, 150));
-    fireEvent(second, pointerAt("pointermove", 30, 160));
-    fireEvent(second, pointerAt("pointerup", 30, 160));
-    fireEvent.click(second, { bubbles: true });
-
-    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
-    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, Market");
-    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
-    // The last thing said has to be the outcome of the gesture the user made:
-    // the dragged block went nowhere, and nothing was placed anywhere.
-    expect(announcement()).toBe(
-      "Market block stayed in Exit column, row 1.",
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Market",
     );
-  });
-
-  it("releases the carry when the carried block itself is dragged away", () => {
-    const { first } = renderTwoBlocks();
-
-    tap(first);
-
-    stubRect(cell(1, 2), 500, 200);
-    fireEvent(first, pointerAt("pointerdown", 30, 150));
-    fireEvent(first, pointerAt("pointermove", 30, 550));
-    fireEvent(first, pointerAt("pointerup", 30, 550));
-    fireEvent.click(first, { bubbles: true });
-
-    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Market");
-    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
-    // A carry left live would still point its target highlight at the cell the
-    // block has just been dragged out of.
-    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
-    // And the announcement has to name the cell the block is actually in. This
-    // assertion used to say the block had been left in the cell it just left.
-    expect(announcement()).toBe("Moved Market block to Exit column, row 3.");
+    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, empty");
   });
 
   it("refuses to carry a block drawn on a price axis, and still prices it", () => {
@@ -626,6 +672,97 @@ describe("GridArea, tapping a placed block", () => {
     fireEvent(slider, pointer("pointerup", centre + 30));
 
     expect(renderedCentre()).toBeCloseTo(centre + 30, 1);
+  });
+
+  // Below `lg` the panel holding the live region is `display: none`, so a
+  // sighted user gets no announcement at all. The visible note used to be shown
+  // for the no-axis refusal only, which left this one - the priced block the
+  // acceptance criteria name specifically - with nothing on screen.
+  it("puts the priced block's rule on screen, worded for the arrow keys", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    tap(slider);
+
+    const note = screen.getByText(/Orders do not move between cells/);
+    expect(note).toHaveTextContent(
+      "Limit stays in the cell it was placed in. Orders do not move between cells - use the arrow keys to change this one's price.",
+    );
+    // Never a removal instruction here: a block on a price axis is wired to the
+    // vertical price drag, so it cannot be dragged off the grid at all.
+    expect(note).not.toHaveTextContent(/remove it/);
+    expect(note.closest("[aria-live]")).toBeNull();
+    expect(note).not.toHaveAttribute("role", "status");
+  });
+
+  // A note that survives the action it asked for reads as though the action
+  // failed. A priced block is wired to the vertical price drag, so neither of
+  // the two gestures this note names passes through any of the resets that
+  // existed when it was first shown for them.
+  it("takes the note down once the arrow keys do what it asked", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    tap(slider);
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+
+    expect(slider).not.toHaveAttribute("aria-valuenow", "-25");
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
+  });
+
+  // Reverse Blocks swaps the entry and exit columns and keeps every block's id,
+  // so the block the note names is still on the grid - in the other column. The
+  // note is a claim about a block IN A CELL, and keyed on the id alone it went
+  // on insisting the order stays where it was placed while the order visibly
+  // changed cells.
+  it("takes the note down when Reverse Blocks moves the order to the other column", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(
+      <Harness
+        initialGrid={grid}
+        pattern="bulk"
+        gridReplacement={reverseGrid(grid)}
+      />,
+    );
+
+    tap(screen.getByRole("button", { name: /^Market order,/ }));
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    // The order is still on the grid, and it is in the other column now.
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, row 2, Market",
+    );
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("takes the note down once a price drag does what it asked", () => {
+    const { slider, centre } = renderPlacedLimit(25);
+
+    tap(slider);
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+
+    fireEvent(slider, pointer("pointerdown", centre));
+    fireEvent(slider, pointer("pointermove", centre + 20));
+    fireEvent(slider, pointer("pointerup", centre + 20));
+
+    expect(
+      screen.queryByText(/Orders do not move between cells/),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -929,19 +1066,47 @@ describe("GridArea, a same-cell release on the conditional pattern", () => {
     );
   });
 
-  it("still says a different cell refused the order", () => {
+  // FORMERLY "still says a different cell refused the order", which expected
+  // "Entry column, lower conditional row cannot take this order." That was the
+  // right sentence when a placed block could in principle change cells and this
+  // particular cell would not have it. Under decision D9 no cell will take a
+  // placed block, so naming one would send the user hunting for a cell that
+  // says yes. The refusal is about the rule, not about the cell.
+  it("says a release over another cell was refused by the rule, not by the cell", () => {
     const { block } = renderConditionalMarket();
 
-    // The Entry column's conditional rows are not legal while its primary is
-    // occupied, so this release really is refused - and both clauses are true.
     stubRect(cell(0, 2), 650, 200);
     fireEvent(block, pointerAt("pointerdown", 30, 500));
     fireEvent(block, pointerAt("pointermove", 30, 700));
     fireEvent(block, pointerAt("pointerup", 30, 700));
 
     expect(announcement()).toBe(
-      "Entry column, lower conditional row cannot take this order. Market block stayed in Entry column, primary row.",
+      "Market block stays in the cell it was placed in, so it was not moved to Entry column, lower conditional row. To put this order somewhere else, remove it and place a new one. Market block stayed in Entry column, primary row.",
     );
+    // Nothing moved, and the note says so on screen as well.
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, primary row, Market",
+    );
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer a single cell as a target while a placed block is dragged", () => {
+    const { block } = renderConditionalMarket();
+
+    fireEvent(block, pointerAt("pointerdown", 30, 500));
+    fireEvent(block, pointerAt("pointermove", 30, 700));
+
+    // Lighting up cells that would take it would be the interface promising a
+    // move the release is about to refuse. Nothing is offered, which is the
+    // first half of telling the user why.
+    expect(
+      document.querySelectorAll("[data-col][data-row].border-accent-primary"),
+    ).toHaveLength(0);
+
+    fireEvent(block, pointerAt("pointerup", 30, 700));
   });
 });
 
@@ -1009,40 +1174,47 @@ describe("GridArea, a carry that a drag takes over", () => {
     );
   });
 
-  it("leaves the drag to speak for itself when it is the carried block", () => {
-    const { first } = renderTwoBlocks();
+  // FORMERLY the same case driven by *carrying* the block that is then dragged,
+  // which expected "Moved Market block to Exit column, row 3." A placed block is
+  // never carried now (decision D9), so the same invariant - one sentence, and
+  // it is the durable one - is pinned on the gesture that can still reach it: a
+  // palette carry ended by dragging the palette entry it holds.
+  it("leaves the drag to speak for itself when it is the carried order", () => {
+    renderTwoBlocks();
 
-    tap(first);
+    const palette = screen.getByRole("button", { name: "Add Limit order" });
+    tap(palette);
+    expect(announcement()).toContain("Picked up Limit order");
+
     stubRect(cell(1, 2), 500, 200);
-    fireEvent(first, pointerAt("pointerdown", 30, 150));
-    fireEvent(first, pointerAt("pointermove", 30, 550));
-    fireEvent(first, pointerAt("pointerup", 30, 550));
-    fireEvent.click(first, { bubbles: true });
+    fireEvent(palette, pointerAt("pointerdown", 30, 150));
+    fireEvent(palette, pointerAt("pointermove", 30, 550));
+    fireEvent(palette, pointerAt("pointerup", 30, 550));
+    fireEvent.click(palette, { bubbles: true });
 
-    // One sentence, and it is the durable one: a release announcement here
-    // would have named a resting place this same gesture then invalidated.
-    expect(announcement()).toBe("Moved Market block to Exit column, row 3.");
+    expect(announcement()).toBe("Placed Limit order in Exit column, row 3.");
   });
 });
 
 // =============================================================================
-// A SAME-CELL NUDGE IN THE BULK PATTERN, WHICH ANOTHER LANE OWNS
+// A SAME-CELL NUDGE IN THE BULK PATTERN
 // =============================================================================
 //
-// What the user is TOLD about a same-cell release is decided independently of
-// the placement rules: a block can never be refused by the cell it is sitting
-// in. What the grid DOES on that release is deliberately untouched here. In the
-// bulk pattern every cell is a legal target, so the drop still runs the full
-// move - it rewrites the dragged order's `axis` and `yPosition`, and its
-// remove-then-push reorders the cell array, which is what the cell header reads
-// `blocks[0]` for. That reordering and re-pricing belongs to `bb3-mapping-owner`
-// under the ruling that direction belongs to the cell, and two lanes
-// reconciling one question is how the display and the payload drifted apart
-// before. This test is the fence: it fails if that mutation is quietly changed
-// here instead of there.
+// **The test that stood here pinned the wrong behaviour, and said so.** It was
+// titled "still reorders and re-prices the cell, while saying the block stayed",
+// and asserted that a ten-pixel nudge inside a block's own cell took the block
+// out of the cell array and pushed it back - so the Limit beside it became
+// `blocks[0]`, the cell header changed from "Market" to "Limit", and every
+// price in the cell was redrawn on the other block's scale. It was written as a
+// fence around a mutation another lane owned. That lane is this one, and the
+// ruling is decision D8: the direction belongs to the cell, stamped when the
+// first block lands.
+//
+// So the assertions are inverted rather than deleted. The gesture is the same
+// ordinary accidental nudge; what it must now do is nothing at all.
 
 describe("GridArea, a same-cell nudge in the bulk pattern", () => {
-  it("still reorders and re-prices the cell, while saying the block stayed", () => {
+  it("leaves the cell's order and its prices exactly as they were", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("m1"), placedLimit(25, "b1"));
     render(<Harness initialGrid={grid} pattern="bulk" />);
@@ -1063,13 +1235,15 @@ describe("GridArea, a same-cell nudge in the bulk pattern", () => {
     fireEvent(market, pointerAt("pointermove", 40, 504));
     fireEvent(market, pointerAt("pointerup", 40, 504));
 
-    // Unchanged from main, and owned elsewhere: the Market has been taken out
-    // and pushed back, so the Limit is now `blocks[0]` and names the cell.
+    // FORMERLY "Entry column, row 2, Limit, Market" - the remove-then-push
+    // reorder. Nothing is removed and nothing is pushed any more.
     expect(cell(0, 1)).toHaveAttribute(
       "aria-label",
-      "Entry column, row 2, Limit, Market",
+      "Entry column, row 2, Market, Limit",
     );
-    expect(within(cell(0, 1) as HTMLElement).getByText("Limit")).toBeInTheDocument();
+    expect(
+      within(cell(0, 1) as HTMLElement).getByText("Market"),
+    ).toBeInTheDocument();
 
     // And the sentence is decided from the fact that the block did not change
     // cells, not from what the placement rules said about the cell.
@@ -1088,40 +1262,53 @@ describe("GridArea, a same-cell nudge in the bulk pattern", () => {
 // else in it tells the user their block has left their hand and the next tap on
 // a cell will do nothing.
 
-describe("GridArea, a carry ended by a drag on that same block", () => {
-  it("says the block stayed and that it is no longer carried, in one sentence", () => {
-    const { block } = renderConditionalMarket();
+describe("GridArea, a carry ended by a drag on that same subject", () => {
+  // Both tests here used to tap a *placed* Market block to start the carry,
+  // then drag that same block. A placed block is never carried now (decision
+  // D9), so the same invariant is driven from the palette - and on the outcome
+  // where it matters most: one that describes nothing happening, because then
+  // nothing else in the sentence tells the user their order has left their hand.
 
-    tap(block);
-    expect(announcement()).toContain("Picked up Market block");
+  it("says the order was not placed and is no longer carried, in one sentence", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
 
-    fireEvent(block, pointerAt("pointerdown", 30, 500));
-    fireEvent(block, pointerAt("pointermove", 40, 504));
-    fireEvent(block, pointerAt("pointerup", 40, 504));
-    fireEvent.click(block, { bubbles: true });
+    const palette = screen.getByRole("button", { name: "Add Limit order" });
+    tap(palette);
+    expect(announcement()).toContain("Picked up Limit order");
+
+    // No cell rect is stubbed, so this release lands outside every cell.
+    fireEvent(palette, pointerAt("pointerdown", 30, 150));
+    fireEvent(palette, pointerAt("pointermove", 900, 900));
+    fireEvent(palette, pointerAt("pointerup", 900, 900));
+    fireEvent.click(palette, { bubbles: true });
 
     expect(announcement()).toBe(
-      "Market block stayed in Entry column, primary row, and is no longer picked up.",
+      "Released outside the grid. Limit order was not placed, and is no longer picked up.",
     );
     // The clause has to still be true after the operation that produced it.
-    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(
+      0,
+    );
   });
 
   it("says the same when the browser cancels that drag", () => {
-    const { block } = renderConditionalMarket();
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
 
-    tap(block);
+    const palette = screen.getByRole("button", { name: "Add Limit order" });
+    tap(palette);
 
-    fireEvent(block, pointerAt("pointerdown", 30, 500));
-    fireEvent(block, pointerAt("pointermove", 40, 504));
-    fireEvent(block, pointerAt("pointercancel", 40, 504));
+    fireEvent(palette, pointerAt("pointerdown", 30, 150));
+    fireEvent(palette, pointerAt("pointermove", 30, 300));
+    fireEvent(palette, pointerAt("pointercancel", 30, 300));
 
     // `onDragCancel` ends the drag before `onDragAborted` announces, so this
     // also pins that the released-carry flag outlives the end of the gesture.
     expect(announcement()).toBe(
-      "Drag cancelled. Market block stayed in Entry column, primary row, and is no longer picked up.",
+      "Drag cancelled. Limit order was not placed, and is no longer picked up.",
     );
-    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(
+      0,
+    );
   });
 });
 
@@ -1129,29 +1316,29 @@ describe("GridArea, a carry ended by a drag on that same block", () => {
 // A PICK-UP REFUSED WHILE SOMETHING IS ALREADY CARRIED
 // =============================================================================
 
-describe("GridArea, a refused pick-up while a block is carried", () => {
+describe("GridArea, a refused pick-up while an order is carried", () => {
   it("names the order that is still in hand", () => {
-    // Every diagonal of an occupied cell is itself occupied, so the conditional
-    // rules leave nowhere on this grid for a new order to go.
+    // With the Entry primary and the Exit upper conditional occupied, the one
+    // cell left is the Exit lower conditional. A Stop Loss may sit there; a
+    // Take Profit may not, so reaching for one while holding the other is a
+    // swap the grid refuses.
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));
     grid[1][0].push(placedMarket("b2"));
-    grid[1][2].push(placedMarket("b3"));
     render(<Harness initialGrid={grid} />);
 
-    // A placed block can always go back where it came from, so this pick-up is
-    // offered even though nothing new can be placed.
-    tap(screen.getAllByRole("button", { name: /^Market order,/ })[0]);
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    tap(screen.getByRole("button", { name: "Add Stop Loss order" }));
+    expect(announcement()).toContain("Picked up Stop Loss order");
+    expect(cell(1, 2)).toHaveAttribute("aria-current", "location");
 
     tap(screen.getByRole("button", { name: "Add Take Profit order" }));
 
-    // Refusing without dispatching leaves the Market carried, and the highlight
-    // that shows it is not available to a screen-reader user.
+    // Refusing without dispatching leaves the Stop Loss carried, and the
+    // highlight that shows it is not available to a screen-reader user.
     expect(announcement()).toBe(
-      "Take Profit order cannot be placed anywhere in the grid right now. Still carrying Market block.",
+      "Take Profit order cannot be placed anywhere in the grid right now. Still carrying Stop Loss order.",
     );
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    expect(cell(1, 2)).toHaveAttribute("aria-current", "location");
   });
 });
 
@@ -1163,85 +1350,48 @@ describe("GridArea, a refused pick-up while a block is carried", () => {
 // "Still carrying X." whenever the carry does survive - so a screen-reader user
 // is taught that hearing nothing about the carry means it is still in hand.
 // Silence on these paths therefore states the opposite of the truth.
+//
+// FORMERLY this also covered "a block put back in its own cell", which rested on
+// `withOriginCell` making a placed block's own cell a target. Both went with the
+// cross-cell move (decision D9).
 
 describe("GridArea, a commit that ends the carry", () => {
-  it("says the carry is over when a block is put back in its own cell", () => {
-    const { block } = renderConditionalMarket();
-
-    tap(block);
-    // `withOriginCell` always makes the block's own cell a target, so this is
-    // an ordinary put-it-back rather than an edge case.
-    fireEvent.click(cell(0, 1));
-
-    expect(announcement()).toBe(
-      "Market block stayed in Entry column, primary row, and is no longer picked up.",
-    );
-    // The defect was this reading word for word like the nudge-drag sentence
-    // produced when nothing was carried at all.
-    expect(announcement()).not.toBe(
-      "Market block stayed in Entry column, primary row.",
-    );
-    expect(cell(0, 1)).not.toHaveAttribute("aria-current");
-  });
-
   it("says the carry is over when the grid refuses the chosen cell", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));
-    // The same block, plus a second one that takes the cell this carry is
+    // The same grid, plus a second block that takes the cell this carry is
     // about to be committed into.
     const occupied = clearGrid(2, 3);
     occupied[0][1].push(placedMarket("b1"));
     occupied[1][0].push(placedMarket("b2"));
     render(<Harness initialGrid={grid} gridReplacement={occupied} />);
 
-    tap(screen.getByRole("button", { name: /^Market order,/ }));
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
 
     // (1,0) was one of the cells the carry offered, and has been filled since.
     fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
     fireEvent.click(cell(1, 0));
 
     expect(announcement()).toBe(
-      "Exit column, upper conditional row cannot take this order any more. Market block stayed in Entry column, primary row, and is no longer picked up.",
+      "Exit column, upper conditional row cannot take this order any more. Take Profit order was not placed, and is no longer picked up.",
     );
     expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
   });
 });
 
 // =============================================================================
-// A CARRY THAT OUTLIVES THE BLOCK IT NAMES
+// A CARRY THAT OUTLIVES THE GRID IT WAS STARTED AGAINST
 // =============================================================================
 //
 // Clear All, Reverse Blocks and a pattern switch all replace the grid without
-// ending an active carry, so the cells it offered stay highlighted and the
-// block it names may be gone. When the user then acts on one of those cells,
-// the sentence has to be composed from what the grid can still confirm - which,
-// for a block that has been cleared away, is no cell at all.
-
-describe("GridArea, a carry whose block has been cleared away", () => {
-  it("names no cell for it, and ends the carry", () => {
-    const grid = clearGrid(2, 3);
-    grid[0][1].push(placedMarket("b1"));
-    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
-
-    tap(screen.getByRole("button", { name: /^Market order,/ }));
-    // A diagonal of the occupied primary cell, offered at pick-up time.
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-
-    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, primary row, empty");
-
-    // The stale target is still highlighted, so this is a cell the user was
-    // just told they could drop into.
-    fireEvent.click(cell(1, 0));
-
-    expect(announcement()).toBe(
-      "Market block is no longer on the grid, and is no longer picked up.",
-    );
-    expect(announcement()).not.toContain("stayed in");
-    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
-  });
-});
+// ending an active carry, so the cells it offered stay highlighted. The suite
+// here used to carry a *placed* block through such a replacement and check that
+// the sentence named no cell once the block had been cleared away. A placed
+// block is never carried now (decision D9), so a carry can no longer name a
+// block that the grid might lose - the palette entry it names is always there.
+// What survives is the palette carry itself, covered in
+// `useBlockCommand.dom.test.ts` under "a palette carry the grid changes under".
 
 // =============================================================================
 // A BULK CELL HOLDING TWO ORDER FAMILIES
@@ -1258,7 +1408,7 @@ const renderMixedCell = (limitY: number, stopLossY: number) => {
   grid[0][1].push(placedLimit(limitY), placedStopLoss(stopLossY));
   render(<Harness initialGrid={grid} pattern="bulk" />);
 
-  const track = document.querySelector('[data-axis-track="0-1-1"]');
+  const track = document.querySelector('[data-axis-track="0-1-trigger"]');
   if (!track) throw new Error("the trigger axis column was not rendered");
   stubRect(track, TRACK_TOP, TRACK_HEIGHT);
 
@@ -1358,66 +1508,49 @@ describe("GridArea, a bulk cell holding two order families", () => {
 // A BLOCK DRAWN IN AN AXIS COLUMN ITS OWN `axis` FIELD DOES NOT NAME
 // =============================================================================
 //
-// A bulk cell holding a Market renders without an axis, so the Limit sharing it
-// free-drags. Dropping it in the left half of an empty cell stamps `axis: 1`,
-// and a cell holding only a Limit draws its blocks in the limit column. The
-// block's field and the column it is drawn in then disagree, and the drag has
-// to price it anyway: arrow keys still work there, so an order that cannot be
-// dragged is dead only for the mouse and the finger.
+// **The suite that stood here pinned the defect, not the fix.** It was titled
+// "a block drawn in a column its axis field does not name", and it *created*
+// that state on purpose: free-drag a Limit out of an axis-less bulk cell,
+// release it in the LEFT half of an empty cell, and the drop wrote `axis: 1`
+// onto a block whose `axes` still said `["limit"]`. It then checked the price
+// drag still worked in spite of the mismatch.
+//
+// That is split 6. The drop no longer reads an axis off the pointer at all, and
+// the cross-cell move it needed is refused outright (decision D9), so `axis` and
+// `axes` are written together by `axesForBlockAxis` and never rewritten apart.
+// What is asserted now is the invariant rather than a workaround for its
+// absence; the reload half is in `StrategyAssemblyContext.reload.test.tsx`.
 
-/** The price the cell renders for a block on its ascending scale. */
-// The harness renders on BTC/USD, and Kraken prices that pair to ONE decimal
-// (`pair_decimals: 1`), so the grid draws "$75,000.0" rather than the flat two
-// decimals it used to draw for every market. That is the point: the price on
-// screen is at the precision the payload is sent at.
-const upsidePrice = (yPosition: number) =>
-  `$${(MARKET_PRICE * (1 + yPosition / 100)).toLocaleString("en-US", {
-    minimumFractionDigits: BTC_USD.priceDecimals,
-    maximumFractionDigits: BTC_USD.priceDecimals,
-  })}`;
-
-describe("GridArea, a block drawn in a column its axis field does not name", () => {
-  it("still prices the order on a pointer drag", () => {
+describe("GridArea, which leg a block is", () => {
+  it("does not rewrite a block's axis from where a drag was released", () => {
     const grid = clearGrid(2, 3);
-    grid[0][1].push(placedMarket(), placedLimit(25, "b1"));
+    grid[0][1].push(placedStopLoss(15, "trigger-leg"));
+    grid[0][1].push(placedLimit(10, "limit-leg"));
     render(<Harness initialGrid={grid} pattern="bulk" />);
 
-    // Free-drag the Limit into empty cell (1,1), releasing in the LEFT half:
-    // that is what writes `axis: 1` onto a block the cell draws as a Limit.
+    const trigger = screen.getByRole("slider", { name: /Stop Loss/ });
+    expect(trigger.getAttribute("aria-label")).toContain("trigger price");
+
+    // Release in the RIGHT half of another cell - the pointer position that
+    // used to stamp `axis: 2` onto this block and relabel it a limit leg.
     stubRect(cell(1, 1), 400, 300);
-    const limit = within(cell(0, 1) as HTMLElement).getByRole("button", {
-      name: /Limit/,
-    });
-    fireEvent(limit, pointerAt("pointerdown", 30, 100));
-    fireEvent(limit, pointerAt("pointermove", 10, 572));
-    fireEvent(limit, pointerAt("pointerup", 10, 572));
+    fireEvent(trigger, pointerAt("pointerdown", 30, 100));
+    fireEvent(trigger, pointerAt("pointermove", 190, 572));
+    fireEvent(trigger, pointerAt("pointerup", 190, 572));
 
-    // The state under test: the cell drew a limit column, and nothing is keyed
-    // to the axis the block itself now claims.
-    const track = document.querySelector('[data-axis-track="1-1-2"]');
-    expect(track).not.toBeNull();
-    expect(document.querySelector('[data-axis-track="1-1-1"]')).toBeNull();
-
-    stubRect(track!, TRACK_TOP, TRACK_HEIGHT);
-    const slider = screen.getByRole("slider");
-    const before = Number(slider.getAttribute("aria-valuenow"));
-    const blockTop = TRACK_TOP + getBlockTopPx(before, TRACK_HEIGHT, false);
-    stubRect(slider, blockTop, BLOCK_HEIGHT);
-    const centre = blockTop + BLOCK_HEIGHT / 2;
-
-    fireEvent(slider, pointer("pointerdown", centre));
-    fireEvent(slider, pointer("pointermove", centre + 30));
-    fireEvent(slider, pointer("pointerup", centre + 30));
-
-    // Dragged 30px down an ascending track: a smaller offset above the market,
-    // read back through the same mapping the cell drew it with.
-    const after = Number(slider.getAttribute("aria-valuenow"));
-    expect(after).toBeLessThan(before);
+    // Still in its own cell, still the trigger leg, still on the trigger axis.
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Stop Loss, Limit",
+    );
     expect(
-      TRACK_TOP + getBlockTopPx(after, TRACK_HEIGHT, false) + BLOCK_HEIGHT / 2,
-    ).toBeCloseTo(centre + 30, 1);
-    expect(screen.getByText(`+${after.toFixed(2)}%`)).toBeInTheDocument();
-    expect(screen.getByText(upsidePrice(after))).toBeInTheDocument();
+      document.querySelector('[data-axis-track="0-1-trigger"]'),
+    ).not.toBeNull();
+    expect(
+      screen
+        .getByRole("slider", { name: /Stop Loss/ })
+        .getAttribute("aria-label"),
+    ).toContain("trigger price");
   });
 });
 
@@ -2051,19 +2184,26 @@ describe("GridArea, carrying a block with the mouse", () => {
     expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
   });
 
-  it("carries a placed block, and moves it to the cell the cursor is over", () => {
+  // FORMERLY "carries a placed block, and moves it to the cell the cursor is
+  // over", which expected "Moved Market block to Exit column, row 3." A placed
+  // block is not carried by any input method now (decision D9), and the mouse
+  // is not an exception - it was the input the old carve-outs were justified by.
+  it("refuses to carry a placed block, and puts nothing on the cursor", () => {
     const { first } = renderTwoBlocks();
 
     clickBlock(first);
-    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Mkt" });
 
-    hover(1, 2);
-    fireEvent(cell(1, 2), pointerAt("pointerdown", 30, 30, { pointerType: "mouse" }));
-    fireEvent.click(cell(1, 2));
-
-    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
-    expect(cell(1, 2)).toHaveAttribute("aria-label", "Exit column, row 3, Market");
-    expect(announcement()).toBe("Moved Market block to Exit column, row 3.");
+    expect(dragOverlaySnapshot().active).toBe(false);
+    expect(announcement()).toContain(
+      "Market stays in the cell it was placed in",
+    );
+    expect(
+      screen.getByText(/Orders do not move between cells/),
+    ).toBeInTheDocument();
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Market",
+    );
   });
 
   /**
@@ -2134,23 +2274,12 @@ describe("GridArea, carrying a block with the mouse", () => {
     expect(dragOverlaySnapshot().active).toBe(false);
   });
 
-  it("takes the block off the cursor when the grid stops holding it", () => {
-    // Clear All replaces the grid without ending the carry - that is the known
-    // carry-lifecycle gap, and it belongs to its own lane. What this pins is
-    // that the ghost does not outlive the block it is drawn from: it comes off
-    // the cursor rather than following it around as a picture of an order that
-    // no longer exists.
-    const grid = clearGrid(2, 3);
-    grid[0][1].push(placedMarket("b1"));
-    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
-
-    clickBlock(screen.getByRole("button", { name: /^Market order,/ }));
-    expect(dragOverlaySnapshot()).toMatchObject({ active: true, abrv: "Mkt" });
-
-    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-
-    expect(dragOverlaySnapshot().active).toBe(false);
-  });
+  // FORMERLY "takes the block off the cursor when the grid stops holding it",
+  // which carried a placed Market and checked the ghost came off when Clear All
+  // removed the block. Only a palette order can be on the cursor now (decision
+  // D9), and a palette order cannot be cleared away - so the ghost can no longer
+  // outlive what it is drawn from, and the test below covers the case that is
+  // left.
 
   it("keeps a palette order on the cursor when the grid is replaced", () => {
     // The palette is not the grid: a Limit order that was never placed still
@@ -2177,5 +2306,194 @@ describe("GridArea, carrying a block with the mouse", () => {
       "Limit is priced on this axis and cannot be moved to another cell",
     );
     expect(dragOverlaySnapshot().active).toBe(false);
+  });
+});
+
+// =============================================================================
+// A SAVED `axis` THAT DISAGREES WITH THE BLOCK'S LEG
+// =============================================================================
+//
+// The state a reloaded strategy really carries. `gridFromConfig` rebuilds a
+// Stop Loss saved at `axis: 2` through `axesForBlockAxis`, which correctly
+// gives it `axes: ["trigger"]` and leaves the saved `axis` as it was - so the
+// two fields disagree, and everything the cell draws has to follow the leg.
+// Splitting the columns on `axis` drew this block in a column labelled "Limit"
+// around a slider whose accessible name said "trigger price", and pointed the
+// vertical drag's track lookup at a column the block was not in.
+
+const TriggerIcon: FC<SVGProps<SVGSVGElement>> = (props) => (
+  <svg {...props} data-testid="trigger-icon" />
+);
+const LimitIcon: FC<SVGProps<SVGSVGElement>> = (props) => (
+  <svg {...props} data-testid="limit-icon" />
+);
+
+const savedStopLoss = (yPosition: number): BlockData => ({
+  id: "s1",
+  orderType: "stop-loss",
+  label: "Stop Loss",
+  abrv: "SL",
+  allowedRows: [0, 1, 2],
+  // Saved at the limit axis, rehydrated as the trigger leg. The leg is the
+  // truth; this field is what a reload happens to have kept.
+  axis: 2,
+  yPosition,
+  direction: "downside",
+  axes: ["trigger"],
+  triggerIcon: TriggerIcon,
+  limitIcon: LimitIcon,
+});
+
+describe("GridArea, a block whose saved axis disagrees with its leg", () => {
+  const renderSavedStopLoss = (yPosition: number) => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(savedStopLoss(yPosition));
+    render(<Harness initialGrid={grid} />);
+
+    const track = document.querySelector('[data-axis-track="0-1-trigger"]');
+    if (!track) throw new Error("the trigger axis column was not rendered");
+    stubRect(track, TRACK_TOP, TRACK_HEIGHT);
+
+    const slider = screen.getByRole("slider");
+    const blockTop = TRACK_TOP + getBlockTopPx(yPosition, TRACK_HEIGHT, true);
+    stubRect(slider, blockTop, BLOCK_HEIGHT);
+
+    return { grid, slider, centre: blockTop + BLOCK_HEIGHT / 2 };
+  };
+
+  it("draws it as the trigger leg, in the column, the label and the icon alike", () => {
+    const { slider } = renderSavedStopLoss(15);
+
+    expect(
+      document.querySelector('[data-axis-track="0-1-trigger"]'),
+    ).not.toBeNull();
+    expect(document.querySelector('[data-axis-track="0-1-limit"]')).toBeNull();
+    // Scoped to the cell: the palette beside it carries its own "Limit" entry,
+    // and this is a claim about which column this block was drawn in.
+    const drawnCell = within(cell(0, 1) as HTMLElement);
+    expect(drawnCell.getByText("Trigger")).toBeInTheDocument();
+    expect(drawnCell.queryByText("Limit")).not.toBeInTheDocument();
+    expect(drawnCell.getByTestId("trigger-icon")).toBeInTheDocument();
+    expect(drawnCell.queryByTestId("limit-icon")).not.toBeInTheDocument();
+    expect(slider).toHaveAccessibleName(/Stop Loss trigger price/);
+  });
+
+  it("still re-prices it on a vertical drag, because the track lookup agrees", () => {
+    const { slider, centre } = renderSavedStopLoss(15);
+
+    expect(slider).toHaveAttribute("aria-valuenow", "-15");
+
+    fireEvent(slider, pointer("pointerdown", centre));
+    fireEvent(slider, pointer("pointermove", centre + 20));
+    fireEvent(slider, pointer("pointerup", centre + 20));
+
+    // Further down a descending track is further from market, so the magnitude
+    // grows. What matters is that it moved at all: keyed by `axis` the lookup
+    // found no "0-1-2" column and fell through to the only track in the cell,
+    // which happens to work for a single-column cell and silently would not for
+    // a cell drawing two.
+    const moved = Number(slider.getAttribute("aria-valuenow"));
+    expect(moved).toBeLessThan(-15);
+    expect(Number.isFinite(moved)).toBe(true);
+  });
+
+  it("shows the same price on the chip as it sends in the payload", () => {
+    const { grid } = renderSavedStopLoss(15);
+
+    const [order] = mapGridToOrders(grid, {
+      market: BTC_USD,
+      currentPrice: MARKET_PRICE,
+      quantity: "0.5",
+    });
+
+    const expected = MARKET_PRICE * (1 - 15 / 100);
+    expect(Number(order.trigger_price ?? order.triggers?.price)).toBe(expected);
+    expect(
+      screen.getByText(
+        `$${expected.toLocaleString("en-US", {
+          minimumFractionDigits: BTC_USD.priceDecimals,
+          maximumFractionDigits: BTC_USD.priceDecimals,
+        })}`,
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// A STORED POSITION NO AXIS COULD HAVE PRODUCED
+// =============================================================================
+//
+// The principle this whole lane settled on is CLAMP ON READ, NEVER DESTROY
+// INFORMATION ON WRITE: display collapses a non-finite position onto the market
+// line so nothing prints `NaN%`, and the store keeps it intact so
+// `validateOrder`'s `Number.isFinite` guard still has something to refuse.
+//
+// The arrow keys were the last write site breaking it. `NaN + 1` is `NaN`, it
+// walks through `Math.max`/`Math.min` untouched, and the no-op guard comparing
+// it to itself is false - so one press wrote a clamped 0 into the grid, which
+// is the market price, and the corrupt order became a plausible at-market limit
+// order that validated cleanly. A press on a block with no usable position now
+// does nothing at all, because inventing a position the user never chose is the
+// guessing this mapping exists to prevent.
+
+describe("GridArea, arrow keys on a block whose stored position is corrupt", () => {
+  const renderCorruptLimit = () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedLimit(Number.NaN));
+    let stored: GridData = grid;
+    render(
+      <Harness
+        initialGrid={grid}
+        onGrid={(published) => {
+          stored = published;
+        }}
+      />,
+    );
+
+    const track = document.querySelector('[data-axis-track="0-1-limit"]');
+    if (!track) throw new Error("the axis column was not rendered");
+    stubRect(track, TRACK_TOP, TRACK_HEIGHT);
+
+    return {
+      slider: screen.getByRole("slider"),
+      storedPosition: () => stored[0][1][0].yPosition,
+      payload: () =>
+        mapGridToOrders(stored, {
+          market: BTC_USD,
+          currentPrice: MARKET_PRICE,
+          quantity: "0.5",
+        }),
+    };
+  };
+
+  it("draws it on the market line rather than printing a number it cannot", () => {
+    const { slider, storedPosition } = renderCorruptLimit();
+
+    expect(slider).toHaveAttribute("aria-valuenow", "0");
+    expect(Number.isFinite(storedPosition())).toBe(false);
+  });
+
+  it("leaves the position alone, so the payload is still refused", () => {
+    const { slider, storedPosition, payload } = renderCorruptLimit();
+
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+
+    // Not 0, which is what the clamp used to write here: 0 is an offset of
+    // nothing, which prices the order at the market and validates cleanly.
+    expect(Number.isFinite(storedPosition())).toBe(false);
+
+    const [order] = payload();
+    expect(Number.isFinite(Number(order.limit_price))).toBe(false);
+    expect(validateOrder(order)).toContain(
+      "Limit price must be a finite number",
+    );
+  });
+
+  it("still prices a block whose position the axis can express", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+
+    expect(slider).not.toHaveAttribute("aria-valuenow", "-25");
   });
 });

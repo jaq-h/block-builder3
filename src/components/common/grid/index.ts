@@ -56,9 +56,9 @@ export {
 // Re-export utilities from consolidated utils
 export {
   getCellDisplayMode,
-  calculatePrice,
+  cellDirection,
+  priceForOffset,
   formatPrice,
-  shouldBeDescending,
   getAlignment,
   getColumnHeaderTint,
   getColumnCellTint,

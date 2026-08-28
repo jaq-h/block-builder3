@@ -14,7 +14,13 @@ import type { OrderBuildContext, UIBlockData } from "@api/types";
 import type { BlockData, GridData } from "@/types/grid";
 import { ORDER_TYPES } from "@data/orderTypes";
 import { createBlocksFromOrderType } from "@utils/blockFactory";
-import { calculatePrice, shouldBeDescending } from "@utils/grid";
+import {
+  addBlocksToCell,
+  cellDirection,
+  directionForNewCell,
+  priceForOffset,
+} from "@utils/blockMapping";
+import { clearGrid } from "@utils/grid";
 import { formatPriceForAPI } from "@utils/marketFormat";
 import { ARB_USD, BTC_USD, ETH_USD } from "@/test/marketFixtures";
 
@@ -34,8 +40,8 @@ const context = (
   ...overrides,
 });
 
-// An Entry limit in the primary row: `shouldBeDescending(1, 0, "conditional")`
-// is true, so the grid draws it below market and stamps it "downside".
+// An Entry limit in the primary row: `directionForNewCell(1, 0, "conditional")`
+// is "downside", so the grid draws it below market and the cell stamps it so.
 const uiBlock = (overrides: Partial<UIBlockData> = {}): UIBlockData => ({
   id: "sa-limit-1",
   orderType: "limit",
@@ -140,11 +146,11 @@ describe("calculateBlockPrice", () => {
 
     ([0, 1] as const).forEach((col) => {
       [0, 1, 2].forEach((row) => {
-        const isDescending = shouldBeDescending(row, col, "conditional");
-        const displayed = calculatePrice(market, 25, isDescending);
+        const direction = directionForNewCell(row, col, "conditional");
+        const displayed = priceForOffset(market, 25, direction);
         const sent = calculateBlockPrice(
           uiBlock({
-            direction: isDescending ? "downside" : "upside",
+            direction,
             position: { col, row, yPosition: 25, axis: 2 },
           }),
           market,
@@ -186,6 +192,7 @@ describe("blockDataToUIBlock", () => {
       }),
       1,
       0,
+      "upside",
     );
 
     expect(ui).toMatchObject({
@@ -196,11 +203,26 @@ describe("blockDataToUIBlock", () => {
     });
   });
 
-  it("carries the block's direction through, so the price can be rebuilt", () => {
-    expect(blockDataToUIBlock(blockData({ direction: "upside" }), 0, 1))
-      .toMatchObject({ direction: "upside" });
-    expect(blockDataToUIBlock(blockData({ direction: "downside" }), 0, 1))
-      .toMatchObject({ direction: "downside" });
+  // The direction is the CELL's, handed in by `extractBlocksFromGrid` (decision
+  // D8). This used to read the block's own field, which is how a bulk cell drew
+  // one price and this built another from the identical block.
+  it("takes the direction it is given rather than the block's own", () => {
+    expect(
+      blockDataToUIBlock(blockData({ direction: "upside" }), 0, 1, "downside"),
+    ).toMatchObject({ direction: "downside" });
+    expect(
+      blockDataToUIBlock(blockData({ direction: "downside" }), 0, 1, "upside"),
+    ).toMatchObject({ direction: "upside" });
+  });
+
+  // A position no axis could have drawn cannot reach a payload: the 0-100
+  // reading the drop handler used to write is gone, and this is what stops a
+  // strategy saved while it existed from carrying one back in.
+  it("clamps a position from outside the axis range", () => {
+    expect(
+      blockDataToUIBlock(blockData({ yPosition: 100 }), 0, 1, "downside")
+        .position.yPosition,
+    ).toBe(50);
   });
 
   // FORMERLY A CHARACTERISATION OF A KNOWN BUG. `BlockData` has always carried
@@ -214,7 +236,9 @@ describe("blockDataToUIBlock", () => {
       orderType: "stop-loss-limit",
     });
 
-    expect(blockDataToUIBlock(block, 0, 2).orderType).toBe("stop-loss-limit");
+    expect(blockDataToUIBlock(block, 0, 2, "downside").orderType).toBe(
+      "stop-loss-limit",
+    );
   });
 
   // FORMERLY A CHARACTERISATION OF THE SAME BUG, which listed
@@ -229,7 +253,9 @@ describe("blockDataToUIBlock", () => {
       });
 
       blocks.forEach((block) => {
-        expect(blockDataToUIBlock(block, 0, 1).orderType).toBe(orderType.type);
+        expect(blockDataToUIBlock(block, 0, 1, "downside").orderType).toBe(
+          orderType.type,
+        );
       });
     });
   });
@@ -273,7 +299,7 @@ describe("mapBlockToOrderParams", () => {
 
       blocks.forEach((block) => {
         const params = mapBlockToOrderParams(
-          blockDataToUIBlock(block, 0, 1),
+          blockDataToUIBlock(block, 0, 1, "downside"),
           context(),
         );
 
@@ -557,6 +583,101 @@ describe("findLinkedBlocks", () => {
   });
 });
 
+// =============================================================================
+// THE CELL OWNS THE DIRECTION - decision D8
+// =============================================================================
+
+describe("mapGridToOrders, a bulk cell holding two order families", () => {
+  // Split 5, at the market price it was reported at. A Limit lands in the Entry
+  // column first, so the cell is stamped "downside"; a Stop Loss dropped beside
+  // it would be "upside" on its own account, and used to be, which is how the
+  // grid drew `-25.00% $37,500` while this built a payload at 62,500 from the
+  // very same block.
+  const MARKET = 50_000;
+
+  const bulkCell = (): GridData => {
+    let grid = addBlocksToCell(
+      clearGrid(2, 3),
+      { col: 0, row: 1 },
+      [
+        {
+          id: "b1",
+          orderType: "limit",
+          label: "Limit",
+          abrv: "Lmt",
+          allowedRows: [0, 1, 2],
+          axis: 2,
+          yPosition: 25,
+          direction: "upside",
+          axes: ["limit"],
+        },
+      ],
+      "bulk",
+    );
+    grid = addBlocksToCell(
+      grid,
+      { col: 0, row: 1 },
+      [
+        {
+          id: "s1",
+          orderType: "stop-loss",
+          label: "Stop Loss",
+          abrv: "SL",
+          allowedRows: [0, 1, 2],
+          axis: 1,
+          yPosition: 25,
+          direction: "upside",
+          axes: ["trigger"],
+        },
+      ],
+      "bulk",
+    );
+    return grid;
+  };
+
+  it("prices every block in the cell on the cell's own scale", () => {
+    const grid = bulkCell();
+    const direction = cellDirection(grid[0][1]);
+    const orders = mapGridToOrders(grid, {
+      market: BTC_USD,
+      currentPrice: MARKET,
+      quantity: "1",
+    });
+
+    expect(direction).toBe("downside");
+    expect(orders.find((o) => o.order_type === "limit")?.limit_price).toBe(
+      "37500.0",
+    );
+    expect(
+      orders.find((o) => o.order_type === "stop-loss")?.triggers?.price,
+    ).toBe("37500.0");
+  });
+
+  // The other half of the invariant: taking a block out of the cell must not
+  // re-price the ones left behind. It used to, because the cell drew itself on
+  // whichever block happened to be first.
+  it("does not re-price the survivors when a block is removed", () => {
+    const grid = bulkCell();
+    const before = mapGridToOrders(grid, {
+      market: BTC_USD,
+      currentPrice: MARKET,
+      quantity: "1",
+    }).find((o) => o.order_type === "stop-loss")?.triggers?.price;
+
+    // Remove the Limit, which is `blocks[0]` and used to be the cell's scale.
+    grid[0][1] = grid[0][1].filter((b) => b.id !== "b1");
+
+    const after = mapGridToOrders(grid, {
+      market: BTC_USD,
+      currentPrice: MARKET,
+      quantity: "1",
+    }).find((o) => o.order_type === "stop-loss")?.triggers?.price;
+
+    expect(after).toBe(before);
+    expect(after).toBe("37500.0");
+  });
+});
+
 describe("mapGridToOrders", () => {
   it("emits one order per block, sided by column", () => {
     const grid = gridWith([
@@ -784,9 +905,9 @@ describe("mapGridToOrders", () => {
 
 /**
  * Places an order type the way the grid does: the real block factory builds the
- * blocks, and `shouldBeDescending` stamps each one's direction from the cell it
- * lands in. Nothing here is a re-implementation - these are the same two calls
- * `GridArea` makes on drop.
+ * blocks, and the cell stamps its own direction onto all of them. Nothing here
+ * is a re-implementation - these are the same two calls `GridArea` makes on
+ * drop, through `addBlocksToCell`.
  */
 const placeOrderType = (
   type: string,
@@ -802,13 +923,14 @@ const placeOrderType = (
     counter: 0,
   });
 
-  return blocks.map((block, index) => ({
+  const placed = blocks.map((block, index) => ({
     ...block,
     yPosition: positions[index],
-    direction: shouldBeDescending(row, col, "conditional", block.orderType)
-      ? ("downside" as const)
-      : ("upside" as const),
   }));
+
+  return addBlocksToCell(clearGrid(2, 3), { col, row }, placed, "conditional")[
+    col
+  ][row];
 };
 
 describe("a Stop Loss Limit dragged into Entry / Primary", () => {
@@ -853,7 +975,7 @@ describe("a Stop Loss Limit dragged into Entry / Primary", () => {
   it("sends the prices the grid displayed, derived from the same input", () => {
     const [triggerLeg, limitLeg] = orders();
     const displayed = (position: number) =>
-      formatPriceForAPI(calculatePrice(MARKET, position, true) ?? 0, BTC_USD);
+      formatPriceForAPI(priceForOffset(MARKET, position, "downside"), BTC_USD);
 
     expect(triggerLeg.triggers?.price).toBe(displayed(TRIGGER_POSITION));
     expect(limitLeg.limit_price).toBe(displayed(LIMIT_POSITION));
@@ -1014,28 +1136,67 @@ describe("validateOrder", () => {
     ]);
   });
 
-  // A block dragged to the bottom of its cell keeps the unclamped yPosition of
-  // 100 that `calculateYPosition` produces on its 0-100 scale, which decision
-  // D3's undamped maths turns into a 100% offset - a price of zero. The payload
-  // carries it as the string "0.0", which is truthy, so the old presence check
-  // passed it and the order would have gone to Kraken priced at nothing.
-  it("rejects the zero-priced payload a bottom-of-cell drag produces", () => {
-    const grid = gridWith([
-      {
-        col: 0,
-        row: 1,
-        block: blockData({ yPosition: 100, direction: "downside" }),
-      },
-    ]);
+  // FORMERLY A CHARACTERISATION OF A KNOWN BUG, and the clearest example in
+  // this file of a test certifying a defect as intended. It asserted
+  // `order.limit_price === "0.0"` for a block at yPosition 100 - the unclamped
+  // reading `calculateYPosition` produced on its 0-100 scale while the axis ran
+  // to 50 - and then that validation caught it. The expectation was right about
+  // the validator and wrong about everything upstream of it: an ordinary drag
+  // to the bottom of a cell could price an order at nothing.
+  //
+  // The reading is gone and every position now flows through `clampOffset`, so
+  // the mapper cannot emit a zero price at all. What is asserted is the pair of
+  // facts that replaced it: no position produces one, and `validateOrder` still
+  // rejects one if some future caller hands it one directly.
+  it("cannot be made to emit a zero price by any position", () => {
+    for (const yPosition of [50, 75, 100, 1000]) {
+      const [order] = mapGridToOrders(
+        gridWith([
+          { col: 0, row: 1, block: blockData({ yPosition, direction: "downside" }) },
+        ]),
+        { market: BTC_USD, currentPrice: 76_689, quantity: "0.5" },
+      );
 
-    const [order] = mapGridToOrders(grid, {
-      market: BTC_USD,
-      currentPrice: 76_689,
-      quantity: "0.5",
-    });
+      expect(Number(order.limit_price)).toBeGreaterThan(0);
+      expect(validateOrder(order)).toEqual([]);
+    }
+  });
 
-    expect(order.limit_price).toBe("0.0");
-    expect(validateOrder(order)).toContain(LIMIT_PRICE_ERROR);
+  // A non-finite position is a bug upstream, and the question is what the order
+  // path does with one. `clampOffset` answers it with an offset of zero for the
+  // benefit of the chip, which cannot draw `NaN%` - but zero is the market
+  // price, a perfectly finite and positive number that `validateOrder` accepts,
+  // so absorbing it here would submit an at-market limit order in place of a
+  // corrupt one. `offsetForOrder` keeps it non-finite for exactly this reason.
+  it("refuses a non-finite position rather than pricing it at the market", () => {
+    const [order] = mapGridToOrders(
+      gridWith([
+        {
+          col: 0,
+          row: 1,
+          block: blockData({ yPosition: Number.NaN, direction: "downside" }),
+        },
+      ]),
+      { market: BTC_USD, currentPrice: 76_689, quantity: "0.5" },
+    );
+
+    expect(Number(order.limit_price)).not.toBe(76_689);
+    expect(Number.isFinite(Number(order.limit_price))).toBe(false);
+    expect(validateOrder(order)).toContain(
+      "Limit price must be a finite number",
+    );
+  });
+
+  it("still rejects a zero price handed straight to it", () => {
+    expect(
+      validateOrder({
+        order_type: "limit",
+        side: "buy",
+        order_qty: "0.5",
+        symbol: "BTC/USD",
+        limit_price: "0.0",
+      }),
+    ).toContain(LIMIT_PRICE_ERROR);
   });
 
   it("still accepts the prices the grid actually produces", () => {

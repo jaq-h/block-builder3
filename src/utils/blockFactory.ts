@@ -5,6 +5,7 @@
 import type { BlockData } from "../types/grid";
 import type { AxisType, OrderTypeDefinition, SvgIcon } from "../data/orderTypes";
 import { getDefaultPosition, ORDER_TYPES } from "../data/orderTypes";
+import { clampOffset } from "./blockMapping";
 import LimitIcon from "../assets/icons/limit.svg?react";
 
 // =============================================================================
@@ -135,6 +136,8 @@ export const createBlocksFromOrderType = (
       allowedRows,
       axis: 1,
       yPosition: -1,
+      // Placeholder. `addBlocksToCell` stamps the cell's own direction over it
+      // the moment these blocks land, because the scale belongs to the cell.
       direction: "upside",
       axes: [],
     });
@@ -153,7 +156,7 @@ export const createBlocksFromOrderType = (
       abrv,
       allowedRows,
       axis: 2,
-      yPosition: getDefaultPosition(orderType, "limit"),
+      yPosition: clampOffset(getDefaultPosition(orderType, "limit")),
       direction: "upside",
       axes: ["limit"],
     });
@@ -172,7 +175,7 @@ export const createBlocksFromOrderType = (
       abrv,
       allowedRows,
       axis: 1,
-      yPosition: getDefaultPosition(orderType, "trigger"),
+      yPosition: clampOffset(getDefaultPosition(orderType, "trigger")),
       direction: "upside",
       axes: ["trigger"],
     });
@@ -191,7 +194,7 @@ export const createBlocksFromOrderType = (
       abrv,
       allowedRows,
       axis: 1,
-      yPosition: getDefaultPosition(orderType, "trigger"),
+      yPosition: clampOffset(getDefaultPosition(orderType, "trigger")),
       direction: "upside",
       axes: ["trigger"],
     });
@@ -208,7 +211,7 @@ export const createBlocksFromOrderType = (
       abrv: `${abrv}-L`,
       allowedRows,
       axis: 2,
-      yPosition: getDefaultPosition(orderType, "limit"),
+      yPosition: clampOffset(getDefaultPosition(orderType, "limit")),
       direction: "upside",
       axes: ["limit"],
     });
@@ -225,26 +228,8 @@ export const createBlocksFromOrderType = (
 export const shouldShowPercentage = (block: BlockData): boolean =>
   block.axes.length > 0 && block.yPosition >= 0;
 
-/** Check if a block is vertically draggable */
-export const isBlockVerticallyDraggable = (block: BlockData): boolean =>
-  block.axes.length > 0;
-
-/** Build order config entry for a block */
-export const buildOrderConfigEntry = (
-  block: BlockData,
-  col: number,
-  row: number,
-  type: string,
-): {
-  col: number;
-  row: number;
-  type: string;
-  axis?: 1 | 2;
-  yPosition?: number;
-  direction?: "upside" | "downside";
-} => {
-  if (block.axes.length === 0) {
-    return { col, row, type };
-  }
-  return { col, row, axis: block.axis, yPosition: block.yPosition, direction: block.direction, type };
-};
+// Whether a block sits on a price axis, and the saved form of a whole grid,
+// both belong to `utils/blockMapping.ts` - `legInCell` and `orderConfigFromGrid`
+// respectively. They used to live here as `isBlockVerticallyDraggable` and
+// `buildOrderConfigEntry`, each answering from a block alone, and a block alone
+// cannot see the cell whose scale it is drawn on.

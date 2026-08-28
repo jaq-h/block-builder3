@@ -11,6 +11,7 @@ import {
   type ActivationOrigin,
   type CommandSource,
   type CommandState,
+  type ProviderSource,
 } from "./blockCommand";
 import { clearGrid } from "./grid";
 import type { BlockData, GridData } from "../types/grid";
@@ -39,12 +40,20 @@ const gridWith = (col: number, row: number, b = block()): GridData => {
   return grid;
 };
 
-const providerSource: CommandSource = {
+const providerSource: ProviderSource = {
   kind: "provider",
   type: "limit",
   label: "Limit",
 };
 
+const takeProfitSource: ProviderSource = {
+  kind: "provider",
+  type: "take-profit",
+  label: "Take Profit",
+};
+
+// Still a `CommandSource`: a placed block is never *carried* (decision D9), but
+// it is still what a drag's outcome is about, so the announcer names one.
 const gridSource: CommandSource = {
   kind: "grid",
   id: "b1",
@@ -53,7 +62,7 @@ const gridSource: CommandSource = {
 };
 
 const carrying = (
-  source: CommandSource,
+  source: ProviderSource,
   target = { col: 0, row: 1 },
   targets = [
     { col: 0, row: 1 },
@@ -98,29 +107,21 @@ describe("validTargetsFor", () => {
 });
 
 describe("initialTarget", () => {
-  it("prefers the block's own cell when it is still a legal target", () => {
+  // It used to take a preferred cell, which was the carried block's own - the
+  // one place a placed block could always be put back. Only a palette order is
+  // carried now (decision D9), and a palette order is nowhere, so there is
+  // nothing to prefer and the first legal cell is the answer.
+  it("starts at the first legal cell", () => {
     const targets = [
       { col: 0, row: 0 },
       { col: 1, row: 2 },
     ];
 
-    expect(initialTarget(targets, { col: 1, row: 2 })).toEqual({
-      col: 1,
-      row: 2,
-    });
+    expect(initialTarget(targets)).toEqual({ col: 0, row: 0 });
   });
 
-  it("falls back to the first legal cell when the preferred one is not one", () => {
-    const targets = [{ col: 1, row: 0 }];
-
-    expect(initialTarget(targets, { col: 0, row: 1 })).toEqual({
-      col: 1,
-      row: 0,
-    });
-  });
-
-  it("is null when the block cannot be placed anywhere", () => {
-    expect(initialTarget([], { col: 0, row: 1 })).toBeNull();
+  it("is null when the order cannot be placed anywhere", () => {
+    expect(initialTarget([])).toBeNull();
   });
 });
 
@@ -185,7 +186,7 @@ describe("stepTarget", () => {
 
 describe("commandReducer", () => {
   describe("pick up", () => {
-    it("starts carrying at the preferred cell", () => {
+    it("starts carrying at the first legal cell", () => {
       const targets = [
         { col: 0, row: 1 },
         { col: 1, row: 1 },
@@ -194,20 +195,19 @@ describe("commandReducer", () => {
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
         origin: "keyboard",
-        source: gridSource,
+        source: providerSource,
         targets,
-        preferred: { col: 1, row: 1 },
       });
 
       expect(next.carrying).toEqual({
-        source: gridSource,
-        target: { col: 1, row: 1 },
+        source: providerSource,
+        target: { col: 0, row: 1 },
         targets,
         origin: "keyboard",
       });
     });
 
-    it("starts at the first legal cell when nothing is preferred", () => {
+    it("starts at the first legal cell of a shorter list too", () => {
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
         origin: "keyboard",
@@ -237,11 +237,11 @@ describe("commandReducer", () => {
       const next = commandReducer(carrying(providerSource), {
         type: "pickUp",
         origin: "keyboard",
-        source: gridSource,
+        source: takeProfitSource,
         targets: [{ col: 1, row: 2 }],
       });
 
-      expect(next.carrying?.source).toEqual(gridSource);
+      expect(next.carrying?.source).toEqual(takeProfitSource);
       expect(next.carrying?.target).toEqual({ col: 1, row: 2 });
     });
   });
@@ -294,13 +294,13 @@ describe("commandReducer", () => {
   describe("place and cancel", () => {
     it("returns to idle on place", () => {
       expect(
-        commandReducer(carrying(gridSource), { type: "place" }).carrying,
+        commandReducer(carrying(providerSource), { type: "place" }).carrying,
       ).toBeNull();
     });
 
     it("returns to idle on cancel", () => {
       expect(
-        commandReducer(carrying(gridSource), { type: "cancel" }).carrying,
+        commandReducer(carrying(providerSource), { type: "cancel" }).carrying,
       ).toBeNull();
     });
 

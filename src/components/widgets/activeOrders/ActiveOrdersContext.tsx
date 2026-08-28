@@ -5,9 +5,9 @@ import type {
   ActiveOrdersConfig,
 } from "../../../types/activeOrders";
 import type { GridData, CellPosition } from "../../../types/grid";
-import type { AxisType } from "../../../data/orderTypes";
-import { GRID_CONFIG, ORDER_TYPES } from "../../../data/orderTypes";
-import { axesForBlockAxis, shouldBeDescending } from "../../../utils";
+import { GRID_CONFIG } from "../../../data/orderTypes";
+import { directionForNewCell, normaliseCellDirections } from "../../../utils";
+import { axesForOrder } from "./orderAxes";
 import { ActiveOrdersContext } from "./ActiveOrdersContextDef";
 
 // =============================================================================
@@ -19,35 +19,6 @@ const createEmptyGrid = (): GridData =>
   Array.from({ length: GRID_CONFIG.numColumns }, () =>
     Array.from({ length: GRID_CONFIG.numRows }, () => []),
   );
-
-/**
- * The axes a submitted order's block owns, through the one owner of the
- * axis-to-axes rule.
- *
- * This panel used to derive the rule itself, as `axis === 1 ? trigger : limit`,
- * which has no notion of a single-axis order type: a Stop Loss released in the
- * right half of its cell is saved with `axis: 2` and came back here labelled a
- * limit leg, while the assembly grid reloaded the same order as a trigger one.
- * Routing this last consumer through `axesForBlockAxis` leaves one derivation
- * of the fact rather than two that can disagree.
- */
-const axesForOrder = (type: string, axis?: 1 | 2): AxisType[] => {
-  if (!axis) {
-    return [];
-  }
-
-  const typeDef = ORDER_TYPES.find((ot) => ot.type === type);
-
-  // An order whose type is not in the catalogue keeps the raw rule rather than
-  // being dropped. `gridFromConfig` skips such an entry because a missing block
-  // in the builder is harmless, but an order that was actually submitted has to
-  // stay visible in the list.
-  if (!typeDef) {
-    return axis === 1 ? ["trigger"] : ["limit"];
-  }
-
-  return axesForBlockAxis(typeDef.axes, axis);
-};
 
 // =============================================================================
 // PROVIDER COMPONENT
@@ -99,15 +70,21 @@ export const ActiveOrdersProvider: FC<ActiveOrdersProviderProps> = ({
           allowedRows: [order.row],
           axis: order.axis || 1,
           yPosition: order.yPosition || 0,
-          direction: order.direction ??
-            (shouldBeDescending(order.row, order.col, undefined, order.type) ? "downside" as const : "upside" as const),
+          direction:
+            order.direction ??
+            directionForNewCell(order.row, order.col, undefined, order.type),
           axes: axesForOrder(order.type, order.axis),
         };
         newGrid[order.col][order.row].push(block);
       }
     });
 
-    return newGrid;
+    // A cell draws one scale, and every block in it is priced on it (decision
+    // D8). This panel builds its grid entry by entry from records written
+    // before that rule existed, so it goes through the same normaliser the
+    // builder's own hydration does - otherwise an order card could show a price
+    // the cell it was built in never drew.
+    return normaliseCellDirections(newGrid);
   })();
 
   // Combine state and actions

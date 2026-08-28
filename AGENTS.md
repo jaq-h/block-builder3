@@ -179,7 +179,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Ten things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Eleven things bite in ordinary work:
 
 - **Never add a `window` *mouse* listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events. Mouse events are also suppressed during a drag,
@@ -225,6 +225,13 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   holds pointer capture and its events are retargeted to the dragged block, which is inside
   the surface, so a live gesture is not cancelled by it. That rests on the capture, which is
   not guaranteed. Focus is not handed back, for the same reason Tab does not hand it back.
+- **Only a palette order is ever carried.** A placed block does not change cells, by any
+  input method (decision D9, and see "Prices and order types"), so the carry has one kind of
+  source and `CarriedBlock.source: ProviderSource` is the type saying so. Pressing Enter,
+  tapping or clicking a placed block reaches `refuseMove` instead, and whether that refusal
+  offers the arrow keys is decided by `cellDrawsPriceAxis` - the same owner the renderer uses
+  to decide whether to draw an axis at all, so the affordance named is one this render really
+  wired.
 - **The mouse is a first-class user of the command model: click to pick up, click to place**,
   and hold-to-drag is unchanged beside it. `TAP_SLOP_PX` (4px) is the one threshold that
   separates a click from a drag, for every device - a per-device number would be a second
@@ -245,8 +252,9 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   notice a holder that goes away without stopping its ghost.
 - **Every new interactive affordance needs a keyboard path and an announcement**, not just a
   handler. Placement is expressed in terms of a target cell in `GridArea`
-  (`placeProviderInCell` / `moveBlockToCell`); the pointer drag and the command model both
-  call it. Anything that bypasses those two functions will work for one input method only.
+  (`placeProviderInCell` for a palette order, `keepBlockInItsCell` for the refusal a placed
+  one gets); the pointer drag and the command model both call them. Anything that bypasses
+  those two functions will work for one input method only.
 - **Never compose an announcement string at a call site.** `src/utils/gridAnnouncements.ts`
   writes every sentence the grid speaks and `useGridAnnouncer` is the only thing that reaches
   the live region; callers report an *outcome*, and the placement primitives return a
@@ -290,7 +298,7 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   linear/logarithmic choice onto the library's `PriceScaleMode` and stops there. No price,
   no order and no grid position is derived from it, which is the whole reason the
   logarithmic option is safe here: the grid and the chart share exactly one fact, the price,
-  and both take it from `calculatePrice`. They share no coordinate space - the grid's axis
+  and both take it from `priceForOffset`. They share no coordinate space - the grid's axis
   is a 0-50% control track in a cell, the chart's is a price axis in a separate panel - so
   there is no second derivation for a logarithmic mapping to break. A scale argument
   appearing in `orderPriceLines` would be that second derivation, and
@@ -300,8 +308,9 @@ The README's **Interaction model** section is authoritative. Ten things bite in 
   `toHaveLength(2)` stays green for `scale?: PriceScaleKind` and for a trailing options
   object, which are exactly the regressions it would exist to catch.
   `orderAutoscale.ts` carries the one thing a logarithmic axis genuinely cannot do: show a
-  zero or negative price, which the drag layer's 0-100 vs 50 percent mismatch can still
-  produce. It always returns a provider, never `undefined`: `applyOptions` merges with a
+  zero or negative price, which the drag layer's 0-100 vs 50 percent mismatch used to
+  produce; `clampOffset` closed that, and the guard stays because a guard that trusts its
+  callers is not one. It always returns a provider, never `undefined`: `applyOptions` merges with a
   helper that skips an undefined source value, so `undefined` does not clear a provider,
   it leaves the previous one installed and the chart stretched to a level the user has
   already deleted.
@@ -561,18 +570,24 @@ strict about `send` while CONNECTING.
 The invariants the order path depends on, each of which was previously violated in
 `src/api/orderMapper.ts` and is now pinned by tests:
 
-- **One price formula.** `src/utils/price.ts` `priceAtOffset` is the shared owner of
-  "percentage offset from market" for the grid display and the order mapper. The grid cell
-  renders its price chip through `calculatePrice`, which delegates to it, and the order
-  mapper builds Kraken payloads from it directly, so the price sent is the price shown.
-  The chart's order lines join them: `orderPriceLines.ts` calls the same `calculatePrice`,
-  and `orderPriceLines.dom.test.tsx` reads the chip a real `GridCell` renders and asserts
-  it is the number the chart draws, so the copy the chart used to inline cannot come back.
-  Captain's decision D3: a block at yPosition 25 means **25%** from market,
-  not 2.5%. The side of the market comes from the block's own `direction`, never from
-  re-deriving one from row/column - those disagree under the bulk pattern. That settles the
-  direction question **for single-block cells**; it is still **open for bulk cells holding
-  mixed order families**, which is the known gap below, owned by `bb3-mapping-owner`.
+- **One price formula, and one owner of what is fed to it.** `src/utils/price.ts`
+  `priceAtOffset` is the formula. `src/utils/blockMapping.ts` is the owner of its arguments,
+  and of the whole block-to-price mapping: **axis membership, position, direction and a
+  cell's scale**. Every consumer asks it - the price chip (`GridCell`), the read-only card
+  (`ReadOnlyGridCell`), the chart (`orderPriceLines`), the Kraken payload
+  (`extractBlocksFromGrid`), the vertical drag and the arrow keys - and none of them derives
+  any of those four facts for itself. That is the rule to preserve: a fifth consumer works
+  it out again is exactly how the chip, the chart and the payload came to disagree.
+  Captain's decision D3: a block at yPosition 25 means **25%** from market, not 2.5%.
+  Captain's decision D8: **direction belongs to the CELL**, stamped when the first block
+  lands. `addBlocksToCell` is the one write path into a cell and the one place a direction
+  is chosen; `normaliseCellDirections` brings a grid built elsewhere - a reloaded strategy,
+  the Active Orders panel - onto the same invariant. `cellDirection` reading `blocks[0]` is
+  therefore a statement about the cell rather than an accident of insertion order, which is
+  what makes removing a block safe: the survivors already carry the cell's scale.
+  `blockMapping.dom.test.tsx` is the acceptance check - it puts a Limit and a Stop Loss in
+  one bulk cell at $50,000 and asserts the chip, the chart line and the payload all say
+  `$37,500`, including on a grid whose blocks were never stamped.
 - **A block's order type is `BlockData.orderType`.** Never parse it back out of the block id.
   Ids look like `sa-stop-loss-limit-limit-2`, and substring matching on them turned every
   `-limit` variant into a plain limit order with no trigger. Because `mapOrderType` refuses
@@ -614,7 +629,7 @@ The invariants the order path depends on, each of which was previously violated 
   in the app writes `linkedBlockId`, deleting a block must clear every link pointing at it.
   Refusing a dangling link is safe only because nothing writes links today; wiring that path
   up without fixing deletion first turns an ordinary delete into a refused strategy for real
-  users. Owned by `bb3-mapping-owner`.
+  users. Still open, and not part of the mapping owner's remit.
 
 `src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type, a block
 claiming both axes, a link graph that is not flat, an incomplete conditional close, and a
@@ -622,48 +637,85 @@ price that is not a finite number or not a positive static one all throw or fail
 because silently substituting a different order is the failure this module exists to
 prevent. `useKrakenAPI.prepareOrdersFromGrid` catches that and surfaces it as `orderError`.
 
-`validateOrder`'s price guard is a last line of defence, not the fix for what feeds it:
-prices reach it as strings, so `"0.0"` is truthy and a presence check passed it. It is
-reachable because `calculateYPosition` works on a 0-100 scale while the slider and the axis
-labels use `SCALE_CONFIG.MAX_PERCENT = 50`, and the drop handler writes the unclamped result
-into the block - a block dragged to the bottom of its cell is a 100% offset, which is a
-price of zero. That root cause is in the drag layer and is owned by `bb3-mapping-owner`.
-Every price must be finite; **positivity is checked only for a static price**, because under
-a `pct` or `quote` price type the value is a signed offset and `-1.5` is legitimate.
+`validateOrder`'s price guard is a last line of defence, and now genuinely the last one
+rather than the only one: prices reach it as strings, so `"0.0"` is truthy and a presence
+check passed it. It used to be reachable, because `calculateYPosition` read a 0-100 scale
+while the axis runs to `SCALE_CONFIG.MAX_PERCENT = 50` and the drop handler wrote the
+unclamped result into the block - a block dragged to the bottom of its cell was a 100%
+offset, which is a price of zero. That reader is gone, and every position now flows through
+`blockMapping.ts` before it is drawn or priced. The guard stays, because a validator that
+trusts its callers is not one. Every price must be finite; **positivity is checked only for
+a static price**, because under a `pct` or `quote` price type the value is a signed offset
+and `-1.5` is legitimate.
+
+**Clamp on read, never destroy information on write.** That is why the clamp comes in two
+halves, and mixing them up re-opens the hole above. `clampOffset` is the DISPLAY answer: it
+bounds the range *and* collapses a non-finite position onto the market line, because a chip
+cannot print `NaN%`. `offsetForOrder` is what every path that can reach a Kraken payload
+uses instead - the mapper, `orderConfigFromGrid`, and `setBlockPosition` writing a dragged
+position back - and it bounds the range while leaving a non-finite value non-finite,
+so `validateOrder`'s `Number.isFinite` guard still has something to refuse. Collapsing it
+would price a corrupt block at the market, which is a finite, positive, entirely plausible
+order. Hydration writes neither clamp into a stored block: `gridFromConfig` copies a saved
+position across as it stands and `normaliseCellDirections` stamps a direction and nothing
+else, because both used to clamp there and a hydrated grid then reached the mapper already
+priced at the market with nothing left to refuse. `NaN` is not nullish, so a `?? 0` never
+caught it either.
 
 Still open in the same file, and deliberately not fixed with the above: the two legs of a
 dual-axis order type (`stop-loss-limit` and friends) are emitted as two separate orders
 rather than one payload carrying both `limit_price` and `triggers`, so each leg now fails
-`validateOrder`. Merging them needs a durable pairing identity on the block, since either
-leg can be dragged to another cell.
+`validateOrder`. Merging them needs a durable pairing identity on the block.
 
-**Known gap: under the bulk pattern the price shown and the price sent can disagree.**
-`src/components/common/grid/GridCell.tsx` derives one `isDescending` for the whole cell from
-`blocks[0].direction` and renders every block's price chip, percentage sign and slider
-geometry from it, while the mapper reads each block's own `direction`. A bulk-pattern cell
-can hold blocks with opposite directions, so the two diverge. Concretely: at a $50,000
-market, drop a Limit into Entry/Primary and then a Stop Loss into the same cell, and the
-Stop Loss chip reads `-25.00% $37,500` while the payload and the chart line both say
-`62,500`. It is not reachable in the conditional pattern, which is the default. It is
-deliberately not fixed here, and has been filed to `bb3-mapping-owner`, which owns
-reconciling the chip, the chart and the payload together; that owner must decide what a bulk
-cell means and apply that one answer to all three in a single change - splitting it across
-owners is how display and payload drifted apart in the first place, which is exactly what
-decision D3 exists to prevent.
+**A placed block never changes cells.** Captain's decision D9, asked directly and answered
+"every block": once a block is placed, its cell is where it lives, with no per-block-type
+carve-out. `keepBlockInItsCell` in `GridArea.tsx` is the whole of it - it reports
+`unchanged` for a release in the block's own cell and `refused` with `reason:
+"staysInCell"` for any other, and mutates nothing. The command model carries palette orders
+only, which `CarriedBlock.source: ProviderSource` states in the type rather than in a
+comment. A misplaced order is corrected by removing it (drag it off the grid) and placing a
+new one, until the cell-detail editor ships.
 
-**Known gap: `axis` is derived two ways, so a live grid and a reloaded one can disagree
-about which leg is the trigger.** Hydration derives `axes` from the saved `axis`, but the
-drop handler rewrites `axis` from the pointer's x-half (`findAxisAtPosition` in
-`src/utils/grid.ts` returns 1 for the left half, 2 for the right; `GridArea.tsx` writes it
-straight into the config) without touching `axes`. Concretely: drag a Stop Loss Limit's
-trigger leg and release just right of the cell midline, and the live session still emits
-`triggers.price = 66098.4` from its in-memory `["trigger"]`, while the same config after an
-Edit reload comes back as `["limit"]` and emits `limit_price = 66098.4`. Same saved
-strategy, two different payloads. Nothing wrong is submitted today, because a split
-dual-axis leg fails `validateOrder` either way - but it becomes a silent wrong payload the
-moment the two legs are merged into one order, which is why it is written down here rather
-than left as folklore. Owned by `bb3-mapping-owner`; `axis` and `axes` should be kept in
-step at the one place `axis` changes, through `axesForBlockAxis`.
+**Known gap: removing a single placed block is not reachable for most of them.**
+`handleDragEnd` -> `removeBlock` is the only per-block removal path in the app, and it fires
+only when a *free* drag ends outside every cell. `block.tsx` wires `useVerticalDrag` instead
+for any block whose cell draws a price axis, so a placed Limit, Stop Loss or Take Profit
+cannot be dragged off the grid at all, and no input method has a keyboard removal path for
+any block type. Clear All is then the only way to remove one, and it destroys the whole
+strategy. This is pre-existing and predates the mapping owner; D9 makes it more visible by
+naming delete-and-rebuild as *the* correction path for a misplaced order. Closing it - a
+removal affordance that works on a priced block and from the keyboard - is filed as its own
+piece of work, and the sr-only block instructions deliberately promise removal only for a
+cell that draws no axis until it lands.
+
+**The refusal is legible, not silent.** Three things say so together and none of them is
+optional: the announcer's `moveRefused` sentences, a visible note under the grid
+(`cellLockedNote`, ordinary text - never a second live region), and no cell drawing itself
+as a target while a placed block is dragged (`getActiveAllowedRows` returns none for one).
+A gesture that simply does nothing is indistinguishable from a broken control, which is what
+D9 asks this to avoid. The note is shown for **both** refusals and worded for each: a block
+in a cell drawing no axis is told it can be dragged off the grid, and one on a price axis is
+told about the arrow keys instead, because that is the affordance its render actually wires
+and it has no removal path at all (see the known gap above). Showing one wording for both is
+how the note came to promise a removal the app cannot perform.
+
+**Two closed gaps, recorded because the shape recurs.** Both were one fact derived twice.
+
+- *The price shown versus the price sent.* A bulk cell drew every chip on `blocks[0]`'s
+  direction while the mapper read each block's own, so at a $50,000 market a Stop Loss
+  dropped beside a Limit read `-25.00% $37,500` on screen against `62,500` in the payload
+  and on the chart. Closed by D8 above.
+- *`axis` versus `axes`.* Hydration derived `axes` from the saved `axis` while the drop
+  handler rewrote `axis` from the pointer's x-half without touching `axes`, so a live grid
+  and a reloaded one disagreed about which leg of a dual-axis order was the trigger. Closed
+  by deleting the drop-time reader: a drop resolves a cell and nothing else, and
+  `axesForBlockAxis` is the one derivation of the pair. Pinned by the round-trip test in
+  `StrategyAssemblyContext.reload.test.tsx`.
+
+**`orderConfig` is derived, not maintained.** `orderConfigFromGrid(grid)` is a projection,
+memoised in `StrategyAssemblyProvider`; there is no `setOrderConfig`. It used to be a second
+copy written by hand at every call site that touched the grid, which is how the chart came
+to read a direction the cell had already changed its mind about.
 
 ## Path aliases
 

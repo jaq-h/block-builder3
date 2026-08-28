@@ -81,10 +81,12 @@ describe("orderAutoscaleProvider", () => {
   });
 
   it("leaves a non-positive level out of a logarithmic range", () => {
-    // A block dragged to the very bottom of its cell is a 100% offset, which
-    // is a price of zero: `calculateYPosition` runs on a 0-100 scale while the
-    // slider uses MAX_PERCENT = 50. A logarithmic axis has no coordinate for
-    // it, and letting it set the floor takes the whole chart with it.
+    // A block dragged to the very bottom of its cell used to be a 100% offset,
+    // which is a price of zero: `calculateYPosition` ran on a 0-100 scale while
+    // the slider used MAX_PERCENT = 50. That reader is gone and `clampOffset`
+    // bounds every position now, so no drag produces one. The guard is pinned
+    // anyway, because a logarithmic axis has no coordinate for a level of zero
+    // and letting one in from any other source takes the whole chart with it.
     const range = apply(
       orderAutoscaleProvider([0, 90_000], true),
       candles(70_000, 80_000),

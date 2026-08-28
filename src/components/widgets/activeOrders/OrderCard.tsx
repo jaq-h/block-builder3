@@ -2,6 +2,8 @@ import type { FC } from "react";
 import type { ActiveOrderEntry } from "../../../types/activeOrders";
 import { getStatusColor, getStatusLabel } from "../../../types/activeOrders";
 import { ORDER_TYPES, COLUMN_HEADERS } from "../../../data/orderTypes";
+import type { PriceAxisLeg } from "../../../utils";
+import { legForOrder } from "./orderAxes";
 
 // =============================================================================
 // HELPERS
@@ -13,9 +15,15 @@ const ROW_LABELS: Record<number, string> = {
   2: "Bottom",
 };
 
-const AXIS_LABELS: Record<number, string> = {
-  1: "Trigger",
-  2: "Limit",
+// The leg this card names is the leg the grid drew and the leg the payload
+// sent, because all three read `legForOrder`. Labelling from `axis` alone was
+// the last consumer deriving it for itself, and it disagreed with the other
+// two for the case a reload pins as real: a Stop Loss saved at `axis: 2` was
+// called a Limit here while the grid drew it in the trigger column and Kraken
+// was sent a `triggers.price`.
+const LEG_LABELS: Record<PriceAxisLeg, string> = {
+  trigger: "Trigger",
+  limit: "Limit",
 };
 
 // =============================================================================
@@ -34,7 +42,8 @@ const OrderCard: FC<OrderCardProps> = ({ order, isEditing = false }) => {
   const rowLabel = ROW_LABELS[order.row] ?? `Row ${order.row}`;
   const statusColor = getStatusColor(order.status);
   const statusLabel = getStatusLabel(order.status);
-  const axisLabel = order.axis ? AXIS_LABELS[order.axis] : null;
+  const leg = legForOrder(order.type, order.axis);
+  const axisLabel = leg ? LEG_LABELS[leg] : null;
   const sign = order.direction === "downside" ? "-" : "+";
 
   const editingBlue = "rgba(100, 140, 255, 0.9)";
