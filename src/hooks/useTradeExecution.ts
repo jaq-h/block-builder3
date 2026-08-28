@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { OrderConfig } from "../types/grid";
 import { useOrdersStore } from "../store";
 import { useTradingMode } from "./useTradingMode";
@@ -46,12 +46,38 @@ export interface UseTradeExecutionReturn {
 // HOOK
 // =============================================================================
 
+/**
+ * How long the post-submission success message stays on screen.
+ *
+ * The message carries a focusable control ("View Active Orders"), so removing it
+ * on a timer is content the user may be in the middle of reaching. WCAG 2.2.1
+ * asks for at least 20s for a time limit like this one, and 3s - what this was
+ * while the message was never rendered at all - took the control away mid-Tab.
+ */
+const SUCCESS_MESSAGE_TIMEOUT_MS = 20_000;
+
 export function useTradeExecution(): UseTradeExecutionReturn {
   const [orderConfig, setOrderConfig] = useState<OrderConfig>({});
   const [showSuccess, setShowSuccess] = useState(false);
   const [strategyKey, setStrategyKey] = useState(0);
   const [initialConfig, setInitialConfig] = useState<OrderConfig | undefined>(undefined);
   const [isEditMode, setIsEditMode] = useState(false);
+
+  /**
+   * The pending success-message dismissal, so there is exactly one in flight.
+   * Two submissions three seconds apart used to leave the first one's timer
+   * running, and it then cleared the *second* message early.
+   */
+  const dismissTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const cancelPendingDismissal = useCallback(() => {
+    if (dismissTimer.current !== undefined) {
+      clearTimeout(dismissTimer.current);
+      dismissTimer.current = undefined;
+    }
+  }, []);
+
+  useEffect(() => cancelPendingDismissal, [cancelPendingDismissal]);
 
   const {
     submitOrders,
@@ -89,6 +115,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
   const handleConfigChange = (config: OrderConfig) => {
     setOrderConfig(config);
     // Clear any previous success message when config changes
+    cancelPendingDismissal();
     setShowSuccess(false);
     clearError();
   };
@@ -113,7 +140,11 @@ export function useTradeExecution(): UseTradeExecutionReturn {
       setInitialConfig(undefined);
       setOrderConfig({});
       setStrategyKey((prev) => prev + 1);
-      setTimeout(() => setShowSuccess(false), 3000);
+      cancelPendingDismissal();
+      dismissTimer.current = setTimeout(() => {
+        dismissTimer.current = undefined;
+        setShowSuccess(false);
+      }, SUCCESS_MESSAGE_TIMEOUT_MS);
     }
   };
 

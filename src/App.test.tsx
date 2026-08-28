@@ -141,6 +141,23 @@ describe("App layout", () => {
     expect([...panelRoot("assembly-panel").classList]).toContain("hidden");
   });
 
+  it("hands focus to the Active Orders tab when the assembly panel's control is used", async () => {
+    const { user } = renderApp();
+
+    const control = within(screen.getByTestId("assembly-panel")).getByRole(
+      "button",
+      { name: "View Active Orders" },
+    );
+    await user.click(control);
+
+    // The control is inside the panel that the switch hides, so leaving focus
+    // where it was drops it to `<body>` and the next Tab restarts from the top
+    // of the document. The tab button is on screen either way and reads
+    // `aria-pressed="true"` once the switch has happened.
+    expect(ordersTab()).toHaveFocus();
+    expect(document.body).not.toHaveFocus();
+  });
+
   it("names the tab bar and marks the selected tab programmatically", async () => {
     const { user } = renderApp();
 
