@@ -1,5 +1,3 @@
-import { PriceScaleMode } from "lightweight-charts";
-
 // =============================================================================
 // PRICE SCALE - what the logarithmic option is, and what it deliberately is not
 // =============================================================================
@@ -21,6 +19,12 @@ import { PriceScaleMode } from "lightweight-charts";
 // range in a separate panel of a different height. Nothing outside this widget
 // reads a chart coordinate, and nothing inside it converts a pixel back into a
 // price. So there is no second derivation for a logarithmic mapping to break.
+//
+// This module holds the vocabulary only - the kinds, the buttons that offer them
+// and the default - and carries **no import of `lightweight-charts`**, because
+// `ChartHeader` reaches it from the eager chunk. The mapping onto the library's
+// own enum is next door in `priceScaleMode.ts`, which only the lazy chart chunk
+// imports; that file's header carries why.
 
 export type PriceScaleKind = "linear" | "logarithmic";
 
@@ -50,7 +54,3 @@ export const PRICE_SCALE_OPTIONS: readonly PriceScaleOption[] = [
 ] as const;
 
 export const DEFAULT_PRICE_SCALE: PriceScaleKind = "linear";
-
-/** The library mode for a scale. The only place the two vocabularies meet. */
-export const priceScaleMode = (kind: PriceScaleKind): PriceScaleMode =>
-  kind === "logarithmic" ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal;

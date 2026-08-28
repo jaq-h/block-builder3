@@ -54,7 +54,41 @@ export const headerText = cva("font-semibold text-text-secondary", {
  * below, which adds the rule and the background. The chart panel draws those
  * itself, around a title bar and the toolbar row beneath it, so it takes this.
  */
-export const panelTitleBar = "shrink-0 flex items-center gap-3 h-16 px-4";
+const panelTitleBarRail = "shrink-0 flex items-center gap-3 px-4";
+
+export const panelTitleBar = cn(panelTitleBarRail, "h-16");
+
+/**
+ * The one deliberate exception to the fixed height above, and the only bar
+ * allowed to take it: the chart panel's, which is the only title bar carrying
+ * controls rather than a title alone.
+ *
+ * `h-16` becomes a floor and the row may wrap, so a strip that does not fit
+ * beside the pair drops onto a second line **inside the bar** instead of being
+ * drawn outside the panel's `overflow-hidden` and going out of reach. That was
+ * the state on `main`: seven timeframe buttons, and at every viewport below
+ * 480px and in the 1024-1200px band where the chart panel sits at its 300px
+ * floor, the trailing ones were painted outside the panel with nothing to
+ * scroll them back. See `AGENTS.md`, "Layout and the CSS cascade".
+ *
+ * **Why this is safe for the other two panels, measured rather than argued.**
+ * The constant exists so the three title bars share one height, one rail and
+ * one centre line - and they are only ever side by side above `lg`, since below
+ * it the layout is tabbed and no two are on screen at once. Measured across
+ * 320-1920px with the offline warning showing, this bar is **exactly 64px at
+ * every width from 360px up**, wrapped or not: two lines come to 20px of text
+ * plus a 12px row gap plus a 24px control, which is 56px and still inside the
+ * floor. It exceeds 64px only at 320px, where the pair, the price and the
+ * warning cannot share one line either - and there the panels are tabbed. The
+ * assembly and Active Orders bars keep `panelTitleBar` unchanged.
+ *
+ * `content-center` keeps the wrapped lines together on the bar's centre line
+ * rather than letting `align-content: stretch` push them to its two edges.
+ */
+export const wrappingPanelTitleBar = cn(
+  panelTitleBarRail,
+  "min-h-16 flex-wrap content-center",
+);
 
 /**
  * A panel header that is a single bar: the shared title-bar geometry plus the

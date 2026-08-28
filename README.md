@@ -168,6 +168,13 @@ new deploy is picked up immediately.
 enters the initial payload. The barrel re-exports the boundary rather than the implementation, so
 no import can pull it back in by accident.
 
+One module crosses that boundary deliberately: `ChartHeader.tsx`, which the real panel and the
+loading placeholder both render, so the two are the same markup and the swap costs no layout
+shift. That puts it in the eager chunk, so **nothing it reaches may import `lightweight-charts`
+as a value** - which is why the enum mapping lives in `priceScaleMode.ts`, imported only from
+the lazy side, while `priceScale.ts` holds the library-free vocabulary. The check is a
+production build plus `grep -c lightweight-charts dist/assets/index-*.js`, which must be 0.
+
 ---
 
 ## Trading modes
@@ -905,11 +912,14 @@ src/
 │       │
 │       ├── orderChart/            # Price chart widget (code-split)
 │       │   ├── LazyOrderChart.tsx     # lazy() boundary + loading fallback
-│       │   ├── OrderChart.tsx         # Chart panel - the only lightweight-charts importer
+│       │   ├── OrderChart.tsx         # Chart panel - the chart body and its data wiring
+│       │   ├── ChartHeader.tsx        # Both header rows. Eager: the placeholder renders it too
 │       │   ├── OrderChart.styles.ts   # CVA styles (one variant for every toolbar toggle)
 │       │   ├── useLightweightChart.ts # Chart instance lifecycle
 │       │   ├── useIndicatorSeries.ts  # Line-series lifecycle, derived from the registry
-│       │   ├── priceScale.ts          # Linear/logarithmic choice → PriceScaleMode. Nothing else
+│       │   ├── timeframes.ts          # The timeframes offered, and the default
+│       │   ├── priceScale.ts          # Linear/logarithmic vocabulary. No library import
+│       │   ├── priceScaleMode.ts      # That choice → PriceScaleMode. Lazy side only
 │       │   ├── orderPriceLines.ts     # Grid blocks → price lines, through blockMapping
 │       │   ├── orderAutoscale.ts      # Keeps the order levels inside the visible range
 │       │   ├── indicators/            # Overlay indicators - a pure compute plus a registry entry

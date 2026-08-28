@@ -1,7 +1,7 @@
 // Chart panel styles → Tailwind + CVA, on the tokens in `src/styles/theme.ts`.
 import { cva } from "class-variance-authority";
 import { cn } from "../../../lib/utils";
-import { panelTitleBar } from "../../../styles/shared";
+import { wrappingPanelTitleBar } from "../../../styles/shared";
 
 // =============================================================================
 // TOOLBAR BUTTON
@@ -64,27 +64,56 @@ export const chartHeader =
   "border-b border-border-neutral bg-bg-overlay shrink-0";
 
 /**
- * Row one, this panel's title bar: symbol, price, timeframes. Its geometry is
- * `panelTitleBar`, shared with the assembly and Active Orders panels, so all
- * three titles sit at one height, on one 16px rail and on one centre line.
+ * Row one, this panel's title bar: the pair, its price, any warning about that
+ * price, and the timeframes.
+ *
+ * `wrappingPanelTitleBar` is the shared rail with its fixed height relaxed to a
+ * floor and wrapping allowed - the app's one documented exception to
+ * `panelTitleBar`, and that constant's docblock carries why it is safe for the
+ * other two panels. It is what keeps the trailing timeframes inside the panel
+ * instead of outside its `overflow-hidden`.
  */
-export const chartHeaderPrimaryRow = cn(panelTitleBar, "justify-between");
+export const chartHeaderPrimaryRow = cn(
+  wrappingPanelTitleBar,
+  "justify-between",
+);
 
 /**
  * Row two: indicators and price scale. A toolbar strip rather than a title bar,
- * so it keeps its own tighter geometry and may wrap when narrow.
+ * so it keeps its own tighter geometry, and it wraps for the same reason the
+ * row above does.
  *
- * `min-h` is what keeps the lazy fallback the same height as the real header:
- * the fallback has captions where this row has buttons, and without a floor the
- * chart body would jump upward the moment the chart chunk lands. It is derived
- * from what this row holds - `chartToggleButton`'s 24px SC 2.5.8 floor plus this
- * row's own 6px and 8px padding - so raising that floor raises this with it
- * rather than leaving the fallback a few pixels short.
+ * It used to carry a `min-h-[38px]` floor, to hold the lazy placeholder's
+ * header at the same height as the real one. That floor is gone because the job
+ * is: both are now the same component (`ChartHeader`), so they measure equal by
+ * construction at every width. A constant could not have done it anyway - what
+ * a wrapped row measures depends on the panel's width, and at a 1024px viewport
+ * the real header stood 166px against the placeholder's 102px while the floor
+ * was in place and agreeing with itself.
  */
 export const chartHeaderSecondaryRow =
-  "flex flex-wrap items-center justify-between gap-3 px-4 py-1.5 pb-2 min-h-[38px]";
+  "flex flex-wrap items-center justify-between gap-3 px-4 py-1.5 pb-2";
 
-export const chartControlGroup = "flex items-center gap-1";
+/**
+ * One group of related toggles: the timeframes, the indicators, the scale.
+ *
+ * `flex-wrap` is what makes a group too wide for its row fold onto a second
+ * line of its own rather than overflow. Both halves are needed and they act at
+ * different moments: the row wrapping moves a *whole group* to its own line,
+ * and this moves *buttons within a group* once the group is alone on a line and
+ * still too wide - which is the case at a 1024px viewport, where the chart panel
+ * is at its 300px floor and the Indicators group needs 300.41px of a 268px row.
+ * Before this, `EMA 20` was simply painted 16.41px outside the panel.
+ *
+ * It is deliberately **not** a scroll container. `overflow-x-auto` here was
+ * tried and reverted: the group's own height then depends on the platform's
+ * scrollbar - about 15px taller wherever bars take space rather than overlay,
+ * which is most of Windows and Linux and none of this project's development
+ * machines - and it puts the buttons' focus rings inside a clipping box.
+ * `AGENTS.md` records that as a standing rule: the app's chrome wraps, it never
+ * scrolls.
+ */
+export const chartControlGroup = "flex flex-wrap items-center gap-1";
 
 /** The quiet caption in front of a control group. */
 export const chartControlGroupLabel =
