@@ -488,6 +488,17 @@ and is `lg:hidden` for the same reason the tab bar is. A feature that genuinely
 needs a shareable URL needs a decision about what a URL means for a two-panel
 screen first, not a router underneath the existing one.
 
+**A control that switches tabs from inside a panel has to hand focus out of it.**
+Below `lg` the switch puts `hidden lg:block` on the panel that control lives in,
+so the button just pressed lands in a `display: none` subtree, the browser drops
+focus to `<body>` and the next Tab restarts at the top of the document.
+`showActiveOrders` in `App.tsx` is the worked example: it commits the switch with
+`flushSync` and *then* focuses the Active Orders tab button, which is mounted
+either side of the switch. The order is the point - committing first means the
+button already carries `aria-pressed="true"` when the focus event fires, so the
+name and state a screen reader computes are the ones the user has arrived at.
+`src/App.test.tsx` pins it.
+
 **The feedback strip's gate is `orderCount > 0` *or* `showSuccess`.** A successful
 submission raises `showSuccess` and calls `setOrderConfig({})` in one React
 update, so the render that first has something to report is also the first render
@@ -495,6 +506,24 @@ with the grid empty. Gated on `orderCount` alone, `ExecuteTradePanel` unmounted 
 exactly that render and "Orders submitted successfully!" was never once visible;
 the failure path looked fine only because a refused submission leaves the orders
 on the grid. `strategyAssembly.feedback.dom.test.tsx` pins both halves.
+
+**The success message's time limit has one owner, and it is not a bare
+`setTimeout`.** It is an effect in `useTradeExecution` keyed on `showSuccess`, so
+there is exactly one pending dismissal and every transition out of a message
+cancels it - a new submission, a strategy loaded for edit, a config change,
+unmount. Two submissions inside the window used to leave the first timer running
+to clear the second message early. Two further rules travel with it and neither
+is decoration: `SUCCESS_MESSAGE_TIMEOUT_MS` is 20s rather than the 3s it was
+while the message never rendered at all, and the limit **does not fire while the
+strip holds the focused element** - the message carries a focusable control, and
+taking it away mid-Tab drops focus to `<body>`, so the message stays up and goes
+once focus leaves. The strip is `feedbackRef`, drilled `App` ->
+`StrategyAssembly` -> `ExecuteTradePanel` and **required at every hop**: an
+unfilled ref is not a weaker guard but no guard, because the owner then reads
+`null` at the limit and dismisses unconditionally. `focusout` is only the prompt
+to re-check `document.activeElement` a tick later, since a window blur fires it
+while the strip still holds focus. `src/hooks/useTradeExecution.dom.test.tsx` and
+`strategyAssembly.dismissal.dom.test.tsx` pin it.
 
 ## Markets
 
