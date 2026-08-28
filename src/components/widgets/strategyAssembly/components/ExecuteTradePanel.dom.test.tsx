@@ -58,7 +58,8 @@ describe("the post-submission Active Orders control", () => {
   it("is reachable and operable from the keyboard", async () => {
     const { user, onViewActiveOrders } = renderPanel();
 
-    viewOrders().focus();
+    expect(document.body).toHaveFocus();
+    await user.tab();
     expect(viewOrders()).toHaveFocus();
 
     await user.keyboard("{Enter}");
