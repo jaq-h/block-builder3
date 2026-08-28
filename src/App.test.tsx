@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // The panels are stubbed so these tests are about App's layout and nothing
@@ -28,9 +28,13 @@ import { mounts, unmounts, resetMountTracker } from "@/test/mountTracker";
 
 const renderApp = () => ({ user: userEvent.setup(), ...render(<App />) });
 
-const ordersTab = () => screen.getByRole("button", { name: /Active Orders/ });
+// Scoped to the tab bar rather than the whole document: the assembly panel
+// also offers an "Active Orders" control - the tab switch that replaced the
+// router's `/active` link - and an unscoped query matches both.
+const tabBar = () => within(screen.getByRole("navigation", { name: "Panels" }));
+const ordersTab = () => tabBar().getByRole("button", { name: /Active Orders/ });
 const builderTab = () =>
-  screen.getByRole("button", { name: /Strategy Builder/ });
+  tabBar().getByRole("button", { name: /Strategy Builder/ });
 
 /** The outermost element of a panel: the one App applies its layout classes to. */
 const panelRoot = (testId: string): HTMLElement => {
@@ -118,6 +122,48 @@ describe("App layout", () => {
     // `lg` - and it carries `lg:grid`, so the desktop layout still shows it.
     expect([...panelRoot("assembly-panel").classList]).not.toContain("hidden");
     expect([...panelRoot("orders-panel").classList]).toContain("lg:grid");
+  });
+
+  it("switches to the orders tab from inside the assembly panel", async () => {
+    const { user } = renderApp();
+
+    // This is what the router's `/active` link became. As a `Link` it pushed a
+    // URL that rendered the identical page - there were never any routes - so
+    // pressing it changed nothing at any width.
+    await user.click(
+      within(screen.getByTestId("assembly-panel")).getByRole("button", {
+        name: "View Active Orders",
+      }),
+    );
+
+    expect(ordersTab()).toHaveAttribute("aria-pressed", "true");
+    expect([...panelRoot("orders-panel").classList]).not.toContain("hidden");
+    expect([...panelRoot("assembly-panel").classList]).toContain("hidden");
+  });
+
+  it("names the tab bar and marks the selected tab programmatically", async () => {
+    const { user } = renderApp();
+
+    // Selected state may never be colour alone: it is on `aria-pressed`, the
+    // same idiom `PatternSelector` uses, inside a named group.
+    expect(builderTab()).toHaveAttribute("aria-pressed", "true");
+    expect(ordersTab()).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(ordersTab());
+
+    expect(builderTab()).toHaveAttribute("aria-pressed", "false");
+    expect(ordersTab()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("operates the tabs from the keyboard", async () => {
+    const { user } = renderApp();
+
+    builderTab().focus();
+    await user.tab();
+    expect(ordersTab()).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    expect(ordersTab()).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps both panels in one shared tree", () => {

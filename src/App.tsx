@@ -183,6 +183,7 @@ function AppInner() {
         canToggle={canToggle}
         isSimulationMode={isSimulationMode}
         onToggleSimulationMode={toggleSimulationMode}
+        onViewActiveOrders={() => setActiveTab("orders")}
         isEditMode={isEditMode}
         strategyMarketUnavailable={strategyMarketUnavailable}
         strategyLoaded={strategyLoaded}

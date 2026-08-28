@@ -25,6 +25,8 @@ interface StrategyAssemblyProps {
   canToggle?: boolean;
   isSimulationMode?: boolean;
   onToggleSimulationMode?: () => void;
+  /** Switches the app to the Active Orders panel; see `ExecuteTradePanel`. */
+  onViewActiveOrders?: () => void;
   isEditMode?: boolean;
   /**
    * A strategy the builder refused to load, because the market it was placed on
@@ -86,6 +88,7 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
   canToggle,
   isSimulationMode,
   onToggleSimulationMode,
+  onViewActiveOrders,
   isEditMode,
   strategyMarketUnavailable,
   strategyLoaded,
@@ -98,7 +101,14 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
     pollInterval: 30000,
   });
 
-  const showFeedback = orderCount != null && orderCount > 0;
+  // `showSuccess` is part of this, not just `orderCount`. A successful
+  // submission empties the grid and raises the success flag in the same React
+  // update, so an `orderCount > 0` gate alone unmounted this panel on the very
+  // render that had something to say: "Orders submitted successfully!" and the
+  // Active Orders control beside it were never once visible. The failure path
+  // was unaffected, because a failed submission leaves the orders on the grid,
+  // which is why only the success half was silently missing.
+  const showFeedback = (orderCount != null && orderCount > 0) || showSuccess;
 
   return (
     <div className={container}>
@@ -120,7 +130,7 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
         isSubmitting={isSubmitting}
         isEditMode={isEditMode}
       />
-      {showFeedback && onToggleSimulationMode && (
+      {showFeedback && onToggleSimulationMode && onViewActiveOrders && (
         <ExecuteTradePanel
           showSuccess={showSuccess ?? false}
           error={error ?? null}
@@ -129,6 +139,7 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
           canToggle={canToggle ?? false}
           isSimulationMode={isSimulationMode ?? true}
           onToggleSimulationMode={onToggleSimulationMode}
+          onViewActiveOrders={onViewActiveOrders}
         />
       )}
     </div>

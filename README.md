@@ -803,7 +803,7 @@ vite/                              # Dev-server tooling (never bundled)
 └── localEnv.ts                    # Reads local.env into the dev server's environment
 
 src/
-├── App.tsx                        # Root component - providers, routing, drag overlay
+├── App.tsx                        # Root component - providers, panel tabs, drag overlay
 ├── App.styles.ts                  # App-level CVA variants & layout classes
 ├── main.tsx                       # Application entry point
 ├── index.css                      # Global styles & Tailwind theme tokens
@@ -835,7 +835,6 @@ src/
 │   │   ├── dragOverlayStore.ts    # Module-level drag state (useSyncExternalStore)
 │   │   ├── LiveAnnouncer.tsx      # Two alternating live regions for announcements
 │   │   ├── ErrorBoundary.tsx      # Recoverable fallback UI in place of a blank page
-│   │   ├── NavBar.tsx             # Navigation bar with live order badge
 │   │   ├── MarketSelector.tsx     # The pair picker (native <select>) + live price readout
 │   │   ├── MarketSelector.styles.ts # Market selector CVA styling
 │   │   └── grid/                  # Shared grid components
@@ -965,7 +964,6 @@ src/
 |---|---|---|
 | [react](https://react.dev/) | ^19.2.0 | UI framework |
 | [react-dom](https://react.dev/) | ^19.2.0 | React DOM renderer |
-| [react-router-dom](https://reactrouter.com/) | ^7.12.0 | Client-side routing (Strategy Builder ↔ Active Orders) |
 | [lightweight-charts](https://tradingview.github.io/lightweight-charts/) | ^5.1.0 | Price chart rendering (code-split, chart panel only) |
 | [tailwindcss](https://tailwindcss.com/) | ^4.1.18 | Utility-first CSS framework |
 | [@tailwindcss/vite](https://tailwindcss.com/docs/installation/vite) | ^4.1.18 | Tailwind CSS Vite plugin |
