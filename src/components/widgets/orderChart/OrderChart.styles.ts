@@ -27,7 +27,6 @@ import { wrappingPanelTitleBar } from "../../../styles/shared";
 // both toolbar rows rendered at before this change. `min-w-6` is the same floor
 // on the other axis - no label here is narrow enough to need it today, and it is
 // written down so the next abbreviation added cannot quietly breach it.
-// `chartHeaderSecondaryRow`'s `min-h` is derived from this floor.
 export const chartToggleButton = cva(
   [
     // `shrink-0` so the 24px floor holds inside a flex row that runs out of

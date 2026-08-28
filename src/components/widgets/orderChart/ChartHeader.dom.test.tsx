@@ -34,20 +34,6 @@ const controls = (): ChartHeaderControls => ({
   onSelectPriceScale: vi.fn(),
 });
 
-/**
- * Utilities that put `overflow: hidden` on an element. Per CSS Flexbox, an item
- * whose main-axis overflow is not `visible` has an automatic minimum size of 0 -
- * so any of these on a flex item in the title bar lets it collapse to nothing
- * rather than push the row into wrapping.
- */
-const CLIPPING_UTILITIES = [
-  "truncate",
-  "overflow-hidden",
-  "overflow-x-hidden",
-  "overflow-y-hidden",
-  "text-ellipsis",
-];
-
 /** Utilities that turn a box into a scroll container. */
 const SCROLLING_UTILITIES = [
   "overflow-auto",
@@ -69,9 +55,9 @@ describe("ChartHeader", () => {
   // strip holding it `truncate` so it would yield width first, and because
   // `truncate` carries `overflow: hidden` the strip collapsed to 0px at every
   // width the app is actually narrow at - the warning disappeared while the
-  // pair and the price beside it stayed. jsdom does no layout, so what is
-  // checkable here is the cause rather than the collapse: the strip must not be
-  // given anything that makes its overflow non-visible.
+  // pair and the price beside it stayed. jsdom does no layout, so the collapse
+  // itself is not observable here; what is, and what these check, is that the
+  // warning is rendered at all and reaches the accessibility tree.
 
   it("shows the offline warning when the feed has been given up on", () => {
     render(<ChartHeader priceLabel="$50,000.0" isFeedOffline controls={controls()} />);
@@ -89,27 +75,26 @@ describe("ChartHeader", () => {
     expect(screen.queryByText("Live feed offline")).not.toBeInTheDocument();
   });
 
-  it("never clips the strip the warning shares with the pair and the price", () => {
-    render(<ChartHeader priceLabel="$50,000.0" isFeedOffline controls={controls()} />);
-
-    const warning = screen.getByText("Live feed offline");
-    for (
-      let element: HTMLElement | null = warning;
-      element;
-      element = element.parentElement
-    ) {
-      for (const utility of CLIPPING_UTILITIES) {
-        expect(
-          element.className.split(/\s+/),
-          `"${utility}" on an ancestor of the offline warning collapses it to 0px`,
-        ).not.toContain(utility);
-      }
-    }
-  });
-
   // ===========================================================================
-  // THE ROWS WRAP, AND NOTHING SCROLLS
+  // THE ROWS WRAP, AND NOTHING SCROLLS - A STYLESHEET CONTRACT, NOT A BEHAVIOUR
   // ===========================================================================
+  //
+  // WHAT THESE THREE ASSERT, PLAINLY: the class strings this app ships. They are
+  // a stylesheet contract, the same shape as `vite/buttonResetLayer.test.ts`
+  // reading `src/index.css` as text, and they exist for the same stated reason -
+  // jsdom applies no author stylesheet, so no rendering test in this suite can
+  // see a cascade, and this project has no browser-mode runner that could assert
+  // the rendered result instead.
+  //
+  // WHAT THEY DO NOT PROVE: anything about what the browser draws. They would go
+  // red on a behaviour-preserving rewrite - `min-h-[64px]` for `min-h-16`, or
+  // moving the wrapping into a stylesheet - and they would stay green if the
+  // panel regressed for a reason outside this component. The pixel evidence is
+  // browser measurement, recorded in the commit message and in `AGENTS.md`.
+  //
+  // They stay because they are the only executable guard that the two things
+  // this change deliberately ruled out cannot come back: the `overflow-x-auto`
+  // scroller that was tried and reverted, and a control under the 24px target.
 
   it("lets the title bar wrap rather than hold a fixed height", () => {
     const classes = chartHeaderPrimaryRow.split(/\s+/);

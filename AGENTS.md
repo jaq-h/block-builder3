@@ -311,8 +311,9 @@ The README's **Interaction model** section is authoritative. Twelve things bite 
 
 `src/components/widgets/orderChart/` owns the price chart. Three rules keep it honest:
 
-- **The price scale is presentation and nothing else.** `priceScale.ts` maps the
-  linear/logarithmic choice onto the library's `PriceScaleMode` and stops there. No price,
+- **The price scale is presentation and nothing else.** `priceScale.ts` holds the
+  vocabulary - the kinds, the buttons offering them, the default - and `priceScaleMode.ts`
+  maps that choice onto the library's `PriceScaleMode` and stops there. No price,
   no order and no grid position is derived from it, which is the whole reason the
   logarithmic option is safe here: the grid and the chart share exactly one fact, the price,
   and both take it from `priceForOffset`. They share no coordinate space - the grid's axis
@@ -471,9 +472,9 @@ folklore:
 - **`chartToggleButton` carries `min-h-6`/`min-w-6`, the 24px WCAG 2.2 SC 2.5.8
   minimum target size.** Padding alone does not reach it: an 11px label with
   `leading-none` in `py-1` measures 21px tall, which is what every control in
-  both chart toolbar rows rendered at before. `chartHeaderSecondaryRow`'s
-  `min-h` is derived from that floor plus its own padding, so the lazy fallback
-  stays the same height as the real header. Measure a new control rather than
+  both chart toolbar rows rendered at before. It is the floor for a control, and
+  nothing else derives from it: the lazy fallback matches the real header's
+  height by being the same component, not by any row floor. Measure a new control rather than
   reasoning about its classes - `getBoundingClientRect()` in the browser is the
   check, and `#tv-attr-logo` in `src/index.css` is the same fix applied to the
   chart library's own attribution link.
