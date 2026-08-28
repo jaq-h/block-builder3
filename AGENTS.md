@@ -364,7 +364,7 @@ deliberate documented exception.
 
 ## Layout and the CSS cascade
 
-Seven traps live in the layout, and each is easy to reintroduce.
+Ten traps live in the layout, and each is easy to reintroduce.
 
 **The desktop shell only has a height above `lg`.** `body`/`#root` are
 content-sized, so `h-full` resolves to `auto` unless something above it commits to
