@@ -21,8 +21,14 @@ interface ExecuteTradePanelProps {
    * message's time limit. The limit may not remove the strip while it holds
    * the focused element - the "View Active Orders" control below is focusable,
    * and taking it away mid-Tab drops focus to `<body>`.
+   *
+   * Required, at every hop it is drilled through. An unfilled ref is not a
+   * degraded guard, it is no guard: the owner reads `null` when the limit
+   * falls due and dismisses unconditionally, which is the behaviour this
+   * replaced. Making it optional let that be reintroduced by deleting one
+   * line, with nothing to typecheck and nothing to fail.
    */
-  feedbackRef?: RefObject<HTMLDivElement | null>;
+  feedbackRef: RefObject<HTMLDivElement | null>;
   error: string | null;
   simulationMessage: string;
   isEffectivelySimulation: boolean;

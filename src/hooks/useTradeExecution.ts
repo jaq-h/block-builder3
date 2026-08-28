@@ -71,15 +71,7 @@ const SUCCESS_MESSAGE_TIMEOUT_MS = 20_000;
 
 export function useTradeExecution(): UseTradeExecutionReturn {
   const [orderConfig, setOrderConfig] = useState<OrderConfig>({});
-  /**
-   * The success message, held as the submission that raised it rather than as
-   * a boolean. Two submissions inside the time limit are two messages, and a
-   * boolean cannot tell them apart - the dismissal below is keyed on this, so
-   * the second submission restarts the limit instead of inheriting what is
-   * left of the first one's.
-   */
-  const [successToken, setSuccessToken] = useState<number | null>(null);
-  const showSuccess = successToken !== null;
+  const [showSuccess, setShowSuccess] = useState(false);
   const [strategyKey, setStrategyKey] = useState(0);
   const [initialConfig, setInitialConfig] = useState<OrderConfig | undefined>(undefined);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -96,24 +88,45 @@ export function useTradeExecution(): UseTradeExecutionReturn {
    * that was missing (`loadConfig`) was invisible because no route back to a
    * second message happened to pass through it.
    *
+   * Every route from one success message to the next passes back through "no
+   * message" - the only writer of a non-empty config is `handleConfigChange`,
+   * and a submit on an empty one returns early - so a second submission is a
+   * second run of this effect and gets a fresh full-length limit rather than
+   * what is left of the first one's.
+   *
    * The limit does not fire while the strip holds focus. Removing content the
    * user is on is the failure the tab switch's focus handoff exists to avoid,
    * and it is reachable here too: the message carries a focusable control, and
    * unmounting it mid-Tab drops focus to `<body>`. Moving focus instead would
    * be a change of context the user never asked for, so the message simply
    * stays up and goes when focus leaves the strip.
+   *
+   * "Focus left the strip" is narrower than the `focusout` that reports it,
+   * and the event cannot answer it on its own. A window blur - another
+   * application, another browser tab, the URL bar - fires `focusout` with no
+   * `relatedTarget` while the strip still holds `document.activeElement`,
+   * which is indistinguishable from a Tab out by shape alone; reading it as
+   * one handed the control back at an arbitrary moment instead of at the
+   * limit. So the event is only the prompt to look: the answer is
+   * `document.activeElement`, read a tick later because during `focusout` it
+   * has not moved yet. That covers a move *within* the strip for the same
+   * reason, and needs no second rule for it.
    */
   useEffect(() => {
-    if (successToken === null) return;
+    if (!showSuccess) return;
 
     let strip: HTMLElement | null = null;
+    let recheck: ReturnType<typeof setTimeout> | undefined;
 
-    const handleFocusOut = (event: FocusEvent) => {
-      const next = event.relatedTarget;
-      if (strip && next instanceof Node && strip.contains(next)) return;
-      strip?.removeEventListener("focusout", handleFocusOut);
-      strip = null;
-      setSuccessToken(null);
+    const handleFocusOut = () => {
+      clearTimeout(recheck);
+      recheck = setTimeout(() => {
+        const current = strip;
+        if (!current || current.contains(document.activeElement)) return;
+        current.removeEventListener("focusout", handleFocusOut);
+        strip = null;
+        setShowSuccess(false);
+      }, 0);
     };
 
     const timer = setTimeout(() => {
@@ -123,14 +136,15 @@ export function useTradeExecution(): UseTradeExecutionReturn {
         strip.addEventListener("focusout", handleFocusOut);
         return;
       }
-      setSuccessToken(null);
+      setShowSuccess(false);
     }, SUCCESS_MESSAGE_TIMEOUT_MS);
 
     return () => {
       clearTimeout(timer);
+      clearTimeout(recheck);
       strip?.removeEventListener("focusout", handleFocusOut);
     };
-  }, [successToken]);
+  }, [showSuccess]);
 
   const {
     submitOrders,
@@ -168,7 +182,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
   const handleConfigChange = (config: OrderConfig) => {
     setOrderConfig(config);
     // Clear any previous success message when config changes
-    setSuccessToken(null);
+    setShowSuccess(false);
     clearError();
   };
 
@@ -176,7 +190,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     setInitialConfig(config);
     setIsEditMode(true);
     setOrderConfig({});
-    setSuccessToken(null);
+    setShowSuccess(false);
     clearError();
     setStrategyKey((prev) => prev + 1);
   };
@@ -187,7 +201,7 @@ export function useTradeExecution(): UseTradeExecutionReturn {
     const success = await submitOrders(orderConfig);
 
     if (success) {
-      setSuccessToken((previous) => (previous ?? 0) + 1);
+      setShowSuccess(true);
       setIsEditMode(false);
       setInitialConfig(undefined);
       setOrderConfig({});

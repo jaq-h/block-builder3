@@ -19,8 +19,8 @@ interface StrategyAssemblyProps {
   onExecute?: () => void;
   isSubmitting?: boolean;
   showSuccess?: boolean;
-  /** The feedback strip's element; see `ExecuteTradePanel`. */
-  feedbackRef?: RefObject<HTMLDivElement | null>;
+  /** The feedback strip's element, required; see `ExecuteTradePanel`. */
+  feedbackRef: RefObject<HTMLDivElement | null>;
   error?: string | null;
   simulationMessage?: string;
   isEffectivelySimulation?: boolean;

@@ -4,6 +4,7 @@
 // are stubbed: this is about *when* the strip is on screen, not about anything
 // it sits next to.
 import { describe, it, expect, vi } from "vitest";
+import { createRef } from "react";
 import { render, screen } from "@testing-library/react";
 
 vi.mock("@widgets/strategyAssembly/components", async () => {
@@ -37,6 +38,7 @@ const renderPanel = (
     <StrategyAssembly
       orderCount={0}
       showSuccess={false}
+      feedbackRef={createRef<HTMLDivElement>()}
       error={null}
       simulationMessage="Simulation mode"
       isEffectivelySimulation

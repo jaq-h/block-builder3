@@ -20,6 +20,9 @@ import { render, screen, act } from "@testing-library/react";
 // - Even at 20s the limit took the strip away while the user was on it. The
 //   dismissal now waits for focus to leave rather than relocating it, which
 //   would be a change of context the user never asked for.
+// - A window blur reports itself as a `focusout` with no `relatedTarget`,
+//   which is also what leaving the strip looks like, so switching application
+//   handed the control back at an arbitrary moment instead of at the limit.
 
 const submitOrders = vi.fn(async () => true);
 
@@ -63,6 +66,7 @@ const Harness = () => {
         <div ref={feedbackRef}>
           <span>Orders submitted successfully!</span>
           <button type="button">View Active Orders</button>
+          <button type="button">dismiss</button>
         </div>
       )}
       <button type="button" id="elsewhere">
@@ -119,9 +123,15 @@ const advance = async (ms: number) => {
   });
 };
 
+/**
+ * A focus change and the tick that settles it: `document.activeElement` has
+ * not moved yet while `focusout` is dispatching, so the dismissal reads it
+ * afterwards and so does anything asserting on what it decided.
+ */
 const focusOn = async (element: HTMLElement) => {
   await act(async () => {
     element.focus();
+    vi.advanceTimersByTime(0);
   });
 };
 
@@ -160,18 +170,34 @@ describe("the success message's time limit", () => {
     expect(successMessage()).toBeNull();
   });
 
-  it("does not let an earlier submission's timer clear a later message", async () => {
+  it("gives a second submission's message a full limit of its own", async () => {
     render(<Harness />);
 
     await submit();
     await advance(15_000);
-
-    // A second success restarts the limit. Uncancelled, the first timer fires
-    // 5s into this second message and takes it away with 15s still to run.
-    await submit();
-    await advance(10_000);
-
     expect(successMessage()).not.toBeNull();
+
+    // The route a user actually takes from one message to the next, step by
+    // step: building again clears the first message, and the submit that
+    // follows raises a second one. Uncancelled, the first submission's timer
+    // fires 5s into that second message and takes it away with 15s to run.
+    await act(async () => {
+      screen.getByRole("button", { name: "build" }).click();
+    });
+    expect(successMessage()).toBeNull();
+
+    await act(async () => {
+      screen.getByRole("button", { name: "submit" }).click();
+    });
+    expect(successMessage()).not.toBeNull();
+
+    await advance(10_000);
+    expect(successMessage()).not.toBeNull();
+
+    // ...and the second message then runs its own limit out, rather than
+    // inheriting anything from the first.
+    await advance(10_000);
+    expect(successMessage()).toBeNull();
   });
 
   it("cancels the pending dismissal when a strategy is loaded for edit", async () => {
@@ -235,5 +261,46 @@ describe("the time limit and the focused control", () => {
     await advance(20_000);
 
     expect(successMessage()).toBeNull();
+  });
+
+  it("does not read a window blur as focus leaving the strip", async () => {
+    render(<Harness />);
+    await submit();
+
+    await focusOn(viewActiveOrders());
+    await advance(20_000);
+
+    // Switching to another application, another browser tab or the URL bar:
+    // the focused element inside the strip fires `focusout` with no
+    // `relatedTarget`, and the page's own focus does not move - the control
+    // is still `document.activeElement`. Indistinguishable from a Tab out by
+    // the event alone, which is why the event is not what decides.
+    await act(async () => {
+      viewActiveOrders().dispatchEvent(
+        new FocusEvent("focusout", { bubbles: true, relatedTarget: null }),
+      );
+      vi.advanceTimersByTime(0);
+    });
+
+    expect(successMessage()).not.toBeNull();
+    expect(viewActiveOrders()).toHaveFocus();
+
+    // Coming back and tabbing out for real still dismisses it: the re-arm is
+    // held open by the blur rather than spent by it.
+    await focusOn(elsewhere());
+
+    expect(successMessage()).toBeNull();
+  });
+
+  it("keeps the strip up while focus only moves within it", async () => {
+    render(<Harness />);
+    await submit();
+
+    await focusOn(viewActiveOrders());
+    await advance(20_000);
+
+    await focusOn(screen.getByRole("button", { name: "dismiss" }));
+
+    expect(successMessage()).not.toBeNull();
   });
 });
