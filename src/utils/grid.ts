@@ -251,28 +251,14 @@ export const getColumnCellTint = (colIndex: number): string =>
 // =============================================================================
 // DOM POSITION HELPERS
 // =============================================================================
-
-/** Find the cell at a given x, y position using data attributes */
-export const findCellAtPosition = (
-  x: number,
-  y: number,
-): CellPosition | null => {
-  const elements = document.querySelectorAll("[data-col][data-row]");
-  for (const element of Array.from(elements)) {
-    const rect = element.getBoundingClientRect();
-    if (
-      x >= rect.left &&
-      x <= rect.right &&
-      y >= rect.top &&
-      y <= rect.bottom
-    ) {
-      const col = parseInt(element.getAttribute("data-col") || "-1", 10);
-      const row = parseInt(element.getAttribute("data-row") || "-1", 10);
-      if (col !== -1 && row !== -1) return { col, row };
-    }
-  }
-  return null;
-};
+//
+// `findCellAtPosition` lived here and is gone. It asked whether the POINTER was
+// inside a cell's rect, which left a dead band half a dragged tile wide around
+// every cell and swallowed the whole gutter between two of them - a release
+// there showed a block plainly overlapping a cell and dropped it nowhere.
+// Which cell a released block lands in is now `utils/dropTarget.ts`, which
+// tests the block's own edges and owns the answer for the drop and for the
+// target highlight alike.
 
 // =============================================================================
 // PROVIDER BLOCK HELPERS

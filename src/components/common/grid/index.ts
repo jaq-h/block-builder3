@@ -62,7 +62,6 @@ export {
   getAlignment,
   getColumnHeaderTint,
   getColumnCellTint,
-  findCellAtPosition,
 } from "../../../utils";
 
 // Export components

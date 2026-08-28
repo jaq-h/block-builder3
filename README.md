@@ -523,6 +523,39 @@ of this file's history. A gesture that crosses it is a drag for the rest of its 
 it comes back; a pick-up is only ever resolved at the release, so a single gesture can never be
 a pick-up *and* a drag.
 
+**A drop is decided by the block's edges, not by the pointer.** The user aims the 40px tile on
+the cursor, so that tile's rectangle is what is hit-tested against the cells:
+`src/utils/dropTarget.ts` is the one owner of *which cell did this land in*, and the palette
+drag, the free drag of a placed block and the target highlight all ask it. Testing the pointer
+alone - which is what the app did until this rule - left a dead band half a tile wide around
+every cell, plus the entire gutter between two of them. Measured in Chrome at 1440x900 the
+columns sit 24px apart and the rows 15px, so there was a 24px-wide strip of the grid in which a
+release showed the block plainly overlapping a cell and dropped it nowhere, announcing
+*"Released outside the grid"*. The band was never speed-dependent - a slow drag released there
+failed identically - but the same point test drove the highlight, so a slow user watched the
+highlight go out and corrected while a fast one had already let go. That is why it was reported
+as a fast-drag defect.
+
+Widening the target means a tile can straddle a gutter and overlap two cells or four, so the
+order is fixed and total and the same release always resolves to the same cell:
+
+1. the greatest overlap **area** wins;
+2. tied, the cell **containing the pointer** wins;
+3. still tied, the lowest `(col, row)` wins - sorted in the resolver rather than taken from the
+   order `querySelectorAll` happens to return.
+
+Two areas within a square pixel of each other count as tied, because client rects are
+fractional and a hundredth of a square pixel of rounding deciding the cell instead of the
+pointer is arbitrary rather than deterministic.
+
+What the resolver deliberately does **not** decide is whether the cell will take the order.
+Geometry stops there; `isCellValidForPlacement` and the placement primitives answer the rules,
+and a drop onto a cell that refuses is still refused. Folding validity in would let a block
+released squarely over a cell that says no be silently placed in a neighbour it merely brushed,
+which is the substitution the order path exists to prevent. It does not weaken decision D9
+either: a wider target is a wider target for the drop that *places* an order, and a placed
+block released over a cell its edge overlaps still gets the rule's refusal rather than a move.
+
 **The mouse carries a block between two clicks.** Click a block to pick it up, click a cell to
 place it - the same command model the keyboard and a finger drive, reached a third way rather
 than reimplemented. Hold-to-drag is untouched; this is a second way in, not a replacement.
