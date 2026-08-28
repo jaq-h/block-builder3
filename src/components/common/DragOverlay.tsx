@@ -2,13 +2,18 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { subscribe, getSnapshot, pos } from "./dragOverlayStore";
 import { BLOCK_TILE_SHAPE } from "../blocks/blockTile";
+import { BLOCK_HEIGHT } from "../../styles/grid";
 import { cn } from "../../lib/utils";
 
 // =============================================================================
 // DRAG OVERLAY COMPONENT - rendered via Portal, completely outside #root tree
 // =============================================================================
 
-const HALF_BLOCK = 20; // half of the 40x40 block size
+// The ghost is centred on the pointer, and `src/utils/dropTarget.ts` hit-tests
+// it there. Both take the tile's size from its one owner rather than from a
+// literal of their own, so what the user sees over a cell and what the drop
+// resolves to are the same rectangle.
+const HALF_BLOCK = BLOCK_HEIGHT / 2;
 
 const DragOverlay: React.FC = () => {
   const state = useSyncExternalStore(subscribe, getSnapshot);

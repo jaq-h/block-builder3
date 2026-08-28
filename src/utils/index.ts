@@ -30,8 +30,6 @@ export {
   getAlignment,
   getColumnHeaderTint,
   getColumnCellTint,
-  // DOM position helpers
-  findCellAtPosition,
   // Provider block helpers
   isProviderBlockHighlighted,
 } from "./grid";
@@ -105,3 +103,14 @@ export {
   type PickUpRefusal,
   type GridOutcome,
 } from "./gridAnnouncements";
+
+// Drop targeting - the single owner of which cell a released block lands in
+export {
+  blockBoxAt,
+  resolveDropCell,
+  cellBoxesFromDom,
+  findDropCell,
+  type Box,
+  type CellBox,
+  type DropPoint,
+} from "./dropTarget";

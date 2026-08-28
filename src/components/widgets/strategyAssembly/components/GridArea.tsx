@@ -10,7 +10,6 @@ import {
   getAlignment,
   isCellDisabled,
   findBlockInGrid,
-  findCellAtPosition,
   addBlocksToCell,
   cellDirection,
   isDescending,
@@ -20,6 +19,7 @@ import {
   MIN_OFFSET_PERCENT,
   hasConditionalWithoutPrimary,
   createBlocksFromOrderType,
+  findDropCell,
 } from "../../../../utils";
 import {
   samePosition,
@@ -36,7 +36,7 @@ import {
   type SvgIcon,
 } from "../../../../data/orderTypes";
 import { PATTERN_CONFIGS } from "../../../../types/grid";
-import { positionFromPointer } from "../../../../styles/grid";
+import { BLOCK_HEIGHT, positionFromPointer } from "../../../../styles/grid";
 import {
   getDragOverlayPosition,
   startDragOverlay,
@@ -607,6 +607,18 @@ const GridArea: FC<GridAreaProps> = ({
       document.removeEventListener("pointerdown", onPointerDownAnywhere, true);
   }, []);
 
+  /**
+   * The cell a release at (`x`, `y`) lands in, for every drag in this
+   * component: the palette drag that creates an order, the free drag of a
+   * placed block, and the hover highlight that has to agree with both.
+   *
+   * The block's own 40px tile is what is hit-tested, not the pointer's single
+   * pixel - see `utils/dropTarget.ts` for the rule and for the dead band around
+   * every cell that testing the pointer alone left behind.
+   */
+  const dropCellAt = (x: number, y: number) =>
+    findDropCell(x, y, BLOCK_HEIGHT);
+
   const handleProviderDragStart = (type: string) => {
     carryReleasedByDragRef.current = false;
     setRefusedMove(null);
@@ -637,7 +649,7 @@ const GridArea: FC<GridAreaProps> = ({
     // and which leg it is comes from `axesForBlockAxis`. Reading those off the
     // drop coordinates was two separate defects - a 0-100 reading written into
     // a 0-50 axis, and an `axis` rewritten without its matching `axes`.
-    const cell = findCellAtPosition(x, y);
+    const cell = dropCellAt(x, y);
     const source = providerSource(type);
 
     const releasedCarry = carryReleasedByDragRef.current;
@@ -804,7 +816,7 @@ const GridArea: FC<GridAreaProps> = ({
 
   const handleDragEnd = (id: string, x: number, y: number) => {
     const blockInfo = findBlockInGrid(grid, id);
-    const cell = findCellAtPosition(x, y);
+    const cell = dropCellAt(x, y);
 
     // The block is not on the grid, so there is no fact to report about it.
     if (!blockInfo) {
@@ -877,9 +889,14 @@ const GridArea: FC<GridAreaProps> = ({
   // coordinates rather than by walking up from the event target. Coordinates
   // are the answer for a drag whose capture was refused too, where the target
   // is instead whatever happens to be under the cursor.
+  //
+  // Through `dropCellAt`, the same resolver the release uses. The highlight is
+  // the only warning a user gets before letting go, so it has to name the cell
+  // the drop will actually resolve to; a highlight computed one way and a drop
+  // the other is the shape of defect this repository keeps paying for.
   const handlePointerMove = (e: PointerEvent) => {
     if (draggingId !== null || draggingFromProvider !== null) {
-      setHoverCell(findCellAtPosition(e.clientX, e.clientY));
+      setHoverCell(dropCellAt(e.clientX, e.clientY));
     }
   };
 

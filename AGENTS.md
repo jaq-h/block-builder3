@@ -34,7 +34,8 @@ SVG imports work in tests for the same reason.
   every push, in the same command as the client tests.
 - The default environment is `node`, because most of the suite is pure logic. A test that
   needs a DOM opts in with a `// @vitest-environment jsdom` docblock on its first line.
-  See `src/utils/grid.test.ts` (node) and `src/utils/grid.dom.test.ts` (jsdom) for the split.
+  See `src/utils/blockMapping.test.ts` (node) and `src/utils/blockMapping.dom.test.tsx`
+  (jsdom) for the split.
 - Globals are off. Import `describe`/`it`/`expect` from `vitest` explicitly.
 - `src/test/setup.ts` registers the jest-dom matchers, unmounts React trees after
   each test, and replaces `fetch` for the whole suite: Kraken's `AssetPairs` request is
@@ -179,7 +180,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Eleven things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Twelve things bite in ordinary work:
 
 - **Never add a `window` *mouse* listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events. Mouse events are also suppressed during a drag,
@@ -217,6 +218,22 @@ The README's **Interaction model** section is authoritative. Eleven things bite 
   gesture kept window listeners that match on pointer id alone, and a mouse's id is a
   constant 1, so the `pointerup` completing a dismissal click was resolved as that gesture's
   drop on no cell and `handleDragEnd` deleted the block.
+- **Which cell a drop landed in has one owner: `src/utils/dropTarget.ts`.** It hit-tests the
+  dragged block's own 40px tile rather than the pointer, so a cell the block's EDGE overlaps
+  is a cell it can land in. All three sites take it - the palette drag that creates an order,
+  the free drag of a placed block, and the hover highlight - because a highlight computed one
+  way and a drop the other is a target that promises a cell the release then refuses. The
+  point test it replaced (`findCellAtPosition`, gone from `grid.ts`) left a dead band half a
+  tile wide around every cell plus the whole 24px gutter between two of them, in which a
+  release showed a block plainly over a cell and announced "Released outside the grid"; that
+  band is not speed-dependent, but the same point test drove the highlight, so only a fast
+  drag gave the user no chance to notice. **Overlapping two or more cells** resolves by
+  greatest overlap area, then the cell containing the pointer, then the lowest `(col, row)` -
+  sorted there rather than taken from `querySelectorAll` order. The resolver answers geometry
+  and stops: `isCellValidForPlacement` and the placement primitives still decide whether the
+  cell will take the order, and folding validity in would silently place a block in a
+  neighbour it merely brushed. Do not reintroduce a point test, and do not give the highlight
+  a rule of its own.
 - **A click outside the placement surface puts down whatever is in hand**, by emptying that
   register. The surface is the element `GridArea` draws - the palette a block is picked up
   from and the cells it can be put down in - and it is chosen by that element rather than by a
@@ -430,7 +447,14 @@ folklore:
   must not be reconciled.** Only the colour differs - the geometry has one owner,
   `BLOCK_TILE_SHAPE` in `src/components/blocks/blockTile.ts`, which both draw
   from, because a hand-copied class list is how the two came to disagree about
-  the colour without either file saying so.
+  the colour without either file saying so. That size as a *number* has one
+  owner too, and it is the pre-existing `BLOCK_HEIGHT` in `src/styles/grid.ts`
+  rather than a second constant beside the class list: the tile is square, so
+  the price-axis layout's insets and `BLOCK_HEIGHT / 2` centring, `DragOverlay`
+  centring the ghost on the pointer, and `dropTarget.ts` hit-testing that
+  ghost's edges are all the same measurement. `blockTile.test.ts` pins that
+  number against the class list on both axes, so resizing the tile in one
+  cannot leave the other behind.
 
 **Every panel title bar takes its geometry from `panelTitleBar` in
 `src/styles/shared.ts`.** The assembly panel's pattern selector, the chart's title

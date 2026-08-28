@@ -297,6 +297,29 @@ const stubRect = (element: Element, top: number, height: number) => {
 };
 
 /**
+ * A cell's full box, for the drop tests. `stubRect` above fixes x at 0..60,
+ * which was enough while a drop was decided by the pointer alone; a block's
+ * EDGES are what decide it now, so the tests that exercise a gutter have to
+ * place two cells side by side and mean it.
+ */
+const stubBox = (
+  element: Element,
+  { left, top, width, height }: { left: number; top: number; width: number; height: number },
+) => {
+  vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+    x: left,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect);
+};
+
+/**
  * The pressed-button bitmask a real pointer carries for this event type: 1
  * while the button is held, 0 once it is up. `usePointerGesture` reads a move
  * carrying 0 as proof of a release it never heard, so a helper leaving it at
@@ -880,6 +903,162 @@ describe("GridArea, what a completed drag says", () => {
 // The release TARGET is the point. A drop can land on a valid cell, a cell that
 // refuses it, the palette, another panel, or nothing at all, and not one of
 // those may decide whether the gesture finishes.
+
+describe("GridArea, a drop whose block overlaps a cell it is not over", () => {
+  // ── THE DEFECT, reproduced ────────────────────────────────────────────
+  //
+  // The captain reported this as "the drag and drop is not dropping into the
+  // cell when the drag speed is very fast". Speed is the masking condition, not
+  // the trigger. What actually decided the drop was whether the POINTER landed
+  // inside a cell's rect, so every release in the gutter between two cells - or
+  // within half a tile of any edge - resolved to no cell at all, while the 40px
+  // block on the cursor sat plainly over one. Measured in Chrome at 1440x900
+  // the columns are 24px apart, which is a 24px-wide band of the grid in which
+  // a drop was refused and announced "Released outside the grid".
+  //
+  // It is not speed-dependent: a slow drag released at the same point failed
+  // identically in the browser. Speed is what removes the user's chance to
+  // notice, because the same point test drove the target highlight - so a slow
+  // user watches the highlight go out and corrects, and a fast one has already
+  // let go.
+  //
+  // The boxes below are Chrome's own, from the running app at 1440x900.
+
+  const CELL = { top: 393, width: 271, height: 195 };
+  const LEFT_COLUMN = 149;
+  const RIGHT_COLUMN = 444;
+  /** The gap between the two columns: 420 to 444. */
+  const GUTTER_START = LEFT_COLUMN + CELL.width;
+  /** A y well inside both row-1 cells. */
+  const ROW_MID = CELL.top + CELL.height / 2;
+
+  /** Both middle-row cells laid out side by side, the way a browser draws them. */
+  const renderTwoColumns = (grid = clearGrid(2, 3)) => {
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+    stubBox(cell(0, 1), { left: LEFT_COLUMN, ...CELL });
+    stubBox(cell(1, 1), { left: RIGHT_COLUMN, ...CELL });
+  };
+
+  const dragFromPalette = (x: number, y: number) => {
+    const palette = screen.getByRole("button", { name: "Add Market order" });
+    fireEvent(palette, pointerAt("pointerdown", 30, 20));
+    fireEvent(palette, pointerAt("pointermove", x, y));
+    fireEvent(palette, pointerAt("pointerup", x, y));
+  };
+
+  it("places the order in the cell its edge overlaps, not nowhere", () => {
+    renderTwoColumns();
+
+    // Five pixels into the gutter. The pointer is outside every cell; fifteen
+    // of the tile's forty pixels are still over the left column.
+    dragFromPalette(GUTTER_START + 5, ROW_MID);
+
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Market",
+    );
+    expect(announcement()).toBe(
+      "Placed Market order in Entry column, row 2.",
+    );
+  });
+
+  it("gives the drop to the cell the block covers most", () => {
+    renderTwoColumns();
+
+    // Five pixels short of the right column: one pixel of tile left behind in
+    // the left column, fifteen reaching into the right one.
+    dragFromPalette(RIGHT_COLUMN - 5, ROW_MID);
+
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, row 2, Market",
+    );
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, empty",
+    );
+  });
+
+  it("resolves a dead-centre straddle the same way every time", () => {
+    renderTwoColumns();
+
+    // The middle of the gutter: eight pixels of tile in each column, and the
+    // pointer in neither, so neither area nor pointer can separate them. The
+    // lowest (column, row) settles it - the point being that a user who does
+    // this twice gets the same cell twice.
+    dragFromPalette(GUTTER_START + 12, ROW_MID);
+
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Market",
+    );
+  });
+
+  it("still says nothing was placed when the block reaches no cell", () => {
+    renderTwoColumns();
+
+    // Half a tile clear of the left column: widening the target must not turn
+    // "off the grid" into a drop somewhere.
+    dragFromPalette(LEFT_COLUMN - 40, ROW_MID);
+
+    expect(announcement()).toBe(
+      "Released outside the grid. Market order was not placed.",
+    );
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, empty",
+    );
+  });
+
+  // ── Decision D9 still holds ───────────────────────────────────────────
+  //
+  // A wider target is a wider target for the DROP that places an order. A
+  // placed block still does not change cells, by any input method, and the
+  // refusal is still the one the rule gives rather than one the cell gives.
+
+  it("does not let a placed block reach another cell by overlapping it", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    renderTwoColumns(grid);
+
+    const block = screen.getByRole("button", { name: /^Market order,/ });
+    const landing = RIGHT_COLUMN - 5;
+    fireEvent(block, pointerAt("pointerdown", LEFT_COLUMN + 30, ROW_MID));
+    fireEvent(block, pointerAt("pointermove", landing, ROW_MID));
+    fireEvent(block, pointerAt("pointerup", landing, ROW_MID));
+
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Market",
+    );
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, row 2, empty",
+    );
+    expect(announcement()).toBe(
+      "Market block stays in the cell it was placed in, so it was not moved to Exit column, row 2. To put this order somewhere else, remove it and place a new one. Market block stayed in Entry column, row 2.",
+    );
+  });
+
+  it("still removes a placed block released clear of every cell", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    renderTwoColumns(grid);
+
+    fireEvent(
+      screen.getByRole("button", { name: /^Market order,/ }),
+      pointerAt("pointerdown", LEFT_COLUMN + 30, ROW_MID),
+    );
+    fireEvent(document.body, pointerAt("pointermove", 1200, 1200));
+    fireEvent(document.body, pointerAt("pointerup", 1200, 1200));
+
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, empty",
+    );
+    expect(announcement()).toBe("Removed Market block from the grid.");
+  });
+});
 
 describe("GridArea, a release the dragged block never receives", () => {
   afterEach(() => {
