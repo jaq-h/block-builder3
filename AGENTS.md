@@ -364,7 +364,7 @@ deliberate documented exception.
 
 ## Layout and the CSS cascade
 
-Seven traps live in the layout, and each is easy to reintroduce.
+Ten traps live in the layout, and each is easy to reintroduce.
 
 **The desktop shell only has a height above `lg`.** `body`/`#root` are
 content-sized, so `h-full` resolves to `auto` unless something above it commits to
@@ -473,6 +473,28 @@ bar.
 `display: none`. Using a JSX element variable in two branches mounts two
 independent components, and crossing the breakpoint then swaps in an empty one -
 silent data loss. `src/App.test.tsx` fails if that returns.
+
+**There is no router, and adding one back would be a mistake.** Which panel is on
+screen is `activeTab` in `App.tsx`, and the tab bar is `lg:hidden` because above
+`lg` there is no such thing as an inactive panel - both render side by side. That
+is the reason: **no URL can describe the desktop layout.** Routing models mutually
+exclusive views and this app has none, so `react-router-dom` was modelling
+something untrue. It was also never wired: there were no `<Routes>` anywhere, so
+the `/active` link pushed a URL that rendered the identical page, and nothing -
+then or now - reads the path. The one control that pointed at it, "View Active
+Orders" on the post-submission success message, is a tab switch
+(`onViewActiveOrders`, drilled `App` -> `StrategyAssembly` -> `ExecuteTradePanel`)
+and is `lg:hidden` for the same reason the tab bar is. A feature that genuinely
+needs a shareable URL needs a decision about what a URL means for a two-panel
+screen first, not a router underneath the existing one.
+
+**The feedback strip's gate is `orderCount > 0` *or* `showSuccess`.** A successful
+submission raises `showSuccess` and calls `setOrderConfig({})` in one React
+update, so the render that first has something to report is also the first render
+with the grid empty. Gated on `orderCount` alone, `ExecuteTradePanel` unmounted on
+exactly that render and "Orders submitted successfully!" was never once visible;
+the failure path looked fine only because a refused submission leaves the orders
+on the grid. `strategyAssembly.feedback.dom.test.tsx` pins both halves.
 
 ## Markets
 
@@ -735,7 +757,7 @@ would invite exactly that.
 
 Two tiers under `src/components`, and the distinction is load-bearing:
 
-- `common/` - shared, widget-agnostic pieces (`grid/`, `NavBar`, `DragOverlay`).
+- `common/` - shared, widget-agnostic pieces (`grid/`, `MarketSelector`, `DragOverlay`).
 - `widgets/<widget>/` - a self-contained feature. Each owns its `components/`, `contexts/`,
   a `*.styles.ts`, a business-logic hook and an `index.ts` barrel. `strategyAssembly` is
   the reference example.

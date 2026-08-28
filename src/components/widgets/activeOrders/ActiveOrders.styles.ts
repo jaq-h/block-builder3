@@ -112,13 +112,6 @@ export const orderCountBadge = cva(
 );
 
 // =============================================================================
-// NAVIGATION LINK
-// =============================================================================
-
-export const navLink =
-  "inline-flex items-center gap-1 text-xs text-accent-primary no-underline cursor-pointer transition-opacity duration-200 hover:opacity-80 hover:underline [&>svg]:w-3 [&>svg]:h-3";
-
-// =============================================================================
 // ORDER CARDS OVERVIEW
 // =============================================================================
 

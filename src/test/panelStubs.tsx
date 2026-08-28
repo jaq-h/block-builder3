@@ -15,7 +15,16 @@ const useMountTally = (name: string): void => {
  * test can put something in one and check it is still there later. Losing that
  * state is the user-facing bug these stubs exist to catch.
  */
-export const AssemblyPanelStub = () => {
+export const AssemblyPanelStub = ({
+  onViewActiveOrders,
+}: {
+  /**
+   * The real panel offers this on its post-submission success message. It is
+   * stubbed here so a test can exercise the one thing `App` does with it -
+   * switch the active tab - without mounting the grid or submitting anything.
+   */
+  onViewActiveOrders?: () => void;
+}) => {
   const [draft, setDraft] = useState("");
   useMountTally("assembly");
 
@@ -27,6 +36,9 @@ export const AssemblyPanelStub = () => {
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
       />
+      <button type="button" onClick={onViewActiveOrders}>
+        View Active Orders
+      </button>
     </div>
   );
 };

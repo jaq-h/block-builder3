@@ -138,5 +138,18 @@ export const successMessage =
 export const errorMessage =
   "text-status-red text-[13px] flex items-center gap-1.5 [&>svg]:stroke-current";
 
-export const successLink =
-  "text-status-green ml-2 inline-flex items-center gap-1";
+// The Active Orders control on the success message. It is a `<button>` - it
+// switches the active panel, and it used to be a router `Link` to a `/active`
+// that rendered the identical page - so it inherits the bare `button` defaults
+// in `index.css`: a border, an 8px radius, `0.6em 1.2em` of padding and a grey
+// fill, none of which belong on a phrase sitting inside a sentence. Those
+// defaults are overridden here, in this control's own utilities, because that
+// is the only mechanism: no `!` modifier and no opt-out attribute. `min-h-6` is
+// the 24px WCAG 2.2 SC 2.5.8 target minimum, which 13px text alone does not
+// reach.
+export const successLink = cn(
+  "text-status-green ml-2 inline-flex items-center gap-1",
+  "border-0 rounded-none bg-transparent p-0 min-h-6 font-medium",
+  "underline underline-offset-2 cursor-pointer",
+  "hover:text-status-green hover:no-underline",
+);
