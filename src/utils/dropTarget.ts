@@ -10,8 +10,8 @@
 //
 // ── What is hit-tested, and why it is not the pointer ────────────────────
 //
-// A drag carries a 40px tile on the cursor (`DragOverlay`, drawn from
-// `BLOCK_TILE_SIZE_PX`), and what the user aims is that tile, not the one pixel
+// A drag carries a 40px tile on the cursor (`DragOverlay`, centred using
+// `BLOCK_HEIGHT`), and what the user aims is that tile, not the one pixel
 // under the cursor's hotspot. Testing the pointer alone left a dead band around
 // every cell as wide as half a tile in each direction, plus the whole gutter
 // between two cells: measured in Chrome at 1440x900 the columns are 24px apart

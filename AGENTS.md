@@ -34,7 +34,8 @@ SVG imports work in tests for the same reason.
   every push, in the same command as the client tests.
 - The default environment is `node`, because most of the suite is pure logic. A test that
   needs a DOM opts in with a `// @vitest-environment jsdom` docblock on its first line.
-  See `src/utils/grid.test.ts` (node) and `src/utils/grid.dom.test.ts` (jsdom) for the split.
+  See `src/utils/blockMapping.test.ts` (node) and `src/utils/blockMapping.dom.test.tsx`
+  (jsdom) for the split.
 - Globals are off. Import `describe`/`it`/`expect` from `vitest` explicitly.
 - `src/test/setup.ts` registers the jest-dom matchers, unmounts React trees after
   each test, and replaces `fetch` for the whole suite: Kraken's `AssetPairs` request is
@@ -446,11 +447,14 @@ folklore:
   must not be reconciled.** Only the colour differs - the geometry has one owner,
   `BLOCK_TILE_SHAPE` in `src/components/blocks/blockTile.ts`, which both draw
   from, because a hand-copied class list is how the two came to disagree about
-  the colour without either file saying so. The same file states that geometry
-  as a number, `BLOCK_TILE_SIZE_PX`, for the two things that cannot read a
-  class: `DragOverlay` centring the ghost on the pointer, and `dropTarget.ts`
-  hit-testing that ghost's edges. `blockTile.test.ts` pins the number against
-  the class list, so resizing the tile in one cannot leave the other behind.
+  the colour without either file saying so. That size as a *number* has one
+  owner too, and it is the pre-existing `BLOCK_HEIGHT` in `src/styles/grid.ts`
+  rather than a second constant beside the class list: the tile is square, so
+  the price-axis layout's insets and `BLOCK_HEIGHT / 2` centring, `DragOverlay`
+  centring the ghost on the pointer, and `dropTarget.ts` hit-testing that
+  ghost's edges are all the same measurement. `blockTile.test.ts` pins that
+  number against the class list on both axes, so resizing the tile in one
+  cannot leave the other behind.
 
 **Every panel title bar takes its geometry from `panelTitleBar` in
 `src/styles/shared.ts`.** The assembly panel's pattern selector, the chart's title

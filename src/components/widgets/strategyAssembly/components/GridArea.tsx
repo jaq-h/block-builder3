@@ -36,8 +36,7 @@ import {
   type SvgIcon,
 } from "../../../../data/orderTypes";
 import { PATTERN_CONFIGS } from "../../../../types/grid";
-import { positionFromPointer } from "../../../../styles/grid";
-import { BLOCK_TILE_SIZE_PX } from "../../../blocks/blockTile";
+import { BLOCK_HEIGHT, positionFromPointer } from "../../../../styles/grid";
 import {
   getDragOverlayPosition,
   startDragOverlay,
@@ -618,7 +617,7 @@ const GridArea: FC<GridAreaProps> = ({
    * every cell that testing the pointer alone left behind.
    */
   const dropCellAt = (x: number, y: number) =>
-    findDropCell(x, y, BLOCK_TILE_SIZE_PX);
+    findDropCell(x, y, BLOCK_HEIGHT);
 
   const handleProviderDragStart = (type: string) => {
     carryReleasedByDragRef.current = false;

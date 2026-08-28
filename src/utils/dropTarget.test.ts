@@ -1,3 +1,26 @@
+// =============================================================================
+// WHAT USED TO ANSWER THIS QUESTION, AND WHY IT NO LONGER DOES
+// =============================================================================
+//
+// Two removed helpers were tested in `grid.dom.test.ts`, and a reader looking
+// for either of them now arrives here.
+//
+// `findCellAtPosition` asked whether the POINTER was inside a cell's rect,
+// which is not what a user aims: a drag carries a tile, so that rule left a
+// dead band half a tile wide around every cell plus the whole gutter between
+// two of them, in which a release showed a block plainly over a cell and
+// announced "Released outside the grid". Which cell a released block lands in
+// is `dropTarget.ts` now - tested here, and end to end in
+// `GridArea.dom.test.tsx`.
+//
+// `findCellAndPositionData` went before that. It read a cell, an axis and a
+// slider position off one drop, and two of those three were wrong: the
+// position came from `calculateYPosition` on a 0-100 scale while the axis runs
+// to 50, and the axis was taken from which half of the cell the pointer was in
+// without touching the block's matching `axes`. A drop resolves a cell and
+// nothing else; the tests that pinned the other two are recorded in
+// `grid.test.ts` under "POSITION MATHS".
+
 import { describe, it, expect } from "vitest";
 
 import {
@@ -23,7 +46,7 @@ const ROW_GAP = 15;
 const GRID_LEFT = 149;
 const GRID_TOP = 183;
 
-/** A 40px tile, the size `BLOCK_TILE_SIZE_PX` gives the dragged block. */
+/** A 40px tile, the size `BLOCK_HEIGHT` gives the dragged block. */
 const TILE = 40;
 
 const cellBox = (col: number, row: number): CellBox => {
@@ -115,8 +138,10 @@ describe("resolveDropCell, a block whose edge overlaps a cell", () => {
 
 describe("resolveDropCell, a block overlapping two or more cells", () => {
   it("gives the drop to the cell it covers most", () => {
-    // 7px into the 24px gutter: 13px of tile left over column 0, 1px reaching
-    // column 1. Column 0 wins on area, and the pointer is in neither.
+    // 7px into the 24px gutter: the tile spans [GUTTER_LEFT - 13,
+    // GUTTER_LEFT + 27], so 13px of it is still over column 0 and 3px reaches
+    // past the gutter into column 1 - 520 square pixels against 120. Column 0
+    // wins on area, and the pointer is in neither.
     const x = GUTTER_LEFT + 7;
     expect(drop(x, ROW_1_MID)).toEqual({ col: 0, row: 1 });
 
@@ -164,13 +189,27 @@ describe("resolveDropCell, a block overlapping two or more cells", () => {
   });
 
   it("does not let sub-pixel rounding decide instead of the pointer", () => {
-    // Two cells the tile covers to within a fraction of a square pixel, with
-    // the pointer squarely inside the second. A strict comparison would hand
-    // the drop to the first on 0.4px of rounding; the pointer is the better
-    // answer and the epsilon is what lets it be heard.
+    // The tile is [30..70] x [185..225], centred on (50, 205).
+    //
+    // Column 0 is a 1.02px strip the tile's lower half crosses: 40 x 1.02 =
+    // 40.8 square pixels, and the pointer is NOT inside it. Column 1 is a 1px
+    // strip standing on the pointer: 40 x 1 = 40 square pixels. The greater
+    // raw area is column 0, by 0.8 of a square pixel.
+    //
+    // That gap is rounding, not a preference, so the epsilon calls the two
+    // tied and the pointer decides - column 1. Both other rules answer column
+    // 0: a strict `greatest === area` comparison would take it on the 0.8px,
+    // and the last tie-break takes the lowest (column, row). So this assertion
+    // holds for exactly one reason, which is the one being tested.
     const boxes: CellBox[] = [
-      { cell: { col: 0, row: 0 }, box: { left: 0, top: 0, right: 100, bottom: 200.01 } },
-      { cell: { col: 1, row: 0 }, box: { left: 0, top: 200, right: 100, bottom: 400 } },
+      {
+        cell: { col: 0, row: 0 },
+        box: { left: 0, top: 206, right: 100, bottom: 207.02 },
+      },
+      {
+        cell: { col: 1, row: 0 },
+        box: { left: 0, top: 204.5, right: 100, bottom: 205.5 },
+      },
     ];
     const point = { x: 50, y: 205 };
     expect(resolveDropCell(blockBoxAt(point, TILE), point, boxes)).toEqual({
@@ -178,7 +217,6 @@ describe("resolveDropCell, a block overlapping two or more cells", () => {
       row: 0,
     });
   });
-
 });
 
 describe("resolveDropCell, before the grid has rendered", () => {

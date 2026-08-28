@@ -37,7 +37,26 @@ export const getScaleLabels = (isDescending: boolean): string[] => {
 // =============================================================================
 
 export const MARKET_PADDING = 20; // Space for market axis and price label
-export const BLOCK_HEIGHT = 40; // Height of block element
+/**
+ * The block tile's edge length in CSS pixels. The tile is square, so this one
+ * number is its width as well as its height, and it is the only place either is
+ * stated as a number.
+ *
+ * Three things read it, and a second copy is how any two of them come to
+ * disagree without either file saying so:
+ *
+ *   - the price-axis layout below, which insets the track by a tile and centres
+ *     a block on its own position with `BLOCK_HEIGHT / 2`;
+ *   - `DragOverlay`, which centres the ghost on the pointer by half a tile;
+ *   - `src/utils/dropTarget.ts`, which hit-tests that ghost's edges against the
+ *     cells to decide which one a release landed in.
+ *
+ * `src/components/blocks/blockTile.test.ts` pins it against `BLOCK_TILE_SHAPE`'s
+ * own `w-10 h-10`, so resizing the tile in the class list alone fails there
+ * rather than silently drawing axis blocks off-centre and moving every drop
+ * target by a few pixels.
+ */
+export const BLOCK_HEIGHT = 40;
 export const MARKET_GAP = 10; // Gap between market axis and 0% block position
 
 /**
