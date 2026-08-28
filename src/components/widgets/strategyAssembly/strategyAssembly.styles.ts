@@ -47,25 +47,30 @@ export const cellLockedNote =
 // That scroll is VERTICAL only, and deliberately so; the horizontal half of it
 // is what the wrap below exists to remove.
 //
-// **The row has a minimum width, and it is derived rather than chosen.** The
-// palette is 110px (`ProviderColumn`), each grid column carries the
-// `min-w-[220px]` that keeps its price chip inside the cell, and two 6px gaps
-// join them: 542px, and none of the three can give any of it up. Below `lg` the
-// panel is the viewport less the shell's 32px of padding, so the row stops
-// fitting at a 574px viewport. It used to be drawn at that width anyway.
-// Measured in Chrome at 320, 360 and 390 the lanes stood at the same rigid
-// 542px and the Exit column sat at x 347..549 in every one of them - entirely
-// outside the viewport, with the panel's own `overflow-auto` the only way to
-// reach it and no visible scrollbar to say so. A conditional strategy needs
-// both an Entry and an Exit leg, so the app's core task could not be completed
-// on a phone at all.
+// **The row has a min-content width, and it is derived rather than chosen.**
+// It is 542px: the palette's 90px min-width (`ProviderColumn`'s
+// `sm:min-w-22.5`) plus the `min-w-[220px]` each grid column carries to keep
+// its price chip inside the cell, twice, plus two 6px gaps. That floor is owned
+// by `sm:min-w-22.5` and NOT by the palette's `sm:w-27.5`: 110px is what the
+// palette prefers, and it gives up 20px of it before the row stops shrinking.
+// 542px is therefore the width the lanes collapse to when the panel cannot fit
+// them. Below `lg` the panel is the viewport less the shell's 32px of padding,
+// so the row stops fitting at a 574px viewport, and it used to be drawn at that
+// width anyway. Measured in Chrome at 320, 360 and 390 the lanes stood at that
+// collapsed 542px - the palette squeezed to 90px - and the Exit column sat at
+// x 347..549 in every one of them, entirely outside the viewport, with the
+// panel's own `overflow-auto` the only way to reach it and no visible scrollbar
+// to say so. A conditional strategy needs both an Entry and an Exit leg, so the
+// app's core task could not be completed on a phone at all.
 //
 // It wraps rather than scrolls, which is this project's standing answer for
 // chrome that will not fit; see AGENTS.md, "Layout and the CSS cascade".
 // `sm` is where it switches, and it is a floor with room rather than a fitted
-// number: the panel measures 608px at a 640px viewport, comfortably past the
-// 542px the row needs, and 640 is the first standard breakpoint above the 574px
-// the row actually fails at. Above `lg` the panel is never narrower than 660px
+// number: at a 640px viewport the panel measures 608px against that 542px
+// min-content row, and measured there the palette sits at its preferred 110px
+// with each column at 243px, so nothing is at its floor. 640 is also the first
+// standard breakpoint above the 574px the row actually fails at. Above `lg` the
+// panel is never narrower than 660px
 // (measured at 1024, where the shell's `minmax(0,700px)` track is squeezed
 // hardest), so the desktop layout never reaches the stacked form.
 export const contentRow = "flex flex-col sm:flex-row min-h-full gap-1.5";

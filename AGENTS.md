@@ -426,25 +426,32 @@ action bar against them.
 
 **The assembly grid's three lanes stack when the panel is too narrow to draw
 them, and the row they are in has a derived minimum width.** The lanes are the
-order palette (110px), the Entry column and the Exit column, each of which
-carries `min-w-[220px]` because that is where a cell still fits its own price
+order palette, the Entry column and the Exit column, each of the latter two
+carrying `min-w-[220px]` because that is where a cell still fits its own price
 chip - the chip is laid out at `calc(50% + 25px)` from the axis centre and is
 about 66px wide at a BTC price, so a 202px cell put `$58,322.4` at x 247..305.5
-against a cell edge at 323, 17.5px of slack. With two 6px gaps the row cannot be
-drawn in less than 542px, and below `lg` the panel is the viewport less the
-shell's 32px of padding, so it stops fitting at a 574px viewport. It used to be
-drawn anyway: measured in Chrome at 320, 360 and 390 the lanes stood at that
-same rigid 542px in all three and the Exit column sat at x 347..549, entirely
-outside the viewport. **That is a functional defect rather than a responsive
-gap** - a conditional strategy needs both an Entry and an Exit leg, so the app's
-core task could not be completed on a phone at all. `contentRow` and
-`columnsWrapper` are `flex-col sm:flex-row` for it: below `sm` the palette lays
-its tiles across the panel in an `auto-fill` grid and the two columns are
-full-width bands under it, and the panel's existing vertical scroll carries the
-lot. `sm` is a floor with room rather than a fitted number - the panel is 608px
-at a 640px viewport, and above `lg` it is never narrower than 660px, measured at
-1024 where the shell's `minmax(0,700px)` track is squeezed hardest - so the
-desktop layout never reaches the stacked form and is unchanged to the pixel.
+against a cell edge at 323, 17.5px of slack. **The row's min-content width is
+542px: the palette's 90px min-width plus those two 220px columns plus two 6px
+gaps.** That floor is owned by the palette's `sm:min-w-22.5`, the constant this
+change moved behind a breakpoint, and not by its `sm:w-27.5` - 110px is the
+palette's PREFERRED width, and it shrinks 20px below it when the row cannot fit.
+Below `lg` the panel is the viewport less the shell's 32px of padding, so the
+row stops fitting at a 574px viewport, and it used to be drawn at that width
+anyway: measured in Chrome at 320, 360 and 390 the lanes collapsed to that same
+min-content 542px in all three - the palette squeezed to its 90px floor - and
+the Exit column sat at x 347..549, entirely outside the viewport. **That is a
+functional defect rather than a responsive gap** - a conditional strategy needs
+both an Entry and an Exit leg, so the app's core task could not be completed on
+a phone at all. `contentRow` and `columnsWrapper` are `flex-col sm:flex-row` for
+it: below `sm` the palette lays its tiles across the panel in an `auto-fill`
+grid and the two columns are full-width bands under it, and the panel's existing
+vertical scroll carries the lot. `sm` is a floor with room rather than a fitted
+number - at a 640px viewport the panel is 608px against that 542px min-content
+row, and measured there the palette is at its preferred 110px and each column at
+243px, so nothing is at its floor. Above `lg` the panel is never narrower than
+660px, measured at 1024 where the shell's `minmax(0,700px)` track is squeezed
+hardest - so the desktop layout never reaches the stacked form and is unchanged
+to the pixel.
 `utilityRow` wraps for the same reason: Clear All and Reverse come to 219px
 beside a 203px Execute Trade against 326px of bar at 390, and unwrapped that
 button was drawn at x 267.5..470.8 with the panel's `overflow-hidden` clipping

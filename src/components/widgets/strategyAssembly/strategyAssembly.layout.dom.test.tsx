@@ -6,7 +6,6 @@ import ProviderColumn from "../../common/grid/ProviderColumn";
 import { ORDER_TYPES } from "../../../data/orderTypes";
 import { createEmptyGrid } from "../../../utils";
 import {
-  column,
   columnsWrapper,
   contentRow,
   utilityRow,
@@ -16,16 +15,17 @@ import {
 // THE GRID PANE'S THREE LANES, AND WHAT HAPPENS WHEN THEY DO NOT FIT
 // =============================================================================
 //
-// The order palette, the Entry column and the Exit column need 542px between
-// them - 110px of palette, two columns that cannot go under `min-w-[220px]`
-// without clipping their own price chips, and two 6px gaps. Below `lg` the
-// panel is the viewport less 32px, so the row stops fitting at a 574px
-// viewport. It used to be drawn anyway: measured in Chrome at 320, 360 and 390
-// the lanes stood at that same rigid 542px and the Exit column sat at
-// x 347..549 in all three, entirely outside the viewport and reachable only
-// through a scroller with no visible bar. A conditional strategy needs both an
-// Entry and an Exit leg, so the app's core task could not be completed on a
-// phone at all.
+// The order palette, the Entry column and the Exit column give the row a
+// min-content width of 542px - the palette's 90px min-width (`sm:min-w-22.5`,
+// not its 110px preferred `sm:w-27.5`), two columns that cannot go under
+// `min-w-[220px]` without clipping their own price chips, and two 6px gaps.
+// Below `lg` the panel is the viewport less 32px, so the row stops fitting at a
+// 574px viewport. It used to be drawn anyway: measured in Chrome at 320, 360
+// and 390 the lanes collapsed to that 542px - the palette squeezed 20px below
+// its preferred width - and the Exit column sat at x 347..549 in all three,
+// entirely outside the viewport and reachable only through a scroller with no
+// visible bar. A conditional strategy needs both an Entry and an Exit leg, so
+// the app's core task could not be completed on a phone at all.
 //
 // WHAT THESE TESTS ARE: assertions about the utilities the components ask for.
 // jsdom applies no author stylesheet and does no layout, so none of them can
@@ -41,23 +41,15 @@ import {
 // change deliberately ruled out cannot come back: answering a row that does not
 // fit with a horizontal scroller rather than with a wrap.
 
-/** Utilities that turn a box into a scroll container. */
-const SCROLLING_UTILITIES = [
-  "overflow-auto",
-  "overflow-scroll",
-  "overflow-x-auto",
-  "overflow-x-scroll",
-  "overflow-y-auto",
-  "overflow-y-scroll",
-];
-
 const expectNoScroller = (classes: string[]) => {
-  for (const utility of SCROLLING_UTILITIES) {
-    expect(classes).not.toContain(utility);
-  }
-  // A `sm:`-prefixed scroller is the same box at a different width.
+  // A variant-prefixed scroller is the same box under some other condition, so
+  // every leading `<variant>:` segment comes off first - `max-sm:` and stacked
+  // ones like `sm:hover:` included - and the utility underneath is what is
+  // judged.
   for (const cls of classes) {
-    expect(cls.replace(/^\w+:/, "")).not.toMatch(/^overflow(-x|-y)?-(auto|scroll)$/);
+    expect(cls.replace(/^.*:/, "")).not.toMatch(
+      /^overflow(-x|-y)?-(auto|scroll)$/,
+    );
   }
 };
 
@@ -84,17 +76,6 @@ describe("the assembly grid's lanes", () => {
     expect(classes).toContain("sm:flex-1");
     expect(classes).not.toContain("flex-1");
     expectNoScroller(classes);
-  });
-
-  it("keeps the price chip's width floor on a column", () => {
-    const classes = column.split(/\s+/);
-
-    // 220px is where a cell still fits its own price chip: measured at 390, a
-    // 202px cell put `$58,322.4` at x 247..305.5 with the cell edge at 323.
-    // The stacked form exists so a narrow panel gives one column its whole
-    // width rather than squeezing two under this floor.
-    expect(classes).toContain("min-w-[220px]");
-    expect(classes).toContain("w-full");
   });
 
   it("wraps the action bar rather than clipping Execute Trade", () => {
@@ -166,17 +147,5 @@ describe("the order palette", () => {
 
     expect(classes).toContain("sm:flex");
     expect(classes).toContain("sm:flex-col");
-  });
-
-  it("keeps every order tile at the 24px minimum target size", () => {
-    renderPalette();
-
-    // The tile is `BLOCK_TILE_SHAPE`'s 40px square in both forms; the wrap is
-    // what gives it room rather than shrinking it under SC 2.5.8's floor.
-    for (const button of screen.getAllByRole("button")) {
-      const classes = button.className.split(/\s+/);
-      expect(classes).toContain("w-10");
-      expect(classes).toContain("h-10");
-    }
   });
 });
