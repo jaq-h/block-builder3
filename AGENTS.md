@@ -179,7 +179,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Ten things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Eleven things bite in ordinary work:
 
 - **Never add a `window` *mouse* listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events. Mouse events are also suppressed during a drag,
@@ -643,10 +643,24 @@ check passed it. It used to be reachable, because `calculateYPosition` read a 0-
 while the axis runs to `SCALE_CONFIG.MAX_PERCENT = 50` and the drop handler wrote the
 unclamped result into the block - a block dragged to the bottom of its cell was a 100%
 offset, which is a price of zero. That reader is gone, and every position now flows through
-`clampOffset` in `blockMapping.ts` on every path into a payload. The guard stays, because a
-validator that trusts its callers is not one. Every price must be finite; **positivity is
-checked only for a static price**, because under a `pct` or `quote` price type the value is
-a signed offset and `-1.5` is legitimate.
+`blockMapping.ts` before it is drawn or priced. The guard stays, because a validator that
+trusts its callers is not one. Every price must be finite; **positivity is checked only for
+a static price**, because under a `pct` or `quote` price type the value is a signed offset
+and `-1.5` is legitimate.
+
+**Clamp on read, never destroy information on write.** That is why the clamp comes in two
+halves, and mixing them up re-opens the hole above. `clampOffset` is the DISPLAY answer: it
+bounds the range *and* collapses a non-finite position onto the market line, because a chip
+cannot print `NaN%`. `offsetForOrder` is what every path that can reach a Kraken payload
+uses instead - the mapper, `orderConfigFromGrid`, and `setBlockPosition` writing a dragged
+position back - and it bounds the range while leaving a non-finite value non-finite,
+so `validateOrder`'s `Number.isFinite` guard still has something to refuse. Collapsing it
+would price a corrupt block at the market, which is a finite, positive, entirely plausible
+order. Hydration writes neither clamp into a stored block: `gridFromConfig` copies a saved
+position across as it stands and `normaliseCellDirections` stamps a direction and nothing
+else, because both used to clamp there and a hydrated grid then reached the mapper already
+priced at the market with nothing left to refuse. `NaN` is not nullish, so a `?? 0` never
+caught it either.
 
 Still open in the same file, and deliberately not fixed with the above: the two legs of a
 dual-axis order type (`stop-loss-limit` and friends) are emitted as two separate orders

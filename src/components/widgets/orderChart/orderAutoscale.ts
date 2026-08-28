@@ -17,8 +17,10 @@ import type { AutoscaleInfo } from "lightweight-charts";
  * worked on a 0-100 scale while the slider and the axis labels use
  * `SCALE_CONFIG.MAX_PERCENT = 50`, so a block dragged to the very bottom of its
  * cell was a 100% offset - a price of exactly zero. That reader is gone and
- * `clampOffset` in `utils/blockMapping.ts` now bounds every position on every
- * path, so no drag can produce one. This guard stays anyway: it is what stops a
+ * `utils/blockMapping.ts` now bounds every position to the range the axis can
+ * draw, on every path - `clampOffset` where one is read for display, this
+ * chart's included, and `offsetForOrder` where one is read for a payload - so
+ * no drag can produce one. This guard stays anyway: it is what stops a
  * price arriving from anywhere else taking the logarithmic chart down with it,
  * and a guard that trusts its callers is not one.
  */

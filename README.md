@@ -559,8 +559,8 @@ The transitions where the two ways in overlap:
   otherwise the ending carry would wipe the ghost of the gesture that replaced it, and the
   press of a click on any other block would take the carry's ghost off the cursor and never
   put it back.
-- **A block drawn on a price axis is refused**, exactly as it is for the keyboard and a finger,
-  because a mouse cannot drag one between cells either.
+- **A click on any placed block is refused**, exactly as it is for the keyboard and a finger:
+  a placed block never changes cells, whatever is driving (decision D9 below).
 
 **Command model: keyboard, screen readers, taps and clicks.** Focus a block and press Enter - or
 Space, which a button answers to as well - to pick it up; the arrow keys choose a target
@@ -582,37 +582,38 @@ a reducer cannot supply: which outcome is reported to the announcer at each step
 focus lands afterwards. It chooses no wording of its own; see **Announcements have one
 owner** below.
 
-**What moves between cells, and what does not.** A block the cell draws **on a price axis**
-stays in its cell. That is not an accessibility shortfall: a mouse cannot move one either -
-`Block` routes anything rendered on an axis to the vertical drag, so the free drag never
-applies to it - and every input method is held to the same capability. Palette placement and
-moving an **axis-less** block between cells are offered by pointer, keyboard and tap alike.
-`activateBlock` decides this from the cell's display mode, the same value the renderer uses,
-so the offer and the drawing can never disagree.
+**What moves between cells, and what does not.** A **placed block never changes cells** -
+every block, by every input method, with no per-type carve-out. That is captain decision D9,
+asked directly and answered "every block": a cell owns the scale its blocks are priced on,
+stamped when the first one lands, so a block that changed cells would be silently re-priced
+by the one it arrived in. Only a **palette order** is ever carried, which
+`CarriedBlock.source: ProviderSource` states in the type rather than in a comment, and
+`keepBlockInItsCell` in `GridArea` is the whole of the rule on the pointer side: it reports
+`unchanged` for a release in the block's own cell and `refused` for any other, and mutates
+nothing.
 
-**Removing a single block is pointer-only today.** It happens by dragging a block out of the
-grid: `removeBlock` is reached from one place, the `else` branch of `handleDragEnd`, which
-only a free drag that released outside every cell can get to. The command model has no
-delete transition at all - `blockCommand.ts` is pickUp, moveTarget, place and cancel - and
-`activateCell` can only name a grid cell, so a keyboard or a tap cannot remove one block.
-A keyboard user's removal path is **Clear All**. That is missing capability rather than a
-defect: a keyboard user can still assemble and price a complete strategy, and a delete
-transition - which needs its own confirmation and announcement design - is filed as its own
-work rather than bolted onto this lane.
+**A misplaced order is corrected by removing it and placing a new one**, and removing one is
+pointer-only today: `removeBlock` is reached from one place, the `else` branch of
+`handleDragEnd`, which only a free drag released outside every cell can get to. The command
+model has no delete transition at all, and `activateCell` can only name a grid cell, so a
+keyboard or a tap cannot remove one block. **A block whose cell draws a price axis cannot be
+dragged off the grid either** - `Block` routes it to the vertical price drag instead - so
+**Clear All** is the only way to remove one, and it destroys the whole strategy. That gap is
+pre-existing rather than introduced by D9, which only makes it more visible by naming
+delete-and-rebuild as *the* correction path; closing it needs a removal affordance that works
+on a priced block and from the keyboard, and is filed as its own work. The sr-only block
+instructions promise removal only where it actually exists until it lands.
 
-Enter or a tap on a priced block is therefore refused rather than silent, and the refusal
-names what that render does wire: the arrow keys, which move the block along its axis. The
-rule is the whole axis and not just paired legs - a lone Limit, a lone Stop Loss and two
-independent Limits sharing a bulk cell are all drawn on an axis, so all are refused, and all
-are equally immovable with a mouse. Only in a cell that draws **no** axis at all - a bulk
-cell holding an axis-less block - is the separate dual-axis refusal reached, and there it
-promises no arrow keys, because none are wired.
-
-Moving a placed priced block between cells is a real capability worth having for every
-input method, and it is **sequenced rather than abandoned**: a cell's scale is currently
-its first block's `direction`, so moving a block out of a mixed cell would silently re-price
-the ones left behind. It is filed with the lane that gives the block-to-price mapping a
-single owner, because doing it safely needs that authority to exist first.
+**The refusal is legible rather than silent**, because a press that does nothing is
+indistinguishable from a broken control. Three things say so together: the announcer's
+`moveRefused` sentence, a visible note under the grid (ordinary text - never a second live
+region), and no cell drawing itself as a target while a placed block is dragged. The note and
+the sentence are worded per case, and the case is decided by `cellDrawsPriceAxis` - the same
+owner the renderer uses to decide whether to draw an axis at all, so the affordance a refusal
+names is one that render really wired. A block on a price axis is pointed at the **arrow
+keys**, which move it along that axis; one in a cell that draws **no** axis - a bulk cell
+holding an axis-less block - is told to drag it off the grid and place a new one, which is the
+only case where that is true.
 
 **The price axis** is a block's most important property, so it is reachable every way too: a
 pointer drags the block up and down its axis, and on the keyboard it behaves as a real
@@ -743,7 +744,10 @@ They are recorded because the shape recurs, not because any of them is still liv
 - *That drop path wrote `yPosition` through `calculateYPosition`*, which returned 0-100
   against a scale whose maximum is 50 - so a block could render pinned at the 50% end while
   its label read the raw value, and a 100% offset was a price of exactly zero. The reader is
-  deleted; `clampOffset` bounds every position on every path.
+  deleted, and every position is now bounded to the range the axis can draw on every path -
+  clamped where it is read rather than where it is stored, so a position that is not a number
+  at all still reaches `validateOrder` to be refused rather than being quietly answered with
+  the market price. `AGENTS.md` under "Prices and order types" is the authority on that split.
 - *Keyboard and tap pick-up of a paired leg was refused there without offering the arrow
   keys*, because that render wires none. Still true, and now decided by the same
   `cellDrawsPriceAxis` the renderer uses, so the two cannot disagree about it.
@@ -885,6 +889,7 @@ src/
 │           ├── ActiveOrdersContext.tsx          # Provider wiring
 │           ├── ActiveOrdersContextDef.ts       # Context creation (separate for Fast Refresh)
 │           ├── OrderCard.tsx                   # Single submitted-order card
+│           ├── orderAxes.ts                    # Which leg a submitted order is, through blockMapping
 │           ├── useActiveOrders.ts              # Consumer hook
 │           └── index.ts                        # Barrel export
 │
