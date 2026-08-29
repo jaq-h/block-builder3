@@ -967,6 +967,28 @@ on no pointer event" - jsdom neither synthesises `click` from pointer events nor
 that target algorithm, so the test asserts the component's wiring in a pair with the click
 that does remove, rather than resting on jsdom's missing click.
 
+**What is NOT accepted, and is why sibling tiles carry a gap: the control overhanging the
+NEIGHBOUR.** It is pinned at `-top-2 -right-2`, so it hangs 8px past its own tile, and a cell
+that draws no price axis lays its blocks out side by side in `centeredContainer`
+(`src/styles/grid.ts`). With no gap those tiles are flush, the control sat over the next
+tile's top-left corner and above it in the stacking order, and a press aimed at one block
+removed the block BESIDE it - measured in Chrome at 1440 with two Market orders in one bulk
+cell, where `elementFromPoint` 3px inside the second tile returned the first block's control.
+`centeredContainer`'s `gap-3` clears the 8px with room to spare, and it is the cause that is
+fixed rather than the control: moving or shrinking the control were both rejected above.
+The same constant carries `flex-wrap`, because widening the gap brought the row's own limit
+one block nearer - at 390 four blocks in a bulk cell measured 201px of content in a 190px
+cell, and the panel clipping it is `overflow-hidden`, so the fourth tile and its Remove
+control were cut off with nothing to scroll them back. That is the app's standing answer
+rather than a new one: a row too wide for its box wraps, it never scrolls.
+**Do not collapse this into 1.** There the block destroyed is the block aimed at, which is
+the trade D9 makes routine; here it is a different block and nothing on screen says so.
+`blockTile.test.ts` holds the gap against `REMOVE_CONTROL_SHAPE`'s own offset, so widening
+the overhang without widening the gap fails there, and `GridArea.dom.test.tsx` pins the
+wiring under "removes the block its own control belongs to". `ReadOnlyGridCell` shares
+`centeredContainer` and draws no such control, so the gap is cosmetic there rather than a
+fix - and it is currently mounted by tests alone, nothing in the product reaching it.
+
 **The refusal is legible, not silent.** Three things say so together and none of them is
 optional: the announcer's `moveRefused` sentences, a visible note under the grid
 (`cellLockedNote`, ordinary text - never a second live region), and no cell drawing itself

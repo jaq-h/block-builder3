@@ -12,7 +12,7 @@ import {
   signedOffset,
   type PriceAxisLeg,
 } from "../../utils/blockMapping";
-import { BLOCK_TILE_SHAPE } from "./blockTile";
+import { BLOCK_TILE_SHAPE, REMOVE_CONTROL_SHAPE } from "./blockTile";
 import XIcon from "../../assets/icons/x.svg?react";
 
 /** The id every block's instructions are described by. Rendered once by GridArea. */
@@ -96,35 +96,11 @@ const PRICE_STEP_TO_END = MAX_OFFSET_PERCENT * 2;
 // only way to be rid of one. Decision D9 made that gap load-bearing by naming
 // delete-and-rebuild as *the* way to correct a misplaced order.
 //
-// It is rendered rather than revealed, and that is the decision the whole task
-// turns on. A control shown on `:hover` exists for a mouse and for nothing
-// else: a finger has no hover, and the sticky `:hover` a tap leaves behind on
-// some browsers is an accident rather than an affordance. Parity across mouse,
-// keyboard and touch is the point here, so the control is simply there, for all
-// three, at all times.
-//
-// `w-6 h-6` is 24px, the WCAG 2.2 SC 2.5.8 minimum target size, and it is the
-// same floor `chartToggleButton` carries for the same reason. The colour is
-// quiet at rest and turns red under the cursor or the focus ring: a grid full
-// of red dots would spend, on the least-used control on screen, exactly the
-// visual weight the block tiles need for saying what they are.
-const removeButton = cn(
-  "absolute -top-2 -right-2 z-2",
-  // `p-0` is load-bearing, not tidiness. `src/index.css`'s layered `button`
-  // default is `padding: 0.6em 1.2em`, and under `box-sizing: border-box` a
-  // `width` cannot shrink a box below its own padding and border - so `w-6`
-  // asked for 24px and the button measured 40.375px wide in Chrome, wider than
-  // the 40px tile it sits on. The app has exactly one mechanism for a control
-  // that wants to look different, and it is stating the utility (`AGENTS.md`,
-  // "Layout and the CSS cascade"); this is that, and `BLOCK_TILE_SHAPE`'s own
-  // `p-[3px]` is the same move for the same reason.
-  "p-0 w-6 h-6 flex items-center justify-center rounded-full cursor-pointer",
-  "border border-border-neutral bg-bg-column text-white-70",
-  "transition-colors duration-150",
-  "hover:bg-status-red-bg-strong hover:border-status-red-border hover:text-text-primary",
-  "focus-visible:bg-status-red-bg-strong focus-visible:border-status-red-border focus-visible:text-text-primary",
-  "[&_svg]:w-3 [&_svg]:h-3 [&_svg]:stroke-current [&_svg]:pointer-events-none",
-);
+// Its geometry and its colours are `REMOVE_CONTROL_SHAPE` in `./blockTile`,
+// beside the tile's own, because the control is pinned outside the tile it
+// belongs to and that overhang has to be checkable against the gap between two
+// sibling tiles. That module's docblock is the authority on each class.
+const removeButton = cn(REMOVE_CONTROL_SHAPE);
 
 interface BlockProps {
   id: string;
