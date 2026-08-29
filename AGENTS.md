@@ -424,7 +424,12 @@ the app never puts a scrollbar somewhere its width could change a layout, so it
 never has to style one. `ChartHeader.dom.test.tsx` pins the chart's control
 groups against both halves of this, and
 `strategyAssembly.layout.dom.test.tsx` pins the assembly panel's grid pane and
-action bar against them.
+action bar against them. The rule reaches content the same way
+where content is a row of controls: `centeredContainer` in `src/styles/grid.ts`
+lays a cell's blocks out side by side with `gap-3`, and it wraps rather than
+scrolls, because the panel clipping it is `overflow-hidden` - at 390 four blocks
+in a bulk cell measured 201px of content in a 190px cell and the fourth tile,
+with its Remove control, was cut off at 320px with nothing to scroll it back.
 
 **The assembly grid's three lanes stack when the panel is too narrow to draw
 them, and the row they are in has a derived minimum width.** The lanes are the
@@ -942,18 +947,48 @@ that decides it:
   is the half-fix this file exists to refuse. It is filed as ONE item covering both
   surfaces, and covering whether "Limit limit order" is the wording wanted at all.
 
+**The control is pinned INSIDE the tile it belongs to (`top-0 right-0`), and must never
+overhang it again.** A destructive control that extends past the tile a user can see is a
+control that removes a block the user was not aiming at, with nothing on screen saying so and
+no undo. At `-top-2 -right-2` it hung 8px out and did that in **both** layouts:
+
+- **Axis-less cells**, where blocks sit side by side in `centeredContainer`. Flush tiles put
+  the control over the next tile's top-left corner and above it in the stacking order -
+  measured in Chrome at 1440 with two Market orders in one bulk cell, `elementFromPoint` 3px
+  inside the second tile returned the FIRST block's control, and the click removed that first
+  block.
+- **Cells that DRAW a price axis**, which is most of the grid. Blocks there are positioned by
+  `getBlockPositionerProps`, so **a block's position IS its price** and there is no spacing to
+  give at all. Two Limits in one bulk cell at -25% and -35%, 16px apart: tile A y282-322, tile
+  B y298-338, B's control y290-314, so the band y290-298 lay over A's face and over no part of
+  B's. `elementFromPoint` there returned B's control, and the click destroyed the -35% block
+  while the user pressed the visible lower-right corner of the -25% one.
+
+**One geometry answers both, and a per-layout offset would be one fact styled two ways.**
+`REMOVE_CONTROL_SHAPE` in `src/components/blocks/blockTile.ts` is the authority;
+`blockTile.test.ts` pins containment on both axes against `BLOCK_TILE_SHAPE`'s own size, so a
+negative offset on either axis, or a control grown past the tile, fails there. **The gap on
+`centeredContainer` is no longer that guarantee** - it stays as spacing, because two flush
+40px tiles read as one 80px block, and it could never have covered the axis layout anyway.
+
+**The price is deliberate: the control now covers about 36% of its own tile (24x24 of 40x40)
+rather than 16%, over the top-right of the icon.** That is the trade bought with the
+neighbour case, and the two ways of undoing it are both rejected - shrinking the control below
+`w-6 h-6` loses the 24px WCAG 2.2 SC 2.5.8 target, and hiding it behind `:hover` gives it to a
+mouse alone, which is the opposite of why the affordance exists.
+
 **The control fires on `click`, and must never be given a pointer-down handler.** Two
 behaviours of the tile's top-right corner follow from that, and both are deliberate - do not
 "fix" either:
 
-1. **A tap landing on the 16x16 region where the control overlaps the tile REMOVES the
-   block** rather than selecting it. Accepted, not overlooked: D9 makes delete-and-rebuild
-   the sanctioned correction for a misplaced block, so removal is routine rather than rare,
-   and taxing every pointer removal with an arm-then-confirm second press to guard an
-   extreme-corner mis-tap is the wrong trade - the cost of the mistake is re-placing one
-   block, not lost work. An undo affordance would be a new product surface. Offsetting the
-   control would move it into the percentage chip and the price label, which were verified
-   clear; shrinking the visible disc keeps the same 24px hit area while hiding it.
+1. **A tap landing on the 24x24 region the control occupies REMOVES the block** rather than
+   selecting it. Accepted, not overlooked: D9 makes delete-and-rebuild the sanctioned
+   correction for a misplaced block, so removal is routine rather than rare, and taxing every
+   pointer removal with an arm-then-confirm second press is the wrong trade - the cost of the
+   mistake is re-placing one block, not lost work. An undo affordance would be a new product
+   surface. This is unchanged in kind from the 16x16 version and larger only because the
+   control moved inside the tile; the block destroyed is still the block aimed at, which is
+   what separates it from the neighbour case above.
 2. **A press that BEGINS on the control and drags away is inert**: nothing is removed and
    the block does not drag. The control is a sibling drawn on top of the tile rather than a
    descendant, so the tile's `onPointerDown` never fires. Left as it is - forwarding the
@@ -967,27 +1002,10 @@ on no pointer event" - jsdom neither synthesises `click` from pointer events nor
 that target algorithm, so the test asserts the component's wiring in a pair with the click
 that does remove, rather than resting on jsdom's missing click.
 
-**What is NOT accepted, and is why sibling tiles carry a gap: the control overhanging the
-NEIGHBOUR.** It is pinned at `-top-2 -right-2`, so it hangs 8px past its own tile, and a cell
-that draws no price axis lays its blocks out side by side in `centeredContainer`
-(`src/styles/grid.ts`). With no gap those tiles are flush, the control sat over the next
-tile's top-left corner and above it in the stacking order, and a press aimed at one block
-removed the block BESIDE it - measured in Chrome at 1440 with two Market orders in one bulk
-cell, where `elementFromPoint` 3px inside the second tile returned the first block's control.
-`centeredContainer`'s `gap-3` clears the 8px with room to spare, and it is the cause that is
-fixed rather than the control: moving or shrinking the control were both rejected above.
-The same constant carries `flex-wrap`, because widening the gap brought the row's own limit
-one block nearer - at 390 four blocks in a bulk cell measured 201px of content in a 190px
-cell, and the panel clipping it is `overflow-hidden`, so the fourth tile and its Remove
-control were cut off with nothing to scroll them back. That is the app's standing answer
-rather than a new one: a row too wide for its box wraps, it never scrolls.
-**Do not collapse this into 1.** There the block destroyed is the block aimed at, which is
-the trade D9 makes routine; here it is a different block and nothing on screen says so.
-`blockTile.test.ts` holds the gap against `REMOVE_CONTROL_SHAPE`'s own offset, so widening
-the overhang without widening the gap fails there, and `GridArea.dom.test.tsx` pins the
-wiring under "removes the block its own control belongs to". `ReadOnlyGridCell` shares
-`centeredContainer` and draws no such control, so the gap is cosmetic there rather than a
-fix - and it is currently mounted by tests alone, nothing in the product reaching it.
+`GridArea.dom.test.tsx` pins the wiring under "removes the block its own control belongs to".
+The geometry itself is checkable only in a real browser - jsdom computes no layout and its
+`elementFromPoint` is not layout-aware - so a coordinate test there would pass for the wrong
+reason and must not be written.
 
 **The refusal is legible, not silent.** Three things say so together and none of them is
 optional: the announcer's `moveRefused` sentences, a visible note under the grid

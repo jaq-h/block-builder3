@@ -456,28 +456,27 @@ export function getCalculatedPriceLabelProps(
 export const emptyPlaceholder =
   "flex-1 flex items-center justify-center text-text-placeholder text-xs";
 
-// THE GAP IS THE REMOVE CONTROL'S CLEARANCE, NOT DECORATION.
+// THE GAP IS SPACING, AND IT IS NOT WHAT KEEPS THE REMOVE CONTROL HONEST.
 //
 // A cell that draws no price axis lays its blocks out here, side by side, and
-// with no gap sibling tiles are flush. Every placed block carries a Remove
-// control pinned to its own top-right corner at `-top-2 -right-2`, so that
-// control hangs 8px PAST the tile it belongs to - over the next tile's
-// top-left corner, and above it in the stacking order. A click or a tap aimed
-// at one block then removed the block BESIDE it, with nothing on screen
-// saying so.
+// with no gap two 40px tiles read as one 80px block. That is the whole of what
+// this gap is for now, and it is worth keeping on its own.
 //
-// That is a different thing from the corner tap `block.tsx` documents and the
-// user accepted: there the block destroyed is the block aimed at. Here it is
-// not, so do not collapse the two and take this gap away. `blockTile.test.ts`
-// pins it against `REMOVE_CONTROL_SHAPE`'s own offset, so moving the control
-// further out without widening this fails there.
+// It was introduced as the clearance for a Remove control that hung 8px past
+// its own tile and covered the NEIGHBOUR's top-left corner, so a press aimed at
+// one block removed the block beside it. Spacing could only ever answer that in
+// this layout - a cell that DRAWS a price axis positions its blocks by their
+// price, so there is no spacing to give - and the control is pinned inside its
+// own tile instead (`REMOVE_CONTROL_SHAPE` in `components/blocks/blockTile.ts`,
+// which is the authority, and `blockTile.test.ts` holds it there). Do not read
+// this gap as that guarantee, and do not delete it as redundant either.
 //
 // The row wraps for the reason every row in this app wraps rather than scrolls
 // (`AGENTS.md`, "Layout and the CSS cascade"): the panel that clips this one is
 // `overflow-hidden`, so a row too wide for its cell loses its last tile and
 // that tile's Remove control off the edge, with nothing to scroll them back.
-// Widening the gap brought that one block nearer - at 390 four blocks in a bulk
-// cell measured 201px of content in a 190px cell and the fourth tile was cut at
+// The gap brought that one block nearer - at 390 four blocks in a bulk cell
+// measured 201px of content in a 190px cell and the fourth tile was cut at
 // 320px - so the wrap travels with it.
 export const centeredContainer =
   "flex-1 flex flex-wrap content-center items-center justify-center gap-3";

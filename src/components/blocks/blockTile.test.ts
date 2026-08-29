@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { BLOCK_TILE_SHAPE, REMOVE_CONTROL_SHAPE } from "./blockTile";
-import { BLOCK_HEIGHT, centeredContainer } from "@styles/grid";
+import { BLOCK_HEIGHT } from "@styles/grid";
 
 // =============================================================================
 // THE TILE'S SIZE, STATED TWICE AND CHECKED ONCE
@@ -38,40 +38,74 @@ describe("the block tile's size", () => {
 });
 
 // =============================================================================
-// THE CONTROL'S OVERHANG AGAINST THE GAP THAT HAS TO CLEAR IT
+// THE REMOVE CONTROL STAYS INSIDE THE TILE IT BELONGS TO
 // =============================================================================
 //
-// The Remove control is pinned at `-right-2`, so it hangs 8px past the right
-// edge of the 40px tile it belongs to. A cell that draws no price axis lays its
-// blocks out in `centeredContainer`, and while that set no gap sibling tiles
-// were flush: the control sat over the NEXT tile's top-left corner and above it
-// in the stacking order, so a click or a tap aimed at one block removed the
-// block beside it. Measured in Chrome at 1440 with two Market orders in one
-// bulk cell, `elementFromPoint` 3px inside the second tile returned the FIRST
-// block's control, and clicking there destroyed that first block.
+// A destructive control may never extend past the tile a user can see. While it
+// hung 8px out at `-top-2 -right-2` it covered a NEIGHBOUR in both layouts, and
+// a press on the visible face of one block removed a different one: measured in
+// Chrome, `elementFromPoint` returned the wrong block's control both between
+// two flush Market tiles in a bulk cell and between two Limits 16px apart on a
+// price axis, and the click that followed destroyed the block the user was not
+// aiming at. Spacing answered the first layout only - on a price axis a block's
+// position IS its price, so there is none to give - so the invariant is
+// containment, one geometry for both.
 //
-// Two numbers, one fact: the gap has to be at least the overhang. Neither can
-// be read from jsdom, which computes no layout, so the two class lists that own
-// them are compared here instead - the same contract `BLOCK_TILE_SHAPE` and
-// `BLOCK_HEIGHT` are held to above. The behaviour they produce is pinned where
-// it can be: "removes the block its own control belongs to" in
-// `GridArea.dom.test.tsx` for the wiring, and a real browser for the geometry.
+// This is the same contract `BLOCK_TILE_SHAPE` and `BLOCK_HEIGHT` are held to
+// above, and for the same reason: jsdom computes no layout, so the two class
+// lists that own these boxes are compared against each other here, and the
+// geometry they produce is checked in a real browser. Both axes, because the
+// control was offset on both. A negative offset on either, or a control grown
+// past the tile, fails this.
 
-const spacing = (classes: string[], pattern: RegExp) => {
-  const match = classes.join(" ").match(pattern);
-  expect(match, `no ${pattern} in ${classes.join(" ")}`).not.toBeNull();
+/** The signed `<side>-<n>` inset a class list states, in pixels. */
+const inset = (classes: string[], side: "top" | "right") => {
+  const all = classes.join(" ");
+  const match = all.match(new RegExp(`(?:^|\\s)(-?)${side}-(\\d+)(?:\\s|$)`));
+  expect(match, `REMOVE_CONTROL_SHAPE no longer states a ${side}-<n>`).not.toBeNull();
+  return (match![1] === "-" ? -1 : 1) * Number(match![2]) * TAILWIND_STEP_PX;
+};
+
+/** The `w-<n>`/`h-<n>` a class list states, in pixels. */
+const size = (classes: string[], axis: "w" | "h") => {
+  const match = classes.join(" ").match(new RegExp(`(?:^|\\s)${axis}-(\\d+)(?:\\s|$)`));
+  expect(match, `no ${axis}-<n> in the class list`).not.toBeNull();
   return Number(match![1]) * TAILWIND_STEP_PX;
 };
 
-describe("the gap between two tiles in one cell", () => {
-  it("clears the overhang the remove control states for itself", () => {
-    const overhang = spacing(REMOVE_CONTROL_SHAPE, /(?:^|\s)-right-(\d+)(?:\s|$)/);
-    const gap = spacing([centeredContainer], /(?:^|\s)gap-(\d+)(?:\s|$)/);
+describe("the remove control's box against its own tile's box", () => {
+  it("sits entirely inside the tile, on both axes", () => {
+    const tileWidth = size(BLOCK_TILE_SHAPE, "w");
+    const tileHeight = size(BLOCK_TILE_SHAPE, "h");
+    const controlWidth = size(REMOVE_CONTROL_SHAPE, "w");
+    const controlHeight = size(REMOVE_CONTROL_SHAPE, "h");
+    const fromTop = inset(REMOVE_CONTROL_SHAPE, "top");
+    const fromRight = inset(REMOVE_CONTROL_SHAPE, "right");
 
-    expect(overhang).toBeGreaterThan(0);
     expect(
-      gap,
-      "the remove control now hangs further past its tile than the gap between two tiles clears, so it covers the neighbour a user aims at",
-    ).toBeGreaterThanOrEqual(overhang);
+      fromTop,
+      "the remove control now hangs above the tile it belongs to, where it can cover the block above",
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      fromRight,
+      "the remove control now hangs past the right of the tile it belongs to, where it can cover the block beside it",
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      fromTop + controlHeight,
+      "the remove control now reaches below the tile it belongs to",
+    ).toBeLessThanOrEqual(tileHeight);
+    expect(
+      fromRight + controlWidth,
+      "the remove control now reaches past the left of the tile it belongs to",
+    ).toBeLessThanOrEqual(tileWidth);
+  });
+
+  // The containment above is satisfied by a control of no size at all, and a
+  // 24px target is the other half of what this affordance is: WCAG 2.2 SC 2.5.8
+  // is what `w-6 h-6` is there for, and shrinking the control to buy back tile
+  // was rejected.
+  it("is still the 24px target the affordance was built around", () => {
+    expect(size(REMOVE_CONTROL_SHAPE, "w")).toBe(24);
+    expect(size(REMOVE_CONTROL_SHAPE, "h")).toBe(24);
   });
 });

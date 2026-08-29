@@ -19,14 +19,29 @@ export const BLOCK_TILE_SHAPE = [
 ];
 
 /**
- * The Remove control drawn on a placed block's top-right corner.
+ * The Remove control drawn in a placed block's top-right corner.
  *
  * It lives beside the tile rather than in `block.tsx` for the reason above and
- * for one more: it is pinned OUTSIDE the tile it belongs to, so its offset and
- * the gap between two sibling tiles are one measurement stated in two places -
- * `centeredContainer` in `@styles/grid` sets that gap, and `blockTile.test.ts`
- * checks the pair. Flush tiles put this control over the NEIGHBOUR's top-left
- * corner, where a press aimed at one block removed the block beside it.
+ * for one more: it is pinned INSIDE the tile it belongs to, and that
+ * containment is the invariant `blockTile.test.ts` checks against this list and
+ * `BLOCK_TILE_SHAPE`'s. A destructive control may never extend past the tile a
+ * user can see, because then a press on the visible face of one block destroys
+ * a DIFFERENT one, with nothing on screen saying so and no undo. It hung 8px
+ * past its own tile at `-top-2 -right-2` and did exactly that, in both layouts:
+ * flush siblings in a cell that draws no price axis put it over the next tile's
+ * top-left corner, and in a cell that DRAWS an axis - where a block's position
+ * is its price, so no spacing is available at all - two Limits 16px apart put
+ * the lower block's control over the upper block's face, measured in Chrome
+ * with `elementFromPoint` returning it there and a click removing the block the
+ * user was not aiming at. One geometry answers both; a per-layout offset would
+ * be one fact styled two ways.
+ *
+ * The price of it is deliberate and was weighed: the control covers about 36%
+ * of its own tile rather than 16%, over the top-right of the icon. A press
+ * landing there removes the block it belongs to, which is the accepted
+ * same-tile tap `block.tsx` documents - D9 makes delete-and-rebuild routine, so
+ * the cost of that mistake is re-placing one block. Shrinking the control below
+ * 24px and hiding it behind `:hover` were both rejected.
  *
  * It is rendered rather than revealed on hover, and that is the decision the
  * affordance turns on: a control shown on `:hover` exists for a mouse and for
@@ -50,7 +65,7 @@ export const BLOCK_TILE_SHAPE = [
  * are.
  */
 export const REMOVE_CONTROL_SHAPE = [
-  "absolute -top-2 -right-2 z-2",
+  "absolute top-0 right-0 z-2",
   "p-0 w-6 h-6 flex items-center justify-center rounded-full cursor-pointer",
   "border border-border-neutral bg-bg-column text-white-70",
   "transition-colors duration-150",
