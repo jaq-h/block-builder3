@@ -2035,6 +2035,51 @@ describe("GridArea, a carry the grid is replaced under", () => {
 
     expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
   });
+
+  // Which of the two mechanisms owns a POINTER press on Clear All, Reverse
+  // Blocks or the pattern selector - all three sit beside `GridArea` rather
+  // than inside it, so all three are outside the placement surface.
+  //
+  // BOTH are correct and neither is a fix for the other. The dismissal hatch
+  // owns this case: the user really did press something outside the surface,
+  // so "Cancelled." is the truth about what they did, and the hatch's
+  // `pointerdown` in the capture phase reaches the carry before the button's
+  // own click handler has replaced anything. The `gridReplaced` transition
+  // owns every path the hatch cannot see - a keyboard or assistive-technology
+  // activation of those same controls, a programmatic replacement, and the
+  // removal path, which happens inside the surface where the hatch stays
+  // silent by design. Do not "fix" either into the other.
+  //
+  // The sibling tests above reach the transition because `fireEvent.click`
+  // synthesises no `pointerdown`, so the hatch never hears them. This one
+  // drives the real sequence a browser sends, which is why it is here: a later
+  // change to either mechanism must not silently flip the sentence these three
+  // controls produce.
+  it("lets the dismissal hatch own a pointer press on a control beside the grid", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    const control = screen.getByRole("button", { name: "replace the grid" });
+    fireEvent(control, pointerAt("pointerdown", 900, 900));
+    fireEvent(control, pointerAt("pointerup", 900, 900));
+    fireEvent.click(control);
+
+    expect(announcement()).toBe(
+      "Cancelled. Take Profit order returned to the palette.",
+    );
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+    // And the carry is gone rather than merely undrawn: a cell it used to
+    // offer places nothing now.
+    fireEvent.click(cell(1, 0));
+    expect(cell(1, 0)).toHaveAttribute(
+      "aria-label",
+      "Exit column, upper conditional row, empty",
+    );
+  });
 });
 
 // =============================================================================

@@ -1,4 +1,10 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import type {
   BlockData,
   CellPosition,
@@ -535,23 +541,24 @@ export const useBlockCommand = ({
   // also speaks.
   const offerIsStale = carrying !== null && !gridStandsBehind(carrying, grid);
 
-  // Through a ref, and written from an effect, for the reason the register's
-  // release below is: the callback closes over this render's grid and carry,
-  // and a ref written during render is one the next render cannot be trusted to
-  // have seen. This effect is declared before the one that reads it, so the
-  // reader always sees its own render's closure.
-  const endCarryOnGridChangeRef = useRef(endCarryOnGridChange);
-  useEffect(() => {
-    endCarryOnGridChangeRef.current = endCarryOnGridChange;
-  });
-
-  useEffect(() => {
+  // Before paint, not after it. A passive effect runs once the browser has
+  // already drawn the frame, and that frame is a replaced grid still wearing
+  // the old offer's highlight and `aria-current` - the very thing this rule
+  // exists to stop being shown. A layout effect ends the carry in the same
+  // commit, so the stale invitation is never painted.
+  //
+  // Called directly rather than through a ref: this reads in the commit that
+  // rendered it, so the closure is this render's own. `cancelRef` below needs
+  // the indirection for a different reason - it is read asynchronously, from
+  // the shared `blockInHand` register, long after the render that made it.
+  useLayoutEffect(() => {
     if (!offerIsStale) return;
-    endCarryOnGridChangeRef.current();
+    endCarryOnGridChange();
     // On the staleness itself, not on the grid: the grid is a new array on every
     // block placement and every price nudge, and re-running there would end a
     // carry the grid still stands behind. Ending it clears `carrying`, so the
     // next render is not stale and this settles in one pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offerIsStale]);
 
   // The carry's half of the shared register, so one call ends it and any live
