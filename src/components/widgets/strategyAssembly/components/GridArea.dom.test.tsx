@@ -113,8 +113,15 @@ const Harness: FC<{
   pattern?: StrategyPattern;
   /**
    * Renders a control that replaces the grid wholesale, the way Clear All,
-   * Reverse Blocks and a pattern switch do. None of those touch the carry, so
-   * this is how a carry comes to outlive the block it names.
+   * Reverse Blocks and a pattern switch do. It stubs those three out: the
+   * button swaps the grid straight through `setGrid` and carries none of their
+   * own wiring, which is what lets a test here drive a replacement by itself
+   * and watch what a rendered grid does under one.
+   *
+   * What the app does when a real control replaces the grid is not this file's
+   * to state: README.md describes the behaviour, and
+   * `gridReplacement.dom.test.tsx` drives the three real controls by name under
+   * "a pointer press on %s" and "a keyboard press on %s".
    */
   gridReplacement?: GridData;
   /**
@@ -1038,6 +1045,55 @@ describe("GridArea, removing a placed block", () => {
     expect(announcement()).toBe(
       "Removed Market block from Entry column, row 2.",
     );
+    // And the carry is untouched, because this is the bulk pattern: every cell
+    // takes every order whatever the grid holds, so the removal took no cell
+    // away from it. A carry ends when the grid stops standing behind the cells
+    // it offered, and nothing here stopped. The conditional pattern is where a
+    // removal does take cells away - see "a removal that takes cells away from
+    // a carry" below.
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(1);
+  });
+
+  // ===========================================================================
+  // A REMOVAL THAT TAKES CELLS AWAY FROM A CARRY
+  // ===========================================================================
+  //
+  // "A removal frees a cell, so it can only widen the offer" is false, and it
+  // is the assumption worth writing a test against. Conditional validity is
+  // diagonal adjacency to an OCCUPIED cell, not emptiness, so removing a block
+  // DELETES its diagonals; the cell it frees is the smaller half of the same
+  // move. Walking every reachable occupancy of this grid gives 28 removals that
+  // take a cell away from a carry, and the smallest of them is this one.
+  //
+  // The sibling test above is the other half of the same rule on the bulk
+  // pattern, where the offer cannot change and the carry stands.
+  it("ends a carry whose cell the removal takes away, without losing the removal's own sentence", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    // With a block in the Entry primary cell, a Take Profit is offered that
+    // block's diagonals - and the Exit upper conditional is the one it targets.
+    clickBlock(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    clickBlock(
+      screen.getByRole("button", {
+        name: "Remove Market order, Entry column, primary row",
+      }),
+    );
+
+    // The grid is empty, so only the primary row takes an order now: the cell
+    // this carry was pointing at is not one the grid will accept any more.
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+    // One press, one live-region write. Reported as two, the second erases the
+    // first - `LiveAnnouncer` alternates regions and clears the one it leaves -
+    // and for a removal the sentence lost is the only one naming which block
+    // went, with no undo. That is why the rule runs inside the removal rather
+    // than a render later.
+    expect(announcement()).toBe(
+      "Removed Market block from Entry column, primary row. Take Profit order returned to the palette: the grid changed underneath it.",
+    );
   });
 
   // A palette entry is an order type rather than an order: there is nothing
@@ -1890,7 +1946,19 @@ describe("GridArea, a refused pick-up while an order is carried", () => {
 // cross-cell move (decision D9).
 
 describe("GridArea, a commit that ends the carry", () => {
-  it("says the carry is over when the grid refuses the chosen cell", () => {
+  // FORMERLY "says the carry is over when the grid refuses the chosen cell",
+  // which drove exactly this sequence and then TAPPED the stale cell to hear
+  // the truth. That sentence was the honest half of a dishonest interface: the
+  // cell went on advertising itself between the replacement and the tap, so the
+  // user was invited into a cell the commit was about to refuse. The carry now
+  // ends with the grid, and the invitation is withdrawn before anyone can act
+  // on it - which is why the tap that used to be the point of this test is here
+  // only to show that nothing is left to place.
+  //
+  // `commit`'s own `refused` branch is kept and is not dead: it is what makes
+  // the commit answer from what the grid DID rather than from the snapshot it
+  // was holding, and a commit that trusts its snapshot is not a guard.
+  it("withdraws the offer when the grid is replaced, rather than at the next tap", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));
     // The same grid, plus a second block that takes the cell this carry is
@@ -1905,12 +1973,19 @@ describe("GridArea, a commit that ends the carry", () => {
 
     // (1,0) was one of the cells the carry offered, and has been filled since.
     fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-    fireEvent.click(cell(1, 0));
 
     expect(announcement()).toBe(
-      "Exit column, upper conditional row cannot take this order any more. Take Profit order was not placed, and is no longer picked up.",
+      "Take Profit order returned to the palette: the grid changed underneath it.",
     );
     expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+
+    // And the carry really is gone rather than merely undrawn: the cell it used
+    // to offer places nothing now.
+    fireEvent.click(cell(1, 0));
+    expect(cell(1, 0)).toHaveAttribute(
+      "aria-label",
+      "Exit column, upper conditional row, Market",
+    );
   });
 });
 
@@ -1918,14 +1993,106 @@ describe("GridArea, a commit that ends the carry", () => {
 // A CARRY THAT OUTLIVES THE GRID IT WAS STARTED AGAINST
 // =============================================================================
 //
-// Clear All, Reverse Blocks and a pattern switch all replace the grid without
-// ending an active carry, so the cells it offered stay highlighted. The suite
-// here used to carry a *placed* block through such a replacement and check that
-// the sentence named no cell once the block had been cleared away. A placed
-// block is never carried now (decision D9), so a carry can no longer name a
-// block that the grid might lose - the palette entry it names is always there.
-// What survives is the palette carry itself, covered in
-// `useBlockCommand.dom.test.ts` under "a palette carry the grid changes under".
+// It does not any more, and the transition that ends it has one owner - see
+// `useBlockCommand`. What this file adds to that hook's own suite is the thing
+// only a rendered grid can show: that no cell is left drawing itself as a drop
+// target afterwards.
+//
+// The suite here used to carry a *placed* block through such a replacement and
+// check that the sentence named no cell once the block had been cleared away. A
+// placed block is never carried now (decision D9), so a carry can no longer
+// name a block that the grid might lose - the palette entry it names is always
+// there.
+
+describe("GridArea, a carry the grid is replaced under", () => {
+  /** Carrying a Take Profit, with the Exit upper conditional as its target. */
+  const carryOverAPlacedMarket = (gridReplacement: GridData) => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} gridReplacement={gridReplacement} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+  };
+
+  // Clear All, and every other path that empties the grid: the diagonal cells
+  // the carry was offered stop being legal the moment the primary order goes,
+  // and the disabled cell it was pointing at must not still read as the place
+  // this order is going.
+  it("leaves no cell drawing itself as a target after the grid is emptied", () => {
+    carryOverAPlacedMarket(clearGrid(2, 3));
+
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+    expect(announcement()).toBe(
+      "Take Profit order returned to the palette: the grid changed underneath it.",
+    );
+  });
+
+  // Reverse Blocks keeps every block and swaps the columns, so the offer moves
+  // to the other side of the grid - the old cells are as wrong as an emptied
+  // grid's, and the block is not on the cursor any more either.
+  it("leaves no cell drawing itself as a target after the columns are swapped", () => {
+    const reversed = clearGrid(2, 3);
+    reversed[0][1].push(placedMarket("b1"));
+    carryOverAPlacedMarket(reverseGrid(reversed));
+
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+  });
+
+  // Which of the two mechanisms owns a POINTER press on Clear All, Reverse
+  // Blocks or the pattern selector - all three sit beside `GridArea` rather
+  // than inside it, so all three are outside the placement surface.
+  //
+  // BOTH are correct and neither is a fix for the other. The dismissal hatch
+  // owns this case: the user really did press something outside the surface,
+  // so "Cancelled." is the truth about what they did, and the hatch's
+  // `pointerdown` in the capture phase reaches the carry before the button's
+  // own click handler has replaced anything. The `gridReplaced` transition
+  // owns every path the hatch cannot see - a keyboard or assistive-technology
+  // activation of those same controls, a programmatic replacement, and the
+  // removal path, which happens inside the surface where the hatch stays
+  // silent by design. Do not "fix" either into the other.
+  //
+  // The sibling tests above reach the transition because `fireEvent.click`
+  // synthesises no `pointerdown`, so the hatch never hears them. This one
+  // drives the real sequence a browser sends, which is why it is here: a later
+  // change to either mechanism must not silently flip the sentence these three
+  // controls produce.
+  //
+  // This harness stubs those three controls out, so what it pins is the rule -
+  // a pointer press on ANY control beside the grid is the hatch's. The three
+  // real ones are driven by name, with both sentences asserted per control, in
+  // `gridReplacement.dom.test.tsx` under "a pointer press on %s" and "a
+  // keyboard press on %s", where the real provider makes their clicks replace
+  // the grid for real.
+  it("lets the dismissal hatch own a pointer press on a control beside the grid", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    const control = screen.getByRole("button", { name: "replace the grid" });
+    fireEvent(control, pointerAt("pointerdown", 900, 900));
+    fireEvent(control, pointerAt("pointerup", 900, 900));
+    fireEvent.click(control);
+
+    expect(announcement()).toBe(
+      "Cancelled. Take Profit order returned to the palette.",
+    );
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+    // And the carry is gone rather than merely undrawn: a cell it used to
+    // offer places nothing now.
+    fireEvent.click(cell(1, 0));
+    expect(cell(1, 0)).toHaveAttribute(
+      "aria-label",
+      "Exit column, upper conditional row, empty",
+    );
+  });
+});
 
 // =============================================================================
 // A BULK CELL HOLDING TWO ORDER FAMILIES

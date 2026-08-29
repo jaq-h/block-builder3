@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useBlockCommand } from "./useBlockCommand";
 import { useGridAnnouncer } from "./useGridAnnouncer";
-import { clearGrid } from "@utils/grid";
+import { clearGrid, removeBlockFromGrid } from "@utils/grid";
 import { createBlocksFromOrderType } from "@utils/blockFactory";
 import { getOrderType, ORDER_TYPES } from "@data/orderTypes";
 import type {
@@ -49,7 +49,8 @@ const renderCommand = (
   strategyPattern: StrategyPattern,
   placeProvider: (type: string, cell: { col: number; row: number }) => PlacementResult,
   onRefuse: RefuseMove = () => {},
-  removeFromGrid: (id: string) => void = () => {},
+  removeFromGrid: (id: string) => GridData = (id) =>
+    removeBlockFromGrid(grid, id),
 ) =>
   renderHook(() => {
     const announcer = useGridAnnouncer(strategyPattern);
@@ -74,8 +75,13 @@ const renderCommand = (
 /**
  * The same wiring, but with the grid as a prop so it can be replaced under a
  * live carry - which is what Clear All, Reverse Blocks and a pattern switch do,
- * none of which end the carry. The `GridArea` harness stubs those buttons out,
- * so this is the honest place to drive them.
+ * every one of which now ends the carry, because a new `grid` is the whole of
+ * what any of them can do to this model. The `GridArea` harness stubs those
+ * buttons out, so this is the honest place to drive them.
+ *
+ * FORMERLY this docblock ended "none of which end the carry", which was true of
+ * the behaviour these helpers were written against and is the defect the
+ * `gridReplaced` transition closed.
  */
 const renderCommandWithReplaceableGrid = (initialGrid: GridData) =>
   renderHook(
@@ -87,7 +93,7 @@ const renderCommandWithReplaceableGrid = (initialGrid: GridData) =>
         providerBlocks: ORDER_TYPES,
         announcer,
         placeProvider: () => ({ status: "refused" }),
-        removeFromGrid: () => {},
+        removeFromGrid: (id) => removeBlockFromGrid(grid, id),
         refuseMove: () => {},
       });
       return { ...command, announcement: announcer.announcement };
@@ -108,9 +114,13 @@ const setup = (
   // a callback rather than an announcement composed here.
   const refuseMove = vi.fn<RefuseMove>();
   // The grid's half of a removal: `GridArea` writes the block out and clears
-  // every link that named it. The command model owns the operation - who asked,
-  // what is said, where focus lands - and hands the write over.
-  const removeFromGrid = vi.fn<(id: string) => void>();
+  // every link that named it, and hands back what it wrote. The command model
+  // owns the operation - who asked, what is said, where focus lands - and reads
+  // that grid to decide whether a carry in the user's other hand can survive it.
+  // The real write, not a stub returning anything: the carry's fate turns on it.
+  const removeFromGrid = vi.fn<(id: string) => GridData>((id) =>
+    removeBlockFromGrid(grid, id),
+  );
 
   const view = renderCommand(
     grid,
@@ -387,12 +397,18 @@ describe("useBlockCommand", () => {
   // than merely untested. `renderCommandWithReplaceableGrid` is kept for the
   // palette carry, which still has to survive a grid being swapped under it.
 
+  // FORMERLY "survives the grid being replaced, and still returns to the
+  // palette". It did survive, and that was the defect: a carry is a promise
+  // about *cells*, and Clear All, Reverse Blocks and a pattern switch all make
+  // that promise untrue while the grid goes on drawing it as a highlight and
+  // reading it out as `aria-current`. The carry now ends with the grid it was
+  // offered against.
+  //
+  // Nothing here names a caller, and that is the point of the suite: the
+  // replacement arrives as a different `grid` prop, which is all any path -
+  // named, unnamed, or not written yet - can do to this model.
   describe("a palette carry the grid changes under", () => {
-    // Clear All, Reverse Blocks and a pattern switch all replace the grid
-    // without ending the carry. A palette order is nowhere on the grid to begin
-    // with, so the sentence has no cell to get wrong - which is what makes this
-    // the whole of the case now that a placed block is never carried.
-    it("survives the grid being replaced, and still returns to the palette", () => {
+    it("ends the carry, and says the grid changed rather than blaming the user", () => {
       const view = renderCommandWithReplaceableGrid(gridWithMovableBlock());
 
       act(() => view.result.current.activateProvider("limit", "keyboard"));
@@ -401,12 +417,48 @@ describe("useBlockCommand", () => {
       });
 
       view.rerender({ grid: clearGrid(2, 3) });
-      act(() => view.result.current.cancel());
 
+      expect(view.result.current.carrying).toBeNull();
       expect(view.result.current.announcement.text).toBe(
-        "Cancelled. Limit order returned to the palette.",
+        "Limit order returned to the palette: the grid changed underneath it.",
       );
+      // A palette order is nowhere on the grid to begin with, so the sentence
+      // has no cell to get wrong.
       expect(view.result.current.announcement.text).not.toContain("column");
+    });
+
+    // Focus is not handed back, for the same reason the dismissal hatch does
+    // not hand it back: the user pressed a control somewhere else, and the
+    // grid pulling them to the palette entry they left takes the keyboard off
+    // them mid-task.
+    it("leaves focus where the user was, rather than dragging it to the palette", () => {
+      const view = renderCommandWithReplaceableGrid(gridWithMovableBlock());
+
+      act(() => view.result.current.activateProvider("limit", "keyboard"));
+      view.rerender({ grid: clearGrid(2, 3) });
+
+      expect(view.result.current.focusRequest).toBeNull();
+    });
+
+    // A grid the carry's offer survives is not a replacement, whatever else
+    // changed in it. Nudging a block along its price axis rewrites the grid on
+    // every arrow press, and a carry that ended there would be unusable.
+    it("survives a grid change that leaves the same cells on offer", () => {
+      const view = renderCommandWithReplaceableGrid(gridWithMovableBlock());
+
+      act(() => view.result.current.activateProvider("limit", "keyboard"));
+      const offered = view.result.current.carrying?.targets;
+
+      // The same grid, rebuilt: a new array holding the same block in the same
+      // cell, which is what a re-priced block looks like from here.
+      const repriced = clearGrid(2, 3);
+      repriced[0][1].push(axisLessBlock({ yPosition: 12 }));
+      view.rerender({ grid: repriced });
+
+      expect(view.result.current.carrying?.targets).toEqual(offered);
+      expect(view.result.current.announcement.text).not.toContain(
+        "the grid changed",
+      );
     });
   });
 
@@ -693,16 +745,51 @@ describe("useBlockCommand", () => {
       expect(result.current.focusRequest).toBeNull();
     });
 
-    // Removing a block is not putting down the order in your hand. The two are
-    // unrelated - the carry is a palette order, and a placed block is never
-    // carried (decision D9) - so a removal leaves it exactly where it was.
-    it("leaves a palette order still in hand", () => {
+    // FORMERLY "leaves a palette order still in hand", on the grounds that a
+    // removal and a carry are unrelated. They are related, though not the way
+    // "a removal frees a cell" suggests: conditional validity is diagonal
+    // adjacency to an OCCUPIED cell, so removing this Limit DELETES the
+    // diagonals it was supplying, and the freed cell is the smaller half. The
+    // carry was offered the Exit upper conditional and is not offered it any
+    // more.
+    //
+    // The old rule is kept wherever it is meaningful: the removal does not end
+    // the carry, the offer changing does. See the sibling test below for a
+    // removal that changes nothing and leaves the carry exactly where it was.
+    it("ends the carry when the removal takes the offered cells away", () => {
       const { result } = setup(gridWithLimit());
 
       act(() => result.current.activateProvider("limit", "keyboard"));
       act(() => result.current.removeBlock("b1"));
 
+      expect(result.current.carrying).toBeNull();
+      // One press, one live-region write: reported separately, the second
+      // replaces the first before it has been read, and for a removal that
+      // loses the only sentence saying which block went.
+      expect(result.current.announcement.text).toBe(
+        "Removed Limit limit block from Entry column, primary row. Limit order returned to the palette: the grid changed underneath it.",
+      );
+    });
+
+    // The other half of the same rule, and the removal lane's decision intact
+    // where it holds. In the bulk pattern every cell takes every order whatever
+    // the grid holds, so nothing a removal does can take a cell away from a
+    // carry - and the carry is left exactly where it was, with the removal's
+    // sentence the only thing said.
+    it("leaves a carry alone when the removal takes no cell away from it", () => {
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(limitBlock());
+      const { result } = setup(grid, "bulk");
+
+      act(() => result.current.activateProvider("limit", "keyboard"));
+      const offered = result.current.carrying?.targets;
+      act(() => result.current.removeBlock("b1"));
+
       expect(result.current.carrying?.source.type).toBe("limit");
+      expect(result.current.carrying?.targets).toEqual(offered);
+      expect(result.current.announcement.text).toBe(
+        "Removed Limit limit block from Entry column, row 2.",
+      );
     });
   });
 });

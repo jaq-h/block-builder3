@@ -278,8 +278,10 @@ const GridArea: FC<GridAreaProps> = ({
     target: CellPosition,
   ): PlacementResult => {
     const blockInfo = findBlockInGrid(grid, id);
-    // Not a refusal by any cell: a carry can outlive the grid it was started
-    // against, and there is then no cell to name in either clause.
+    // Not a refusal by any cell: the grid does not hold this block, so there
+    // is no cell to name in either clause. No carry is in play here - this
+    // gesture released one at drag recognition; see `PlacementResult`'s
+    // `gone` for the rest.
     if (!blockInfo) return { status: "gone" };
 
     const at = { col: blockInfo.col, row: blockInfo.row };
@@ -300,9 +302,30 @@ const GridArea: FC<GridAreaProps> = ({
    *
    * It takes no cell. The id is enough, and a cell travelling beside it is one
    * more pair of facts to keep in step.
+   *
+   * It returns what it wrote, because the command model decides the fate of a
+   * carry in the user's other hand from it - see `removeFromGrid` there for why
+   * that one path cannot wait for the next render. Computed from this render's
+   * `grid` rather than through an updater, deliberately: the model has already
+   * looked the block up in exactly this grid, so the value both of them reason
+   * about is one value rather than two that agree.
+   *
+   * **The price of that, stated so the next writer meets it here rather than in
+   * the product:** a value write does not compose with another grid write
+   * batched into the same event, the way this file's other two `setGrid` callers
+   * do - a second writer in one event would clobber this one and resurrect the
+   * block. No such path exists today: each of the three removal affordances
+   * (Delete or Backspace, the Remove control's click, a free drag released clear
+   * of every cell) fires once per event, and the placement and price writes are
+   * events of their own. Adding one means revisiting this, and the way out is
+   * not simply restoring the updater - the returned value is what makes the grid
+   * the model reasons about and the grid this wrote provably the same object,
+   * which is what keeps the removal's own sentence from being erased.
    */
   const removeBlockFromCell = (id: string) => {
-    setGrid((prev) => removeBlockFromGrid(prev, id));
+    const next = removeBlockFromGrid(grid, id);
+    setGrid(next);
+    return next;
   };
 
   // ─── Command model (select, arrows, place) ───────────────────────
