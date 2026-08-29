@@ -34,6 +34,12 @@ squares under a 1px neutral border and are now accent-tinted tiles under a 2px o
 the saturated accent left to the states. `AGENTS.md` under "Layout and the CSS cascade"
 is the authority on that change; the gestures and outcomes below are unaffected by it.
 
+**They also predate the per-block Remove control.** Every placed block now carries a 24px
+remove button on its top-right corner, rendered at all times rather than revealed on hover,
+so the placed tiles in all five shots are missing an affordance the app draws today. The
+gestures and outcomes below are unaffected: removal is an operation beside them rather than
+a change to any of them. `README.md` under "Interaction model" is the authority on it.
+
 | Shot | What it shows |
 |---|---|
 | `01-keyboard-desktop.png` | Three legs assembled with the keyboard alone, and two of them priced with it: the Limit at -14.00% and the Stop Loss at -21.00%, both moved off the defaults their order types place them at (-25.00% and -15.00%). The focus ring sits on the Limit block. Pressing Enter on a placed block in this state is refused, because a placed block never changes cells by any input method (decision D9). |
