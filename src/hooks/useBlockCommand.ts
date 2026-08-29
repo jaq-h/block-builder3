@@ -238,10 +238,16 @@ export const useBlockCommand = ({
     // may have been emptied or filled since - so what is said comes from what
     // the grid did, never from what this call was hoping for.
     switch (result.status) {
-      // The block the carry named is no longer on the grid. The carry ends the
-      // same way a refusal ends it, but focus is left where it is: a request
-      // naming a block that does not exist is never honoured, and sits waiting
-      // for some later block to answer it.
+      // `PlacementResult` admits `gone`, and the primitive this model is given
+      // today - `placeProviderInCell` in `GridArea` - does not produce it, so
+      // nothing currently reaches here. The arm is kept rather than folded into
+      // the default so a future primitive that *can* report a missing block
+      // cannot fall silently through to a placement sentence; see the `gone`
+      // member in `src/types/grid.ts` for what the status means.
+      //
+      // It ends the carry the way a refusal does, but leaves focus alone: there
+      // is no block to move focus to, and a request naming one the grid does
+      // not hold is never honoured.
       case "gone":
         dispatch({ type: "cancel" });
         break;

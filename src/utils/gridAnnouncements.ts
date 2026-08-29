@@ -251,12 +251,12 @@ const CARRY_HELP: Record<ActivationOrigin, string> = {
 /**
  * Where a block that was not placed has ended up, as a verb phrase.
  *
- * It deliberately does NOT read `source.origin`. That field is stamped once
- * when the block is picked up and never refreshed, and the grid can be
- * replaced under a live carry - Reverse Blocks moves the block to the other
- * column, Clear All removes it - so the snapshot names a cell the block has
- * left. `at` is the answer the grid gave when the carry ended, and its absence
- * is itself an answer: the grid no longer holds this block.
+ * It deliberately does NOT read `source.origin`. Only a grid source carries
+ * that field, it is stamped once when the gesture starts and is never
+ * refreshed, and the grid can be rewritten while that gesture is still live,
+ * so the snapshot can name a cell the block has since left. `at` is the answer
+ * the grid gave when the hold ended, and its absence is itself an answer: the
+ * grid no longer holds this block.
  *
  * This is the module's own invariant, that no sentence names a location the
  * grid has not just confirmed, and the module was found breaking it here after

@@ -113,8 +113,15 @@ const Harness: FC<{
   pattern?: StrategyPattern;
   /**
    * Renders a control that replaces the grid wholesale, the way Clear All,
-   * Reverse Blocks and a pattern switch do. None of those touch the carry, so
-   * this is how a carry comes to outlive the block it names.
+   * Reverse Blocks and a pattern switch do. It stubs those three out: the
+   * button swaps the grid straight through `setGrid` and carries none of their
+   * own wiring, which is what lets a test here drive a replacement by itself
+   * and watch what a rendered grid does under one.
+   *
+   * What the app does when a real control replaces the grid is not this file's
+   * to state: README.md describes the behaviour, and
+   * `gridReplacement.dom.test.tsx` drives the three real controls by name under
+   * "a pointer press on %s" and "a keyboard press on %s".
    */
   gridReplacement?: GridData;
   /**
