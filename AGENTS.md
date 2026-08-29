@@ -397,7 +397,9 @@ out the abbreviation renames "SMA 20" to something a voice-control user cannot s
 
 ## Layout and the CSS cascade
 
-Fifteen traps live in the layout, and each is easy to reintroduce.
+Fifteen traps live in the layout, and each is easy to reintroduce. The one
+paragraph below led **Known gap** is not among that fifteen: it records a defect
+that is already there rather than one you could bring back.
 
 **The app's chrome wraps; it never scrolls.** A row of controls - a toolbar, a
 title bar, a tab strip - that cannot fit its width gets `flex-wrap`, and the row
@@ -478,6 +480,35 @@ because two lines come to 20px of text plus a 12px row gap plus a 24px control,
 which is 56px and inside the floor. Only at 320px does it exceed 64, and there no
 two panels share a screen. The assembly and Active Orders bars take
 `panelTitleBar` unchanged. A new panel takes `panelTitleBar`, not this.
+
+**Known gap: the assembly panel's pattern buttons overflow their header rail
+at narrow widths.** `patternSelectorRow` is `cn(panelHeaderBar, "gap-2")`, and
+`panelHeaderBar` carries `panelTitleBar`'s fixed `h-16`. The two pattern buttons
+(`patternButton`, `min-w-[120px] px-4 py-2`, a label above a description that
+wraps) are taller than that 64px rail at narrow widths, and the overflow is
+drawn rather than clipped. Measured in Chrome: at 320 the buttons are 94.5px in
+the 64px bar - the row's scrollHeight is 79 against a clientHeight of 63 - and
+are painted 15.8px above it and 14.8px below, over the `MarketSelector` row
+above and the top of the Orders palette below. At 360, 81.0px with 9.0px above
+and 8.0px below; at 390, 65.0px with 1.0px above and 0.0px below. At 1024 and
+1440 they are 51.5px and fit with 5.8px and 6.8px of slack, so this is a
+narrow-width defect only. It is pre-existing rather than anything the lane
+stacking above introduced: identical figures were measured on that change's
+branch and on its base commit 6067cf5. Nor is it a matter of the buttons simply
+being asked to fit - at 320 the bar has 256px of inner width, so two buttons at
+`min-w-[120px]` plus the 8px gap leave about 92px of text width each, in which
+the label takes two lines and the description three, and the only way that
+content reaches 64px inside the rail is without the description, which is a
+question about what the buttons say rather than about layout. `marketSelectorRow`
+in the same panel is unaffected, having no fixed height and carrying `flex-wrap`
+already: it simply grows, measuring 68.5px at 320 and 360 and 46.5px at 390 and
+above. **Whether a panel header bar's height may be relaxed is an open question,
+and this paragraph does not answer it.** The paragraph above records `h-16` as
+having exactly one exception, `wrappingPanelTitleBar`, whose sole user is the
+chart panel's title bar, with a new panel told to take the constant. Deciding
+what this defect means for that rule is tracked outside this repository; what is
+recorded here is the measurement, so the next reader to meet it at 320 can tell
+it is known and deferred.
 
 **The desktop shell only has a height above `lg`.** `body`/`#root` are
 content-sized, so `h-full` resolves to `auto` unless something above it commits to
