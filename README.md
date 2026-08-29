@@ -668,7 +668,10 @@ the next tile's top-left corner, and in a cell that *draws* an axis - where a bl
 put the lower block's control over the upper block's visible face. Both were measured in
 Chrome, and in both a click removed the block the user was not aiming at. One geometry answers
 both layouts; the gap between sibling tiles remains as spacing rather than as that guarantee.
-The deliberate price is that the control now covers about 36% of its own tile rather than 16%.
+The deliberate price is that the control owns 30.8% of its own tile's face, measured in
+Chrome, and that this reaches the tile's geometric centre - which no placement can avoid, since
+a 24px disc contained in a 40px tile is always within 11.31px of the centre against a 12px
+radius. `AGENTS.md` carries the proof and what it costs a drag.
 
 It removes on **`click`** and on no pointer event. The control overlaps the tile's top-right
 corner, so a press aimed at starting a drag can land on it - and a browser fires `click` at

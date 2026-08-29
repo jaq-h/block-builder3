@@ -971,28 +971,54 @@ negative offset on either axis, or a control grown past the tile, fails there. *
 `centeredContainer` is no longer that guarantee** - it stays as spacing, because two flush
 40px tiles read as one 80px block, and it could never have covered the axis layout anyway.
 
-**The price is deliberate: the control now covers about 36% of its own tile (24x24 of 40x40)
-rather than 16%, over the top-right of the icon.** That is the trade bought with the
-neighbour case, and the two ways of undoing it are both rejected - shrinking the control below
-`w-6 h-6` loses the 24px WCAG 2.2 SC 2.5.8 target, and hiding it behind `:hover` gives it to a
-mouse alone, which is the opposite of why the affordance exists.
+**The price is deliberate: the control owns 30.8% of its own tile's face, and that includes
+the tile's geometric CENTRE.** Both ways of undoing it are rejected - shrinking the control
+below `w-6 h-6` loses the 24px WCAG 2.2 SC 2.5.8 target, and hiding it behind `:hover` gives
+it to a mouse alone, which is the opposite of why the affordance exists.
+
+The covered centre is not an oversight and **cannot be fixed by moving the control**: it is
+the arithmetic consequence of the two rules already decided above, containment and a 24px
+circular target. A 24px disc lying wholly inside a 40px tile has its centre at most 8px from
+the tile's centre on each axis, so at most `sqrt(8^2 + 8^2) = 11.31px` away, against a radius
+of 12. **11.31 < 12, so the tile's centre falls inside the disc at EVERY contained position**,
+not merely the corner-flush one this file describes. Only shrinking below the 24px floor could
+uncover it, trading an accessibility requirement for a nicety, or letting the control leave
+the tile, which is the neighbour case rejected above as its own category.
+
+Measured in Chrome by sampling all 1600 pixels of a placed block's tile with
+`elementFromPoint`, rather than derived from the classes - do not re-derive these:
+
+- **The tile's geometric centre hit-tests to the Remove control**, because browsers hit-test
+  `border-radius` and the disc reaches it as the arithmetic says.
+- **The control takes 493 of the tile's 1600 pixels, 30.8%.** A `24x24` square would be 36%
+  and an ideal disc 28.3%; the measured figure sits between them because the hit test is the
+  rounded border box. Any of those three quoted as the others is wrong - this is the one that
+  was measured.
+- **A press at the centre that drags away is inert**, by the click-only rule below: the
+  control takes the `pointerdown`, the tile receives none, so the block does not drag from
+  dead centre and nothing is removed. A **tap** at the centre removes the block, which is the
+  aimed-and-recoverable case accepted in 1.
+- **The block is still draggable and still priceable.** Below 24px from the tile's top the
+  control is out of the way across the full 40px width (the last 3px taper to 34px on the
+  tile's own `rounded-md` corners); in the top half the grabbable width narrows to 15-24px;
+  and the keyboard slider, which is the price affordance that matters most, is untouched.
 
 **The control fires on `click`, and must never be given a pointer-down handler.** Two
 behaviours of the tile's top-right corner follow from that, and both are deliberate - do not
 "fix" either:
 
-1. **A tap landing on the 24x24 region the control occupies REMOVES the block** rather than
-   selecting it. That is roughly a third of a 40px tile's face, not a sliver at its edge, and
-   it is accepted rather than overlooked - on two grounds, both of which have to hold. It is
+1. **A tap landing on the region the control occupies REMOVES the block** rather than
+   selecting it. That is 30.8% of a 40px tile's face and reaches its centre, not a sliver at
+   its edge, and it is accepted rather than overlooked - on two grounds, both of which have to hold. It is
    an **aimed** mistake: the control is drawn where it acts, so the block destroyed is the
    block under the finger, which is exactly what separates this from the neighbour case
    above. And it is **recoverable**: D9 makes delete-and-rebuild the sanctioned correction for
    a misplaced block, so the cost of the mistake is re-placing one block from the palette
    beside it, not lost work. Taxing every pointer removal with an arm-then-confirm second
    press to guard a recoverable, aimed mistake is the wrong trade, and an undo affordance
-   would be a new product surface. It reached a third of the tile rather than a sixth when
-   the control moved inside; that is the price paid for the neighbour case and it was
-   weighed as such.
+   would be a new product surface. It grew from a sixth of the tile to 30.8% of it, centre
+   included, when the control moved inside; that is the price paid for the neighbour case and
+   it was weighed as such, with the proof above showing no placement avoids it.
 2. **A press that BEGINS on the control and drags away is inert**: nothing is removed and
    the block does not drag. The control is a sibling drawn on top of the tile rather than a
    descendant, so the tile's `onPointerDown` never fires. Left as it is - forwarding the
