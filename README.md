@@ -406,8 +406,9 @@ file, so no surface can reach them and form a second opinion. That matters becau
 known yet" and "known to have no rules" look identical to a consumer holding only a missing
 precision, and every surface that told them apart for itself eventually told them apart
 differently. The guard against that is repository-wide rather than a list of today's
-surfaces: `eslint.config.js` puts the two ingredients out of reach of every module in
-`src/`, and `src/utils/priceFormatReadiness.test.ts` pins the context value's own shape. The invariants behind all
+surfaces: four rules in `eslint.config.js` put the two ingredients, the catalogue fetch and
+the batch's load error out of reach of every module in `src/`, and
+`src/utils/priceFormatReadiness.test.ts` pins the context value's own shape. The invariants behind all
 of this, and the traps around them, are in `AGENTS.md` under **Markets**.
 
 ### Tailwind CVA Styling

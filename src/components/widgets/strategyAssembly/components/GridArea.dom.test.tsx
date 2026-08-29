@@ -209,7 +209,6 @@ const Harness: FC<{
         },
         markets: MARKETS,
         selectMarket: vi.fn(),
-        metadataError: null,
       }}
     >
     <GridDataContext.Provider

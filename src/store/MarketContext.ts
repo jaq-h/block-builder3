@@ -45,19 +45,17 @@ export interface MarketContextValue {
    * previous selection in place.
    */
   selectMarket: (symbol: string) => boolean;
-  /**
-   * Why the *batch* could not be loaded, if it could not.
-   *
-   * **Not a readiness signal, and never to be read as one.** A batch that
-   * answers without one pair reports no error at all while that pair has no
-   * rules, and a request that fails after an earlier one succeeded reports an
-   * error over pairs whose rules are in hand - so this is wrong in both
-   * directions as a test of whether a price can be drawn. `priceFormat` is that
-   * test. This is the load failure, for a surface that wants to say what went
-   * wrong rather than whether anything did.
-   */
-  metadataError: string | null;
 }
+
+// The batch's load failure used to be published here as `metadataError`, for a
+// surface that wanted to say what went wrong rather than whether anything did.
+// Nothing ever read it, and it is not a readiness signal in either direction: a
+// batch that answers without one pair reports no error at all while that pair
+// has no rules, and a request that fails after an earlier one succeeded reports
+// an error over pairs whose rules are in hand. Keeping it here left the context
+// publishing a field the readiness boundary forbids reading, so it went. The
+// provider still holds it internally, where it arms recovery. A lane that wants
+// to show the user *why* the batch failed puts it back deliberately.
 
 /**
  * The value a consumer outside a provider sees.
@@ -73,7 +71,6 @@ const DEFAULT_CONTEXT: MarketContextValue = {
   priceFormat: pendingPriceFormat(DEFAULT_MARKET),
   markets: MARKETS,
   selectMarket: () => false,
-  metadataError: null,
 };
 
 export const MarketContext = createContext<MarketContextValue>(DEFAULT_CONTEXT);

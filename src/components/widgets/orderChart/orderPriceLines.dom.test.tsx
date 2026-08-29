@@ -43,7 +43,6 @@ const marketValue: MarketContextValue = {
   priceFormat: { status: "ready", market, precision: BTC_USD },
   markets: MARKETS,
   selectMarket: () => false,
-  metadataError: null,
 };
 
 const block = (overrides: Partial<BlockData> = {}): BlockData => ({

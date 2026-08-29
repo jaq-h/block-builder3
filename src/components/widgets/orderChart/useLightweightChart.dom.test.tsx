@@ -80,7 +80,6 @@ const Harness: FC<{
     priceFormat: priceFormatReadiness(market, precision, settled),
     markets: MARKETS,
     selectMarket: () => false,
-    metadataError: null,
   };
 
   return (

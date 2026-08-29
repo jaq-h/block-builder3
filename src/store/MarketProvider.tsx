@@ -266,7 +266,6 @@ export const MarketProvider: FC<MarketProviderProps> = ({
       if (needsMetadata) loadPrecisions(handlesRef.current);
       return true;
     },
-    metadataError,
   };
 
   return (

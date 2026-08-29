@@ -102,7 +102,6 @@ vi.mock("../../../store/useMarket", () => ({
       ),
       markets: [market],
       selectMarket: () => false,
-      metadataError: null,
     };
   },
 }));

@@ -71,16 +71,17 @@ const ABSENT_ABLE_PRECISION = [
 ]
 
 /**
- * The batch's load error, which is the readiness proxy that was tried and was
- * wrong in both directions: a batch answering without one pair sets no error
- * while that pair has no rules, and a later failure sets one over pairs whose
- * rules are in hand. It stays on the context as a message for the user.
+ * Ingredient four: the batch's load error, which is the readiness proxy that
+ * was tried and was wrong in both directions - a batch answering without one
+ * pair sets no error while that pair has no rules, and a later failure sets one
+ * over pairs whose rules are in hand. It is the provider's own state now,
+ * driving recovery, and it reaches no surface at all.
  */
 const METADATA_ERROR = [
   {
     selector: 'Identifier[name="metadataError"]',
     message:
-      'The metadata load error is a message, not a readiness proxy: it is unset for a pair Kraken simply does not list, and set for pairs whose rules are in hand. Read `priceFormat` from `useMarket` instead. See src/utils/priceFormatReadiness.ts.',
+      'The batch load error is not a readiness proxy: it is unset for a pair Kraken simply does not list, and set for pairs whose rules are in hand. It is MarketProvider\'s own state, arming its retries, and is deliberately not on the context. Read `priceFormat` from `useMarket` instead. See src/utils/priceFormatReadiness.ts.',
   },
 ]
 
@@ -193,22 +194,12 @@ export default defineConfig([
   {
     // The last point where the two facts exist separately. It holds the settled
     // flag as state, owns the `Map` whose missing entry IS the raw precision
-    // fact, keeps the load error as a message for the user, and fetches the
+    // fact, keeps the load error that arms its own recovery, and fetches the
     // catalogue. None of those leaves this file.
     files: ['src/store/MarketProvider.tsx'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [SERVER_BOUNDARY_IMPORT] }],
       'no-restricted-syntax': 'off',
-    },
-  },
-  {
-    // Carries the load error as the message the provider publishes.
-    files: ['src/store/MarketContext.ts'],
-    rules: {
-      'no-restricted-syntax': restrictedSyntax(
-        SETTLED_FLAG,
-        ABSENT_ABLE_PRECISION,
-      ),
     },
   },
   {

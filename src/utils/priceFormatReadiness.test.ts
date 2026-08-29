@@ -31,10 +31,10 @@ import { ARB_USD } from "@/test/marketFixtures";
 // **Most of that guard is not in this file, and deliberately so.** Readiness is
 // a function of exactly two ingredients - the precision-or-absent and whether
 // the AssetPairs request has answered - so putting those out of reach
-// repository-wide is what stops a second opinion forming. Three of the four
-// reach rules live in `eslint.config.js`, as `no-restricted-syntax` and
-// `no-restricted-imports` over the TypeScript AST, each with the allowlist and
-// the reason each allowed file legitimately handles an ingredient:
+// repository-wide is what stops a second opinion forming. Four reach rules live
+// in `eslint.config.js`, as `no-restricted-syntax` and `no-restricted-imports`
+// over the TypeScript AST, each with the allowlist and the reason each allowed
+// file legitimately handles an ingredient:
 //
 //   1. The settled flag - "has the AssetPairs request answered" - is named
 //      nowhere but the provider that holds it.
@@ -42,11 +42,16 @@ import { ARB_USD } from "@/test/marketFixtures";
 //      places that legitimately handle one.
 //   3. The metadata is fetched by the provider and by nothing else, so no
 //      surface can go and get its own rules.
+//   4. The batch's load error is named nowhere but that same provider, whose
+//      own recovery it arms. It is the readiness proxy that was tried and was
+//      wrong in both directions: a batch answering without one pair sets no
+//      error while that pair has no rules, and a later failure sets one over
+//      pairs whose rules are in hand.
 //
-// The fourth stays here, because it is the one a linter cannot state: that the
-// **context value itself** carries the tri-state and neither of the two facts
-// it is folded from, read off the real default value rather than off a type.
-// That is also the most likely regression route, since re-adding a raw
+// One assertion stays here, because it is the one a linter cannot read: that
+// the **context value itself** carries the tri-state and neither of the two
+// facts it is folded from, read off the real default value rather than off a
+// type. That is also the most likely regression route, since re-adding a raw
 // ingredient to the context puts it within reach of every surface at once.
 //
 // Together those are the whole surface area: a module that can reach neither
@@ -126,7 +131,6 @@ describe("no module outside the owner derives readiness", () => {
     expect(Object.keys(contextDefault).sort()).toEqual([
       "market",
       "markets",
-      "metadataError",
       "priceFormat",
       "selectMarket",
     ]);

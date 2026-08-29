@@ -821,19 +821,27 @@ guard is deliberately not a list of today's surfaces. It states what **any** mod
 `src/` may not do, so a surface nobody has written yet is covered on the day it is written,
 and it is split by what each mechanism can actually see:
 
-- **Three reach rules are in `eslint.config.js`**, as `no-restricted-syntax` and
+- **Four reach rules are in `eslint.config.js`**, as `no-restricted-syntax` and
   `no-restricted-imports` over `src/**`: no module may name `metadataSettled`, declare an
   absent-able `MarketPrecision` (a union with `null` or `undefined`, or an optional
-  parameter or property), or import `fetchMarketPrecisions`. Each carries a short
+  parameter or property), import `fetchMarketPrecisions`, or name `metadataError`. That
+  last one is the readiness proxy that was tried and was wrong in both directions - a batch
+  answering without one pair sets no error while that pair has no rules, and a later
+  failure sets one over pairs whose rules are in hand - so it is `MarketProvider`'s own
+  state, arming its retries, and reaches no surface. **It is not on the context**: it was,
+  nothing read it, and publishing a field the boundary forbids reading is a contradiction
+  rather than an affordance. A lane that wants to show the user why the batch failed puts
+  it back deliberately, and that friction is the point. Each rule carries a short
   file-scoped allowlist stating why that file legitimately handles the ingredient; test
   files and `src/test/` are exempt, because they stand in for Kraken and for the provider
   rather than being surfaces. `npm run lint` is already one of the four CI jobs, so the
   reach is unchanged.
 - **One runtime assertion stays in `src/utils/priceFormatReadiness.test.ts`**: that the
   real `MarketContext` default value carries `priceFormat` and neither of the two facts it
-  is folded from. That is the highest-value regression route - a raw ingredient back on the
-  context is within reach of every surface at once - and it is a *value's* key set, which a
-  linter cannot read.
+  is folded from - its whole key set is `market`, `markets`, `priceFormat`, `selectMarket`.
+  That is the highest-value regression route - a raw ingredient back on the context is
+  within reach of every surface at once - and it is a *value's* key set, which a linter
+  cannot read.
 
 **Why the AST rather than a text scan**, since the guard used to be one and the reasoning
 must survive: matching text can be dead or commented out, a rename slips past a literal

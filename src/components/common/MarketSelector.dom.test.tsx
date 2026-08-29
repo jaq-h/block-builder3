@@ -64,7 +64,6 @@ const harness = (
     ),
     markets: MARKETS,
     selectMarket,
-    metadataError: null,
     ...contextOverrides,
   };
 
@@ -206,10 +205,10 @@ describe("MarketSelector", () => {
   // here means the refusal is not the first the user hears of it, at the moment
   // they press Execute.
   it("warns when the precision rules could not be loaded", () => {
-    const { Wrapper } = harness({
-      precision: null,
-      metadataError: "Kraken API error: EGeneral:Unavailable",
-    });
+    // The request has settled with nothing for this pair. It reached that state
+    // through an outright failure here, but the component cannot see the
+    // difference and must not: a settled request with no rules is one state.
+    const { Wrapper } = harness({ precision: null, settled: true });
     render(
       <Wrapper>
         <MarketSelector currentPrice={50_000} />
@@ -220,14 +219,14 @@ describe("MarketSelector", () => {
   });
 
   // The case the warning used to miss entirely. A batch that answers without
-  // one pair sets the precisions it did get and clears `metadataError`, so that
-  // pair drew "n/a" in the readout, "n/a" on every grid chip and refused at
-  // Execute, with nothing on screen saying why.
+  // one pair sets the precisions it did get and reports no load error at all,
+  // so that pair drew "n/a" in the readout, "n/a" on every grid chip and refused
+  // at Execute, with nothing on screen saying why.
   it("warns when the batch answered without this pair", () => {
     const { Wrapper } = harness({
       market: findMarket("ARB/USD")!,
       precision: null,
-      metadataError: null,
+      settled: true,
     });
     render(
       <Wrapper>
@@ -248,7 +247,6 @@ describe("MarketSelector", () => {
   it("is quiet while the rules are still being fetched", () => {
     const { Wrapper } = harness({
       precision: null,
-      metadataError: null,
       settled: false,
     });
     render(
@@ -260,17 +258,24 @@ describe("MarketSelector", () => {
     expect(warning()).toBeNull();
   });
 
-  // The combination the tests above never built: an error set while a precision
-  // is in hand. It is reachable whenever a later request fails after an earlier
-  // one succeeded, and the warning is a lie in that state - the payload path
-  // prices this pair perfectly well from the record it already has. The
-  // provider closes the race that produces it; this makes sure the message
-  // tracks what the pair actually has rather than the last request's fate.
+  // The situation this case has always been about: a later request has failed
+  // after an earlier one succeeded, so the batch carries a load error while this
+  // pair's rules are in hand. A warning would be a lie there - the payload path
+  // prices this pair perfectly well from the record it already has.
+  //
+  // The case used to build that by setting a `metadataError` on the context.
+  // That field is gone: nothing read it, and the readiness boundary forbids a
+  // surface reaching for it, so the batch's fate is now the provider's own state
+  // and never an input to this component. The situation is expressed by the two
+  // facts that remain, which are the two that decide the answer - rules in hand,
+  // request settled - and the guarantee is now structural rather than merely
+  // observed: a precision folds to `ready` whatever the last request did, so
+  // there is no input through which the batch's fate could reach the warning.
   it("does not claim orders are blocked while it holds the pair's rules", () => {
     const { Wrapper } = harness({
       precision: ARB_USD,
       market: findMarket("ARB/USD")!,
-      metadataError: "Failed to fetch asset metadata: 503 Service Unavailable",
+      settled: true,
     });
     render(
       <Wrapper>

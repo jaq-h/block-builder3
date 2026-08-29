@@ -23,8 +23,12 @@
 //   - `ready`       - Kraken's rules for this pair are in hand. This is the one
 //                     state carrying a `MarketPrecision`, so a caller that has
 //                     one has been through here.
-//   - `unavailable` - the request answered and did not describe this pair.
-//                     There are no rules and asking again will not produce any.
+//   - `unavailable` - the request settled without rules for this pair: it
+//                     answered and described none, or it failed outright. A
+//                     surface has the same thing to do in either, which is why
+//                     they are one state. It does not mean rules can never
+//                     arrive: a failed request still has the provider's retry
+//                     chain and its focus and `online` listeners behind it.
 //
 // `pending` and `unavailable` are the pair that keeps being collapsed, and the
 // collapse is what draws a confident wrong value during loading: before this
@@ -38,10 +42,13 @@
 // this question. That is put out of reach repository-wide rather than checked
 // per surface, and it is the guard that matters here - a test naming today's
 // surfaces only catches today's surfaces, and the whole history of this defect
-// is a surface nobody had thought of yet. Three reach rules in
+// is a surface nobody had thought of yet. Four reach rules in
 // `eslint.config.js` hold the ingredients out of `src/`, each with its own
-// allowlist and reason; `priceFormatReadiness.test.ts` holds the fourth, that
-// the context value carries the tri-state and neither ingredient.
+// allowlist and reason - the settled flag, an absent-able `MarketPrecision`,
+// the catalogue fetch, and the batch's load error, which is the readiness proxy
+// that was tried and was wrong in both directions. One runtime assertion in
+// `priceFormatReadiness.test.ts` carries what a linter cannot read: that the
+// context value itself holds the tri-state and neither ingredient.
 //
 // The *formatting* itself stays with `marketFormat.ts`, which owns how many
 // decimals a pair takes. This module owns whether that question has an answer.
@@ -70,7 +77,12 @@ export type PriceFormatReadiness =
       readonly precision: MarketPrecision;
     }
   | {
-      /** Kraken answered and described no rules for this pair. */
+      /**
+       * The request settled without rules for this pair, by either route: it
+       * answered and described none, or it failed outright. There is nothing to
+       * draw with now; a failed request may still recover through the
+       * provider's retries.
+       */
       readonly status: "unavailable";
       readonly market: Market;
     };
