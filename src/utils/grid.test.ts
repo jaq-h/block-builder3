@@ -21,7 +21,8 @@ import {
 } from "@utils/grid";
 import { NO_PRECISION } from "@utils/marketFormat";
 import type { BlockData, GridData } from "@/types/grid";
-import type { ActiveMarket, MarketPrecision } from "@/types/markets";
+import type { MarketPrecision } from "@/types/markets";
+import type { PriceFormatReadiness } from "@utils/priceFormatReadiness";
 import { ARB_USD, BTC_USD, ETH_USD } from "@/test/marketFixtures";
 import { findMarket } from "@data/markets";
 import { GRID_CONFIG } from "@data/orderTypes";
@@ -409,26 +410,43 @@ describe("primary order guards", () => {
 // which has one owner now, and this file covers the grid's structure.
 
 describe("formatPrice", () => {
-  const active = (symbol: string, precision: MarketPrecision): ActiveMarket => ({
+  const ready = (
+    symbol: string,
+    precision: MarketPrecision,
+  ): PriceFormatReadiness => ({
+    status: "ready",
     market: findMarket(symbol)!,
     precision,
   });
 
+  const pending = (symbol: string): PriceFormatReadiness => ({
+    status: "pending",
+    market: findMarket(symbol)!,
+  });
+
+  const unavailable = (symbol: string): PriceFormatReadiness => ({
+    status: "unavailable",
+    market: findMarket(symbol)!,
+  });
+
   it("renders an em dash placeholder when there is no price", () => {
     // Escaped rather than pasted so the character is unambiguous in review.
-    expect(formatPrice(null)).toBe("\u2014");
+    expect(formatPrice(null, ready("BTC/USD", BTC_USD))).toBe("\u2014");
   });
 
   it("renders a grouped amount at the pair's own precision", () => {
-    expect(formatPrice(50_000, active("BTC/USD", BTC_USD))).toBe("$50,000.0");
-    expect(formatPrice(1234.5, active("ETH/USD", ETH_USD))).toBe("$1,234.50");
-    expect(formatPrice(0.1264, active("ARB/USD", ARB_USD))).toBe("$0.1264");
+    expect(formatPrice(50_000, ready("BTC/USD", BTC_USD))).toBe("$50,000.0");
+    expect(formatPrice(1234.5, ready("ETH/USD", ETH_USD))).toBe("$1,234.50");
+    expect(formatPrice(0.1264, ready("ARB/USD", ARB_USD))).toBe("$0.1264");
   });
 
   // A caller with no precision used to get two decimals, which is BTC's habit
   // and not a neutral default - it draws an ARB price of 0.1264 as "$0.13".
+  // Both unready states are asked: the readiness owner keeps them apart, and
+  // what a chip draws in each is pinned rather than assumed.
   it("draws no number when the pair's precision has not loaded", () => {
-    expect(formatPrice(50_000)).toBe(NO_PRECISION);
+    expect(formatPrice(50_000, pending("BTC/USD"))).toBe(NO_PRECISION);
+    expect(formatPrice(50_000, unavailable("BTC/USD"))).toBe(NO_PRECISION);
   });
 });
 

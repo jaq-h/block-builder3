@@ -71,6 +71,14 @@ export {
   formatMarketPrice,
 } from "./marketFormat";
 
+// Price format readiness - the one owner of "can this pair's prices be written"
+export {
+  priceFormatReadiness,
+  precisionOf,
+  pendingPriceFormat,
+  type PriceFormatReadiness,
+} from "./priceFormatReadiness";
+
 // Block factory utilities
 export {
   createBlocksFromOrderType,

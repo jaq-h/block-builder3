@@ -396,8 +396,21 @@ from Kraken's `/0/public/AssetPairs`, because they differ per pair and none of t
 derivable from a symbol string. `src/utils/marketFormat.ts` turns those rules into every
 price and quantity the app writes, on screen and in the payload alike, so the two cannot
 disagree. Until a pair's rules arrive the app draws no price for it and refuses to build an
-order, rather than guessing a width: the invariants behind that, and the traps around them,
-are in `AGENTS.md` under **Markets**.
+order, rather than guessing a width.
+
+Whether they have arrived is one value with three states, and it has a single owner:
+`src/utils/priceFormatReadiness.ts` folds "the rules for this pair, or nothing" and "has the
+request answered" into `pending`, `ready` or `unavailable`. `MarketProvider` performs that
+fold and puts the result on the context; the two facts it is folded from stay inside that
+file, so no surface can reach them and form a second opinion. That matters because "not
+known yet" and "known to have no rules" look identical to a consumer holding only a missing
+precision, and every surface that told them apart for itself eventually told them apart
+differently. The guard against that is repository-wide rather than a list of today's
+surfaces: four rules in `eslint.config.js` put the two ingredients, the catalogue fetch and
+the batch's load error out of reach of every module in `src/`, and
+`src/utils/priceFormatReadiness.test.ts` pins the context value's own shape. The
+invariants behind all of this, and the traps around them, are in `AGENTS.md` under
+**Markets**.
 
 ### Tailwind CVA Styling
 
@@ -1038,6 +1051,7 @@ src/
 │   ├── gridAnnouncements.ts       # Every sentence the grid speaks (pure)
 │   ├── liveCandles.ts             # The one fold of closed bars + the forming bar, and what a new list appends
 │   ├── marketFormat.ts            # The one owner of every price & quantity format
+│   ├── priceFormatReadiness.ts    # The one owner of whether a pair's prices can be written yet
 │   ├── price.ts                   # Percentage-offset-from-market price formula
 │   └── index.ts
 │

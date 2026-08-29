@@ -25,7 +25,8 @@
 // BTC's two decimals is the bug this replaces, and it is no less a wrong price
 // for being one nobody submits.
 
-import type { ActiveMarket, MarketPrecision } from "../types/markets";
+import type { MarketPrecision } from "../types/markets";
+import type { PriceFormatReadiness } from "./priceFormatReadiness";
 
 /** How many decimal places a number is written with, e.g. 0.0001 -> 4. */
 const decimalPlaces = (value: number): number => {
@@ -155,6 +156,16 @@ export const formatQuantityForAPI = (
  * `MarketSelector` warns beside the readout whenever the selected pair has no
  * rules - not only when the whole batch failed - so the second is explained
  * where there is room to explain it.
+ *
+ * **Whether the rules are known is not decided here.** It arrives as a
+ * `PriceFormatReadiness`, the single owner of that question, so this function
+ * cannot form an opinion of its own about a pair it has no rules for and no
+ * caller can hand it a precision that did not come from there. A `pending`
+ * readiness draws the same `NO_PRECISION` an `unavailable` one does: both are
+ * "no rules to draw by", and a text chip has nothing different to say about
+ * why. That is a rendering choice made here, on a distinction this function can
+ * see - not the collapse that produced the defect, which was surfaces deciding
+ * whether there were rules at all.
  */
 
 /** No price to draw yet. */
@@ -165,14 +176,13 @@ export const NO_PRECISION = "n/a";
 
 export const formatMarketPrice = (
   price: number | null,
-  market?: ActiveMarket | null,
+  priceFormat: PriceFormatReadiness,
 ): string => {
   if (price === null || !Number.isFinite(price)) return NO_PRICE;
+  if (priceFormat.status !== "ready") return NO_PRECISION;
 
-  const precision = market?.precision ?? null;
-  if (!precision) return NO_PRECISION;
-
-  const prefix = market?.market.quotePrefix ?? "$";
+  const { precision } = priceFormat;
+  const prefix = priceFormat.market.quotePrefix;
   const shown = roundToTick(price, precision.tickSize);
 
   return `${prefix}${shown.toLocaleString("en-US", {

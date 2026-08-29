@@ -202,15 +202,13 @@ const Harness: FC<{
     <MarketContext.Provider
       value={{
         market: selected.market,
-        precision: selected.precision,
-        activeMarket: {
+        priceFormat: {
+          status: "ready",
           market: selected.market,
           precision: selected.precision,
         },
         markets: MARKETS,
         selectMarket: vi.fn(),
-        metadataError: null,
-        metadataSettled: true,
       }}
     >
     <GridDataContext.Provider

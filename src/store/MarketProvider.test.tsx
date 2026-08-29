@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 
 import { MarketProvider } from "./MarketProvider";
+import { precisionOf } from "@utils/priceFormatReadiness";
 import { useMarket } from "./useMarket";
 import {
   ARB_USD,
@@ -24,14 +25,21 @@ import { METADATA_TIMEOUT_MS } from "@api/assetMetadata";
 // These cover both halves of that: the precision the provider hands out is
 // Kraken's own per-pair record, and no request leaves the process to get it.
 
+/** What the provider says about writing a price for the selected pair. */
+const status = () => screen.getByTestId("format-status").textContent;
+
 const Probe = () => {
-  const { market, precision, metadataError, selectMarket } = useMarket();
+  const { market, priceFormat, selectMarket } = useMarket();
+  // The provider hands out one readiness rather than a precision and a settled
+  // flag, so this reads both what it says and what it carries. See
+  // `utils/priceFormatReadiness.ts`.
+  const precision = precisionOf(priceFormat);
   return (
     <div>
       <span data-testid="symbol">{market.symbol}</span>
+      <span data-testid="format-status">{priceFormat.status}</span>
       <span data-testid="decimals">{precision?.priceDecimals ?? "none"}</span>
       <span data-testid="order-min">{precision?.orderMin ?? "none"}</span>
-      <span data-testid="error">{metadataError ?? "none"}</span>
       <button type="button" onClick={() => selectMarket("ARB/USD")}>
         pick arb
       </button>
@@ -86,7 +94,7 @@ describe("MarketProvider", () => {
     expect(screen.getByTestId("order-min")).toHaveTextContent(
       String(BTC_USD.orderMin),
     );
-    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(status()).toBe("ready");
   });
 
   it("follows the pair it was opened on rather than the catalogue default", async () => {
@@ -138,8 +146,10 @@ describe("MarketProvider", () => {
 
   // The honest state when Kraken cannot be reached: no precision for anything,
   // so the order path refuses to build a payload instead of pricing an ARB
-  // order to BTC's one decimal place.
-  it("reports the failure and prices nothing when the metadata cannot be read", async () => {
+  // order to BTC's one decimal place. The failure reaches a consumer as the
+  // readiness alone - the batch's own error message is the provider's internal
+  // state and is on no context - so that is what this reads.
+  it("prices nothing and says so when the metadata cannot be read", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
 
     render(
@@ -149,7 +159,93 @@ describe("MarketProvider", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("error")).toHaveTextContent("offline");
+      expect(status()).toBe("unavailable");
+    });
+    expect(screen.getByTestId("decimals")).toHaveTextContent("none");
+  });
+});
+
+// =============================================================================
+// THE READINESS THE PROVIDER HANDS OUT
+// =============================================================================
+//
+// One value with three states, and this is where they are pinned against the
+// provider that produces them rather than against the fold in isolation. What
+// makes them worth pinning here is that the two unready states are reached by
+// different routes through this file - one is simply "the request has not come
+// back", the other is "it came back and said nothing about this pair" - and a
+// surface reading them cannot tell which route it took, only which state it is
+// in. `utils/priceFormatReadiness.test.ts` is where nothing else is allowed to
+// answer the question at all.
+
+describe("MarketProvider's price format readiness", () => {
+  it("is pending while the request is in flight, then ready with the rules", async () => {
+    let answer: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    // The window that used to be indistinguishable from "this pair has no
+    // rules", and the one every surface drew a confident wrong value in.
+    expect(status()).toBe("pending");
+    expect(screen.getByTestId("decimals")).toHaveTextContent("none");
+
+    await act(async () => {
+      answer(assetPairsOk());
+    });
+
+    await waitFor(() => {
+      expect(status()).toBe("ready");
+    });
+    expect(screen.getByTestId("decimals")).toHaveTextContent("1");
+  });
+
+  // Kraken answering normally about a catalogue it describes none of. There is
+  // nothing more to wait for, so this is not pending - and asking again returns
+  // the same answer.
+  it("is unavailable once an answer arrives without the pair", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(assetPairsEmpty());
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await waitFor(() => {
+      expect(status()).toBe("unavailable");
+    });
+    expect(screen.getByTestId("decimals")).toHaveTextContent("none");
+    // That this route sets no load error, and so arms no recovery, is pinned
+    // where it is observable: "does not keep asking after an answer that
+    // describes nothing" counts the requests.
+  });
+
+  // The same state by the other route: the request failed rather than answering
+  // short. A surface has the same thing to do about both - there are no rules to
+  // draw with right now - which is why they are one state and not four. It does
+  // NOT mean rules can never arrive: this route leaves the provider's retry
+  // chain and its focus and `online` listeners armed, which "keeps asking after
+  // a failed answer" pins.
+  it("is unavailable when the request has settled without rules for the pair", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await waitFor(() => {
+      expect(status()).toBe("unavailable");
     });
     expect(screen.getByTestId("decimals")).toHaveTextContent("none");
   });
@@ -179,7 +275,7 @@ describe("MarketProvider after a failed request", () => {
 
     await act(async () => {});
     expect(screen.getByTestId("decimals")).toHaveTextContent("none");
-    expect(screen.getByTestId("error")).toHaveTextContent("network down");
+    expect(status()).toBe("unavailable");
 
     // The first backoff. Before this, a blip meant no trading until reload.
     await act(async () => {
@@ -190,7 +286,7 @@ describe("MarketProvider after a failed request", () => {
     expect(screen.getByTestId("decimals")).toHaveTextContent(
       String(BTC_USD.priceDecimals),
     );
-    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(status()).toBe("ready");
   });
 
   // A pair Kraken has stopped listing, or a typo in the catalogue, fails
@@ -450,9 +546,11 @@ describe("MarketProvider after a failed request", () => {
     });
     await act(async () => {});
     // Nothing is priceable, and the provider says so honestly rather than
-    // inventing a rule - it just does not keep asking.
+    // inventing a rule - it just does not keep asking. A short answer is not a
+    // failure, and the request count below is what that fact is visible as: an
+    // error would have armed the recovery this asserts does not fire.
     expect(screen.getByTestId("decimals")).toHaveTextContent("none");
-    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(status()).toBe("unavailable");
 
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
@@ -504,10 +602,13 @@ describe("MarketProvider after a failed request", () => {
   // The race the retries themselves introduced. A failure arms a backoff; the
   // tab coming back starts a fresh chain that succeeds; the armed timer was
   // still standing, fired against a provider that no longer needed it, and its
-  // failure wrote `metadataError` over a fully populated map. The app then said
+  // failure wrote the load error over a fully populated map. The app then said
   // orders could not be submitted while every chip drew a real price, every
   // payload built fine, and every later tab switch asked again for an answer
-  // already in hand.
+  // already in hand. That error is the provider's own state now rather than
+  // something a consumer can read, so what is asserted here is the half that
+  // survived it and always mattered most: no orphaned request goes out, and the
+  // rules already in hand stay in hand.
   it("keeps the rules a later chain loaded when an earlier retry fails", async () => {
     vi.useFakeTimers();
     const fetchSpy = vi
@@ -526,7 +627,7 @@ describe("MarketProvider after a failed request", () => {
 
     // Attempt 1 fails and arms its retry for one second from now.
     await act(async () => {});
-    expect(screen.getByTestId("error")).toHaveTextContent("network down");
+    expect(status()).toBe("unavailable");
 
     // The tab comes back before that second is up, and its chain succeeds.
     await act(async () => {
@@ -536,7 +637,7 @@ describe("MarketProvider after a failed request", () => {
     expect(screen.getByTestId("decimals")).toHaveTextContent(
       String(BTC_USD.priceDecimals),
     );
-    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(status()).toBe("ready");
     const afterLoad = fetchSpy.mock.calls.length;
 
     // The armed retry's moment passes, and every later prompt to ask again with
@@ -548,7 +649,7 @@ describe("MarketProvider after a failed request", () => {
     });
 
     expect(fetchSpy).toHaveBeenCalledTimes(afterLoad);
-    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(status()).toBe("ready");
     expect(screen.getByTestId("decimals")).toHaveTextContent(
       String(BTC_USD.priceDecimals),
     );
@@ -585,7 +686,7 @@ describe("MarketProvider after a failed request", () => {
 
     // Chain 1 fails and arms timer A for t=1000.
     await act(async () => {});
-    expect(screen.getByTestId("error")).toHaveTextContent("network down");
+    expect(status()).toBe("unavailable");
 
     // t=500: the tab comes back, starting chain 2 while A is still pending.
     // It fails as well, arming timer B for t=1500 and orphaning A.
@@ -612,7 +713,7 @@ describe("MarketProvider after a failed request", () => {
     expect(screen.getByTestId("decimals")).toHaveTextContent(
       String(BTC_USD.priceDecimals),
     );
-    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(status()).toBe("ready");
 
     // Nothing armed by either chain may outlive the answer: no further request,
     // no failure written over the populated map, and recovery not re-armed.
@@ -623,7 +724,7 @@ describe("MarketProvider after a failed request", () => {
     });
 
     expect(fetchSpy).toHaveBeenCalledTimes(3);
-    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(status()).toBe("ready");
     expect(screen.getByTestId("decimals")).toHaveTextContent(
       String(BTC_USD.priceDecimals),
     );
@@ -696,15 +797,17 @@ describe("MarketProvider when Kraken never answers", () => {
 
     // Still honestly nothing: not known yet is not the same as known absent.
     await act(async () => {});
-    expect(screen.getByTestId("error")).toHaveTextContent("none");
+    expect(status()).toBe("pending");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(METADATA_TIMEOUT_MS + 1);
     });
 
     // The same path a refused or unreachable request takes, so the retries, the
-    // recovery on focus and on `online` and the warning all apply to it too.
-    expect(screen.getByTestId("error")).toHaveTextContent(/Timed out/);
+    // recovery on focus and on `online` and the warning all apply to it too. It
+    // is the move off `pending` that says the hang was given up on: the request
+    // has settled, without rules.
+    expect(status()).toBe("unavailable");
   });
 
   it("abandons the request in flight when it is unmounted", async () => {

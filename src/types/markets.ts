@@ -56,7 +56,9 @@ export interface Market {
  * refuses to build a payload, and `formatMarketPrice` draws `NO_PRECISION`
  * rather than a number, which it keeps distinct from the `NO_PRICE` it draws
  * while waiting for a price - rather than a reason to substitute BTC's
- * numbers.
+ * numbers. Whether a record is missing *yet* or missing *for good* is
+ * `PriceFormatReadiness` in `utils/priceFormatReadiness.ts`, not something a
+ * consumer works out from this being absent.
  */
 export interface MarketPrecision {
   /** The WebSocket v2 symbol this describes, so a record cannot be misapplied. */
@@ -86,14 +88,10 @@ export interface MarketPrecision {
   costMin?: number;
 }
 
-/**
- * A market together with whatever Kraken has told us about it.
- *
- * `precision` is `null` until `/0/public/AssetPairs` answers. Callers must
- * treat that as "not known yet", never as "use the default", which is the whole
- * reason this is one value rather than two independent ones that can disagree.
- */
-export interface ActiveMarket {
-  market: Market;
-  precision: MarketPrecision | null;
-}
+// A market together with whatever Kraken has told us about it used to live here
+// as `ActiveMarket`, a market plus a `MarketPrecision | null`. That `null` said
+// two things at once - "not asked yet" and "Kraken describes no rules for this
+// pair" - and every consumer that needed to tell them apart had to fetch the
+// second fact separately and recombine it. Six of them did, and disagreed. Its
+// replacement is `PriceFormatReadiness` in `utils/priceFormatReadiness.ts`,
+// which makes the two a state each and is the one owner of the question.

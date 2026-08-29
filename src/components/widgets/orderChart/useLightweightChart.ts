@@ -16,27 +16,12 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useMarket } from "../../../store/useMarket";
+import { precisionOf } from "../../../utils/priceFormatReadiness";
 import type { MarketPrecision } from "../../../types/markets";
 
 interface ChartInstance {
   chart: IChartApi | null;
   candleSeries: ISeriesApi<"Candlestick"> | null;
-}
-
-interface UseLightweightChartReturn extends ChartInstance {
-  /**
-   * Whether the series is written in the selected pair's own price format.
-   *
-   * False means the plot is not authoritative and must not be presented as
-   * though it were: with no `MarketPrecision` there is no format to apply, and
-   * a series carries whatever it was last given - the previous pair's rules, or
-   * the library's `precision: 2, minMove: 0.01` default. Either draws a whole
-   * axis, crosshair and set of order labels at a width this app does not have
-   * for this pair, which is the thing `formatMarketPrice` refuses to do for a
-   * single number. It is reported here rather than re-derived by the caller so
-   * the format and the judgement about it stay one fact.
-   */
-  hasPriceFormat: boolean;
 }
 
 const NO_CHART: ChartInstance = { chart: null, candleSeries: null };
@@ -62,14 +47,22 @@ const priceFormatFor = (precision: MarketPrecision): PriceFormatBuiltIn => ({
 
 export const useLightweightChart = (
   containerRef: RefObject<HTMLDivElement | null>,
-): UseLightweightChartReturn => {
+): ChartInstance => {
   // The chart is an external object created in an effect, so it has to be held
   // in state rather than a ref: a ref read during render hands the caller `null`
   // on the first pass and never re-renders them once the chart exists, so their
   // `setData` effects never re-run and the chart stays empty.
   const [instance, setInstance] = useState<ChartInstance>(NO_CHART);
 
-  const { precision } = useMarket();
+  // The pair's rules reach this hook only through the readiness, and only the
+  // `ready` state carries any. A series with no format applied keeps whatever it
+  // was last given - the previous pair's rules, or the library's `precision: 2,
+  // minMove: 0.01` default - so whether the plot may be presented at all is a
+  // judgement about the same value, made once by `OrderChart` from the same
+  // `priceFormat`. This hook used to report a `hasPriceFormat` boolean for that,
+  // which was a second derivation of the very fact the store already holds.
+  const { priceFormat } = useMarket();
+  const precision = precisionOf(priceFormat);
   // Read through a ref at creation time so the precision arriving from Kraken
   // does not tear down and rebuild the chart. Kept current by this effect,
   // which is declared first so it has already run when the chart below is
@@ -150,7 +143,7 @@ export const useLightweightChart = (
     series.applyOptions({ priceFormat: priceFormatFor(precision) });
   }, [instance.candleSeries, precision]);
 
-  return { ...instance, hasPriceFormat: precision !== null };
+  return instance;
 };
 
 /**

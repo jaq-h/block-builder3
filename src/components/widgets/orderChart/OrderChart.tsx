@@ -45,7 +45,7 @@ interface OrderChartProps {
 const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   // The selected market is supplied here, at the boundary, and used for the
   // feed, the candles and the header. Everything below is unchanged.
-  const { market, activeMarket, metadataSettled } = useMarket();
+  const { market, priceFormat } = useMarket();
 
   const { currentPrice, tickerError, publicStatus } = useKrakenAPI({
     autoConnect: true,
@@ -61,8 +61,7 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   const interval = TIMEFRAME_MAP[activeTimeframe] ?? 60;
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const { chart, candleSeries, hasPriceFormat } =
-    useLightweightChart(chartContainerRef);
+  const { chart, candleSeries } = useLightweightChart(chartContainerRef);
   const {
     candles,
     latestCandle,
@@ -214,16 +213,17 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   // "$0.3421", and the header and the grid disagreeing about the same number is
   // the drift decision D3 exists to prevent.
   const priceLabel = currentPrice
-    ? formatMarketPrice(currentPrice, activeMarket)
+    ? formatMarketPrice(currentPrice, priceFormat)
     : tickerError
       ? "Price Error"
       : "Loading…";
 
-  // Three states, and each is drawn as what it actually is.
+  // Three states, and each is drawn as what it actually is - the three the
+  // owner names, read rather than reassembled.
   //
-  // `hasPriceFormat` false has two meanings, and collapsing them left this
-  // panel as the one surface still drawing numbers at a width the app does not
-  // have for the pair: before the metadata answers the series carries
+  // "No price format" has two meanings, and collapsing them left this panel as
+  // the one surface still drawing numbers at a width the app does not have for
+  // the pair: before the metadata answers the series carries
   // lightweight-charts' own `precision: 2, minMove: 0.01`, so selecting ARB/USD
   // while AssetPairs is in flight draws an axis, a crosshair and every order
   // label reading "0.42" for a 0.4231 price - beside a header, a selector
@@ -234,8 +234,13 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
   // which invents no surface and states the truth, and only a settled answer
   // with no rules for this pair gets the refusal. A sub-second wrong answer is
   // still a wrong answer, and it is wrong on every page load.
-  const precisionPending = !metadataSettled && !hasPriceFormat;
-  const precisionUnavailable = metadataSettled && !hasPriceFormat;
+  //
+  // This panel used to build the distinction itself, out of the hook's
+  // `hasPriceFormat` and the store's settled flag. It reads it now: the series'
+  // format and this overlay are then answers to one question rather than two
+  // that happen to agree, which is what the whole of this lane is about.
+  const precisionPending = priceFormat.status === "pending";
+  const precisionUnavailable = priceFormat.status === "unavailable";
 
   return (
     <div className="flex flex-col h-full bg-bg-primary border-b border-border-neutral">
@@ -263,8 +268,9 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
         {precisionPending ? (
           /* Covered rather than captioned, for the same reason the refusal
              below is: an overlay that lets the plot show through still shows
-             an axis written at the library's own default. */
-          <div className="absolute inset-0 flex items-center justify-center px-4 bg-bg-primary">
+             an axis written at the library's own default. `z-4` is what makes
+             the cover a cover - see the refusal below for the measurement. */
+          <div className="absolute inset-0 z-4 flex items-center justify-center px-4 bg-bg-primary">
             <p className="text-[11px] text-text-muted opacity-60">
               Loading chart…
             </p>
@@ -277,8 +283,23 @@ const OrderChart: FC<OrderChartProps> = ({ orders }) => {
              `formatMarketPrice` draws no number at all in the same state. An
              opaque cover is what stops the panel presenting the drawing as
              authoritative, and it takes the pointer so the crosshair cannot be
-             read underneath it. */
-          <div className="absolute inset-0 flex items-center justify-center px-4 bg-bg-primary">
+             read underneath it.
+
+             **`z-4` is load-bearing and is the whole of "covered".** An opaque
+             background is not enough on its own: lightweight-charts positions
+             its own layers with explicit z-indexes, measured in Chrome as
+             canvas 1, canvas 2 and its attribution anchor 3, and a positioned
+             element at `z-index: auto` paints below every one of them whatever
+             the DOM order says. Without this the cover was in the tree, opaque,
+             `inset-0` and behind the plot: measured at 1440x900 with the rules
+             refused, `elementFromPoint` at the centre of the panel returned the
+             chart's CANVAS, and the message was drawn as a caption across a
+             live axis reading 130000.00 to 50000.00 at the library's two
+             decimals with a moving crosshair label. That is exactly the drawing
+             this cover exists to withhold. It cannot be caught in jsdom, which
+             lays nothing out and implements no canvas, so the class is asserted
+             there and the geometry is a browser check. */
+          <div className="absolute inset-0 z-4 flex items-center justify-center px-4 bg-bg-primary">
             <p className="text-[11px] text-status-yellow text-center">
               Precision rules unavailable for {market.symbol} - prices cannot be
               drawn

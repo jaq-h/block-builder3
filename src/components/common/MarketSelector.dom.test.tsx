@@ -8,6 +8,8 @@ import { MarketContext, type MarketContextValue } from "@store/MarketContext";
 import { MARKETS, findMarket } from "@data/markets";
 import { ARB_USD, BTC_USD } from "@/test/marketFixtures";
 import { NO_PRECISION } from "@utils/marketFormat";
+import { priceFormatReadiness } from "@utils/priceFormatReadiness";
+import type { MarketPrecision } from "@/types/markets";
 
 // =============================================================================
 // MARKET SELECTOR
@@ -18,8 +20,28 @@ import { NO_PRECISION } from "@utils/marketFormat";
 // a fixed two decimals, which is the number of digits that made every market
 // look like BTC.
 
+/**
+ * The two facts the market store folds into a readiness, plus anything else
+ * about the context a case wants to set.
+ *
+ * They are named separately here and put through the real
+ * `priceFormatReadiness` rather than assembled into a status by hand: each case
+ * below describes a situation Kraken can actually put the app in - "the batch
+ * has not answered", "it answered without this pair", "it answered with this
+ * pair and a later request then failed" - and the point of the owner is that it
+ * is the one thing turning those into a state. A test that stamped the status
+ * itself would be asserting this component against its own idea of the
+ * mapping, which is the shape the whole lane exists to remove.
+ */
+interface HarnessOptions extends Partial<Omit<MarketContextValue, "priceFormat">> {
+  /** Kraken's rules for the selected pair, or `null` for none. */
+  precision?: MarketPrecision | null;
+  /** Whether the AssetPairs request has answered at all. */
+  settled?: boolean;
+}
+
 const harness = (
-  overrides: Partial<MarketContextValue> = {},
+  overrides: HarnessOptions = {},
 ): { Wrapper: FC<{ children: ReactNode }>; selectMarket: ReturnType<typeof vi.fn> } => {
   const selectMarket = vi.fn();
   const market = overrides.market ?? findMarket("BTC/USD")!;
@@ -27,16 +49,22 @@ const harness = (
   // metadata lands, which is a case worth rendering - back into BTC's.
   const precision =
     "precision" in overrides ? overrides.precision! : BTC_USD;
+  // The two harness-only options are dropped: they describe what the store
+  // holds, and the context carries the readiness folded from them instead.
+  const contextOverrides = { ...overrides };
+  delete contextOverrides.precision;
+  delete contextOverrides.settled;
 
   const value: MarketContextValue = {
     market,
-    precision,
-    activeMarket: { market, precision },
+    priceFormat: priceFormatReadiness(
+      market,
+      precision,
+      overrides.settled ?? true,
+    ),
     markets: MARKETS,
     selectMarket,
-    metadataError: null,
-    metadataSettled: true,
-    ...overrides,
+    ...contextOverrides,
   };
 
   const Wrapper: FC<{ children: ReactNode }> = ({ children }) => (
@@ -177,10 +205,10 @@ describe("MarketSelector", () => {
   // here means the refusal is not the first the user hears of it, at the moment
   // they press Execute.
   it("warns when the precision rules could not be loaded", () => {
-    const { Wrapper } = harness({
-      precision: null,
-      metadataError: "Kraken API error: EGeneral:Unavailable",
-    });
+    // The request has settled with nothing for this pair. It reached that state
+    // through an outright failure here, but the component cannot see the
+    // difference and must not: a settled request with no rules is one state.
+    const { Wrapper } = harness({ precision: null, settled: true });
     render(
       <Wrapper>
         <MarketSelector currentPrice={50_000} />
@@ -191,14 +219,14 @@ describe("MarketSelector", () => {
   });
 
   // The case the warning used to miss entirely. A batch that answers without
-  // one pair sets the precisions it did get and clears `metadataError`, so that
-  // pair drew "n/a" in the readout, "n/a" on every grid chip and refused at
-  // Execute, with nothing on screen saying why.
+  // one pair sets the precisions it did get and reports no load error at all,
+  // so that pair drew "n/a" in the readout, "n/a" on every grid chip and refused
+  // at Execute, with nothing on screen saying why.
   it("warns when the batch answered without this pair", () => {
     const { Wrapper } = harness({
       market: findMarket("ARB/USD")!,
       precision: null,
-      metadataError: null,
+      settled: true,
     });
     render(
       <Wrapper>
@@ -219,8 +247,7 @@ describe("MarketSelector", () => {
   it("is quiet while the rules are still being fetched", () => {
     const { Wrapper } = harness({
       precision: null,
-      metadataError: null,
-      metadataSettled: false,
+      settled: false,
     });
     render(
       <Wrapper>
@@ -231,17 +258,24 @@ describe("MarketSelector", () => {
     expect(warning()).toBeNull();
   });
 
-  // The combination the tests above never built: an error set while a precision
-  // is in hand. It is reachable whenever a later request fails after an earlier
-  // one succeeded, and the warning is a lie in that state - the payload path
-  // prices this pair perfectly well from the record it already has. The
-  // provider closes the race that produces it; this makes sure the message
-  // tracks what the pair actually has rather than the last request's fate.
+  // The situation this case has always been about: a later request has failed
+  // after an earlier one succeeded, so the batch carries a load error while this
+  // pair's rules are in hand. A warning would be a lie there - the payload path
+  // prices this pair perfectly well from the record it already has.
+  //
+  // The case used to build that by setting a `metadataError` on the context.
+  // That field is gone: nothing read it, and the readiness boundary forbids a
+  // surface reaching for it, so the batch's fate is now the provider's own state
+  // and never an input to this component. The situation is expressed by the two
+  // facts that remain, which are the two that decide the answer - rules in hand,
+  // request settled - and the guarantee is now structural rather than merely
+  // observed: a precision folds to `ready` whatever the last request did, so
+  // there is no input through which the batch's fate could reach the warning.
   it("does not claim orders are blocked while it holds the pair's rules", () => {
     const { Wrapper } = harness({
       precision: ARB_USD,
       market: findMarket("ARB/USD")!,
-      metadataError: "Failed to fetch asset metadata: 503 Service Unavailable",
+      settled: true,
     });
     render(
       <Wrapper>

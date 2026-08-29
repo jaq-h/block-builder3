@@ -125,7 +125,7 @@ const GridCell: FC<GridCellProps> = ({
   // read from context rather than drilled: the market is app-wide state, and a
   // cell that took it as a prop could be handed a different one from the price
   // it is already being handed.
-  const { activeMarket } = useMarket();
+  const { priceFormat } = useMarket();
 
   const displayMode = getCellDisplayMode(blocks);
   // The cell's scale, from the one owner of it. Every chip, every slider and
@@ -202,7 +202,7 @@ const GridCell: FC<GridCellProps> = ({
           {priceError
             ? "Price Error"
             : currentPrice
-              ? formatPrice(currentPrice, activeMarket)
+              ? formatPrice(currentPrice, priceFormat)
               : "Loading price..."}
         </div>
       </div>
@@ -281,7 +281,7 @@ const GridCell: FC<GridCellProps> = ({
                 {offset.toFixed(2)}%
               </div>
               <div className={priceProps.className} style={priceProps.style}>
-                {formatPrice(calculatedPrice, activeMarket)}
+                {formatPrice(calculatedPrice, priceFormat)}
               </div>
               <div className={posProps.className} style={posProps.style}>
                 <Block
@@ -292,7 +292,7 @@ const GridCell: FC<GridCellProps> = ({
                   leg={legInCell(blocks, block)}
                   yPosition={offset}
                   direction={direction}
-                  priceText={formatPrice(calculatedPrice, activeMarket)}
+                  priceText={formatPrice(calculatedPrice, priceFormat)}
                   onVerticalDrag={onBlockVerticalDrag}
                   onAdjustPrice={onBlockAdjustPrice}
                   {...commandProps(block.id)}
