@@ -193,7 +193,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Twelve things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Thirteen things bite in ordinary work:
 
 - **Never add a `window` *mouse* listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events. Mouse events are also suppressed during a drag,
@@ -247,6 +247,33 @@ The README's **Interaction model** section is authoritative. Twelve things bite 
   cell will take the order, and folding validity in would silently place a block in a
   neighbour it merely brushed. Do not reintroduce a point test, and do not give the highlight
   a rule of its own.
+- **A carry ends when the grid stops standing behind the cells it offered, and
+  `useBlockCommand` is the one owner of that transition.** A carry is a promise
+  about cells - these will take this order - held as `CarriedBlock.targets` at
+  pick-up, drawn as a highlight and read out as `aria-current`. Clear All,
+  Reverse Blocks, a pattern switch and a removal all rewrite what the grid holds,
+  and while the carry outlived one the app went on inviting a drop into a cell
+  `placeProviderInCell` was about to refuse; an earlier lane made that refusal
+  honest, and this is the half that stops the invitation being issued. **It is
+  derived, not signalled**: the hook re-asks `validTargetsFor` on the grid it is
+  handed and compares with `sameTargets`, so a path that replaces the grid cannot
+  forget to call anything, because there is nothing to call. Do not answer a
+  future case here with a counter the grid's owner bumps or a call each caller
+  makes - three call sites is three chances to forget, and the fourth path is
+  written by somebody who has not read this file. Two consequences are deliberate
+  and neither is a gap: a change that leaves the same cells on offer is not a
+  replacement, so nudging a block's price with the arrow keys while carrying does
+  **not** drop the carry; and in the *bulk* pattern every cell takes every order,
+  so Clear All there leaves the promise true and the carry standing - nothing on
+  screen is stale, which is the whole of what a carry can get wrong. `removeBlock`
+  is the one caller that ends the carry by hand, inside `announcer.asOneEvent`,
+  because the check runs a render later and the removal has already spoken by
+  then: reported separately, the second live-region write replaces the sentence
+  naming which block went. `gridReplacement.dom.test.tsx` is the guard that
+  matters - it is typed over `GridDataActions`, so a new action on the grid-data
+  context fails the typecheck until it is classified and is then exercised
+  against a live carry without a test being written for it.
+
 - **A click outside the placement surface puts down whatever is in hand**, by emptying that
   register. The surface is the element `GridArea` draws - the palette a block is picked up
   from and the cells it can be put down in - and it is chosen by that element rather than by a
@@ -966,7 +993,9 @@ convenience.
 Three affordances reach it and there is no fourth: Delete or Backspace on a focused block,
 that block's own Remove control, and a free drag released clear of every cell. It writes
 through `removeFromGrid`, which `GridArea` answers with `removeBlockFromGrid` (the pure
-filter-plus-link-clear above), reports the `removed` outcome to the one announcer, and asks
+filter-plus-link-clear above), reports the `removed` outcome to the one announcer, ends any
+carry the user still has in the other hand (see the carry-lifecycle rule in **Interaction**
+for why that is one sentence rather than two), and asks
 for focus on the palette entry the order came from - the element that was focused is the one
 being removed, so leaving focus alone drops it to `<body>`, and the palette is where D9's
 "place a new one" begins.

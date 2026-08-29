@@ -1037,8 +1037,10 @@ describe("GridArea, removing a placed block", () => {
     );
 
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    // The removal rewrites what the grid holds, so the carry ends with it - one
+    // press, one live-region write, the removal's own sentence first.
     expect(announcement()).toBe(
-      "Removed Market block from Entry column, row 2.",
+      "Removed Market block from Entry column, row 2. Limit order returned to the palette: the grid changed underneath it.",
     );
   });
 
@@ -1892,7 +1894,19 @@ describe("GridArea, a refused pick-up while an order is carried", () => {
 // cross-cell move (decision D9).
 
 describe("GridArea, a commit that ends the carry", () => {
-  it("says the carry is over when the grid refuses the chosen cell", () => {
+  // FORMERLY "says the carry is over when the grid refuses the chosen cell",
+  // which drove exactly this sequence and then TAPPED the stale cell to hear
+  // the truth. That sentence was the honest half of a dishonest interface: the
+  // cell went on advertising itself between the replacement and the tap, so the
+  // user was invited into a cell the commit was about to refuse. The carry now
+  // ends with the grid, and the invitation is withdrawn before anyone can act
+  // on it - which is why the tap that used to be the point of this test is here
+  // only to show that nothing is left to place.
+  //
+  // `commit`'s own `refused` branch is kept and is not dead: it is what makes
+  // the commit answer from what the grid DID rather than from the snapshot it
+  // was holding, and a commit that trusts its snapshot is not a guard.
+  it("withdraws the offer when the grid is replaced, rather than at the next tap", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));
     // The same grid, plus a second block that takes the cell this carry is
@@ -1907,12 +1921,19 @@ describe("GridArea, a commit that ends the carry", () => {
 
     // (1,0) was one of the cells the carry offered, and has been filled since.
     fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-    fireEvent.click(cell(1, 0));
 
     expect(announcement()).toBe(
-      "Exit column, upper conditional row cannot take this order any more. Take Profit order was not placed, and is no longer picked up.",
+      "Take Profit order returned to the palette: the grid changed underneath it.",
     );
     expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+
+    // And the carry really is gone rather than merely undrawn: the cell it used
+    // to offer places nothing now.
+    fireEvent.click(cell(1, 0));
+    expect(cell(1, 0)).toHaveAttribute(
+      "aria-label",
+      "Exit column, upper conditional row, Market",
+    );
   });
 });
 
@@ -1920,14 +1941,54 @@ describe("GridArea, a commit that ends the carry", () => {
 // A CARRY THAT OUTLIVES THE GRID IT WAS STARTED AGAINST
 // =============================================================================
 //
-// Clear All, Reverse Blocks and a pattern switch all replace the grid without
-// ending an active carry, so the cells it offered stay highlighted. The suite
-// here used to carry a *placed* block through such a replacement and check that
-// the sentence named no cell once the block had been cleared away. A placed
-// block is never carried now (decision D9), so a carry can no longer name a
-// block that the grid might lose - the palette entry it names is always there.
-// What survives is the palette carry itself, covered in
-// `useBlockCommand.dom.test.ts` under "a palette carry the grid changes under".
+// It does not any more, and the transition that ends it has one owner - see
+// `useBlockCommand`. What this file adds to that hook's own suite is the thing
+// only a rendered grid can show: that no cell is left drawing itself as a drop
+// target afterwards.
+//
+// The suite here used to carry a *placed* block through such a replacement and
+// check that the sentence named no cell once the block had been cleared away. A
+// placed block is never carried now (decision D9), so a carry can no longer
+// name a block that the grid might lose - the palette entry it names is always
+// there.
+
+describe("GridArea, a carry the grid is replaced under", () => {
+  /** Carrying a Take Profit, with the Exit upper conditional as its target. */
+  const carryOverAPlacedMarket = (gridReplacement: GridData) => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} gridReplacement={gridReplacement} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+  };
+
+  // Clear All, and every other path that empties the grid: the diagonal cells
+  // the carry was offered stop being legal the moment the primary order goes,
+  // and the disabled cell it was pointing at must not still read as the place
+  // this order is going.
+  it("leaves no cell drawing itself as a target after the grid is emptied", () => {
+    carryOverAPlacedMarket(clearGrid(2, 3));
+
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+    expect(announcement()).toBe(
+      "Take Profit order returned to the palette: the grid changed underneath it.",
+    );
+  });
+
+  // Reverse Blocks keeps every block and swaps the columns, so the offer moves
+  // to the other side of the grid - the old cells are as wrong as an emptied
+  // grid's, and the block is not on the cursor any more either.
+  it("leaves no cell drawing itself as a target after the columns are swapped", () => {
+    const reversed = clearGrid(2, 3);
+    reversed[0][1].push(placedMarket("b1"));
+    carryOverAPlacedMarket(reverseGrid(reversed));
+
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+  });
+});
 
 // =============================================================================
 // A BULK CELL HOLDING TWO ORDER FAMILIES

@@ -6,6 +6,7 @@ import {
   IDLE_COMMAND_STATE,
   initialTarget,
   samePosition,
+  sameTargets,
   stepTarget,
   validTargetsFor,
   type ActivationOrigin,
@@ -304,6 +305,18 @@ describe("commandReducer", () => {
       ).toBeNull();
     });
 
+    // A carry is a promise about cells, and every path that rewrites what the
+    // grid holds can make it untrue. It is its own transition rather than a
+    // second spelling of `cancel` because the sentence the user hears differs:
+    // nobody cancelled anything, the grid moved. See `useBlockCommand` for the
+    // one owner of when it fires.
+    it("returns to idle when the grid it was offered against is replaced", () => {
+      expect(
+        commandReducer(carrying(providerSource), { type: "gridReplaced" })
+          .carrying,
+      ).toBeNull();
+    });
+
     it("is a no-op when nothing is being carried", () => {
       expect(commandReducer(IDLE_COMMAND_STATE, { type: "place" })).toBe(
         IDLE_COMMAND_STATE,
@@ -311,6 +324,51 @@ describe("commandReducer", () => {
       expect(commandReducer(IDLE_COMMAND_STATE, { type: "cancel" })).toBe(
         IDLE_COMMAND_STATE,
       );
+      expect(commandReducer(IDLE_COMMAND_STATE, { type: "gridReplaced" })).toBe(
+        IDLE_COMMAND_STATE,
+      );
+    });
+  });
+
+  // What tells a carry the grid still stands behind from one it does not. The
+  // order matters as much as the membership: `validTargetsFor` walks the grid
+  // one way, so two offers that name the same cells in a different order came
+  // from different rules and are not the same offer.
+  describe("sameTargets", () => {
+    it("is true for the same cells in the same order", () => {
+      expect(
+        sameTargets(
+          [
+            { col: 0, row: 1 },
+            { col: 1, row: 1 },
+          ],
+          [
+            { col: 0, row: 1 },
+            { col: 1, row: 1 },
+          ],
+        ),
+      ).toBe(true);
+    });
+
+    it("is false when a cell is added, removed or moved", () => {
+      const offer = [
+        { col: 0, row: 0 },
+        { col: 0, row: 2 },
+      ];
+      expect(sameTargets(offer, [{ col: 0, row: 0 }])).toBe(false);
+      expect(
+        sameTargets(offer, [...offer, { col: 1, row: 1 }]),
+      ).toBe(false);
+      expect(
+        sameTargets(offer, [
+          { col: 0, row: 2 },
+          { col: 0, row: 0 },
+        ]),
+      ).toBe(false);
+    });
+
+    it("is true for two empty offers, which is one grid offering nothing twice", () => {
+      expect(sameTargets([], [])).toBe(true);
     });
   });
 

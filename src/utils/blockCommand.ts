@@ -93,7 +93,13 @@ export type CarryEndReason =
   /** The user asked for it: Escape, Tab, or a second tap on the carried block. */
   | "cancelled"
   /** A pointer drag started and took the interaction over. */
-  | "superseded";
+  | "superseded"
+  /**
+   * The grid the carry was offered against is not the grid that is there any
+   * more: Clear All, Reverse Blocks, a pattern switch, a removal, or anything
+   * else that rewrites what the grid holds. See `gridReplaced` below.
+   */
+  | "gridReplaced";
 
 export const IDLE_COMMAND_STATE: CommandState = { carrying: null };
 
@@ -113,7 +119,20 @@ export type CommandAction =
    */
   | { type: "pointAt"; target: CellPosition }
   | { type: "place" }
-  | { type: "cancel" };
+  | { type: "cancel" }
+  /**
+   * The grid this carry was offered against has been replaced beneath it.
+   *
+   * A carry is a promise about *cells* - these are the ones that will take this
+   * order - and `targets` is that promise snapshotted at pick-up. Anything that
+   * rewrites the grid or switches the pattern can make it untrue, and an untrue
+   * promise is drawn on screen as a highlighted cell and read out as
+   * `aria-current`, so the user is invited to drop into a cell the placement
+   * primitive will then refuse. It is a transition of its own rather than a
+   * second spelling of `cancel` because nobody cancelled anything: the carry
+   * ends because the grid moved, and the sentence the user hears says so.
+   */
+  | { type: "gridReplaced" };
 
 // =============================================================================
 // TARGET SELECTION
@@ -143,6 +162,21 @@ export const validTargetsFor = (
   }
   return targets;
 };
+
+/**
+ * Whether two offers name the same cells, in the same order.
+ *
+ * `validTargetsFor` walks the grid in one fixed order, so two offers built from
+ * it are equal exactly when they are equal element by element - there is no set
+ * comparison to do, and doing one would be a second rule about what an offer is.
+ * This is what tells a carry whose cells the grid still stands behind from one
+ * whose cells it does not; see the `gridReplaced` transition.
+ */
+export const sameTargets = (
+  a: CellPosition[],
+  b: CellPosition[],
+): boolean =>
+  a.length === b.length && a.every((cell, index) => samePosition(cell, b[index]));
 
 /**
  * Where a pick-up starts: the first legal cell.
@@ -255,6 +289,7 @@ export const commandReducer = (
 
     case "place":
     case "cancel":
+    case "gridReplaced":
       return state.carrying === null ? state : IDLE_COMMAND_STATE;
 
     default:

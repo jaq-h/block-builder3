@@ -421,10 +421,17 @@ export const describeOutcome = (
     case "cellRefused":
       return `${describeCell(outcome.cell, pattern)} cannot take this order. Still carrying ${describeSource(outcome.source)}.`;
 
-    case "carryEnded":
-      return outcome.reason === "cancelled"
-        ? `Cancelled. ${describeSource(outcome.source)} ${restingPlace(outcome.source, pattern, outcome.at)}.`
-        : `${describeSource(outcome.source)} ${restingPlace(outcome.source, pattern, outcome.at)}: a drag took over.`;
+    // Three reasons, three sentences, because what the user should do next
+    // differs: a cancellation was theirs, a supersession was the drag they are
+    // still holding, and a grid replacement was neither - the cells the carry
+    // offered are simply not on offer any more, and saying "cancelled" there
+    // would blame the user for something the grid did.
+    case "carryEnded": {
+      const resting = `${describeSource(outcome.source)} ${restingPlace(outcome.source, pattern, outcome.at)}`;
+      if (outcome.reason === "cancelled") return `Cancelled. ${resting}.`;
+      if (outcome.reason === "superseded") return `${resting}: a drag took over.`;
+      return `${resting}: the grid changed underneath it.`;
+    }
 
     case "placement":
       return describePlacement(

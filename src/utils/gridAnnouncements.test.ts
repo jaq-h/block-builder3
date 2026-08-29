@@ -145,6 +145,15 @@ describe("describeOutcome, a carry that ends without a placement", () => {
     ).toBe("Cancelled. Market block left in Entry column, primary row.");
   });
 
+  // Neither a cancellation nor a supersession: the user did not put the block
+  // down and no drag took it, the cells it was offered simply stopped being on
+  // offer. Saying "cancelled" there blames the user for the grid's own change.
+  it("says the grid changed rather than blaming the user or a drag", () => {
+    expect(
+      say({ kind: "carryEnded", source: palette, reason: "gridReplaced" }),
+    ).toBe("Market order returned to the palette: the grid changed underneath it.");
+  });
+
   it("says a drag took the interaction over rather than the user cancelling", () => {
     // Not a cancellation: the user did not ask for it, and telling them they
     // cancelled something would misdescribe their own gesture.
