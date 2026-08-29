@@ -421,6 +421,12 @@ export const useKrakenAPI = (
     // invisible: Kraken rejects the order and the user sees one that never
     // appeared. So this refuses, exactly as it refuses a missing market price,
     // rather than falling back to another pair's precision.
+    //
+    // The sentence says "yet" in both unready states, which is inherited from
+    // when this could not tell them apart: once the batch has answered without
+    // the pair, `unavailable` is not a wait. The distinction is available here
+    // now through `priceFormat.status` if the product wants a second wording;
+    // it was deliberately left unchanged rather than altered in passing.
     if (!precision) {
       setOrderError(
         `Cannot prepare orders: Kraken's precision rules for ${symbol} have not loaded yet.`,
