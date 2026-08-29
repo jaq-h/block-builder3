@@ -667,7 +667,8 @@ the next tile's top-left corner, and in a cell that *draws* an axis - where a bl
 **is** its price, so no spacing exists to separate two blocks at all - two Limits 16px apart
 put the lower block's control over the upper block's visible face. Both were measured in
 Chrome, and in both a click removed the block the user was not aiming at. One geometry answers
-both layouts; the gap between sibling tiles remains as spacing rather than as that guarantee.
+both layouts, and containment is the whole of the guarantee - no spacing between sibling tiles
+is needed for it, and none could have answered the axis layout.
 The deliberate price is that the control owns 30.8% of its own tile's face, measured in
 Chrome, and that this reaches the tile's geometric centre - which no placement can avoid, since
 a 24px disc contained in a 40px tile is always within 11.31px of the centre against a 12px

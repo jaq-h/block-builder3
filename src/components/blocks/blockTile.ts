@@ -36,12 +36,17 @@ export const BLOCK_TILE_SHAPE = [
  * user was not aiming at. One geometry answers both; a per-layout offset would
  * be one fact styled two ways.
  *
- * The price of it is deliberate and was weighed: the control covers about 36%
- * of its own tile rather than 16%, over the top-right of the icon. A press
- * landing there removes the block it belongs to, which is the accepted
- * same-tile tap `block.tsx` documents - D9 makes delete-and-rebuild routine, so
- * the cost of that mistake is re-placing one block. Shrinking the control below
- * 24px and hiding it behind `:hover` were both rejected.
+ * The price of it is deliberate and was weighed: the control owns 30.8% of its
+ * own tile's face - 493 of the tile's 1600 pixels, measured in Chrome, not the
+ * 36% a `24x24` square would give - and that region **includes the tile's
+ * geometric centre**, so a tap at dead centre hits this control rather than the
+ * block. That is unavoidable rather than an oversight: any 24px disc contained
+ * in a 40px tile reaches the centre, so moving the control cannot uncover it.
+ * `AGENTS.md` carries the proof and what it costs a drag. A press landing here
+ * removes the block it belongs to, which is the accepted same-tile tap - D9
+ * makes delete-and-rebuild routine, so the cost of that mistake is re-placing
+ * one block. Shrinking the control below 24px and hiding it behind `:hover`
+ * were both rejected.
  *
  * It is rendered rather than revealed on hover, and that is the decision the
  * affordance turns on: a control shown on `:hover` exists for a mouse and for

@@ -424,12 +424,7 @@ the app never puts a scrollbar somewhere its width could change a layout, so it
 never has to style one. `ChartHeader.dom.test.tsx` pins the chart's control
 groups against both halves of this, and
 `strategyAssembly.layout.dom.test.tsx` pins the assembly panel's grid pane and
-action bar against them. The rule reaches content the same way
-where content is a row of controls: `centeredContainer` in `src/styles/grid.ts`
-lays a cell's blocks out side by side with `gap-3`, and it wraps rather than
-scrolls, because the panel clipping it is `overflow-hidden` - at 390 four blocks
-in a bulk cell measured 201px of content in a 190px cell and the fourth tile,
-with its Remove control, was cut off at 320px with nothing to scroll it back.
+action bar against them.
 
 **The assembly grid's three lanes stack when the panel is too narrow to draw
 them, and the row they are in has a derived minimum width.** The lanes are the
@@ -967,9 +962,10 @@ no undo. At `-top-2 -right-2` it hung 8px out and did that in **both** layouts:
 **One geometry answers both, and a per-layout offset would be one fact styled two ways.**
 `REMOVE_CONTROL_SHAPE` in `src/components/blocks/blockTile.ts` is the authority;
 `blockTile.test.ts` pins containment on both axes against `BLOCK_TILE_SHAPE`'s own size, so a
-negative offset on either axis, or a control grown past the tile, fails there. **The gap on
-`centeredContainer` is no longer that guarantee** - it stays as spacing, because two flush
-40px tiles read as one 80px block, and it could never have covered the axis layout anyway.
+negative offset on either axis, or a control grown past the tile, fails there. **Containment is
+the whole of the guarantee** - `centeredContainer` carries no spacing between sibling tiles and
+must not be given any on this invariant's account: spacing could only ever have answered the
+axis-less layout, and a cell that draws a price axis has none to give.
 
 **The price is deliberate: the control owns 30.8% of its own tile's face, and that includes
 the tile's geometric CENTRE.** Both ways of undoing it are rejected - shrinking the control
@@ -1002,6 +998,27 @@ Measured in Chrome by sampling all 1600 pixels of a placed block's tile with
   control is out of the way across the full 40px width (the last 3px taper to 34px on the
   tile's own `rounded-md` corners); in the top half the grabbable width narrows to 15-24px;
   and the keyboard slider, which is the price affordance that matters most, is untouched.
+
+**Two consequences of the pin that are true, undiscoverable, and filed rather than solved
+here.** Neither is a regression this lane introduced; both are recorded so the next reader
+meets them in writing rather than in the product:
+
+- **A block is now dragged from its LOWER HALF.** The control owns the top-right disc and
+  takes the `pointerdown` there, so the grabbable area is what the measurement above gives:
+  clear across the full 40px from 24px below the tile's top, tapering to 34px over the last
+  three rows on the tile's own `rounded-md` corners, and narrowed to 15-24px in the top half.
+  A press that lands on the control and drags away is inert rather than destructive, because
+  removal is click-only - nothing is removed and the block does not drag. Nothing on screen
+  says where to grab, which is why this is filed separately rather than papered over here.
+- **A later block on a price axis can BURY an earlier one's Remove control.** Each block in an
+  axis cell gets its own positioner at the same `z-2`, so paint order is DOM order and the
+  later block in the cell's array paints over the earlier. With the control inside its tile,
+  a block priced within 40px of the one before it covers most of that block's control - at a
+  2px offset difference only a sliver is left. This is the pre-existing axis-column overlap
+  the lane inherits, not something the pin created, and the failure mode is safe: the topmost
+  element is the covering block's own tile, so a press there acts on the block the user can
+  see, and the buried block is still removable by Delete or Backspace with focus on it, which
+  is the keyboard parity this lane was built for.
 
 **The control fires on `click`, and must never be given a pointer-down handler.** Two
 behaviours of the tile's top-right corner follow from that, and both are deliberate - do not
