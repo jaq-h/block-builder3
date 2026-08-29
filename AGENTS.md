@@ -397,9 +397,9 @@ out the abbreviation renames "SMA 20" to something a voice-control user cannot s
 
 ## Layout and the CSS cascade
 
-Fifteen traps live in the layout, and each is easy to reintroduce. The one
-paragraph below led **Known gap** is not among that fifteen: it records a defect
-that is already there rather than one you could bring back.
+Sixteen traps live in the layout, and each is easy to reintroduce. The two
+paragraphs below led **Known gap** are not among that sixteen: they record
+defects that are already there rather than ones you could bring back.
 
 **The app's chrome wraps; it never scrolls.** A row of controls - a toolbar, a
 title bar, a tab strip - that cannot fit its width gets `flex-wrap`, and the row
@@ -425,6 +425,36 @@ never has to style one. `ChartHeader.dom.test.tsx` pins the chart's control
 groups against both halves of this, and
 `strategyAssembly.layout.dom.test.tsx` pins the assembly panel's grid pane and
 action bar against them.
+
+**A price axis takes its height from flex stretch, and may never ask for it as
+a percentage.** `getAxisColumnProps` in `src/styles/grid.ts` draws the box every
+axis is positioned against, and *everything* the axis draws is positioned
+against that box and nothing else: the track and the percentage scale are
+`top`/`bottom` insets on it, and `getBlockPositionerProps` lays a block out at
+`calc((100% - TRACK_INSETpx) * percent)` within it. One collapsed height is
+therefore not one defect, it is the whole axis at once. It carried `h-full`, and
+a percentage height needs a definite height to resolve against - which the chain
+above it only has while the grid columns are flex items of a ROW. Stacked below
+`sm` by the trap below, they are items of a column with no definite height,
+because below `lg` the shell is deliberately content-sized (see the desktop
+shell trap). `height: 100%` resolved to 0, and since every child of the box is
+absolutely positioned there was nothing to fall back on. Measured in Chrome with
+a Limit in the Entry primary cell, axis column / track / block y: **150 / 80 /
+99.5 at 640 and above, and 0 / 0 / 24.5 at 320, 360, 390 and 414** - no track to
+grab, the scale clumped into 60px, and the offset mapped onto a NEGATIVE 70px
+range, which draws the block above the market line and runs it backwards, while
+`positionFromPointer`'s `trackHeight <= 0` guard returned 0 for every drag. An
+order could not be priced at all on a phone. `align-items: stretch` sizes it
+now - the default for a flex item, and `sliderArea` is a `flex-row` whose cross
+axis IS this height, so it needs no definite parent height and holds in both
+forms of the layout; it was doing the work above `sm` all along, which is why
+removing `h-full` left 768, 1024 and 1440 measuring exactly what they measured
+before, the assembly grid pane pixel-identical at 1440. **Do not restore
+`h-full`, and do not answer a future collapse with a pixel height or a `min-h-*`
+here**: the axis is a proportion of whatever height the cell has, so a number
+would be a second owner of `CELL_MIN_HEIGHT`'s job. `grid.test.ts` pins the
+tokens in both the single-axis and dual-axis forms, since jsdom lays nothing
+out.
 
 **The assembly grid's three lanes stack when the panel is too narrow to draw
 them, and the row they are in has a derived minimum width.** The lanes are the
@@ -480,6 +510,39 @@ because two lines come to 20px of text plus a 12px row gap plus a 24px control,
 which is 56px and inside the floor. Only at 320px does it exceed 64, and there no
 two panels share a screen. The assembly and Active Orders bars take
 `panelTitleBar` unchanged. A new panel takes `panelTitleBar`, not this.
+
+**Known gap: below `sm` a pointer DRAG reaches only the cells already on
+screen, because nothing scrolls during a gesture.** `dropTarget.ts` hit-tests
+the dragged block's tile against each cell's viewport rect, the block follows a
+pointer that cannot leave the viewport, and there is no autoscroll anywhere in
+the drag path - so a cell off screen when the gesture starts cannot be dropped
+into. Stacked, the grid is taller than a phone: measured at 390x844 with a Limit
+placed, the page is 2020px and, with the palette in view at y 196..403, only the
+Entry upper conditional (y 459..648) and Entry primary (y 664..852) cells are
+reachable - **2 of 6**, with every Exit cell at y 1122..1719. Side by side on
+6067cf5 all six were reachable at the same viewport, though the Exit column was
+only reachable through the 43px strip of it inside the screen (x 347..549
+against a 390px viewport) with the rest clipped, which is the defect #30 fixed.
+So this is narrower reach by drag traded for a column that can be seen and
+submitted at all, not a path that used to work cleanly. **The command model is
+unaffected and reaches every cell at every width**: tap or click to pick up,
+scroll, tap to place - verified at 390 placing a Take Profit into the Exit
+column, which announced "Placed Take Profit order in Exit column, upper
+conditional row." The carry survives the scroll because its target is the cell
+that was tapped rather than a viewport position. What is missing is that a drag
+towards an off-screen cell silently does nothing and nothing tells the user to
+tap instead. Closing it properly means autoscrolling the scrollport under the
+gesture, which is inside the layer this file guards most heavily: the scroller
+differs by breakpoint (the document below `lg`, `contentWrapper` above it), the
+rects `dropTarget.ts` reads move under a running scroll so the highlight and the
+drop must be recomputed per scroll frame rather than per pointer move, and all
+six of `usePointerGesture`'s exits have to keep holding while it runs. Shortening
+the stacked grid is a different lever on the same symptom and does not close it
+either - four of the six cells are disabled conditional rows drawing nothing at
+all while each still claims `CELL_MIN_HEIGHT`, about 750px of the 2020 at 390,
+and even without them the Exit primary is below the fold from the palette.
+Tracked outside this repository; what is recorded here is the measurement and
+the fact that the keyboard and tap paths are whole.
 
 **Known gap: the assembly panel's pattern buttons overflow their header rail
 at narrow widths.** `patternSelectorRow` is `cn(panelHeaderBar, "gap-2")`, and
