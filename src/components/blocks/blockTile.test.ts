@@ -72,19 +72,34 @@ describe("the block tile's size", () => {
 //      control and `Block`'s wrapper - or removed from that wrapper - changes
 //      what they mean without changing a token here.
 //   3. THE WRAPPER-EQUALS-TILE ASSUMPTION, which the whole derivation rests on.
-//      The offsets are measured from `Block`'s wrapper `div.relative`, not from
-//      the tile, so "inside the tile" only follows while that wrapper's box IS
-//      the tile's box. It is today because the wrapper carries no padding,
-//      border, width or height of its own and shrink-wraps its one in-flow
-//      child in both layouts: in `centeredContainer` it is a flex item with no
-//      `flex-*` sizing, so it takes its content's width, and under
-//      `getBlockPositionerProps` it is an absolutely positioned box with `top`
-//      and `left` alone and no `width`/`height`/`right`/`bottom`, so it
-//      shrink-to-fits too. Give that wrapper padding, a border, or a width
-//      larger than the tile and this file stays green while the control moves
-//      out over the neighbour again. `block.dom.test.tsx` pins the wrapper's
-//      side of it under "keeps the remove control's wrapper the tile's own box";
-//      the geometry that results is a browser's job.
+//      The offsets are measured from `Block`'s own wrapper `div.relative`, not
+//      from the tile, so "inside the tile" only follows while that wrapper's box
+//      IS the tile's box. Two separate things make that true today, and only the
+//      first is anything this file or `block.tsx` can decide:
+//        a. The wrapper carries no padding, border, margin or size of its own,
+//           so it shrink-wraps its one in-flow child. `block.dom.test.tsx` pins
+//           this under "keeps the remove control's wrapper the tile's own box",
+//           against the classifier beside it.
+//        b. The wrapper's PARENT lets it shrink-wrap, and that parent differs
+//           per layout. In a cell that draws no price axis it is
+//           `centeredContainer`, a flex row, and the wrapper is a flex item with
+//           no `flex-*` sizing, so it takes its content's width. In a cell that
+//           DRAWS an axis the parent is the positioner `GridCell` renders from
+//           `getBlockPositionerProps` - the wrapper is never the positioner,
+//           `GridCell` renders `<div {...posProps}><Block/></div>` and `Block`
+//           renders its own static in-flow `div.relative` inside it. That
+//           positioner sets BOTH `left` and `right`, so it spans the whole axis
+//           column, and the wrapper is only tile-sized because the positioner is
+//           `flex justify-center` and the wrapper is therefore a shrink-wrapped
+//           flex item. `styles/grid.test.ts` pins that under "the positioner
+//           centres a shrink-wrapped child".
+//      Break either half and this file stays green while the control moves out
+//      over the neighbour again.
+//   4. Everything about the boxes those tokens produce. Nothing here or in
+//      either test named above measures anything: they check declared tokens,
+//      and a browser is what turns tokens into the geometry the invariant is
+//      actually about. A stylesheet change, a `transform`, or a container query
+//      reaching any of these elements passes all three unseen.
 
 /** The signed `<side>-<n>` inset a class list states, in pixels. */
 const inset = (classes: string[], side: "top" | "right") => {

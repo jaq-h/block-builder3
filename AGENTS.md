@@ -1013,9 +1013,14 @@ reason and must not be written. What CI can hold is stated in full at the top of
 `blockTile.test.ts`, holes included: it compares the two class lists' offset and size tokens
 and nothing about the rendered boxes, so it would stay green if `absolute` were dropped, if
 the positioning context moved, or if `Block`'s wrapper grew past the tile the offsets are
-measured from. That last one is the assumption the whole derivation rests on - the wrapper
-shrink-wraps its tile in both layouts, and `block.dom.test.tsx` pins that half under "keeps
-the remove control's wrapper the tile's own box".
+measured from. That last one is the assumption the whole derivation rests on, and it has two
+halves with different owners: the wrapper carries no box of its own (`block.dom.test.tsx`,
+"keeps the remove control's wrapper the tile's own box") **and** its parent lets it
+shrink-wrap - `centeredContainer`'s flex row in an axis-less cell, and in an axis cell the
+`flex justify-center` positioner from `getBlockPositionerProps`, which spans the column and
+would otherwise leave the wrapper block-level and the control at the column's edge
+(`styles/grid.test.ts`, "the positioner centres a shrink-wrapped child"). Both halves are
+token checks; the geometry they add up to is still only measurable in a browser.
 
 **The refusal is legible, not silent.** Three things say so together and none of them is
 optional: the announcer's `moveRefused` sentences, a visible note under the grid
