@@ -397,7 +397,9 @@ out the abbreviation renames "SMA 20" to something a voice-control user cannot s
 
 ## Layout and the CSS cascade
 
-Fourteen traps live in the layout, and each is easy to reintroduce.
+Fifteen traps live in the layout, and each is easy to reintroduce. The one
+paragraph below led **Known gap** is not among that fifteen: it records a defect
+that is already there rather than one you could bring back.
 
 **The app's chrome wraps; it never scrolls.** A row of controls - a toolbar, a
 title bar, a tab strip - that cannot fit its width gets `flex-wrap`, and the row
@@ -420,7 +422,46 @@ not decide its size. The consequence, and the reason there is no
 `scrollbar-width`, `scrollbar-gutter` or `::-webkit-scrollbar` rule anywhere:
 the app never puts a scrollbar somewhere its width could change a layout, so it
 never has to style one. `ChartHeader.dom.test.tsx` pins the chart's control
-groups against both halves of this.
+groups against both halves of this, and
+`strategyAssembly.layout.dom.test.tsx` pins the assembly panel's grid pane and
+action bar against them.
+
+**The assembly grid's three lanes stack when the panel is too narrow to draw
+them, and the row they are in has a derived minimum width.** The lanes are the
+order palette, the Entry column and the Exit column, each of the latter two
+carrying `min-w-[220px]` because that is where a cell still fits its own price
+chip - the chip is laid out at `calc(50% + 25px)` from the axis centre and is
+about 66px wide at a BTC price, so a 202px cell put `$58,322.4` at x 247..305.5
+against a cell edge at 323, 17.5px of slack. **The row's min-content width is
+542px: the palette's 90px min-width plus those two 220px columns plus two 6px
+gaps.** That floor is owned by the palette's `sm:min-w-22.5`, the constant this
+change moved behind a breakpoint, and not by its `sm:w-27.5` - 110px is the
+palette's PREFERRED width, and it shrinks 20px below it when the row cannot fit.
+Below `lg` the panel is the viewport less the shell's 32px of padding, so the
+row stops fitting at a 574px viewport, and it used to be drawn at that width
+anyway: measured in Chrome at 320, 360 and 390 the lanes collapsed to that same
+min-content 542px in all three - the palette squeezed to its 90px floor - and
+the Exit column sat at x 347..549, entirely outside the viewport. **That is a
+functional defect rather than a responsive gap** - a conditional strategy needs
+both an Entry and an Exit leg, so the app's core task could not be completed on
+a phone at all. `contentRow` and `columnsWrapper` are `flex-col sm:flex-row` for
+it: below `sm` the palette lays its tiles across the panel in an `auto-fill`
+grid and the two columns are full-width bands under it, and the panel's existing
+vertical scroll carries the lot. `sm` is a floor with room rather than a fitted
+number - at a 640px viewport the panel is 608px against that 542px min-content
+row, and measured there the palette is at its preferred 110px and each column at
+243px, so nothing is at its floor. Above `lg` the panel is never narrower than
+660px, measured at 1024 where the shell's `minmax(0,700px)` track is squeezed
+hardest - so the desktop layout never reaches the stacked form and is unchanged
+to the pixel.
+`utilityRow` wraps for the same reason: Clear All and Reverse come to 219px
+beside a 203px Execute Trade against 326px of bar at 390, and unwrapped that
+button was drawn at x 267.5..470.8 with the panel's `overflow-hidden` clipping
+its last 80.8px, so the strategy could not be submitted. The Active Orders panel
+draws a card list at every width and has no lane row to stack; its
+`ActiveOrders.styles.ts` still exports a `columnClass`, a `columnsWrapper` and a
+`contentWrapper` carrying the same rigid geometry, but nothing imports any of
+the three - they are dead, not a second copy of this rule.
 
 **`panelTitleBar`'s `h-16` has exactly one exception, and it is written down
 next to the constant.** `wrappingPanelTitleBar` in `src/styles/shared.ts` is the
@@ -439,6 +480,35 @@ because two lines come to 20px of text plus a 12px row gap plus a 24px control,
 which is 56px and inside the floor. Only at 320px does it exceed 64, and there no
 two panels share a screen. The assembly and Active Orders bars take
 `panelTitleBar` unchanged. A new panel takes `panelTitleBar`, not this.
+
+**Known gap: the assembly panel's pattern buttons overflow their header rail
+at narrow widths.** `patternSelectorRow` is `cn(panelHeaderBar, "gap-2")`, and
+`panelHeaderBar` carries `panelTitleBar`'s fixed `h-16`. The two pattern buttons
+(`patternButton`, `min-w-[120px] px-4 py-2`, a label above a description that
+wraps) are taller than that 64px rail at narrow widths, and the overflow is
+drawn rather than clipped. Measured in Chrome: at 320 the buttons are 94.5px in
+the 64px bar - the row's scrollHeight is 79 against a clientHeight of 63 - and
+are painted 15.8px above it and 14.8px below, over the `MarketSelector` row
+above and the top of the Orders palette below. At 360, 81.0px with 9.0px above
+and 8.0px below; at 390, 65.0px with 1.0px above and 0.0px below. At 1024 and
+1440 they are 51.5px and fit with 5.8px and 6.8px of slack, so this is a
+narrow-width defect only. It is pre-existing rather than anything the lane
+stacking above introduced: identical figures were measured on that change's
+branch and on its base commit 6067cf5. Nor is it a matter of the buttons simply
+being asked to fit - at 320 the bar has 256px of inner width, so two buttons at
+`min-w-[120px]` plus the 8px gap leave about 92px of text width each, in which
+the label takes two lines and the description three, and the only way that
+content reaches 64px inside the rail is without the description, which is a
+question about what the buttons say rather than about layout. `marketSelectorRow`
+in the same panel is unaffected, having no fixed height and carrying `flex-wrap`
+already: it simply grows, measuring 68.5px at 320 and 360 and 46.5px at 390 and
+above. **Whether a panel header bar's height may be relaxed is an open question,
+and this paragraph does not answer it.** The paragraph above records `h-16` as
+having exactly one exception, `wrappingPanelTitleBar`, whose sole user is the
+chart panel's title bar, with a new panel told to take the constant. Deciding
+what this defect means for that rule is tracked outside this repository; what is
+recorded here is the measurement, so the next reader to meet it at 320 can tell
+it is known and deferred.
 
 **The desktop shell only has a height above `lg`.** `body`/`#root` are
 content-sized, so `h-full` resolves to `auto` unless something above it commits to

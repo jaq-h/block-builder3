@@ -38,11 +38,47 @@ export const gridPane = "flex-1 min-h-0 flex flex-col";
 export const cellLockedNote =
   "shrink-0 mt-1.5 px-3 py-2 rounded-lg border border-dashed border-accent-outline bg-accent-bg-subtle-light text-[11px] leading-snug text-accent-primary";
 
+// The grid pane's three lanes - the order palette, the Entry column and the
+// Exit column - side by side while the panel is wide enough to draw all three,
+// stacked into full-width bands when it is not.
+//
 // At least fills the viewport above, and grows past it when the grid is taller
 // than the space available - which is what turns the clipping into a scroll.
-export const contentRow = "flex min-h-full gap-1.5";
+// That scroll is VERTICAL only, and deliberately so; the horizontal half of it
+// is what the wrap below exists to remove.
+//
+// **The row has a min-content width, and it is derived rather than chosen.**
+// It is 542px: the palette's 90px min-width (`ProviderColumn`'s
+// `sm:min-w-22.5`) plus the `min-w-[220px]` each grid column carries to keep
+// its price chip inside the cell, twice, plus two 6px gaps. That floor is owned
+// by `sm:min-w-22.5` and NOT by the palette's `sm:w-27.5`: 110px is what the
+// palette prefers, and it gives up 20px of it before the row stops shrinking.
+// 542px is therefore the width the lanes collapse to when the panel cannot fit
+// them. Below `lg` the panel is the viewport less the shell's 32px of padding,
+// so the row stops fitting at a 574px viewport, and it used to be drawn at that
+// width anyway. Measured in Chrome at 320, 360 and 390 the lanes stood at that
+// collapsed 542px - the palette squeezed to 90px - and the Exit column sat at
+// x 347..549 in every one of them, entirely outside the viewport, with the
+// panel's own `overflow-auto` the only way to reach it and no visible scrollbar
+// to say so. A conditional strategy needs both an Entry and an Exit leg, so the
+// app's core task could not be completed on a phone at all.
+//
+// It wraps rather than scrolls, which is this project's standing answer for
+// chrome that will not fit; see AGENTS.md, "Layout and the CSS cascade".
+// `sm` is where it switches, and it is a floor with room rather than a fitted
+// number: at a 640px viewport the panel measures 608px against that 542px
+// min-content row, and measured there the palette sits at its preferred 110px
+// with each column at 243px, so nothing is at its floor. 640 is also the first
+// standard breakpoint above the 574px the row actually fails at. Above `lg` the
+// panel is never narrower than 660px
+// (measured at 1024, where the shell's `minmax(0,700px)` track is squeezed
+// hardest), so the desktop layout never reaches the stacked form.
+export const contentRow = "flex flex-col sm:flex-row min-h-full gap-1.5";
 
-export const columnsWrapper = "flex flex-1 gap-1.5";
+// Stacked, the two columns are bands in the flow and take their height from
+// their cells, so no `flex-1` - a `0%` basis in a column direction would fight
+// the content for a height that nothing above has fixed.
+export const columnsWrapper = "flex flex-col sm:flex-row sm:flex-1 gap-1.5";
 
 // =============================================================================
 // HEADER
@@ -98,6 +134,13 @@ export const patternDescription = "text-[9px] opacity-70 mt-0.5";
 // COLUMNS
 // =============================================================================
 
+// `min-w-[220px]` is the width at which a cell's price chip still fits inside
+// it. The chip is laid out at `calc(50% + 25px)` from the axis centre and is
+// about 66px wide at a BTC price, against 8px of cell padding and 8px of cell
+// margin either side: measured at 390, a 202px cell put `$58,322.4` at
+// x 247..305.5 with the cell edge at 323, so 17.5px of slack. Narrower and the
+// price the user is about to trade at is clipped, which is why the stacked form
+// above gives a column the panel's whole width rather than squeezing two in.
 export const column =
   "flex flex-col min-w-[220px] w-full bg-bg-column border border-border-dimmed rounded-lg overflow-hidden p-0";
 
@@ -120,8 +163,19 @@ export const columnHeaderText = "text-sm font-semibold text-text-secondary";
 // a block no longer slides the buttons sideways as Execute Trade appears.
 // `shrink-0` pins the bar to the bottom of the panel instead of letting the
 // scrolling grid above squeeze it out of the viewport.
+//
+// It wraps, for the same reason `contentRow` above does and by the same rule.
+// Clear All and Reverse come to 219px beside a 203px Execute Trade, and the bar
+// has the panel's width less 32px of padding to draw them in - 326px at a 390px
+// viewport. Measured there before this wrapped, Execute Trade stood at
+// x 267.5..470.8 against a 390px viewport and the panel's own `overflow-hidden`
+// clipped the last 80.8px of it with nothing to scroll: the button that submits
+// the strategy could not be pressed on a phone. Wrapped, the actions take the
+// first line and Execute Trade the second, and both fit at 320. On a panel wide
+// enough for one line nothing moves - `flex-wrap` costs a single-line row
+// nothing.
 export const utilityRow =
-  "shrink-0 flex items-stretch justify-between gap-4 p-4 border-t border-border-neutral bg-bg-overlay";
+  "shrink-0 flex flex-wrap items-stretch justify-between gap-4 p-4 border-t border-border-neutral bg-bg-overlay";
 
 export const utilityActions = "flex items-stretch gap-4";
 
