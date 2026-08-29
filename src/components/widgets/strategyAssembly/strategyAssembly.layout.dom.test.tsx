@@ -10,6 +10,7 @@ import {
   contentRow,
   utilityRow,
 } from "./strategyAssembly.styles";
+import { utilitiesInAnyCondition } from "../../../test/tailwindTokens";
 
 // =============================================================================
 // THE GRID PANE'S THREE LANES, AND WHAT HAPPENS WHEN THEY DO NOT FIT
@@ -41,14 +42,17 @@ import {
 // change deliberately ruled out cannot come back: answering a row that does not
 // fit with a horizontal scroller rather than with a wrap.
 
-const expectNoScroller = (classes: string[]) => {
+const expectNoScroller = (className: string) => {
   // A variant-prefixed scroller is the same box under some other condition, so
   // every leading `<variant>:` segment comes off first - `max-sm:` and stacked
   // ones like `sm:hover:` included - and the utility underneath is what is
-  // judged.
-  for (const cls of classes) {
-    expect(cls.replace(/^.*:/, "")).not.toMatch(
-      /^overflow(-x|-y)?-(auto|scroll)$/,
+  // judged. `utilitiesInAnyCondition` is the shared owner of that strip; it
+  // leaves a bracketed arbitrary value intact, which a greedy one did not, so
+  // `[overflow-x:auto]` reaches the matcher below rather than arriving as
+  // `auto]` and matching nothing.
+  for (const utility of utilitiesInAnyCondition(className)) {
+    expect(utility).not.toMatch(
+      /^(overflow(-x|-y)?-(auto|scroll)$|\[overflow(-x|-y)?:(auto|scroll)\])/,
     );
   }
 };
@@ -62,7 +66,7 @@ describe("the assembly grid's lanes", () => {
     // The app's chrome wraps and never scrolls: a horizontal scrollport is a
     // box whose height depends on the platform's scrollbar, and it clips the
     // focus rings of the controls inside it. See `AGENTS.md`.
-    expectNoScroller(classes);
+    expectNoScroller(contentRow);
   });
 
   it("stacks the Entry and Exit columns with them", () => {
@@ -75,7 +79,7 @@ describe("the assembly grid's lanes", () => {
     // a height nothing above has fixed.
     expect(classes).toContain("sm:flex-1");
     expect(classes).not.toContain("flex-1");
-    expectNoScroller(classes);
+    expectNoScroller(columnsWrapper);
   });
 
   it("wraps the action bar rather than clipping Execute Trade", () => {
@@ -86,7 +90,7 @@ describe("the assembly grid's lanes", () => {
     // x 267.5..470.8 and the panel's `overflow-hidden` clipped the last 80.8px
     // of it: the button that submits the strategy could not be pressed.
     expect(classes).toContain("flex-wrap");
-    expectNoScroller(classes);
+    expectNoScroller(utilityRow);
   });
 });
 
@@ -131,9 +135,9 @@ describe("the order palette", () => {
     // left-hand lane, so its tiles run across it. A column of nine would push
     // the Entry column most of a phone screen down before it started.
     expect(classes).toContain("grid");
-    expect(classes.some((c) => c.startsWith("grid-cols-[repeat(auto-fill"))).toBe(
-      true,
-    );
+    expect(
+      classes.some((c) => c.startsWith("grid-cols-[repeat(auto-fill")),
+    ).toBe(true);
     // The scroll belongs to the lane form alone: stacked, the palette's height
     // is its content's, so a scrollport would have nothing to scroll and would
     // only clip the tiles' focus rings.

@@ -2,10 +2,16 @@ import { describe, it, expect } from "vitest";
 import {
   BLOCK_HEIGHT,
   SCALE_CONFIG,
+  getAxisColumnProps,
   getBlockPositionerProps,
   getBlockTopPx,
   positionFromPointer,
+  sliderArea,
 } from "./grid";
+import {
+  unconditionalUtilities,
+  utilitiesInAnyCondition,
+} from "../test/tailwindTokens";
 
 // =============================================================================
 // HARNESS
@@ -15,7 +21,16 @@ const TRACK_TOP = 400;
 const TRACK_HEIGHT = 181.5;
 
 /** Every yPosition worth checking, including both ends of the axis. */
-const POSITIONS = [0, 0.5, 7.25, 12.5, 25, 37.5, 49.5, SCALE_CONFIG.MAX_PERCENT];
+const POSITIONS = [
+  0,
+  0.5,
+  7.25,
+  12.5,
+  25,
+  37.5,
+  49.5,
+  SCALE_CONFIG.MAX_PERCENT,
+];
 
 /**
  * Where the rendered block's centre lands, in viewport coordinates: the
@@ -34,9 +49,8 @@ const renderedCentre = (yPosition: number, isDescending: boolean) =>
  * matched as text.
  */
 const resolveTop = (top: string, elementHeight: number): number => {
-  const parts = /^calc\(calc\(100% - ([\d.]+)px\) \* ([\d.]+) \+ ([\d.]+)px\)$/.exec(
-    top,
-  );
+  const parts =
+    /^calc\(calc\(100% - ([\d.]+)px\) \* ([\d.]+) \+ ([\d.]+)px\)$/.exec(top);
   if (!parts) throw new Error(`unrecognised positioner top: ${top}`);
   const [, inset, percent, offset] = parts;
   return (elementHeight - Number(inset)) * Number(percent) + Number(offset);
@@ -152,5 +166,145 @@ describe("the positioner centres a shrink-wrapped child", () => {
     expect(style.left).toBeDefined();
     expect(style.right).toBeDefined();
     expect(style.width).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// THE AXIS COLUMN'S HEIGHT COMES FROM STRETCH, NEVER FROM A PERCENTAGE
+// =============================================================================
+//
+// Everything the price axis draws is positioned against the axis column and
+// nothing else: the track and the percentage scale are `top`/`bottom` insets on
+// it, and `getBlockPositionerProps` lays a block out at
+// `calc((100% - TRACK_INSETpx) * percent)` within it. So one collapsed height
+// is not one defect, it is the whole axis at once.
+//
+// It carried `h-full`, and a percentage height needs a definite height to
+// resolve against. The chain above it is only definite while the grid columns
+// are flex items of a ROW; stacked below `sm` for the phone layout they are
+// items of a column with no definite height, because below `lg` the shell is
+// deliberately content-sized. `height: 100%` resolved to 0, and since every
+// child of this box is absolutely positioned there was no content to fall back
+// on. Measured in Chrome with a Limit in the Entry primary cell: the axis
+// column and the track stood at 150px/80px at 640 and above, and at 0px/0px at
+// 320, 360, 390 and 414 - no track to grab, the scale clumped into 60px, and
+// the offset mapped onto a NEGATIVE 70px range, which drew the block above the
+// market line and ran it the wrong way.
+//
+// `align-items: stretch` sizes it now. It is the default for a flex item and
+// `sliderArea` is a `flex-row` whose cross axis IS this height, so it needs no
+// definite parent height and holds in both forms of the layout.
+//
+// The fact has TWO owners, so both are guarded below: the child must not state
+// a height or opt out of the stretch, and `sliderArea` must stay the flex row
+// that supplies one. A column parent, or a parent that stopped being a flex
+// container, collapses this box exactly as `h-full` did.
+//
+// WHAT THESE TESTS ARE: assertions about the utilities the two owners ask for.
+// jsdom applies no author stylesheet and lays nothing out, so none of them can
+// watch a height resolve; the pixel evidence is the browser measurement above.
+// What they CAN hold is that the token whose collapse caused this cannot come
+// back under any variant, that no pixel height is substituted for it - the axis
+// is a proportion of whatever height the cell has, so a number here would be a
+// second owner of `CELL_MIN_HEIGHT`'s job - and that the parent still stretches
+// its children along the axis that IS this height.
+//
+// WHAT THEY DO NOT REACH: the third half of the invariant, that the axis column
+// is `sliderArea`'s DIRECT child. Wrapping `renderAxisContent`'s output in an
+// extra div inside `GridCell` or `ReadOnlyGridCell` puts an unstretched box
+// between the two and re-collapses the axis with both owners' class lists
+// untouched. That is a component-structure fact no token test can see, and
+// since jsdom draws nothing no rendering test can see the collapse either, so
+// nothing here pretends to cover it. They would also go red on a
+// behaviour-preserving rewrite - the same two boxes expressed in a stylesheet -
+// and stay green if the axis collapsed for a reason outside these constants.
+// The matchers know the two syntaxes Tailwind offers for each declaration, the
+// named utility and the arbitrary property, and no third: a declaration
+// smuggled in through a plugin's own utility name is outside their reach.
+
+// Each matcher below covers both syntaxes a declaration can arrive in: the
+// named utility, and the arbitrary property that states the same CSS outright.
+// `[height:100%]` is the most literal restatement of the thing this guard
+// exists to refuse, so a height-only `h-`/`size-` matcher would miss precisely
+// the form that says it in so many words.
+
+const STATES_A_HEIGHT = /^(((min|max)-)?(h|size)-|\[(min-|max-)?height:)/;
+const OPTS_OUT_OF_STRETCH =
+  /^((place-)?self-(start|end|center|baseline)$|\[(align|place)-self:)/;
+const IS_A_COLUMN = /^(flex-col(-reverse)?$|\[flex-direction:column)/;
+const ALIGNS_ITS_CHILDREN =
+  /^((place-)?items-(start|end|center|baseline)$|\[(align|place)-items:)/;
+
+describe("the axis column's height", () => {
+  // Both shapes: a single-axis order type gets `flex-1`, a dual-axis leg gets
+  // `flex-none w-1/2`. Neither may state a height.
+  for (const isSingleAxis of [true, false]) {
+    const shape = isSingleAxis ? "single-axis" : "dual-axis";
+
+    it(`takes no height of its own in the ${shape} form`, () => {
+      for (const utility of utilitiesInAnyCondition(
+        getAxisColumnProps(isSingleAxis),
+      )) {
+        // `size-*` sets a height as well as a width, so it collapses this box
+        // identically while sliding past a height-only matcher.
+        expect(
+          utility,
+          "the axis column is asking for a height again; a percentage collapses to 0 wherever the grid columns are stacked, which takes the track, the scale and the block position with it",
+        ).not.toMatch(STATES_A_HEIGHT);
+      }
+    });
+
+    it(`stays a flex item its parent can stretch in the ${shape} form`, () => {
+      // `sliderArea` is a `flex-row`, so stretch is what supplies the height.
+      // A `self-start`/`self-end`/`self-center` here would opt out of it and
+      // collapse the box just as `h-full` did.
+      for (const utility of utilitiesInAnyCondition(
+        getAxisColumnProps(isSingleAxis),
+      )) {
+        expect(
+          utility,
+          "the axis column has opted out of the stretch that gives it its height",
+        ).not.toMatch(OPTS_OUT_OF_STRETCH);
+      }
+    });
+  }
+});
+
+describe("the box that stretches the axis column", () => {
+  it("stays a flex row, so its cross axis is the height it supplies", () => {
+    // Stretch only supplies a height while the cross axis IS the height. As a
+    // column, or as no flex container at all, `sliderArea` gives the axis
+    // column nothing to be stretched to and the whole axis reads zero again.
+    //
+    // These two are positive, so they are judged on the utilities that carry no
+    // variant. The row has to hold at EVERY width - `sm:flex-row` is the shape
+    // of the change that caused this defect in the first place, and it would
+    // leave the axis collapsed below `sm` exactly as before.
+    const unconditional = unconditionalUtilities(sliderArea);
+
+    expect(
+      unconditional,
+      "sliderArea is no longer a flex container at every width, so it stretches nothing and the price axis has no height",
+    ).toContain("flex");
+    expect(
+      unconditional,
+      "sliderArea is no longer a row at every width, so its cross axis is the width and the price axis has no height",
+    ).toContain("flex-row");
+
+    for (const utility of utilitiesInAnyCondition(sliderArea)) {
+      expect(
+        utility,
+        "sliderArea has been turned into a column; stretch then supplies a width and the price axis collapses to 0",
+      ).not.toMatch(IS_A_COLUMN);
+    }
+  });
+
+  it("does not opt its children out of the stretch", () => {
+    for (const utility of utilitiesInAnyCondition(sliderArea)) {
+      expect(
+        utility,
+        "sliderArea has aligned its children instead of stretching them, which takes the price axis' height away just as h-full did",
+      ).not.toMatch(ALIGNS_ITS_CHILDREN);
+    }
   });
 });

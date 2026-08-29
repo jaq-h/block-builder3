@@ -281,11 +281,55 @@ export function getAxisLabelItemProps(
   return { className, style };
 }
 
+/**
+ * The row a price axis column sits in, and **the thing that gives that column
+ * its height.** It must stay a flex ROW whose children are stretched: stretch
+ * only supplies a height while the cross axis IS the height, so a `flex-col`
+ * here, or an `items-start`/`items-center`/`items-end`/`items-baseline` that
+ * opts the children out, collapses the whole axis exactly as the `h-full` on
+ * `getAxisColumnProps` did. Read that function's docblock for what a collapse
+ * costs; the axis column also has to remain this box's DIRECT child.
+ */
 export const sliderArea = "flex-1 relative flex flex-row overflow-visible";
 
+/**
+ * The box a price axis is drawn inside, and the one the vertical drag measures
+ * to invert that layout. **Its height comes from `sliderArea` stretching it,
+ * and it must never be asked for as a percentage again.**
+ *
+ * Everything the axis draws is positioned against this box and nothing else:
+ * the track and the percentage scale are `top`/`bottom` insets on it, and
+ * `getBlockPositionerProps` lays a block out at `calc((100% - 70px) * percent)`
+ * within it. Every one of those reads zero if this box reads zero, so a single
+ * collapsed height is the whole axis at once - no track to grab, a scale
+ * clumped into 60px, and an offset mapped onto a NEGATIVE 70px range, which
+ * draws the block above the market line and moves it the wrong way.
+ *
+ * It carried `h-full` and did exactly that. A percentage height needs a
+ * definite height to resolve against, and the chain above it is only definite
+ * while the grid columns are flex items of a ROW: stacked below `sm`
+ * (`columnsWrapper`, added for the phone layout) they are items of a column
+ * with no definite height, because below `lg` the shell is deliberately
+ * content-sized. `height: 100%` then resolved to 0, and since every child here
+ * is absolutely positioned there was no content to fall back on. Measured in
+ * Chrome with a Limit in Entry: this box and the track stood at 150px/80px at
+ * 640 and above and at 0px/0px at 320, 360, 390 and 414, with the block drawn
+ * at y 24.5 instead of y 99.5.
+ *
+ * `align-items: stretch` is what sizes it now - the default for a flex item,
+ * and the parent (`sliderArea`) is a `flex-row` whose cross axis IS this
+ * height. Stretch needs no definite parent height, so it holds in both forms
+ * of the layout. It was doing the work above `sm` all along: `h-full` was
+ * redundant there, which is why removing it leaves 768, 1024 and 1440
+ * measuring exactly what they measured before.
+ *
+ * Do not restore `h-full`, and do not answer a future collapse with a pixel
+ * height or a `min-h-*` here: the axis is a proportion of whatever height the
+ * cell has, so a number would be a second owner of `CELL_MIN_HEIGHT`'s job.
+ */
 export function getAxisColumnProps(isSingleAxis?: boolean) {
   const className = cn(
-    "relative h-full flex flex-col overflow-visible",
+    "relative flex flex-col overflow-visible",
     isSingleAxis ? "flex-1" : "flex-none w-1/2",
   );
   return className;
