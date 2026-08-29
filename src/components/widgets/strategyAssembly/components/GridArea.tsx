@@ -278,8 +278,10 @@ const GridArea: FC<GridAreaProps> = ({
     target: CellPosition,
   ): PlacementResult => {
     const blockInfo = findBlockInGrid(grid, id);
-    // Not a refusal by any cell: a carry can outlive the grid it was started
-    // against, and there is then no cell to name in either clause.
+    // Not a refusal by any cell: the grid does not hold this block, so there
+    // is no cell to name in either clause. No carry is in play here - this
+    // gesture released one at drag recognition; see `PlacementResult`'s
+    // `gone` for the rest.
     if (!blockInfo) return { status: "gone" };
 
     const at = { col: blockInfo.col, row: blockInfo.row };

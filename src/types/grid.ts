@@ -76,9 +76,16 @@ export type PlacementResult =
       reason?: "staysInCell";
     }
   /**
-   * The block named is not on the grid at all - a carry can outlive the grid
-   * it was started against, and the block may have been cleared away since.
-   * There is no cell to name, so the sentence for this must name none.
+   * The grid does not hold the block named. There is no cell to name in
+   * either clause, so the sentence for this must name none.
+   *
+   * It is not about a carry. Only a palette order is ever carried (decision
+   * D9), so a carry can never name a block the grid has lost; and the one
+   * thing that produces this - `keepBlockInItsCell` in `GridArea`, on the
+   * placed-block pointer path - runs after that gesture has already released
+   * any carry. What is left is a lookup of a block this grid no longer holds.
+   * When a carry itself ends is a separate rule with its own owner: see
+   * `useBlockCommand` and the carry-lifecycle entry in AGENTS.md.
    */
   | { status: "gone" };
 
