@@ -307,6 +307,18 @@ const GridArea: FC<GridAreaProps> = ({
    * `grid` rather than through an updater, deliberately: the model has already
    * looked the block up in exactly this grid, so the value both of them reason
    * about is one value rather than two that agree.
+   *
+   * **The price of that, stated so the next writer meets it here rather than in
+   * the product:** a value write does not compose with another grid write
+   * batched into the same event, the way this file's other two `setGrid` callers
+   * do - a second writer in one event would clobber this one and resurrect the
+   * block. No such path exists today: each of the three removal affordances
+   * (Delete or Backspace, the Remove control's click, a free drag released clear
+   * of every cell) fires once per event, and the placement and price writes are
+   * events of their own. Adding one means revisiting this, and the way out is
+   * not simply restoring the updater - the returned value is what makes the grid
+   * the model reasons about and the grid this wrote provably the same object,
+   * which is what keeps the removal's own sentence from being erased.
    */
   const removeBlockFromCell = (id: string) => {
     const next = removeBlockFromGrid(grid, id);

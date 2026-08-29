@@ -75,8 +75,13 @@ const renderCommand = (
 /**
  * The same wiring, but with the grid as a prop so it can be replaced under a
  * live carry - which is what Clear All, Reverse Blocks and a pattern switch do,
- * none of which end the carry. The `GridArea` harness stubs those buttons out,
- * so this is the honest place to drive them.
+ * every one of which now ends the carry, because a new `grid` is the whole of
+ * what any of them can do to this model. The `GridArea` harness stubs those
+ * buttons out, so this is the honest place to drive them.
+ *
+ * FORMERLY this docblock ended "none of which end the carry", which was true of
+ * the behaviour these helpers were written against and is the defect the
+ * `gridReplaced` transition closed.
  */
 const renderCommandWithReplaceableGrid = (initialGrid: GridData) =>
   renderHook(

@@ -2055,6 +2055,13 @@ describe("GridArea, a carry the grid is replaced under", () => {
   // drives the real sequence a browser sends, which is why it is here: a later
   // change to either mechanism must not silently flip the sentence these three
   // controls produce.
+  //
+  // This harness stubs those three controls out, so what it pins is the rule -
+  // a pointer press on ANY control beside the grid is the hatch's. The three
+  // real ones are driven by name, with both sentences asserted per control, in
+  // `gridReplacement.dom.test.tsx` under "a pointer press on %s" and "a
+  // keyboard press on %s", where the real provider makes their clicks replace
+  // the grid for real.
   it("lets the dismissal hatch own a pointer press on a control beside the grid", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));

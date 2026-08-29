@@ -796,16 +796,45 @@ carrying both facts - the strategy is on the grid, and the market did or did not
 because two live-region writes in quick succession cut the first one off. A strategy saved on a
 pair the catalogue no longer offers is refused rather than repriced, and says so.
 
-**Known gap, deferred and filed as its own item: a carry can outlive the grid it was started
-against.** Clear All, Reverse Blocks and a pattern switch each replace the grid without ending
-an active carry, so the cells the carry offered stay highlighted - `aria-current="location"` -
-even though the grid beneath them has changed. That is misleading rather than false: the
-highlight says *you could drop here*, which is not an assertion about where any block is, and
-the moment the user acts on one of those cells the announcement is correct and the carry ends.
-Making it *not misleading* means ending the carry when the grid is replaced under it, and that
-is **carry lifecycle** - it belongs to the command model, not to the announcement layer that
-owns the words. It is narrower than it was: only a palette order is carried now, and a palette
-order cannot be cleared away, so the carry can no longer name a block the grid has lost.
+**A carry no longer outlives the grid it was started against.** This was a known gap, filed
+and deferred: Clear All, Reverse Blocks and a pattern switch each replaced the grid without
+ending an active carry, so the cells the carry offered stayed highlighted -
+`aria-current="location"` - after the grid beneath them had changed. That was misleading
+rather than false, since the highlight says *you could drop here* rather than asserting where
+any block is, and acting on one of those cells announced the truth and ended the carry. What
+was missing was withdrawing the invitation instead of merely refusing it honestly, and that is
+**carry lifecycle**, so it belongs to the command model rather than to the announcement layer
+that owns the words.
+
+`useBlockCommand` is the one owner of that transition, and it is **derived rather than
+signalled**: `gridStandsBehind` re-asks `validTargetsFor` on the grid the model is handed and
+compares it with the carry's own `targets` through `sameTargets`, in a layout effect, so the
+stale highlight is never painted and no caller has anything to remember. A path that replaces
+the grid cannot forget to call anything, because there is nothing to call - which is the point,
+since the three callers above were the ones that existed the day it was written and the fourth
+is always somebody else's. Two consequences are deliberate: a change that leaves the same cells
+on offer is not a replacement, so nudging a price with the arrow keys while carrying keeps the
+carry; and in the bulk pattern every cell takes every order, so Clear All there leaves the
+promise true and the carry standing. A removal is not an exception either - `removeBlock`
+applies the same rule inside its own `asOneEvent`, on the grid the write hands back, so the
+removal's own sentence is not erased by a second live-region write.
+
+**Which mechanism ends the carry depends on how the control was reached, and the two are not
+competing.** The pattern selector, the grid and the utility buttons are siblings in the panel,
+so Clear All, Reverse and both pattern buttons are genuinely outside the placement surface: a
+real **pointer** press on one reaches the dismissal hatch's capture-phase `pointerdown` before
+that button's own click handler, and the carry ends as a cancellation - *"Cancelled. Take
+Profit order returned to the palette."* That is truthful, because the user really did press
+something elsewhere, and the replacement that follows finds no carry left to be stale about.
+The lifecycle transition owns every path the hatch cannot see - a keyboard or
+assistive-technology activation of those same controls, a programmatic replacement, and a
+removal, which happens inside the surface where the hatch is silent by design - and says
+*"Take Profit order returned to the palette: the grid changed underneath it."* Neither should
+be "fixed" into the other.
+
+The gap was narrower than it looked by the time it was closed: only a palette order is ever
+carried, and a palette order cannot be cleared away, so a carry can no longer name a block the
+grid has lost.
 
 The same rule decides one thing outside the announcer: `GridCell` wires its click handler
 unconditionally rather than only while something is carried. Whether a click means anything is

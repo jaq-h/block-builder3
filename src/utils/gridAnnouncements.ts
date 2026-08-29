@@ -353,6 +353,35 @@ const describePlacement = (
 };
 
 /**
+ * One sentence per reason a carry ended, and no sentence any reason merely
+ * falls into.
+ *
+ * A `switch` over the whole union rather than a chain of guards, and hoisted
+ * here so its exhaustiveness is the compiler's job: a fourth `CarryEndReason`
+ * leaves this function without an ending return, which its declared `string`
+ * fails the typecheck on. The chain this replaced let the newest member of the
+ * union inherit the last branch's words - a wrong sentence with nothing to
+ * announce it, which is exactly what `mapOrderType` refuses to do with an order
+ * type and what this file means by "a new message means a new outcome".
+ *
+ * What the user should do next is what separates them: a cancellation was
+ * theirs, a supersession was the drag they are still holding, and a grid
+ * replacement was neither - the cells the carry offered are simply not on offer
+ * any more, and saying "cancelled" there would blame the user for something the
+ * grid did.
+ */
+const describeCarryEnd = (reason: CarryEndReason, resting: string): string => {
+  switch (reason) {
+    case "cancelled":
+      return `Cancelled. ${resting}.`;
+    case "superseded":
+      return `${resting}: a drag took over.`;
+    case "gridReplaced":
+      return `${resting}: the grid changed underneath it.`;
+  }
+};
+
+/**
  * Several settled facts about **one** event, as the single thing the live
  * region is told.
  *
@@ -421,17 +450,13 @@ export const describeOutcome = (
     case "cellRefused":
       return `${describeCell(outcome.cell, pattern)} cannot take this order. Still carrying ${describeSource(outcome.source)}.`;
 
-    // Three reasons, three sentences, because what the user should do next
-    // differs: a cancellation was theirs, a supersession was the drag they are
-    // still holding, and a grid replacement was neither - the cells the carry
-    // offered are simply not on offer any more, and saying "cancelled" there
-    // would blame the user for something the grid did.
-    case "carryEnded": {
-      const resting = `${describeSource(outcome.source)} ${restingPlace(outcome.source, pattern, outcome.at)}`;
-      if (outcome.reason === "cancelled") return `Cancelled. ${resting}.`;
-      if (outcome.reason === "superseded") return `${resting}: a drag took over.`;
-      return `${resting}: the grid changed underneath it.`;
-    }
+    // One sentence per reason, in `describeCarryEnd` above, where the compiler
+    // holds the union to it.
+    case "carryEnded":
+      return describeCarryEnd(
+        outcome.reason,
+        `${describeSource(outcome.source)} ${restingPlace(outcome.source, pattern, outcome.at)}`,
+      );
 
     case "placement":
       return describePlacement(

@@ -285,6 +285,20 @@ The README's **Interaction model** section is authoritative. Thirteen things bit
   matters - it is typed over `GridDataActions`, so a new action on the grid-data
   context fails the typecheck until it is classified and is then exercised
   against a live carry without a test being written for it.
+  **Which mechanism ends the carry depends on how the control was reached, and
+  the two are not competing.** `PatternSelector`, `GridArea` and `UtilityButtons`
+  are siblings in `StrategyAssembly`, so Clear All, Reverse and both pattern
+  buttons are genuinely OUTSIDE the placement surface - and a real POINTER press
+  on any of them reaches the dismissal hatch's capture-phase `pointerdown` first,
+  which ends the carry as `cancelled` and says "Cancelled. ...". That is truthful:
+  the user really did press something elsewhere, and the grid replacement that
+  follows finds no carry left to be stale about. The `gridReplaced` transition
+  owns everything the hatch cannot see - a keyboard or assistive-technology
+  activation of those same three controls, a programmatic replacement, and the
+  removal path, which happens INSIDE the surface where the hatch stays silent by
+  design. Do not "fix" either into the other, and do not read one sentence as a
+  regression of the other. `gridReplacement.dom.test.tsx` pins both halves per
+  control, under "a pointer press on %s" and "a keyboard press on %s".
 
 - **A click outside the placement surface puts down whatever is in hand**, by emptying that
   register. The surface is the element `GridArea` draws - the palette a block is picked up
@@ -294,6 +308,9 @@ The README's **Interaction model** section is authoritative. Thirteen things bit
   holds pointer capture and its events are retargeted to the dragged block, which is inside
   the surface, so a live gesture is not cancelled by it. That rests on the capture, which is
   not guaranteed. Focus is not handed back, for the same reason Tab does not hand it back.
+  It fires before the pressed control's own `onClick`, so for a POINTER press on Clear All,
+  Reverse or a pattern button it - not the carry-lifecycle rule above - is what ends the
+  carry, and "Cancelled." is the sentence. See that rule for why both are correct.
 - **Only a palette order is ever carried.** A placed block does not change cells, by any
   input method (decision D9, and see "Prices and order types"), so the carry has one kind of
   source and `CarriedBlock.source: ProviderSource` is the type saying so. Pressing Enter,

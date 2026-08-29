@@ -5,6 +5,8 @@ import { act, render, screen, fireEvent } from "@testing-library/react";
 
 import { StrategyAssemblyProvider } from "./StrategyAssemblyContext";
 import GridArea from "./components/GridArea";
+import PatternSelector from "./components/PatternSelector";
+import UtilityButtons from "./components/UtilityButtons";
 import { useGridData } from "./contexts/GridDataContext";
 import { clearGrid } from "@utils/grid";
 import type { GridDataActions } from "@/types/strategyAssembly";
@@ -93,7 +95,14 @@ const Harness: FC<{ actionsOut: (actions: GridDataActions) => void }> = ({
   >
     <StrategyAssemblyProvider>
       <ActionsProbe onActions={actionsOut} />
+      {/* The three real controls that replace the grid, as siblings of
+          `GridArea` in the order `StrategyAssembly` puts them - which is the
+          fact the activation tests below turn on. Being siblings, they are
+          outside the element `GridArea` draws as its placement surface, so a
+          pointer press on one is a press the dismissal hatch hears. */}
+      <PatternSelector />
       <GridArea currentPrice={100_000} tickerError={null} />
+      <UtilityButtons />
     </StrategyAssemblyProvider>
   </MarketContext.Provider>
 );
@@ -198,5 +207,102 @@ describe("the grid-data context's write surface", () => {
         "Take Profit order returned to the palette: the grid changed underneath it.",
       );
     });
+  });
+});
+
+// =============================================================================
+// WHICH MECHANISM OWNS WHICH ACTIVATION
+// =============================================================================
+//
+// Two things end a carry when one of these three controls is used, and **which
+// one gets there first depends on the input method, not on the control**. Both
+// are correct and neither is a fix for the other:
+//
+//   - A real POINTER press is heard by `GridArea`'s dismissal hatch, on
+//     `pointerdown` in the capture phase, before the pressed button's own click
+//     handler has replaced anything. The three controls are siblings of
+//     `GridArea` rather than children of it, so they are genuinely outside the
+//     placement surface and the user genuinely did press something else -
+//     "Cancelled." is the truth about what they did. The replacement that
+//     follows then finds no carry to be stale about.
+//   - A KEYBOARD or assistive-technology activation dispatches a click with no
+//     pointer event before it, so the hatch never hears it and the grid is
+//     replaced with the carry still live. That is the `gridReplaced` transition's
+//     case, and it says so - the cells stopped being on offer, which is not
+//     something to blame the user for.
+//
+// The sentence is the whole of what separates them: both end the carry and both
+// clear the highlight, so an assertion about either alone stays green through a
+// change that silently swaps which mechanism wins. That is why each case below
+// asserts the literal string, for each of the three controls rather than for one
+// representative - the hatch and the transition are wired once but reached three
+// ways, and a control that drifted out of the sibling arrangement would change
+// only its own sentence.
+
+/** A `pointerdown` with nothing on it but its type: the hatch reads no more. */
+const pointerDownOn = (control: Element) =>
+  fireEvent(
+    control,
+    new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
+  );
+
+const clearAll = () => screen.getByRole("button", { name: /Clear All/ });
+const reverse = () => screen.getByRole("button", { name: /Reverse/ });
+
+/**
+ * The pattern button that is not the one already in force - `aria-pressed` is
+ * how the control itself says which that is, so this cannot drift out of step
+ * with the selector's own idea of its state.
+ *
+ * Switching INTO bulk is a genuine replacement of the offer, which is what
+ * makes this case worth a test: a conditional carry is offered its primary's
+ * diagonals, and in bulk every cell takes every order. (Clear All *within* bulk
+ * is the opposite case, and deliberately leaves the carry standing.)
+ */
+const otherPattern = () =>
+  screen
+    .getAllByRole("button", { pressed: false })
+    .find((button) =>
+      screen
+        .getByRole("group", { name: "Order assembly type" })
+        .contains(button),
+    )!;
+
+const OUTSIDE_CONTROLS: [string, () => Element][] = [
+  ["Clear All", clearAll],
+  ["Reverse", reverse],
+  ["the pattern selector", otherPattern],
+];
+
+describe.each(OUTSIDE_CONTROLS)("a pointer press on %s", (_name, find) => {
+  it("ends the carry as a cancellation, because the press was outside the placement surface", () => {
+    carryOverAPlacedPrimary();
+
+    // The order a browser sends, and the order that decides this: the hatch's
+    // capture-phase `pointerdown` runs before the button's own click handler.
+    const control = find();
+    pointerDownOn(control);
+    fireEvent.click(control);
+
+    expect(announcement()).toBe(
+      "Cancelled. Take Profit order returned to the palette.",
+    );
+    expect(targets()).toHaveLength(0);
+  });
+});
+
+describe.each(OUTSIDE_CONTROLS)("a keyboard press on %s", (_name, find) => {
+  it("ends the carry as a grid replacement, because no pointer went down anywhere", () => {
+    carryOverAPlacedPrimary();
+
+    // What Enter or Space on a focused button produces: a click, and no pointer
+    // event at all. Nothing the hatch can hear, so the carry is still live when
+    // the grid is replaced under it.
+    fireEvent.click(find());
+
+    expect(announcement()).toBe(
+      "Take Profit order returned to the palette: the grid changed underneath it.",
+    );
+    expect(targets()).toHaveLength(0);
   });
 });
