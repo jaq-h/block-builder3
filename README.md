@@ -913,7 +913,7 @@ src/
 ├── components/
 │   ├── blocks/                    # Draggable order block components
 │   │   ├── block.tsx              # Core block component (CVA variants)
-│   │   ├── blockTile.ts           # The tile's shape, colour-free - shared with DragOverlay
+│   │   ├── blockTile.ts           # The tile's shape (shared with DragOverlay) and its Remove control's, colour-free
 │   │   ├── action-placeholder.tsx # Placeholder for action slots
 │   │   └── trigger-placeholder.tsx# Placeholder for trigger slots
 │   │
