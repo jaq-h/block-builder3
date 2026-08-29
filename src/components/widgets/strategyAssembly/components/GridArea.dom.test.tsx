@@ -922,6 +922,42 @@ describe("GridArea, removing a placed block", () => {
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
   });
 
+  // TWO OF ONE KIND IN ONE CELL, WHERE ONLY IDENTITY SEPARATES THEM.
+  //
+  // Reachable in the bulk pattern, where `isCellValidForPlacement` returns true
+  // for every cell: two Market orders share a label, a cell and therefore a
+  // control name, an ambiguity recorded in `AGENTS.md` as accepted. What is not
+  // acceptable is a control removing the OTHER one, which is what an overhanging
+  // control produced: while it hung 8px past its own tile it covered the
+  // neighbour, and a press aimed at one block destroyed another. The control is
+  // pinned inside its own tile now (`REMOVE_CONTROL_SHAPE`, held there by
+  // `blockTile.test.ts`), and the geometry that follows from that needs a real
+  // browser - jsdom computes no layout. What is pinned here is the wiring
+  // underneath it: each control takes away the block it belongs to and leaves
+  // the other standing, told apart by DOM identity rather than by a name they
+  // share.
+  it("removes the block its own control belongs to, not the one beside it", () => {
+    const grid = addBlocksToCell(
+      addBlocksToCell(clearGrid(2, 3), { col: 0, row: 1 }, [placedMarket("m1")], "bulk"),
+      { col: 0, row: 1 },
+      [placedMarket("m2")],
+      "bulk",
+    );
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+
+    const tiles = screen.getAllByRole("button", { name: /^Market order,/ });
+    const controls = screen.getAllByRole("button", { name: /^Remove Market order,/ });
+    expect(tiles).toHaveLength(2);
+    expect(controls).toHaveLength(2);
+    const [firstTile] = tiles;
+
+    tap(controls[1]);
+
+    const left = screen.getAllByRole("button", { name: /^Market order,/ });
+    expect(left).toHaveLength(1);
+    expect(left[0]).toBe(firstTile);
+  });
+
   // THE HARDEST PAIR TO TELL APART, AND THE ONE THE CELL CANNOT SEPARATE.
   //
   // `createBlocksFromOrderType` gives both legs of a dual-axis order type the

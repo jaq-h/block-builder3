@@ -105,3 +105,52 @@ describe("track geometry", () => {
     });
   });
 });
+
+// =============================================================================
+// THE POSITIONER CENTRES THE BLOCK IT PLACES, AND THAT IS LOAD-BEARING
+// =============================================================================
+//
+// The positioner spans the whole axis column - it sets BOTH `left` and `right`,
+// so it is nothing like tile-sized - and `GridCell` renders `Block` inside it.
+// `Block`'s own wrapper is therefore tile-sized for exactly one reason: this
+// element is a centring flex container, which makes that wrapper a shrink-
+// wrapped flex item.
+//
+// That is what the Remove control's containment rests on in this layout. The
+// control is pinned `top-0 right-0` INSIDE the tile, but those offsets resolve
+// against `Block`'s wrapper, so the moment the wrapper stops being a flex item
+// it becomes a block-level box filling the column and `right-0` puts a
+// DESTRUCTIVE control at the column's edge - clear of the 40px tile, over the
+// price label and the neighbouring axis - while every class-list token
+// `blockTile.test.ts` reads and every token on the wrapper itself stays
+// unchanged. `blockTile.test.ts`'s REACH paragraph names this as half 3b of the
+// wrapper-equals-tile assumption; this is the half of it that lives here.
+//
+// It asserts the declared display and alignment, which is this function's own
+// output contract. What it cannot do is measure the boxes that follow - that is
+// a browser's job, and hole 4 of the same paragraph says so.
+
+describe("the positioner centres a shrink-wrapped child", () => {
+  it("declares a flex container that centres what GridCell puts in it", () => {
+    const tokens = getBlockPositionerProps(25, false).className.split(/\s+/);
+
+    expect(
+      tokens,
+      "the positioner is no longer a flex container, so Block's wrapper fills the axis column and the remove control leaves its tile",
+    ).toContain("flex");
+    expect(
+      tokens,
+      "the positioner no longer centres its child, so Block's wrapper is not laid out at the tile's position",
+    ).toContain("justify-center");
+  });
+
+  // The span is why the centring matters: a positioner only as wide as the tile
+  // would make the question moot, and this is what says it is not.
+  it("spans the column rather than shrinking to the block", () => {
+    const { style } = getBlockPositionerProps(25, false);
+
+    expect(style.left).toBeDefined();
+    expect(style.right).toBeDefined();
+    expect(style.width).toBeUndefined();
+  });
+});

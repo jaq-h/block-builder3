@@ -438,6 +438,75 @@ describe("Block, placed on a price axis", () => {
 // =============================================================================
 
 // =============================================================================
+// WHAT WOULD GROW THE REMOVE CONTROL'S WRAPPER PAST ITS TILE
+// =============================================================================
+//
+// The wrapper shrink-wraps its one in-flow child, so any utility on it that adds
+// to its box - or sets the box outright - breaks the containment derivation in
+// `blockTile.test.ts` while every token that file reads stays put.
+//
+// WHAT IT CATCHES: padding and margin in every spelling Tailwind offers, the
+// shorthand `p-`/`m-`, the axis and side forms `px-`/`py-`/`pt-`/`pr-`/`pb-`/
+// `pl-` and their margin twins, and the logical `ps-`/`pe-`/`ms-`/`me-`; every
+// explicit size, `w-`/`h-`/`size-` and the `min-`/`max-` forms of the first two;
+// `border` in any spelling that adds width, including the bare token; the inset
+// shorthands `inset-`; and the flex sizing that stops a flex item taking its
+// content's width, `basis-`/`flex-`/`grow`/`shrink`. Negative variants of all of
+// them, since `-mx-2` moves the box just as surely.
+//
+// WHAT IT DELIBERATELY DOES NOT: anything that cannot change the wrapper's own
+// box - colour, typography, `relative`, `z-*`, `overflow-*`, transforms, and a
+// bare `flex`, which makes the wrapper a flex CONTAINER and leaves its own box
+// shrink-wrapped as before - and arbitrary-value utilities whose bracket
+// contents it does not parse (`w-[3rem]` IS caught, because the prefix is what
+// is matched, but a bare `[width:3rem]` is not). It is a prefix classifier over
+// class tokens and nothing more; the boxes it reasons about are only measurable
+// in a browser.
+
+/** Utilities that only affect the box in their `<prefix>-<value>` form. */
+const BOX_GROWING_PREFIXES = [
+  "p", "px", "py", "pt", "pr", "pb", "pl", "ps", "pe",
+  "m", "mx", "my", "mt", "mr", "mb", "ml", "ms", "me",
+  "w", "h", "size", "min-w", "min-h", "max-w", "max-h",
+  "border", "inset", "basis", "flex", "grow", "shrink",
+];
+
+/** The three that stand alone: `border` is 1px, `grow`/`shrink` are sizing. */
+const BOX_GROWING_BARE = ["border", "grow", "shrink"];
+
+const growsTheBox = (token: string): boolean => {
+  const bare = token.replace(/^-/, "");
+  return (
+    BOX_GROWING_BARE.includes(bare) ||
+    BOX_GROWING_PREFIXES.some((prefix) => bare.startsWith(`${prefix}-`))
+  );
+};
+
+describe("the wrapper tokens that would break containment", () => {
+  // The reviewer's own repro heads this list: `px-2` on the wrapper makes it
+  // 56px wide against a 40px tile, so `right-0` puts the 24px control 8px past
+  // the tile's right edge - exactly the neighbour overhang the pin closed.
+  it.each([
+    "px-2", "py-1", "pt-2", "pr-2", "pb-2", "pl-1", "ps-2", "pe-2", "p-2",
+    "mx-2", "my-1", "mt-1", "mr-2", "mb-2", "ml-4", "ms-2", "me-2", "m-2",
+    "-mx-2", "-ml-4",
+    "size-10", "w-20", "h-20", "w-[3rem]", "min-w-20", "max-w-20",
+    "border", "border-2", "border-t-2", "border-x",
+    "inset-0", "basis-full", "flex-1", "grow", "shrink-0",
+  ])("catches %s", (token) => {
+    expect(growsTheBox(token)).toBe(true);
+  });
+
+  it.each([
+    "relative", "absolute", "z-2", "overflow-hidden", "rounded-md",
+    "text-white-70", "bg-bg-column", "items-center", "justify-center",
+    "pointer-events-none", "hover:bg-status-red-bg-strong", "flex",
+  ])("leaves %s alone", (token) => {
+    expect(growsTheBox(token)).toBe(false);
+  });
+});
+
+// =============================================================================
 // REMOVAL
 // =============================================================================
 //
@@ -639,6 +708,42 @@ describe("Block, the removal it offers", () => {
     );
 
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  // THE HALF OF CONTAINMENT THAT LIVES IN THE MARKUP RATHER THAN IN THE CLASSES.
+  //
+  // `blockTile.test.ts` checks that the control's offset and size tokens put its
+  // box inside the tile's, and its REACH paragraph names the assumption that
+  // derivation rests on: the offsets are resolved against this wrapper, not
+  // against the tile, so "inside the tile" holds only while the wrapper's box IS
+  // the tile's box. This pins the part of that assumption belonging to the
+  // wrapper itself - it carries nothing that would grow its box past its one
+  // in-flow child - plus the structure the offsets need: the control is the
+  // tile's SIBLING under this wrapper, and this wrapper is the positioning
+  // context they resolve against. Give the wrapper padding, a border, a margin
+  // or a size of its own and the control drifts back out over the neighbour with
+  // every class-list token in `blockTile.ts` unchanged.
+  //
+  // Structure is all jsdom can answer here: it applies no author stylesheet and
+  // computes no layout, so the resulting geometry stays a browser's to measure,
+  // and so does the OTHER half of the assumption - whether the wrapper's parent
+  // lets it shrink-wrap. That half is `getBlockPositionerProps`' business in the
+  // axis layout and `centeredContainer`'s in the other; `styles/grid.test.ts`
+  // holds the positioner's side of it.
+  it("keeps the remove control's wrapper the tile's own box", () => {
+    placed({ onRemove: vi.fn() });
+    const tile = screen.getByRole("slider");
+    const control = screen.getByRole("button", { name: /^Remove / });
+    const wrapper = tile.parentElement!;
+
+    expect(control.parentElement).toBe(wrapper);
+    expect(wrapper.className.split(/\s+/)).toContain("relative");
+    expect(control.className.split(/\s+/)).toContain("absolute");
+
+    expect(
+      wrapper.className.split(/\s+/).filter(Boolean).filter(growsTheBox),
+      "Block's wrapper no longer shrink-wraps its tile, so the remove control's offsets are measured from a box that is not the tile's",
+    ).toEqual([]);
   });
 });
 

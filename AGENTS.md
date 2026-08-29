@@ -923,18 +923,119 @@ by `removeBlock` for the `removed` outcome. Neither may re-derive it from `axis`
 `Block` derives the control's name and the slider's from one `legName`, so the two names a
 block carries cannot drift.
 
+**Known and accepted: two blocks of the SAME order type on the same leg in one cell are
+still named identically**, by the control and by the sentence alike - "Remove Limit limit
+order, Entry column, row 2" twice over. It is reachable: `isCellValidForPlacement` returns
+`true` for every cell in the bulk pattern, so a deliberate double placement puts two Limits
+in one cell. Three reasons it is left rather than patched here, and the third is the one
+that decides it:
+
+- Only the offset separates them, and folding a percentage into a control's accessible name
+  makes that name change while the user drags the block. Voice control targets a control BY
+  name, so an unstable name is worse for the users this would be for than an ambiguous one.
+- It would not close the case anyway: two Market orders in one bulk cell carry no price at
+  all, and nothing but an ordinal could tell them apart - which then shifts when a sibling
+  is removed.
+- **The slider already carries the same ambiguity** (its name is identical for both; only
+  `aria-valuetext` differs), so this lane did not introduce it, and fixing it on the Remove
+  control alone would leave the two surfaces disagreeing about how one fact is named. That
+  is the half-fix this file exists to refuse. It is filed as ONE item covering both
+  surfaces, and covering whether "Limit limit order" is the wording wanted at all.
+
+**The control is pinned INSIDE the tile it belongs to (`top-0 right-0`), and must never
+overhang it again.** A destructive control that extends past the tile a user can see is a
+control that removes a block the user was not aiming at, with nothing on screen saying so and
+no undo. At `-top-2 -right-2` it hung 8px out and did that in **both** layouts:
+
+- **Axis-less cells**, where blocks sit side by side in `centeredContainer`. Flush tiles put
+  the control over the next tile's top-left corner and above it in the stacking order -
+  measured in Chrome at 1440 with two Market orders in one bulk cell, `elementFromPoint` 3px
+  inside the second tile returned the FIRST block's control, and the click removed that first
+  block.
+- **Cells that DRAW a price axis**, which is most of the grid. Blocks there are positioned by
+  `getBlockPositionerProps`, so **a block's position IS its price** and there is no spacing to
+  give at all. Two Limits in one bulk cell at -25% and -35%, 16px apart: tile A y282-322, tile
+  B y298-338, B's control y290-314, so the band y290-298 lay over A's face and over no part of
+  B's. `elementFromPoint` there returned B's control, and the click destroyed the -35% block
+  while the user pressed the visible lower-right corner of the -25% one.
+
+**One geometry answers both, and a per-layout offset would be one fact styled two ways.**
+`REMOVE_CONTROL_SHAPE` in `src/components/blocks/blockTile.ts` is the authority;
+`blockTile.test.ts` pins containment on both axes against `BLOCK_TILE_SHAPE`'s own size, so a
+negative offset on either axis, or a control grown past the tile, fails there. **Containment is
+the whole of the guarantee** - `centeredContainer` carries no spacing between sibling tiles and
+must not be given any on this invariant's account: spacing could only ever have answered the
+axis-less layout, and a cell that draws a price axis has none to give.
+
+**The price is deliberate: the control owns 30.8% of its own tile's face, and that includes
+the tile's geometric CENTRE.** Both ways of undoing it are rejected - shrinking the control
+below `w-6 h-6` loses the 24px WCAG 2.2 SC 2.5.8 target, and hiding it behind `:hover` gives
+it to a mouse alone, which is the opposite of why the affordance exists.
+
+The covered centre is not an oversight and **cannot be fixed by moving the control**: it is
+the arithmetic consequence of the two rules already decided above, containment and a 24px
+circular target. A 24px disc lying wholly inside a 40px tile has its centre at most 8px from
+the tile's centre on each axis, so at most `sqrt(8^2 + 8^2) = 11.31px` away, against a radius
+of 12. **11.31 < 12, so the tile's centre falls inside the disc at EVERY contained position**,
+not merely the corner-flush one this file describes. Only shrinking below the 24px floor could
+uncover it, trading an accessibility requirement for a nicety, or letting the control leave
+the tile, which is the neighbour case rejected above as its own category.
+
+Measured in Chrome by sampling all 1600 pixels of a placed block's tile with
+`elementFromPoint`, rather than derived from the classes - do not re-derive these:
+
+- **The tile's geometric centre hit-tests to the Remove control**, because browsers hit-test
+  `border-radius` and the disc reaches it as the arithmetic says.
+- **The control takes 493 of the tile's 1600 pixels, 30.8%.** A `24x24` square would be 36%
+  and an ideal disc 28.3%; the measured figure sits between them because the hit test is the
+  rounded border box. Any of those three quoted as the others is wrong - this is the one that
+  was measured.
+- **A press at the centre that drags away is inert**, by the click-only rule below: the
+  control takes the `pointerdown`, the tile receives none, so the block does not drag from
+  dead centre and nothing is removed. A **tap** at the centre removes the block, which is the
+  aimed-and-recoverable case accepted in 1.
+- **The block is still draggable and still priceable.** Below 24px from the tile's top the
+  control is out of the way across the full 40px width (the last 3px taper to 34px on the
+  tile's own `rounded-md` corners); in the top half the grabbable width narrows to 15-24px;
+  and the keyboard slider, which is the price affordance that matters most, is untouched.
+
+**Two consequences of the pin that are true, undiscoverable, and filed rather than solved
+here.** Neither is a regression this lane introduced; both are recorded so the next reader
+meets them in writing rather than in the product:
+
+- **A block is now dragged from its LOWER HALF.** The control owns the top-right disc and
+  takes the `pointerdown` there, so the grabbable area is what the measurement above gives:
+  clear across the full 40px from 24px below the tile's top, tapering to 34px over the last
+  three rows on the tile's own `rounded-md` corners, and narrowed to 15-24px in the top half.
+  A press that lands on the control and drags away is inert rather than destructive, because
+  removal is click-only - nothing is removed and the block does not drag. Nothing on screen
+  says where to grab, which is why this is filed separately rather than papered over here.
+- **A later block on a price axis can BURY an earlier one's Remove control.** Each block in an
+  axis cell gets its own positioner at the same `z-2`, so paint order is DOM order and the
+  later block in the cell's array paints over the earlier. With the control inside its tile,
+  a block priced within 40px of the one before it covers most of that block's control - at a
+  2px offset difference only a sliver is left. This is the pre-existing axis-column overlap
+  the lane inherits, not something the pin created, and the failure mode is safe: the topmost
+  element is the covering block's own tile, so a press there acts on the block the user can
+  see, and the buried block is still removable by Delete or Backspace with focus on it, which
+  is the keyboard parity this lane was built for.
+
 **The control fires on `click`, and must never be given a pointer-down handler.** Two
 behaviours of the tile's top-right corner follow from that, and both are deliberate - do not
 "fix" either:
 
-1. **A tap landing on the 16x16 region where the control overlaps the tile REMOVES the
-   block** rather than selecting it. Accepted, not overlooked: D9 makes delete-and-rebuild
-   the sanctioned correction for a misplaced block, so removal is routine rather than rare,
-   and taxing every pointer removal with an arm-then-confirm second press to guard an
-   extreme-corner mis-tap is the wrong trade - the cost of the mistake is re-placing one
-   block, not lost work. An undo affordance would be a new product surface. Offsetting the
-   control would move it into the percentage chip and the price label, which were verified
-   clear; shrinking the visible disc keeps the same 24px hit area while hiding it.
+1. **A tap landing on the region the control occupies REMOVES the block** rather than
+   selecting it. That is 30.8% of a 40px tile's face and reaches its centre, not a sliver at
+   its edge, and it is accepted rather than overlooked - on two grounds, both of which have to hold. It is
+   an **aimed** mistake: the control is drawn where it acts, so the block destroyed is the
+   block under the finger, which is exactly what separates this from the neighbour case
+   above. And it is **recoverable**: D9 makes delete-and-rebuild the sanctioned correction for
+   a misplaced block, so the cost of the mistake is re-placing one block from the palette
+   beside it, not lost work. Taxing every pointer removal with an arm-then-confirm second
+   press to guard a recoverable, aimed mistake is the wrong trade, and an undo affordance
+   would be a new product surface. It grew from a sixth of the tile to 30.8% of it, centre
+   included, when the control moved inside; that is the price paid for the neighbour case and
+   it was weighed as such, with the proof above showing no placement avoids it.
 2. **A press that BEGINS on the control and drags away is inert**: nothing is removed and
    the block does not drag. The control is a sibling drawn on top of the tile rather than a
    descendant, so the tile's `onPointerDown` never fires. Left as it is - forwarding the
@@ -947,6 +1048,22 @@ the corner that travels away fires none at all. `block.dom.test.tsx` pins it und
 on no pointer event" - jsdom neither synthesises `click` from pointer events nor implements
 that target algorithm, so the test asserts the component's wiring in a pair with the click
 that does remove, rather than resting on jsdom's missing click.
+
+`GridArea.dom.test.tsx` pins the wiring under "removes the block its own control belongs to".
+The geometry itself is checkable only in a real browser - jsdom computes no layout and its
+`elementFromPoint` is not layout-aware - so a coordinate test there would pass for the wrong
+reason and must not be written. What CI can hold is stated in full at the top of
+`blockTile.test.ts`, holes included: it compares the two class lists' offset and size tokens
+and nothing about the rendered boxes, so it would stay green if `absolute` were dropped, if
+the positioning context moved, or if `Block`'s wrapper grew past the tile the offsets are
+measured from. That last one is the assumption the whole derivation rests on, and it has two
+halves with different owners: the wrapper carries no box of its own (`block.dom.test.tsx`,
+"keeps the remove control's wrapper the tile's own box") **and** its parent lets it
+shrink-wrap - `centeredContainer`'s flex row in an axis-less cell, and in an axis cell the
+`flex justify-center` positioner from `getBlockPositionerProps`, which spans the column and
+would otherwise leave the wrapper block-level and the control at the column's edge
+(`styles/grid.test.ts`, "the positioner centres a shrink-wrapped child"). Both halves are
+token checks; the geometry they add up to is still only measurable in a browser.
 
 **The refusal is legible, not silent.** Three things say so together and none of them is
 optional: the announcer's `moveRefused` sentences, a visible note under the grid

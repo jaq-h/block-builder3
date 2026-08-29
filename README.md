@@ -412,7 +412,7 @@ The project enables the **React Compiler** (`babel-plugin-react-compiler`) via V
 Interaction logic is split into purpose-specific hooks:
 
 - **`usePointerGesture`** - The pointer primitive underneath both drag hooks: capture, tap-versus-drag, cancel
-- **`useFreeDrag`** - Free-form drag for moving blocks between grid cells (integrates with the drag overlay portal)
+- **`useFreeDrag`** - Free-form drag carrying a palette order onto a grid cell; on a placed block its only outcome is removal, when the release lands clear of every cell (see **Interaction model**; integrates with the drag overlay portal)
 - **`useVerticalDrag`** - Constrained vertical drag for sliding blocks along the price-scale axis
 - **`useBlockCommand`** - The select-then-place command model layered over the drag
 - **`useTradeExecution`** - Order configuration management, submission flow, simulation mode toggle
@@ -660,13 +660,28 @@ really draws the block on a price axis, and it comes from `legInCell` - the same
 slider's name takes it from, so what was pressed and what is then heard are one fact. A
 Market order in a bulk cell keeps "Remove Market order, Entry column, row 2".
 
+**It is pinned inside the tile it belongs to and never overhangs it**, which is what keeps a
+press on one block from destroying another. While it hung 8px out it covered the NEIGHBOUR in
+both of the grid's layouts: two flush tiles in a cell that draws no price axis put it over
+the next tile's top-left corner, and in a cell that *draws* an axis - where a block's position
+**is** its price, so no spacing exists to separate two blocks at all - two Limits 16px apart
+put the lower block's control over the upper block's visible face. Both were measured in
+Chrome, and in both a click removed the block the user was not aiming at. One geometry answers
+both layouts, and containment is the whole of the guarantee - no spacing between sibling tiles
+is needed for it, and none could have answered the axis layout.
+The deliberate price is that the control owns 30.8% of its own tile's face, measured in
+Chrome, and that this reaches the tile's geometric centre - which no placement can avoid, since
+a 24px disc contained in a 40px tile is always within 11.31px of the centre against a 12px
+radius. `AGENTS.md` carries the proof and what it costs a drag.
+
 It removes on **`click`** and on no pointer event. The control overlaps the tile's top-right
 corner, so a press aimed at starting a drag can land on it - and a browser fires `click` at
 the nearest common ancestor of the pointer-down and pointer-up targets, so a press that
 travels away fires none and destroys nothing. That press is inert in the other direction
 too: the control is a sibling drawn over the tile rather than a descendant, so no drag
 starts either. A *tap* on that corner does remove the block, which is the accepted cost of a
-routine operation D9 makes the correction path; see `AGENTS.md` for the tradeoff in full.
+routine operation D9 makes the correction path; the block destroyed is the block aimed at,
+which is what separates it from the neighbour case above. See `AGENTS.md` for both in full.
 
 Removal writes through `removeBlockFromGrid` in `src/utils/grid.ts`, which takes the block
 out **and clears every `linkedBlockId` that named it**, in one function. That pairing is not
@@ -898,7 +913,7 @@ src/
 ├── components/
 │   ├── blocks/                    # Draggable order block components
 │   │   ├── block.tsx              # Core block component (CVA variants)
-│   │   ├── blockTile.ts           # The tile's shape, colour-free - shared with DragOverlay
+│   │   ├── blockTile.ts           # The tile's shape (shared with DragOverlay) and its Remove control's, colour-free
 │   │   ├── action-placeholder.tsx # Placeholder for action slots
 │   │   └── trigger-placeholder.tsx# Placeholder for trigger slots
 │   │
