@@ -299,7 +299,6 @@ The README's **Interaction model** section is authoritative. Thirteen things bit
   design. Do not "fix" either into the other, and do not read one sentence as a
   regression of the other. `gridReplacement.dom.test.tsx` pins both halves per
   control, under "a pointer press on %s" and "a keyboard press on %s".
-
 - **A click outside the placement surface puts down whatever is in hand**, by emptying that
   register. The surface is the element `GridArea` draws - the palette a block is picked up
   from and the cells it can be put down in - and it is chosen by that element rather than by a
