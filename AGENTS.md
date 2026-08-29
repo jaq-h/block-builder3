@@ -76,6 +76,14 @@ makes the connect race in `src/api/krakenWebSocket.ts` fail a test rather than
 pass quietly. `src/test/panelStubs.tsx` plus `src/test/mountTracker.ts` count
 component mounts, which is how `src/App.test.tsx` detects a duplicated tree.
 
+`src/test/tailwindTokens.ts` is how a layout guard reads a class list, and picking
+the wrong one of its two readers does not weaken a guard, it inverts it.
+`utilitiesInAnyCondition` strips every `<variant>:` prefix and is for a NEGATIVE
+assertion, since `sm:h-full` is the forbidden utility under a condition;
+`unconditionalUtilities` keeps only the unprefixed tokens and is for a POSITIVE
+one, since `sm:flex-row` is precisely not `flex-row`. That file carries the rest,
+including why the strip has to leave a bracketed arbitrary value intact.
+
 Coverage is reported, not enforced. The suite targets the logic where a defect would
 corrupt a real order or leak a credential (`api/_lib/`, `src/api/orderMapper.ts`,
 `src/utils/`) rather than chasing a repository-wide percentage.
@@ -452,9 +460,16 @@ removing `h-full` left 768, 1024 and 1440 measuring exactly what they measured
 before, the assembly grid pane pixel-identical at 1440. **Do not restore
 `h-full`, and do not answer a future collapse with a pixel height or a `min-h-*`
 here**: the axis is a proportion of whatever height the cell has, so a number
-would be a second owner of `CELL_MIN_HEIGHT`'s job. `grid.test.ts` pins the
-tokens in both the single-axis and dual-axis forms, since jsdom lays nothing
-out.
+would be a second owner of `CELL_MIN_HEIGHT`'s job. **The invariant has two
+owners and both are load-bearing**: the axis column must state no height and
+must not opt out of the stretch, and `sliderArea` must stay a `flex-row` that
+stretches its children - as a column, or with an `items-start`/`-center`/`-end`,
+it supplies nothing and the axis reads zero exactly as `h-full` did.
+`grid.test.ts` pins both, in the single-axis and the dual-axis forms, since
+jsdom lays nothing out. A third fact is out of every token test's reach: the
+axis column has to remain `sliderArea`'s DIRECT child, so an extra wrapper in
+`GridCell` or `ReadOnlyGridCell` re-collapses the axis with both class lists
+untouched.
 
 **The assembly grid's three lanes stack when the panel is too narrow to draw
 them, and the row they are in has a derived minimum width.** The lanes are the
