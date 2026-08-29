@@ -8,6 +8,10 @@ import {
   positionFromPointer,
   sliderArea,
 } from "./grid";
+import {
+  unconditionalUtilities,
+  utilitiesInAnyCondition,
+} from "../test/tailwindTokens";
 
 // =============================================================================
 // HARNESS
@@ -17,7 +21,16 @@ const TRACK_TOP = 400;
 const TRACK_HEIGHT = 181.5;
 
 /** Every yPosition worth checking, including both ends of the axis. */
-const POSITIONS = [0, 0.5, 7.25, 12.5, 25, 37.5, 49.5, SCALE_CONFIG.MAX_PERCENT];
+const POSITIONS = [
+  0,
+  0.5,
+  7.25,
+  12.5,
+  25,
+  37.5,
+  49.5,
+  SCALE_CONFIG.MAX_PERCENT,
+];
 
 /**
  * Where the rendered block's centre lands, in viewport coordinates: the
@@ -36,9 +49,8 @@ const renderedCentre = (yPosition: number, isDescending: boolean) =>
  * matched as text.
  */
 const resolveTop = (top: string, elementHeight: number): number => {
-  const parts = /^calc\(calc\(100% - ([\d.]+)px\) \* ([\d.]+) \+ ([\d.]+)px\)$/.exec(
-    top,
-  );
+  const parts =
+    /^calc\(calc\(100% - ([\d.]+)px\) \* ([\d.]+) \+ ([\d.]+)px\)$/.exec(top);
   if (!parts) throw new Error(`unrecognised positioner top: ${top}`);
   const [, inset, percent, offset] = parts;
   return (elementHeight - Number(inset)) * Number(percent) + Number(offset);
@@ -206,17 +218,22 @@ describe("the positioner centres a shrink-wrapped child", () => {
 // nothing here pretends to cover it. They would also go red on a
 // behaviour-preserving rewrite - the same two boxes expressed in a stylesheet -
 // and stay green if the axis collapsed for a reason outside these constants.
+// The matchers know the two syntaxes Tailwind offers for each declaration, the
+// named utility and the arbitrary property, and no third: a declaration
+// smuggled in through a plugin's own utility name is outside their reach.
 
-/**
- * A variant-prefixed utility is the same declaration under some other
- * condition, so every leading `<variant>:` segment comes off before the utility
- * underneath is judged - `sm:h-full`, `lg:min-h-0` and stacked ones like
- * `sm:hover:h-full` included. This follows `expectNoScroller` in
- * `strategyAssembly.layout.dom.test.tsx`, which strips them for the same
- * reason.
- */
-const utilitiesOf = (className: string) =>
-  className.split(/\s+/).map((token) => token.replace(/^.*:/, ""));
+// Each matcher below covers both syntaxes a declaration can arrive in: the
+// named utility, and the arbitrary property that states the same CSS outright.
+// `[height:100%]` is the most literal restatement of the thing this guard
+// exists to refuse, so a height-only `h-`/`size-` matcher would miss precisely
+// the form that says it in so many words.
+
+const STATES_A_HEIGHT = /^(((min|max)-)?(h|size)-|\[(min-|max-)?height:)/;
+const OPTS_OUT_OF_STRETCH =
+  /^((place-)?self-(start|end|center|baseline)$|\[(align|place)-self:)/;
+const IS_A_COLUMN = /^(flex-col(-reverse)?$|\[flex-direction:column)/;
+const ALIGNS_ITS_CHILDREN =
+  /^((place-)?items-(start|end|center|baseline)$|\[(align|place)-items:)/;
 
 describe("the axis column's height", () => {
   // Both shapes: a single-axis order type gets `flex-1`, a dual-axis leg gets
@@ -225,13 +242,15 @@ describe("the axis column's height", () => {
     const shape = isSingleAxis ? "single-axis" : "dual-axis";
 
     it(`takes no height of its own in the ${shape} form`, () => {
-      for (const utility of utilitiesOf(getAxisColumnProps(isSingleAxis))) {
+      for (const utility of utilitiesInAnyCondition(
+        getAxisColumnProps(isSingleAxis),
+      )) {
         // `size-*` sets a height as well as a width, so it collapses this box
         // identically while sliding past a height-only matcher.
         expect(
           utility,
           "the axis column is asking for a height again; a percentage collapses to 0 wherever the grid columns are stacked, which takes the track, the scale and the block position with it",
-        ).not.toMatch(/^((min|max)-)?(h|size)-/);
+        ).not.toMatch(STATES_A_HEIGHT);
       }
     });
 
@@ -239,11 +258,13 @@ describe("the axis column's height", () => {
       // `sliderArea` is a `flex-row`, so stretch is what supplies the height.
       // A `self-start`/`self-end`/`self-center` here would opt out of it and
       // collapse the box just as `h-full` did.
-      for (const utility of utilitiesOf(getAxisColumnProps(isSingleAxis))) {
+      for (const utility of utilitiesInAnyCondition(
+        getAxisColumnProps(isSingleAxis),
+      )) {
         expect(
           utility,
           "the axis column has opted out of the stretch that gives it its height",
-        ).not.toMatch(/^(place-)?self-(start|end|center|baseline)$/);
+        ).not.toMatch(OPTS_OUT_OF_STRETCH);
       }
     });
   }
@@ -251,33 +272,39 @@ describe("the axis column's height", () => {
 
 describe("the box that stretches the axis column", () => {
   it("stays a flex row, so its cross axis is the height it supplies", () => {
-    const utilities = utilitiesOf(sliderArea);
-
     // Stretch only supplies a height while the cross axis IS the height. As a
     // column, or as no flex container at all, `sliderArea` gives the axis
     // column nothing to be stretched to and the whole axis reads zero again.
+    //
+    // These two are positive, so they are judged on the utilities that carry no
+    // variant. The row has to hold at EVERY width - `sm:flex-row` is the shape
+    // of the change that caused this defect in the first place, and it would
+    // leave the axis collapsed below `sm` exactly as before.
+    const unconditional = unconditionalUtilities(sliderArea);
+
     expect(
-      utilities,
-      "sliderArea is no longer a flex container, so it stretches nothing and the price axis has no height",
+      unconditional,
+      "sliderArea is no longer a flex container at every width, so it stretches nothing and the price axis has no height",
     ).toContain("flex");
     expect(
-      utilities,
-      "sliderArea is no longer a row, so its cross axis is the width and the price axis has no height",
+      unconditional,
+      "sliderArea is no longer a row at every width, so its cross axis is the width and the price axis has no height",
     ).toContain("flex-row");
-    for (const utility of utilities) {
+
+    for (const utility of utilitiesInAnyCondition(sliderArea)) {
       expect(
         utility,
         "sliderArea has been turned into a column; stretch then supplies a width and the price axis collapses to 0",
-      ).not.toMatch(/^flex-col(-reverse)?$/);
+      ).not.toMatch(IS_A_COLUMN);
     }
   });
 
   it("does not opt its children out of the stretch", () => {
-    for (const utility of utilitiesOf(sliderArea)) {
+    for (const utility of utilitiesInAnyCondition(sliderArea)) {
       expect(
         utility,
         "sliderArea has aligned its children instead of stretching them, which takes the price axis' height away just as h-full did",
-      ).not.toMatch(/^items-(start|end|center|baseline)$/);
+      ).not.toMatch(ALIGNS_ITS_CHILDREN);
     }
   });
 });
