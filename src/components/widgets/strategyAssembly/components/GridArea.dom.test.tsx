@@ -927,13 +927,15 @@ describe("GridArea, removing a placed block", () => {
   // Reachable in the bulk pattern, where `isCellValidForPlacement` returns true
   // for every cell: two Market orders share a label, a cell and therefore a
   // control name, an ambiguity recorded in `AGENTS.md` as accepted. What is not
-  // acceptable is a control removing the OTHER one, which is what flush tiles
-  // produced - the control hangs 8px past its own tile, so it covered the
-  // neighbour's top-left corner and a press aimed at the second block destroyed
-  // the first. `centeredContainer`'s gap is the fix; the geometry itself needs
-  // a browser, so what is pinned here is the wiring underneath it: each control
-  // takes away the block it belongs to and leaves the other standing, told
-  // apart by DOM identity rather than by a name they share.
+  // acceptable is a control removing the OTHER one, which is what an overhanging
+  // control produced: while it hung 8px past its own tile it covered the
+  // neighbour, and a press aimed at one block destroyed another. The control is
+  // pinned inside its own tile now (`REMOVE_CONTROL_SHAPE`, held there by
+  // `blockTile.test.ts`), and the geometry that follows from that needs a real
+  // browser - jsdom computes no layout. What is pinned here is the wiring
+  // underneath it: each control takes away the block it belongs to and leaves
+  // the other standing, told apart by DOM identity rather than by a name they
+  // share.
   it("removes the block its own control belongs to, not the one beside it", () => {
     const grid = addBlocksToCell(
       addBlocksToCell(clearGrid(2, 3), { col: 0, row: 1 }, [placedMarket("m1")], "bulk"),

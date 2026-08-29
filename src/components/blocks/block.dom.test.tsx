@@ -640,6 +640,41 @@ describe("Block, the removal it offers", () => {
 
     expect(screen.queryByRole("button")).toBeNull();
   });
+
+  // THE HALF OF CONTAINMENT THAT LIVES IN THE MARKUP RATHER THAN IN THE CLASSES.
+  //
+  // `blockTile.test.ts` checks that the control's offset and size tokens put its
+  // box inside the tile's, and its REACH paragraph names the assumption that
+  // derivation rests on: the offsets are resolved against this wrapper, not
+  // against the tile, so "inside the tile" holds only while the wrapper's box IS
+  // the tile's box. That is what is pinned here, and it is structure rather than
+  // layout, which is all jsdom can answer: the control is the tile's SIBLING
+  // under one wrapper, that wrapper is the positioning context the offsets are
+  // measured from, and it carries nothing that would grow its box past the
+  // tile's. Give it padding, a border, a margin or a size of its own and the
+  // control drifts back out over the neighbour with every class-list token
+  // unchanged. The resulting geometry is still a browser's to measure.
+  it("keeps the remove control's wrapper the tile's own box", () => {
+    placed({ onRemove: vi.fn() });
+    const tile = screen.getByRole("slider");
+    const control = screen.getByRole("button", { name: /^Remove / });
+    const wrapper = tile.parentElement!;
+
+    expect(control.parentElement).toBe(wrapper);
+    expect(wrapper.className.split(/\s+/)).toContain("relative");
+    expect(control.className.split(/\s+/)).toContain("absolute");
+
+    const growsTheBox = /^-?(p|m|w|h|min-w|min-h|max-w|max-h|border|inset|basis|flex)(-|$)/;
+    const offenders = wrapper.className
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((token) => growsTheBox.test(token));
+
+    expect(
+      offenders,
+      "Block's wrapper no longer shrink-wraps its tile, so the remove control's offsets are measured from a box that is not the tile's",
+    ).toEqual([]);
+  });
 });
 
 describe("Block, while being carried", () => {

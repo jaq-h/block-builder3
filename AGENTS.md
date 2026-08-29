@@ -982,13 +982,17 @@ behaviours of the tile's top-right corner follow from that, and both are deliber
 "fix" either:
 
 1. **A tap landing on the 24x24 region the control occupies REMOVES the block** rather than
-   selecting it. Accepted, not overlooked: D9 makes delete-and-rebuild the sanctioned
-   correction for a misplaced block, so removal is routine rather than rare, and taxing every
-   pointer removal with an arm-then-confirm second press is the wrong trade - the cost of the
-   mistake is re-placing one block, not lost work. An undo affordance would be a new product
-   surface. This is unchanged in kind from the 16x16 version and larger only because the
-   control moved inside the tile; the block destroyed is still the block aimed at, which is
-   what separates it from the neighbour case above.
+   selecting it. That is roughly a third of a 40px tile's face, not a sliver at its edge, and
+   it is accepted rather than overlooked - on two grounds, both of which have to hold. It is
+   an **aimed** mistake: the control is drawn where it acts, so the block destroyed is the
+   block under the finger, which is exactly what separates this from the neighbour case
+   above. And it is **recoverable**: D9 makes delete-and-rebuild the sanctioned correction for
+   a misplaced block, so the cost of the mistake is re-placing one block from the palette
+   beside it, not lost work. Taxing every pointer removal with an arm-then-confirm second
+   press to guard a recoverable, aimed mistake is the wrong trade, and an undo affordance
+   would be a new product surface. It reached a third of the tile rather than a sixth when
+   the control moved inside; that is the price paid for the neighbour case and it was
+   weighed as such.
 2. **A press that BEGINS on the control and drags away is inert**: nothing is removed and
    the block does not drag. The control is a sibling drawn on top of the tile rather than a
    descendant, so the tile's `onPointerDown` never fires. Left as it is - forwarding the
@@ -1005,7 +1009,13 @@ that does remove, rather than resting on jsdom's missing click.
 `GridArea.dom.test.tsx` pins the wiring under "removes the block its own control belongs to".
 The geometry itself is checkable only in a real browser - jsdom computes no layout and its
 `elementFromPoint` is not layout-aware - so a coordinate test there would pass for the wrong
-reason and must not be written.
+reason and must not be written. What CI can hold is stated in full at the top of
+`blockTile.test.ts`, holes included: it compares the two class lists' offset and size tokens
+and nothing about the rendered boxes, so it would stay green if `absolute` were dropped, if
+the positioning context moved, or if `Block`'s wrapper grew past the tile the offsets are
+measured from. That last one is the assumption the whole derivation rests on - the wrapper
+shrink-wraps its tile in both layouts, and `block.dom.test.tsx` pins that half under "keeps
+the remove control's wrapper the tile's own box".
 
 **The refusal is legible, not silent.** Three things say so together and none of them is
 optional: the announcer's `moveRefused` sentences, a visible note under the grid

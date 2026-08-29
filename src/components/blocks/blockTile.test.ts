@@ -51,12 +51,40 @@ describe("the block tile's size", () => {
 // position IS its price, so there is none to give - so the invariant is
 // containment, one geometry for both.
 //
-// This is the same contract `BLOCK_TILE_SHAPE` and `BLOCK_HEIGHT` are held to
-// above, and for the same reason: jsdom computes no layout, so the two class
-// lists that own these boxes are compared against each other here, and the
-// geometry they produce is checked in a real browser. Both axes, because the
-// control was offset on both. A negative offset on either, or a control grown
-// past the tile, fails this.
+// THE REACH. Stated here once and in full, holes included; the assertions below
+// refer back to this paragraph rather than restating it. This file compares the
+// two exported class-list constants against each other and proves exactly one
+// thing: that the offset and size tokens `REMOVE_CONTROL_SHAPE` states put its
+// box inside the box `BLOCK_TILE_SHAPE` states. It says NOTHING about the
+// rendered boxes, and it cannot: jsdom computes no layout, applies no author
+// stylesheet, and its `elementFromPoint` is not layout-aware, so a coordinate
+// test here would pass for the wrong reason. The real evidence for the
+// invariant is measurement in a browser, which lives outside CI - this is the
+// cheap check that stands in for it between measurements, and it is the only
+// one that runs.
+//
+// What would slip past it, in full:
+//
+//   1. Dropping `absolute` from the control. The offsets then position nothing
+//      and the control lays out in flow, outside the tile entirely.
+//   2. Moving the positioning context. The offsets are resolved against the
+//      nearest positioned ancestor, so a `relative` added anywhere between the
+//      control and `Block`'s wrapper - or removed from that wrapper - changes
+//      what they mean without changing a token here.
+//   3. THE WRAPPER-EQUALS-TILE ASSUMPTION, which the whole derivation rests on.
+//      The offsets are measured from `Block`'s wrapper `div.relative`, not from
+//      the tile, so "inside the tile" only follows while that wrapper's box IS
+//      the tile's box. It is today because the wrapper carries no padding,
+//      border, width or height of its own and shrink-wraps its one in-flow
+//      child in both layouts: in `centeredContainer` it is a flex item with no
+//      `flex-*` sizing, so it takes its content's width, and under
+//      `getBlockPositionerProps` it is an absolutely positioned box with `top`
+//      and `left` alone and no `width`/`height`/`right`/`bottom`, so it
+//      shrink-to-fits too. Give that wrapper padding, a border, or a width
+//      larger than the tile and this file stays green while the control moves
+//      out over the neighbour again. `block.dom.test.tsx` pins the wrapper's
+//      side of it under "keeps the remove control's wrapper the tile's own box";
+//      the geometry that results is a browser's job.
 
 /** The signed `<side>-<n>` inset a class list states, in pixels. */
 const inset = (classes: string[], side: "top" | "right") => {

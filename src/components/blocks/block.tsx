@@ -97,9 +97,15 @@ const PRICE_STEP_TO_END = MAX_OFFSET_PERCENT * 2;
 // delete-and-rebuild as *the* way to correct a misplaced order.
 //
 // Its geometry and its colours are `REMOVE_CONTROL_SHAPE` in `./blockTile`,
-// beside the tile's own, because the control is pinned outside the tile it
-// belongs to and that overhang has to be checkable against the gap between two
-// sibling tiles. That module's docblock is the authority on each class.
+// beside the tile's own, because the one thing this control must never do is
+// leave the tile it belongs to: it is pinned INSIDE at `top-0 right-0`, and
+// that containment is checked against `BLOCK_TILE_SHAPE`'s own box in
+// `blockTile.test.ts`. A destructive control that reaches past the tile a user
+// can see removes a block the user was not aiming at, and it did - the two
+// class lists have to be readable together for that not to come back. One
+// geometry serves both of the grid's layouts, because a cell that draws a price
+// axis positions its blocks by their price and has no spacing to give. That
+// module's docblock is the authority on each class.
 const removeButton = cn(REMOVE_CONTROL_SHAPE);
 
 interface BlockProps {
