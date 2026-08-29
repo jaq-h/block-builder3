@@ -412,7 +412,7 @@ The project enables the **React Compiler** (`babel-plugin-react-compiler`) via V
 Interaction logic is split into purpose-specific hooks:
 
 - **`usePointerGesture`** - The pointer primitive underneath both drag hooks: capture, tap-versus-drag, cancel
-- **`useFreeDrag`** - Free-form drag for moving blocks between grid cells (integrates with the drag overlay portal)
+- **`useFreeDrag`** - Free-form drag carrying a palette order onto a grid cell; on a placed block its only outcome is removal, when the release lands clear of every cell (see **Interaction model**; integrates with the drag overlay portal)
 - **`useVerticalDrag`** - Constrained vertical drag for sliding blocks along the price-scale axis
 - **`useBlockCommand`** - The select-then-place command model layered over the drag
 - **`useTradeExecution`** - Order configuration management, submission flow, simulation mode toggle
