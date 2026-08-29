@@ -457,7 +457,7 @@ beside a 203px Execute Trade against 326px of bar at 390, and unwrapped that
 button was drawn at x 267.5..470.8 with the panel's `overflow-hidden` clipping
 its last 80.8px, so the strategy could not be submitted. The Active Orders panel
 draws a card list at every width and has no lane row to stack; its
-`ActiveOrders.styles.ts` still exports a `column`, a `columnsWrapper` and a
+`ActiveOrders.styles.ts` still exports a `columnClass`, a `columnsWrapper` and a
 `contentWrapper` carrying the same rigid geometry, but nothing imports any of
 the three - they are dead, not a second copy of this rule.
 

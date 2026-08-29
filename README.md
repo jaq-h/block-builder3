@@ -886,7 +886,7 @@ src/
 │   │       ├── GridCell.tsx       # Interactive grid cell (Strategy Builder)
 │   │       ├── GridCell.styles.ts # Grid cell CVA styling
 │   │       ├── ReadOnlyGridCell.tsx # Read-only grid cell (Active Orders)
-│   │       ├── ProviderColumn.tsx # Order-type provider sidebar column
+│   │       ├── ProviderColumn.tsx # Order-type palette - a lane, a band when stacked
 │   │       └── index.ts          # Barrel export
 │   │
 │   └── widgets/
