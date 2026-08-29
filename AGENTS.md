@@ -53,12 +53,16 @@ SVG imports work in tests for the same reason.
   the chart's. `vite/buttonResetLayer.test.ts` is there for that reason and one more: it has
   to read `src/index.css` as text, and `src` is typechecked without node types while `vite/`
   has them - which is the second reason the bundle scan is there too.
-  `src/utils/priceFormatReadiness.test.ts` scans the repository from *inside* `src/`, and
-  that is not a contradiction: it reads its sources through `import.meta.glob(..., { query:
-  "?raw" })`, which is typed by `vite/client` and needs no `node:fs`, so the only reason the
-  two above sit in `vite/` does not apply and the guard can live with the module that owns
-  the fact. Reach for that glob before moving a new repository-wide `src/` guard out of the
-  tree it is about.
+  A repository-wide guard does not have to be a test at all, and the price-formatting
+  readiness one is the worked example: most of it is `no-restricted-syntax` and
+  `no-restricted-imports` in `eslint.config.js`, with only the part a linter cannot state -
+  the context value's own key set - left in `src/utils/priceFormatReadiness.test.ts`. See
+  **Markets** for why. **Take the strongest guard the environment actually offers**, and
+  where it offers nothing better than reading text, that is not a defect to be fixed: jsdom
+  lays nothing out and implements no canvas, so the class-token guards in
+  `blockTile.test.ts`, the Tailwind token guards read through `src/test/tailwindTokens.ts`,
+  `vite/buttonResetLayer.test.ts` and the `z-4` assertion in `OrderChart.dom.test.tsx` are
+  already as strong as they can be and must be left alone.
 
 A test may deliberately assert **current, wrong** behaviour, commented
 `CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. None are live today;
@@ -813,14 +817,40 @@ That shape is the fix for a defect found on **four consecutive review rounds** o
 multi-pair work - candle `setData`, then the order price lines, then the series'
 `priceFormat`, then the pre-settle window - each correct about its own surface and teaching
 the next one nothing, because six surfaces each decided the question for themselves. So the
-guard is deliberately not a list of today's surfaces: `priceFormatReadiness.test.ts` scans
-every module under `src/` and fails when **any** of them names `metadataSettled`, declares
-an absent-able `MarketPrecision`, imports `fetchMarketPrecisions`, or reads `metadataError`
-- outside the few files named there with a reason each - and asserts the context's own key
-set. It strips comments before scanning, so this file's prose about the retired shape is not
-itself a finding. A new surface that derives readiness fails it on the day it is written.
-`pending` and `unavailable` render the same in a text chip (`NO_PRECISION`), which is a
-rendering choice made where the distinction is visible, not a collapse.
+guard is deliberately not a list of today's surfaces. It states what **any** module in
+`src/` may not do, so a surface nobody has written yet is covered on the day it is written,
+and it is split by what each mechanism can actually see:
+
+- **Three reach rules are in `eslint.config.js`**, as `no-restricted-syntax` and
+  `no-restricted-imports` over `src/**`: no module may name `metadataSettled`, declare an
+  absent-able `MarketPrecision` (a union with `null` or `undefined`, or an optional
+  parameter or property), or import `fetchMarketPrecisions`. Each carries a short
+  file-scoped allowlist stating why that file legitimately handles the ingredient; test
+  files and `src/test/` are exempt, because they stand in for Kraken and for the provider
+  rather than being surfaces. `npm run lint` is already one of the four CI jobs, so the
+  reach is unchanged.
+- **One runtime assertion stays in `src/utils/priceFormatReadiness.test.ts`**: that the
+  real `MarketContext` default value carries `priceFormat` and neither of the two facts it
+  is folded from. That is the highest-value regression route - a raw ingredient back on the
+  context is within reach of every surface at once - and it is a *value's* key set, which a
+  linter cannot read.
+
+**Why the AST rather than a text scan**, since the guard used to be one and the reasoning
+must survive: matching text can be dead or commented out, a rename slips past a literal
+pattern, and a scan that read comments would fail for the very paragraphs recording why the
+rule exists - so it had to strip them, which is another hole. The deciding reason is not
+that text scans are bad in general, though: it is that **this repository already guards a
+structural boundary exactly this way**, with the `no-restricted-imports` rule stopping
+`src/` importing `api/_lib` and `api/kraken`, and a second differently-shaped answer to the
+same kind of problem is precisely the drift this codebase keeps paying for. This is not a
+ruling that every token or text assertion here should become a lint rule - see the
+**Testing** section for the ones that are already as strong as their environment allows.
+
+The remaining hole is stated so the next reader knows it: a module reaching an ingredient
+under a name none of the rules spell - a re-export renamed on its way out, a value pulled
+from a loosely typed `Map` - passes. `pending` and `unavailable` render the same in a text
+chip (`NO_PRECISION`), which is a rendering choice made where the distinction is visible,
+not a collapse.
 
 **A cover over the chart plot needs `z-4`, and that is what makes it a cover.**
 `OrderChart`'s two overlays - the pending one and the refusal - are opaque and `inset-0`,

@@ -35,10 +35,13 @@
 // **The two ingredients are not exported and must not be reconstructed.** The
 // readiness is a function of the precision-or-null and whether the request has
 // answered; a module holding either of those separately is a second owner of
-// this question. `priceFormatReadiness.test.ts` scans the repository for that
-// shape, and it is the guard that matters here - a test naming today's surfaces
-// only catches today's surfaces, and the whole history of this defect is a
-// surface nobody had thought of yet.
+// this question. That is put out of reach repository-wide rather than checked
+// per surface, and it is the guard that matters here - a test naming today's
+// surfaces only catches today's surfaces, and the whole history of this defect
+// is a surface nobody had thought of yet. Three reach rules in
+// `eslint.config.js` hold the ingredients out of `src/`, each with its own
+// allowlist and reason; `priceFormatReadiness.test.ts` holds the fourth, that
+// the context value carries the tri-state and neither ingredient.
 //
 // The *formatting* itself stays with `marketFormat.ts`, which owns how many
 // decimals a pair takes. This module owns whether that question has an answer.

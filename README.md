@@ -405,8 +405,9 @@ fold and puts the result on the context; the two facts it is folded from stay in
 file, so no surface can reach them and form a second opinion. That matters because "not
 known yet" and "known to have no rules" look identical to a consumer holding only a missing
 precision, and every surface that told them apart for itself eventually told them apart
-differently. `src/utils/priceFormatReadiness.test.ts` scans every module in `src/` and fails
-when a new one starts deriving the answer instead of reading it. The invariants behind all
+differently. The guard against that is repository-wide rather than a list of today's
+surfaces: `eslint.config.js` puts the two ingredients out of reach of every module in
+`src/`, and `src/utils/priceFormatReadiness.test.ts` pins the context value's own shape. The invariants behind all
 of this, and the traps around them, are in `AGENTS.md` under **Markets**.
 
 ### Tailwind CVA Styling
