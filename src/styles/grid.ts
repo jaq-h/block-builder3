@@ -281,6 +281,15 @@ export function getAxisLabelItemProps(
   return { className, style };
 }
 
+/**
+ * The row a price axis column sits in, and **the thing that gives that column
+ * its height.** It must stay a flex ROW whose children are stretched: stretch
+ * only supplies a height while the cross axis IS the height, so a `flex-col`
+ * here, or an `items-start`/`items-center`/`items-end`/`items-baseline` that
+ * opts the children out, collapses the whole axis exactly as the `h-full` on
+ * `getAxisColumnProps` did. Read that function's docblock for what a collapse
+ * costs; the axis column also has to remain this box's DIRECT child.
+ */
 export const sliderArea = "flex-1 relative flex flex-row overflow-visible";
 
 /**

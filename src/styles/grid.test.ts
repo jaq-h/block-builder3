@@ -6,6 +6,7 @@ import {
   getBlockPositionerProps,
   getBlockTopPx,
   positionFromPointer,
+  sliderArea,
 } from "./grid";
 
 // =============================================================================
@@ -182,13 +183,40 @@ describe("the positioner centres a shrink-wrapped child", () => {
 // `sliderArea` is a `flex-row` whose cross axis IS this height, so it needs no
 // definite parent height and holds in both forms of the layout.
 //
-// WHAT THIS TEST IS: an assertion about the utilities the function asks for.
-// jsdom applies no author stylesheet and lays nothing out, so it cannot watch a
-// height resolve; the pixel evidence is the browser measurement above. What it
-// CAN hold is that the one token whose collapse caused this cannot come back,
-// and that no pixel height is substituted for it - the axis is a proportion of
-// whatever height the cell has, so a number here would be a second owner of
-// `CELL_MIN_HEIGHT`'s job.
+// The fact has TWO owners, so both are guarded below: the child must not state
+// a height or opt out of the stretch, and `sliderArea` must stay the flex row
+// that supplies one. A column parent, or a parent that stopped being a flex
+// container, collapses this box exactly as `h-full` did.
+//
+// WHAT THESE TESTS ARE: assertions about the utilities the two owners ask for.
+// jsdom applies no author stylesheet and lays nothing out, so none of them can
+// watch a height resolve; the pixel evidence is the browser measurement above.
+// What they CAN hold is that the token whose collapse caused this cannot come
+// back under any variant, that no pixel height is substituted for it - the axis
+// is a proportion of whatever height the cell has, so a number here would be a
+// second owner of `CELL_MIN_HEIGHT`'s job - and that the parent still stretches
+// its children along the axis that IS this height.
+//
+// WHAT THEY DO NOT REACH: the third half of the invariant, that the axis column
+// is `sliderArea`'s DIRECT child. Wrapping `renderAxisContent`'s output in an
+// extra div inside `GridCell` or `ReadOnlyGridCell` puts an unstretched box
+// between the two and re-collapses the axis with both owners' class lists
+// untouched. That is a component-structure fact no token test can see, and
+// since jsdom draws nothing no rendering test can see the collapse either, so
+// nothing here pretends to cover it. They would also go red on a
+// behaviour-preserving rewrite - the same two boxes expressed in a stylesheet -
+// and stay green if the axis collapsed for a reason outside these constants.
+
+/**
+ * A variant-prefixed utility is the same declaration under some other
+ * condition, so every leading `<variant>:` segment comes off before the utility
+ * underneath is judged - `sm:h-full`, `lg:min-h-0` and stacked ones like
+ * `sm:hover:h-full` included. This follows `expectNoScroller` in
+ * `strategyAssembly.layout.dom.test.tsx`, which strips them for the same
+ * reason.
+ */
+const utilitiesOf = (className: string) =>
+  className.split(/\s+/).map((token) => token.replace(/^.*:/, ""));
 
 describe("the axis column's height", () => {
   // Both shapes: a single-axis order type gets `flex-1`, a dual-axis leg gets
@@ -197,28 +225,59 @@ describe("the axis column's height", () => {
     const shape = isSingleAxis ? "single-axis" : "dual-axis";
 
     it(`takes no height of its own in the ${shape} form`, () => {
-      const tokens = getAxisColumnProps(isSingleAxis).split(/\s+/);
-
-      for (const token of tokens) {
+      for (const utility of utilitiesOf(getAxisColumnProps(isSingleAxis))) {
+        // `size-*` sets a height as well as a width, so it collapses this box
+        // identically while sliding past a height-only matcher.
         expect(
-          token,
+          utility,
           "the axis column is asking for a height again; a percentage collapses to 0 wherever the grid columns are stacked, which takes the track, the scale and the block position with it",
-        ).not.toMatch(/^(min-|max-)?h-/);
+        ).not.toMatch(/^((min|max)-)?(h|size)-/);
       }
     });
 
     it(`stays a flex item its parent can stretch in the ${shape} form`, () => {
-      const tokens = getAxisColumnProps(isSingleAxis).split(/\s+/);
-
       // `sliderArea` is a `flex-row`, so stretch is what supplies the height.
-      // An `self-start`/`self-end`/`self-center` here would opt out of it and
+      // A `self-start`/`self-end`/`self-center` here would opt out of it and
       // collapse the box just as `h-full` did.
-      for (const token of tokens) {
+      for (const utility of utilitiesOf(getAxisColumnProps(isSingleAxis))) {
         expect(
-          token,
+          utility,
           "the axis column has opted out of the stretch that gives it its height",
-        ).not.toMatch(/^self-(start|end|center|baseline)$/);
+        ).not.toMatch(/^(place-)?self-(start|end|center|baseline)$/);
       }
     });
   }
+});
+
+describe("the box that stretches the axis column", () => {
+  it("stays a flex row, so its cross axis is the height it supplies", () => {
+    const utilities = utilitiesOf(sliderArea);
+
+    // Stretch only supplies a height while the cross axis IS the height. As a
+    // column, or as no flex container at all, `sliderArea` gives the axis
+    // column nothing to be stretched to and the whole axis reads zero again.
+    expect(
+      utilities,
+      "sliderArea is no longer a flex container, so it stretches nothing and the price axis has no height",
+    ).toContain("flex");
+    expect(
+      utilities,
+      "sliderArea is no longer a row, so its cross axis is the width and the price axis has no height",
+    ).toContain("flex-row");
+    for (const utility of utilities) {
+      expect(
+        utility,
+        "sliderArea has been turned into a column; stretch then supplies a width and the price axis collapses to 0",
+      ).not.toMatch(/^flex-col(-reverse)?$/);
+    }
+  });
+
+  it("does not opt its children out of the stretch", () => {
+    for (const utility of utilitiesOf(sliderArea)) {
+      expect(
+        utility,
+        "sliderArea has aligned its children instead of stretching them, which takes the price axis' height away just as h-full did",
+      ).not.toMatch(/^items-(start|end|center|baseline)$/);
+    }
+  });
 });
