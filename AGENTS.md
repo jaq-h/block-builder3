@@ -923,6 +923,25 @@ by `removeBlock` for the `removed` outcome. Neither may re-derive it from `axis`
 `Block` derives the control's name and the slider's from one `legName`, so the two names a
 block carries cannot drift.
 
+**Known and accepted: two blocks of the SAME order type on the same leg in one cell are
+still named identically**, by the control and by the sentence alike - "Remove Limit limit
+order, Entry column, row 2" twice over. It is reachable: `isCellValidForPlacement` returns
+`true` for every cell in the bulk pattern, so a deliberate double placement puts two Limits
+in one cell. Three reasons it is left rather than patched here, and the third is the one
+that decides it:
+
+- Only the offset separates them, and folding a percentage into a control's accessible name
+  makes that name change while the user drags the block. Voice control targets a control BY
+  name, so an unstable name is worse for the users this would be for than an ambiguous one.
+- It would not close the case anyway: two Market orders in one bulk cell carry no price at
+  all, and nothing but an ordinal could tell them apart - which then shifts when a sibling
+  is removed.
+- **The slider already carries the same ambiguity** (its name is identical for both; only
+  `aria-valuetext` differs), so this lane did not introduce it, and fixing it on the Remove
+  control alone would leave the two surfaces disagreeing about how one fact is named. That
+  is the half-fix this file exists to refuse. It is filed as ONE item covering both
+  surfaces, and covering whether "Limit limit order" is the wording wanted at all.
+
 **The control fires on `click`, and must never be given a pointer-down handler.** Two
 behaviours of the tile's top-right corner follow from that, and both are deliberate - do not
 "fix" either:
