@@ -73,6 +73,9 @@ const GRID_WRITE_SURFACE: Record<keyof GridDataActions, GridWrite> = {
 // HARNESS
 // =============================================================================
 
+/** The pair every price on this harness's grid is written for. */
+const BTC = findMarket("BTC/USD")!;
+
 /**
  * The real provider and the real grid, so the write surface under test is the
  * one the app actually has. `GridArea` is the only child that matters here: it
@@ -84,13 +87,15 @@ const Harness: FC<{ actionsOut: (actions: GridDataActions) => void }> = ({
 }) => (
   <MarketContext.Provider
     value={{
-      market: findMarket("BTC/USD")!,
-      precision: BTC_USD,
-      activeMarket: { market: findMarket("BTC/USD")!, precision: BTC_USD },
+      market: BTC,
+      // The grid draws a price chip per placed block, so the pair's rules have
+      // to be in hand for it to render at all - `ready` is the state the app is
+      // in by the time a user can carry anything. See
+      // `utils/priceFormatReadiness.ts` for why the readiness travels as one
+      // value rather than as a precision and a settled flag.
+      priceFormat: { status: "ready", market: BTC, precision: BTC_USD },
       markets: MARKETS,
       selectMarket: vi.fn(),
-      metadataError: null,
-      metadataSettled: true,
     }}
   >
     <StrategyAssemblyProvider>
