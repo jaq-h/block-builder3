@@ -11,7 +11,7 @@ import type {
 import type { OrderTypeDefinition } from "../data/orderTypes";
 import { GRID_CONFIG } from "../data/orderTypes";
 import { formatMarketPrice } from "./marketFormat";
-import type { ActiveMarket } from "../types/markets";
+import type { PriceFormatReadiness } from "./priceFormatReadiness";
 
 // =============================================================================
 // TYPES
@@ -259,14 +259,15 @@ export const hasConditionalWithoutPrimary = (grid: GridData): boolean => {
  * A flat two decimals was right for exactly one market. ARB/USD prices to four
  * (`$0.3421`, not `$0.34`) and BTC/USD to one, so a fixed width either invents
  * precision the pair does not have or hides the digits that distinguish two
- * price levels. The market is optional, and a caller that has not got one yet
- * gets no number at all rather than a guessed width; see `formatMarketPrice`,
- * which owns that decision and explains it.
+ * price levels. Whether this pair's width is known at all is the readiness the
+ * caller passes in, which comes from `utils/priceFormatReadiness.ts` and from
+ * nowhere else; see `formatMarketPrice`, which owns what is drawn in each state
+ * and explains it.
  */
 export const formatPrice = (
   price: number | null,
-  market?: ActiveMarket | null,
-): string => formatMarketPrice(price, market);
+  priceFormat: PriceFormatReadiness,
+): string => formatMarketPrice(price, priceFormat);
 
 // =============================================================================
 // COLUMN HELPERS

@@ -38,16 +38,11 @@ const noop = () => {};
 // placeholder to another - passing for whatever price `orderPriceLines`
 // computes, which is the one thing this file exists to catch.
 const market = findMarket("BTC/USD")!;
-const activeMarket = { market, precision: BTC_USD };
-
 const marketValue: MarketContextValue = {
   market,
-  precision: BTC_USD,
-  activeMarket,
+  priceFormat: { status: "ready", market, precision: BTC_USD },
   markets: MARKETS,
   selectMarket: () => false,
-  metadataError: null,
-  metadataSettled: true,
 };
 
 const block = (overrides: Partial<BlockData> = {}): BlockData => ({
@@ -142,7 +137,7 @@ describe("the grid's price chip and the chart's price line", () => {
     // number and the cell's number are the same number, not that they round the
     // same way. Both are drawn against the same pair, so a real formatted price
     // is compared rather than the "no rules for this pair" placeholder.
-    const drawn = formatPrice(line.price, activeMarket);
+    const drawn = formatPrice(line.price, marketValue.priceFormat);
     expect(drawn).toMatch(/^\$[\d,]+\.\d$/);
     expect(screen.getAllByText(drawn).length).toBeGreaterThan(0);
   });

@@ -36,7 +36,6 @@ const MARKET_PRICE = 50_000;
 const noop = () => {};
 
 const market = findMarket("BTC/USD")!;
-const activeMarket = { market, precision: BTC_USD };
 
 // Both halves have to be drawn at a real pair's precision. Without it the
 // cell's `useMarket()` falls through to a context with none, every chip reads
@@ -44,12 +43,9 @@ const activeMarket = { market, precision: BTC_USD };
 // placeholder to another - passing for whatever price anything computes.
 const marketValue: MarketContextValue = {
   market,
-  precision: BTC_USD,
-  activeMarket,
+  priceFormat: { status: "ready", market, precision: BTC_USD },
   markets: MARKETS,
   selectMarket: () => false,
-  metadataError: null,
-  metadataSettled: true,
 };
 
 const limit: BlockData = {

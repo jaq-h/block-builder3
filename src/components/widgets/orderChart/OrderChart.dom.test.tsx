@@ -13,6 +13,7 @@ import type {
 import OrderChart from "./OrderChart";
 import { simpleMovingAverage } from "./indicators";
 import { withLatestCandle } from "@utils/liveCandles";
+import { priceFormatReadiness } from "@utils/priceFormatReadiness";
 
 // =============================================================================
 // HARNESS
@@ -44,7 +45,6 @@ const feed = vi.hoisted(() => ({
 
 const chartState = vi.hoisted(() => ({
   instance: null as unknown,
-  hasPriceFormat: true,
 }));
 
 /** The ticker, which goes silent for the moment a market switch takes. */
@@ -89,12 +89,19 @@ vi.mock("../../../store/useMarket", () => ({
       : null;
     return {
       market,
-      precision,
-      activeMarket: { market, precision },
+      // Through the real fold, from the two facts the store holds. The panel
+      // used to reassemble the three states out of this flag and the chart
+      // hook's own `hasPriceFormat`, and mocking them separately let this file
+      // build a pair of inputs the app cannot actually be in - rules in hand
+      // and no format applied. There is one input now, and it is the one the
+      // running app has.
+      priceFormat: priceFormatReadiness(
+        market,
+        precision,
+        marketState.metadataSettled,
+      ),
       markets: [market],
       selectMarket: () => false,
-      metadataError: null,
-      metadataSettled: marketState.metadataSettled,
     };
   },
 }));
@@ -110,10 +117,7 @@ vi.mock("../../../hooks/useOHLCData", () => ({
 }));
 
 vi.mock("./useLightweightChart", () => ({
-  useLightweightChart: () => ({
-    ...(chartState.instance as object),
-    hasPriceFormat: chartState.hasPriceFormat,
-  }),
+  useLightweightChart: () => chartState.instance as object,
 }));
 
 const fakeChart = () => {
@@ -229,7 +233,6 @@ describe("OrderChart", () => {
     feed.isLoading = false;
     feed.error = null;
     chartState.instance = fakeChart();
-    chartState.hasPriceFormat = true;
     ticker.currentPrice = 50_000;
     marketState.symbol = "BTC/USD";
     marketState.base = "BTC";
@@ -538,7 +541,6 @@ describe("OrderChart", () => {
     document.querySelector(".flex-1.min-h-0.relative") as HTMLElement;
 
   it("covers the plot when the selected pair has no precision", () => {
-    chartState.hasPriceFormat = false;
     marketState.symbol = "ARB/USD";
     marketState.hasPrecision = false;
     render(<OrderChart orders={{}} />);
@@ -546,17 +548,27 @@ describe("OrderChart", () => {
     const message = screen.getByText(/Precision rules unavailable for ARB\/USD/);
     expect(message).toBeInTheDocument();
 
-    // Opaque and pointer-taking: a cover that let the crosshair through would
-    // still be reading prices off an axis written in another pair's units.
+    // Opaque, pointer-taking and above the plot: a cover that let the crosshair
+    // through would still be reading prices off an axis written in another
+    // pair's units.
+    //
+    // `z-4` is asserted because an opaque background is not what makes this a
+    // cover. Lightweight-charts positions its own layers with explicit
+    // z-indexes - canvas 1, canvas 2, its attribution anchor 3, measured in
+    // Chrome - and a positioned element at `z-index: auto` paints below all of
+    // them however late it comes in the DOM. Without it this cover sat behind
+    // the plot and the refusal was drawn as a caption over a live axis. jsdom
+    // lays nothing out and implements no canvas, so what can be held here is
+    // the class; the geometry is a browser check, and the measurement is
+    // recorded next to the element in `OrderChart.tsx`.
     const cover = message.closest("div")!;
     expect(cover.className).toContain("bg-bg-primary");
     expect(cover.className).not.toContain("pointer-events-none");
-    expect(cover).toHaveClass("absolute", "inset-0");
+    expect(cover).toHaveClass("absolute", "inset-0", "z-4");
     expect(plotArea()).toContainElement(cover);
   });
 
   it("says one thing at a time, not this over the loading caption", () => {
-    chartState.hasPriceFormat = false;
     marketState.hasPrecision = false;
     feed.isLoading = true;
     render(<OrderChart orders={{}} />);
@@ -576,7 +588,6 @@ describe("OrderChart", () => {
   // first is the ordinary first second of every page load, the second is a pair
   // that cannot be traded. Only the second is a refusal.
   it("waits for the metadata to answer before refusing anything", () => {
-    chartState.hasPriceFormat = false;
     marketState.hasPrecision = false;
     marketState.metadataSettled = false;
     feed.isLoading = true;
@@ -595,7 +606,6 @@ describe("OrderChart", () => {
   // page load - so the window is covered with the loading treatment the panel
   // already draws rather than presented as authoritative.
   it("covers the plot while the pair's rules are still on their way", () => {
-    chartState.hasPriceFormat = false;
     marketState.symbol = "ARB/USD";
     marketState.hasPrecision = false;
     marketState.metadataSettled = false;
@@ -607,7 +617,9 @@ describe("OrderChart", () => {
     const cover = screen.getByText("Loading chart…").closest("div")!;
     expect(cover.className).toContain("bg-bg-primary");
     expect(cover.className).not.toContain("pointer-events-none");
-    expect(cover).toHaveClass("absolute", "inset-0");
+    // Above the library's own layers, for the reason recorded on the refusal
+    // cover above: without it the "cover" is a caption.
+    expect(cover).toHaveClass("absolute", "inset-0", "z-4");
     expect(plotArea()).toContainElement(cover);
 
     // It is loading, not missing: the rules may still turn up.
@@ -621,11 +633,11 @@ describe("OrderChart", () => {
     const { rerender } = render(<OrderChart orders={{}} />);
     expect(screen.queryByText("Loading chart…")).toBeNull();
 
-    chartState.hasPriceFormat = false;
+    marketState.hasPrecision = false;
     rerender(<OrderChart orders={{}} />);
     expect(screen.getByText("Loading chart…")).toBeInTheDocument();
 
-    chartState.hasPriceFormat = true;
+    marketState.hasPrecision = true;
     rerender(<OrderChart orders={{}} />);
     expect(screen.queryByText("Loading chart…")).toBeNull();
     expect(screen.queryByText(/Precision rules unavailable/)).toBeNull();

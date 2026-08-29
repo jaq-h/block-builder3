@@ -18,6 +18,7 @@ import {
   type WebSocketErrorEvent,
 } from "../api";
 import { useTradingMode } from "./useTradingMode";
+import { precisionOf } from "../utils/priceFormatReadiness";
 import { useMarket } from "../store/useMarket";
 import type { GridData } from "../types/grid";
 
@@ -101,7 +102,13 @@ export const useKrakenAPI = (
 ): UseKrakenAPIReturn => {
   const { autoConnect = false, pollInterval = 30000 } = options;
 
-  const { market, precision } = useMarket();
+  // The order path needs the rules and has nothing different to do when they
+  // are merely late rather than absent - a payload cannot be built either way -
+  // so it takes the readiness through `precisionOf` rather than testing the
+  // status itself. It is still the one owner's answer; what it must not do is
+  // work out for itself whether there are rules to be had.
+  const { market, priceFormat } = useMarket();
+  const precision = precisionOf(priceFormat);
   const symbol = market.symbol;
 
   // Connection state
@@ -414,6 +421,12 @@ export const useKrakenAPI = (
     // invisible: Kraken rejects the order and the user sees one that never
     // appeared. So this refuses, exactly as it refuses a missing market price,
     // rather than falling back to another pair's precision.
+    //
+    // The sentence says "yet" in both unready states, which is inherited from
+    // when this could not tell them apart: once the batch has answered without
+    // the pair, `unavailable` is not a wait. The distinction is available here
+    // now through `priceFormat.status` if the product wants a second wording;
+    // it was deliberately left unchanged rather than altered in passing.
     if (!precision) {
       setOrderError(
         `Cannot prepare orders: Kraken's precision rules for ${symbol} have not loaded yet.`,

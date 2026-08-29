@@ -53,6 +53,16 @@ SVG imports work in tests for the same reason.
   the chart's. `vite/buttonResetLayer.test.ts` is there for that reason and one more: it has
   to read `src/index.css` as text, and `src` is typechecked without node types while `vite/`
   has them - which is the second reason the bundle scan is there too.
+  A repository-wide guard does not have to be a test at all, and the price-formatting
+  readiness one is the worked example: most of it is `no-restricted-syntax` and
+  `no-restricted-imports` in `eslint.config.js`, with only the part a linter cannot state -
+  the context value's own key set - left in `src/utils/priceFormatReadiness.test.ts`. See
+  **Markets** for why. **Take the strongest guard the environment actually offers**, and
+  where it offers nothing better than reading text, that is not a defect to be fixed: jsdom
+  lays nothing out and implements no canvas, so the class-token guards in
+  `blockTile.test.ts`, the Tailwind token guards read through `src/test/tailwindTokens.ts`,
+  `vite/buttonResetLayer.test.ts` and the `z-4` assertion in `OrderChart.dom.test.tsx` are
+  already as strong as they can be and must be left alone.
 
 A test may deliberately assert **current, wrong** behaviour, commented
 `CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. None are live today;
@@ -377,7 +387,7 @@ The README's **Interaction model** section is authoritative. Thirteen things bit
 
 ## The chart panel
 
-`src/components/widgets/orderChart/` owns the price chart. Four rules keep it honest:
+`src/components/widgets/orderChart/` owns the price chart. Five rules keep it honest:
 
 - **The price scale is presentation and nothing else.** `priceScale.ts` holds the
   vocabulary - the kinds, the buttons offering them, the default - and `priceScaleMode.ts`
@@ -450,6 +460,17 @@ The README's **Interaction model** section is authoritative. Thirteen things bit
   removes. It also asserts those markers are *present* in a lazy chunk, so a build that dropped
   the library or a release that renamed a marker fails the file instead of passing an absence
   check that has stopped meaning anything.
+- **A cover over the chart plot needs `z-4`, and that is what makes it a cover.**
+  `OrderChart`'s two overlays - the pending one and the refusal - are opaque and `inset-0`,
+  and that is not enough: lightweight-charts positions its own layers with explicit
+  z-indexes, measured in Chrome as canvas 1, canvas 2 and its attribution anchor 3, and a
+  positioned element at `z-index: auto` paints below all of them however late it comes in
+  the DOM. Without it the refusal was drawn as a caption across a live plot - measured at
+  1440x900 with the rules refused, `elementFromPoint` at the panel's centre returned the
+  chart's CANVAS, and the axis read 130000.00 to 50000.00 at the library's two decimals with
+  a moving crosshair label, which is the exact drawing the cover exists to withhold. jsdom
+  lays nothing out and implements no canvas, so `OrderChart.dom.test.tsx` pins the class and
+  the geometry is a browser check.
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region (`aria-live` and `role="status"` alike).
@@ -845,14 +866,65 @@ Three rules, and each replaced a defect that was invisible while the app was BTC
 market is dropped, so the previous pair's price can never be what a block is priced from
 during a switch.
 
-**Known gap: precision *readiness* has no owner.** "Does this pair have rules yet, are they
-known to be absent, or are they still loading" is currently answered independently by
-`MarketSelector`, `OrderChart`, `useLightweightChart`, `formatMarketPrice` and the order
-path, each from `metadataSettled` plus a precision of its own. Every defect in that class so
-far has been one of those five disagreeing with the other four - most recently the chart
-drawing a whole axis at lightweight-charts' `precision: 2` default while every chip beside
-it read `n/a` for the same pair. Owned by `bb3-price-format-readiness-owner`; a fix belongs
-in one readiness value the five read, not in a sixth `metadataSettled &&` expression.
+**Price-formatting readiness has one owner, and it is
+`src/utils/priceFormatReadiness.ts`.** "Can this pair's prices be written, and at what
+precision" is **three** states - `pending` (the AssetPairs request has not answered),
+`ready` (Kraken's rules are in hand, and this is the only state carrying a
+`MarketPrecision`), `unavailable` (it answered and described no rules for this pair) -
+and they are folded there, once, from the precision-or-null and the settled flag.
+`MarketProvider` performs that fold at the last point where those two facts exist
+separately, and **neither leaves that file**: the context carries `priceFormat` and not its
+ingredients, so there is nothing on it for a surface to recombine. Every surface consumes
+it - the selector readout and its warning, the grid chips, the read-only cards, the chart's
+axis and crosshair through `useLightweightChart`, the chart panel's own cover, and the order
+path through `precisionOf`.
+
+That shape is the fix for a defect found on **four consecutive review rounds** of the
+multi-pair work - candle `setData`, then the order price lines, then the series'
+`priceFormat`, then the pre-settle window - each correct about its own surface and teaching
+the next one nothing, because six surfaces each decided the question for themselves. So the
+guard is deliberately not a list of today's surfaces. It states what **any** module in
+`src/` may not do, so a surface nobody has written yet is covered on the day it is written,
+and it is split by what each mechanism can actually see:
+
+- **Four reach rules are in `eslint.config.js`**, as `no-restricted-syntax` and
+  `no-restricted-imports` over `src/**`: no module may name `metadataSettled`, declare an
+  absent-able `MarketPrecision` (a union with `null` or `undefined`, or an optional
+  parameter or property), import `fetchMarketPrecisions`, or name `metadataError`. That
+  last one is the readiness proxy that was tried and was wrong in both directions - a batch
+  answering without one pair sets no error while that pair has no rules, and a later
+  failure sets one over pairs whose rules are in hand - so it is `MarketProvider`'s own
+  state, arming its retries, and reaches no surface. **It is not on the context**: it was,
+  nothing read it, and publishing a field the boundary forbids reading is a contradiction
+  rather than an affordance. A lane that wants to show the user why the batch failed puts
+  it back deliberately, and that friction is the point. Each rule carries a short
+  file-scoped allowlist stating why that file legitimately handles the ingredient; test
+  files and `src/test/` are exempt, because they stand in for Kraken and for the provider
+  rather than being surfaces. `npm run lint` is already one of the four CI jobs, so the
+  reach is unchanged.
+- **One runtime assertion stays in `src/utils/priceFormatReadiness.test.ts`**: that the
+  real `MarketContext` default value carries `priceFormat` and neither of the two facts it
+  is folded from - its whole key set is `market`, `markets`, `priceFormat`, `selectMarket`.
+  That is the highest-value regression route - a raw ingredient back on the context is
+  within reach of every surface at once - and it is a *value's* key set, which a linter
+  cannot read.
+
+**Why the AST rather than a text scan**, since the guard used to be one and the reasoning
+must survive: matching text can be dead or commented out, a rename slips past a literal
+pattern, and a scan that read comments would fail for the very paragraphs recording why the
+rule exists - so it had to strip them, which is another hole. The deciding reason is not
+that text scans are bad in general, though: it is that **this repository already guards a
+structural boundary exactly this way**, with the `no-restricted-imports` rule stopping
+`src/` importing `api/_lib` and `api/kraken`, and a second differently-shaped answer to the
+same kind of problem is precisely the drift this codebase keeps paying for. This is not a
+ruling that every token or text assertion here should become a lint rule - see the
+**Testing** section for the ones that are already as strong as their environment allows.
+
+The remaining hole is stated so the next reader knows it: a module reaching an ingredient
+under a name none of the rules spell - a re-export renamed on its way out, a value pulled
+from a loosely typed `Map` - passes. `pending` and `unavailable` render the same in a text
+chip (`NO_PRECISION`), which is a rendering choice made where the distinction is visible,
+not a collapse.
 
 ## The WebSocket layer
 

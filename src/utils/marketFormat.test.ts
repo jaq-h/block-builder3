@@ -16,7 +16,8 @@ import {
   OP_USD,
   SOL_USD,
 } from "@/test/marketFixtures";
-import type { ActiveMarket, MarketPrecision } from "@/types/markets";
+import type { MarketPrecision } from "@/types/markets";
+import type { PriceFormatReadiness } from "@utils/priceFormatReadiness";
 import { findMarket } from "@data/markets";
 
 // =============================================================================
@@ -153,19 +154,32 @@ describe("formatQuantityForAPI", () => {
 // =============================================================================
 
 describe("formatMarketPrice", () => {
-  const active = (
+  const ready = (
     symbol: string,
-    precision: ActiveMarket["precision"],
-  ): ActiveMarket => ({
+    precision: MarketPrecision,
+  ): PriceFormatReadiness => ({
+    status: "ready",
     market: findMarket(symbol)!,
     precision,
   });
 
+  /** Kraken has not answered yet. */
+  const pending = (symbol: string): PriceFormatReadiness => ({
+    status: "pending",
+    market: findMarket(symbol)!,
+  });
+
+  /** Kraken answered and described no rules for this pair. */
+  const unavailable = (symbol: string): PriceFormatReadiness => ({
+    status: "unavailable",
+    market: findMarket(symbol)!,
+  });
+
   it("draws a price at the selected pair's precision", () => {
-    expect(formatMarketPrice(50_123.456, active("BTC/USD", BTC_USD))).toBe(
+    expect(formatMarketPrice(50_123.456, ready("BTC/USD", BTC_USD))).toBe(
       "$50,123.5",
     );
-    expect(formatMarketPrice(0.4567891, active("ARB/USD", ARB_USD))).toBe(
+    expect(formatMarketPrice(0.4567891, ready("ARB/USD", ARB_USD))).toBe(
       "$0.4568",
     );
   });
@@ -175,16 +189,25 @@ describe("formatMarketPrice", () => {
   // a real ARB price of 0.4231 as "$0.42", a different price level, quietly.
   // Decision D3 is that the price shown is the price sent, so rather than pick
   // a width this refuses to draw a number at all.
+  //
+  // Both unready states are asked, separately. They used to be one case here
+  // because there was one value to express them - a `null` precision - and the
+  // point of the readiness owner is that they are two. A text chip has nothing
+  // different to say about why there are no rules, so it draws the same thing
+  // in both; that is a rendering choice, and this is where it is pinned.
   it("draws no number at all when the pair's precision is unknown", () => {
-    expect(formatMarketPrice(1_234.5, active("ETH/USD", null))).toBe(
-      NO_PRECISION,
-    );
-    expect(formatMarketPrice(0.4231, active("ARB/USD", null))).toBe(
-      NO_PRECISION,
-    );
-    expect(formatMarketPrice(1_234.5)).toBe(NO_PRECISION);
+    expect(formatMarketPrice(1_234.5, pending("ETH/USD"))).toBe(NO_PRECISION);
+    expect(formatMarketPrice(0.4231, pending("ARB/USD"))).toBe(NO_PRECISION);
 
-    expect(formatMarketPrice(0.4231, active("ARB/USD", null))).not.toMatch(
+    expect(formatMarketPrice(1_234.5, unavailable("ETH/USD"))).toBe(
+      NO_PRECISION,
+    );
+    expect(formatMarketPrice(0.4231, unavailable("ARB/USD"))).toBe(
+      NO_PRECISION,
+    );
+
+    expect(formatMarketPrice(0.4231, pending("ARB/USD"))).not.toMatch(/\d/);
+    expect(formatMarketPrice(0.4231, unavailable("ARB/USD"))).not.toMatch(
       /\d/,
     );
   });
@@ -193,19 +216,19 @@ describe("formatMarketPrice", () => {
   // the other that one has but the rule for writing it has not.
   it("tells a missing price apart from a missing precision", () => {
     expect(NO_PRICE).not.toBe(NO_PRECISION);
-    expect(formatMarketPrice(null, active("ARB/USD", ARB_USD))).toBe(NO_PRICE);
-    expect(formatMarketPrice(0.4231, active("ARB/USD", null))).toBe(
+    expect(formatMarketPrice(null, ready("ARB/USD", ARB_USD))).toBe(NO_PRICE);
+    expect(formatMarketPrice(0.4231, unavailable("ARB/USD"))).toBe(
       NO_PRECISION,
     );
   });
 
   it("has no price to draw when there is no price", () => {
-    expect(formatMarketPrice(null)).toBe("—");
-    expect(formatMarketPrice(Number.NaN, active("BTC/USD", BTC_USD))).toBe("—");
+    expect(formatMarketPrice(null, pending("BTC/USD"))).toBe("—");
+    expect(formatMarketPrice(Number.NaN, ready("BTC/USD", BTC_USD))).toBe("—");
   });
 
   it("takes the currency mark from the market rather than assuming one", () => {
-    expect(formatMarketPrice(10, active("SOL/USD", SOL_USD))).toBe("$10.00");
+    expect(formatMarketPrice(10, ready("SOL/USD", SOL_USD))).toBe("$10.00");
   });
 
   // The readout must not have moved. Every value below is a real Kraken figure -
@@ -234,7 +257,7 @@ describe("formatMarketPrice", () => {
     ];
 
     cases.forEach(([symbol, precision, price, expected]) => {
-      expect(formatMarketPrice(price, active(symbol, precision))).toBe(expected);
+      expect(formatMarketPrice(price, ready(symbol, precision))).toBe(expected);
     });
   });
 
@@ -250,7 +273,7 @@ describe("formatMarketPrice", () => {
       tickSize: 0.0005,
     };
 
-    expect(formatMarketPrice(0.4567, active("ARB/USD", coarseTick))).toBe(
+    expect(formatMarketPrice(0.4567, ready("ARB/USD", coarseTick))).toBe(
       "$0.4565",
     );
     expect(formatPriceForAPI(0.4567, coarseTick)).toBe("0.4565");
@@ -258,7 +281,7 @@ describe("formatMarketPrice", () => {
     // Same number on the chip and in the payload, for anything the grid can
     // compute - not just the one value above.
     [0.4567, 0.1234, 0.98765, 1.00024].forEach((price) => {
-      expect(formatMarketPrice(price, active("ARB/USD", coarseTick))).toBe(
+      expect(formatMarketPrice(price, ready("ARB/USD", coarseTick))).toBe(
         `$${formatPriceForAPI(price, coarseTick)}`,
       );
     });

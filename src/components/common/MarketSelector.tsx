@@ -41,8 +41,7 @@ const MarketSelector: FC<MarketSelectorProps> = ({
   currentPrice,
   priceError,
 }) => {
-  const { market, markets, activeMarket, selectMarket, metadataSettled } =
-    useMarket();
+  const { market, markets, priceFormat, selectMarket } = useMarket();
 
   // Keyed on this pair actually having no rules, and on nothing else.
   //
@@ -55,7 +54,13 @@ const MarketSelector: FC<MarketSelectorProps> = ({
   // one succeeded reports an error over a pair whose rules are in hand, which
   // is the case it used to get wrong the other way, claiming a block that does
   // not exist while every chip beside it drew a real price.
-  const precisionUnavailable = metadataSettled && !activeMarket.precision;
+  //
+  // Both of those were decided by combining a precision with a settled flag
+  // here. They are not combined here any more - `unavailable` is that same
+  // condition, named once in `utils/priceFormatReadiness.ts` and read by every
+  // surface, so this warning and the chart's refusal cannot come to disagree
+  // about which pairs have rules.
+  const precisionUnavailable = priceFormat.status === "unavailable";
 
   return (
     <div className={marketSelectorRow}>
@@ -88,7 +93,7 @@ const MarketSelector: FC<MarketSelectorProps> = ({
           ? "Price unavailable"
           : currentPrice === null
             ? "Loading price…"
-            : formatMarketPrice(currentPrice, activeMarket)}
+            : formatMarketPrice(currentPrice, priceFormat)}
       </span>
 
       {/* Without Kraken's rules for the pair no order can be priced, and the

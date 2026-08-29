@@ -57,7 +57,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
 }) => {
   // See the note in `GridCell`: the pair's precision comes from context so a
   // cell can never draw a price at a different precision from its neighbour.
-  const { activeMarket } = useMarket();
+  const { priceFormat } = useMarket();
 
   const displayMode = getCellDisplayMode(blocks);
   // The same cell scale the builder grid draws, from the same owner: an order
@@ -99,7 +99,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
           {priceError
             ? "Price Error"
             : currentPrice
-              ? formatPrice(currentPrice, activeMarket)
+              ? formatPrice(currentPrice, priceFormat)
               : "Loading price..."}
         </div>
       </div>
@@ -170,7 +170,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                 {offset.toFixed(2)}%
               </div>
               <div className={priceProps.className} style={priceProps.style}>
-                {formatPrice(calculatedPriceValue, activeMarket)}
+                {formatPrice(calculatedPriceValue, priceFormat)}
               </div>
               <div className={posProps.className} style={posProps.style}>
                 <Block
@@ -181,7 +181,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                   leg={legInCell(blocks, block)}
                   yPosition={offset}
                   direction={direction}
-                  priceText={formatPrice(calculatedPriceValue, activeMarket)}
+                  priceText={formatPrice(calculatedPriceValue, priceFormat)}
                   isReadOnly={true}
                 />
               </div>
