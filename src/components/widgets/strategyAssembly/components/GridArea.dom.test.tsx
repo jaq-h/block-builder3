@@ -14,9 +14,14 @@ import { GridDataContext } from "../contexts/GridDataContext";
 import { DragContext } from "../contexts/DragContext";
 import { HoverContext } from "../contexts/HoverContext";
 import { StaticContext } from "../contexts/StaticContext";
-import { ORDER_TYPES } from "@data/orderTypes";
+import { getOrderType, ORDER_TYPES } from "@data/orderTypes";
 import { clearGrid } from "@utils/grid";
-import { orderConfigFromGrid, reverseGrid } from "@utils/blockMapping";
+import { createBlocksFromOrderType } from "@utils/blockFactory";
+import {
+  addBlocksToCell,
+  orderConfigFromGrid,
+  reverseGrid,
+} from "@utils/blockMapping";
 import { mapGridToOrders, validateOrder } from "@api/orderMapper";
 import { BLOCK_HEIGHT, getBlockTopPx } from "@styles/grid";
 import type {
@@ -708,13 +713,29 @@ describe("GridArea, tapping a placed block", () => {
 
     const note = screen.getByText(/Orders do not move between cells/);
     expect(note).toHaveTextContent(
-      "Limit stays in the cell it was placed in. Orders do not move between cells - use the arrow keys to change this one's price.",
+      "Limit stays in the cell it was placed in. Orders do not move between cells - use the arrow keys to change this one's price, or remove it and place a new one. Remove it with its Remove button, or with Delete while it has focus.",
     );
-    // Never a removal instruction here: a block on a price axis is wired to the
-    // vertical price drag, so it cannot be dragged off the grid at all.
-    expect(note).not.toHaveTextContent(/remove it/);
     expect(note.closest("[aria-live]")).toBeNull();
     expect(note).not.toHaveAttribute("role", "status");
+  });
+
+  // FORMERLY: this asserted the note said nothing about removal for a priced
+  // block, because a block on a price axis is wired to the vertical price drag
+  // and could not be dragged off the grid at all - so naming a removal would
+  // have promised something the app could not do. Both halves of the grid have
+  // a removal now, so the note offers it to both.
+  it("offers the removal to a priced block, which now has one", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    tap(slider);
+
+    const note = screen.getByText(/Orders do not move between cells/);
+    expect(note).toHaveTextContent(/Remove button/);
+    expect(
+      screen.getByRole("button", {
+        name: "Remove Limit limit order, Entry column, primary row",
+      }),
+    ).toBeInTheDocument();
   });
 
   // A note that survives the action it asked for reads as though the action
@@ -799,6 +820,306 @@ describe("GridArea, tapping a placed block", () => {
 // place the same gesture was about to invalidate. Each outcome now speaks for
 // itself, in the words the keyboard path uses.
 
+// =============================================================================
+// REMOVING ONE PLACED BLOCK
+// =============================================================================
+//
+// The gap this closes was worse than the parity gap it was filed as. Removal
+// used to be a branch of the free drag's release handler, and `block.tsx` wires
+// `useVerticalDrag` instead of `useFreeDrag` for every block its cell draws on a
+// price axis - so a placed Limit, Stop Loss or Take Profit could not be removed
+// by ANY input method, mouse included, and Clear All was the only way out.
+// Decision D9 then made delete-and-rebuild the accepted way to correct a
+// misplaced order, which is a correction path the product did not have.
+
+describe("GridArea, removing a placed block", () => {
+  /**
+   * `name` is the order's label plus its leg where its cell draws one - the
+   * same pairing the slider beside it is named with - and the label alone where
+   * the cell draws no axis at all.
+   */
+  const removeControl = (name: string) =>
+    screen.getByRole("button", { name: new RegExp(`^Remove ${name} order,`) });
+
+  it("removes a block on a price axis from the keyboard, which nothing could", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    fireEvent.keyDown(slider, { key: "Delete" });
+
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, primary row, empty",
+    );
+  });
+
+  it("names the block and its cell when it goes", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    fireEvent.keyDown(slider, { key: "Delete" });
+
+    expect(announcement()).toBe(
+      "Removed Limit limit block from Entry column, primary row.",
+    );
+  });
+
+  // Both keys, because the platforms differ about which one deletes a thing in
+  // a place and a user reaches for whichever theirs taught them.
+  it("takes Backspace as well as Delete", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    fireEvent.keyDown(slider, { key: "Backspace" });
+
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+  });
+
+  it("removes a block in a cell that draws no axis, from the keyboard", () => {
+    const { first } = renderTwoBlocks();
+
+    fireEvent.keyDown(first, { key: "Delete" });
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(announcement()).toBe(
+      "Removed Market block from Entry column, row 2.",
+    );
+  });
+
+  it("removes a priced block on a mouse click of its own control", () => {
+    renderPlacedLimit(25);
+
+    clickBlock(removeControl("Limit limit"));
+
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(announcement()).toBe(
+      "Removed Limit limit block from Entry column, primary row.",
+    );
+  });
+
+  // The affordance is rendered rather than revealed on hover, which is the
+  // whole reason a finger can reach it: there is no hover on a touch screen,
+  // and a control that appears only under a cursor exists for one device.
+  it("removes a priced block on a tap of its own control", () => {
+    renderPlacedLimit(25);
+
+    tap(removeControl("Limit limit"));
+
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+  });
+
+  it("names the cell in the control, so two orders of one type are told apart", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    grid[1][0].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+
+    tap(
+      screen.getByRole("button", {
+        name: "Remove Market order, Exit column, row 1",
+      }),
+    );
+
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, empty");
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+  });
+
+  // THE HARDEST PAIR TO TELL APART, AND THE ONE THE CELL CANNOT SEPARATE.
+  //
+  // `createBlocksFromOrderType` gives both legs of a dual-axis order type the
+  // same `label` and puts them in the SAME cell, so the label plus the cell
+  // names neither of them: both controls read "Remove Stop Loss Limit order,
+  // Entry column, primary row" and both removals said the same sentence. A
+  // screen-reader or voice-control user could not tell which leg they were
+  // about to destroy, nor which one had gone - and the survivor is half an
+  // order. Built with the real factory, because the duplicate label is its
+  // doing rather than a fixture's.
+  it("separates the two legs of one dual-axis order, in the control and in what it says", () => {
+    const place = () => {
+      const definition = getOrderType("stop-loss-limit");
+      if (!definition) throw new Error("stop-loss-limit is not a palette entry");
+      const grid = addBlocksToCell(
+        clearGrid(2, 3),
+        { col: 0, row: 1 },
+        createBlocksFromOrderType(definition, { baseId: "t", counter: 0 }).blocks,
+        "conditional",
+      );
+      return render(<Harness initialGrid={grid} pattern="conditional" />);
+    };
+
+    const { unmount } = place();
+    expect(
+      screen.getByRole("button", {
+        name: "Remove Stop Loss Limit trigger order, Entry column, primary row",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Remove Stop Loss Limit limit order, Entry column, primary row",
+      }),
+    ).toBeInTheDocument();
+
+    tap(removeControl("Stop Loss Limit trigger"));
+    expect(announcement()).toBe(
+      "Removed Stop Loss Limit trigger block from Entry column, primary row.",
+    );
+    unmount();
+
+    place();
+    tap(removeControl("Stop Loss Limit limit"));
+    expect(announcement()).toBe(
+      "Removed Stop Loss Limit limit block from Entry column, primary row.",
+    );
+  });
+
+  // The block that was focused is the block being removed, so leaving focus
+  // alone drops it to `<body>` and the next Tab restarts at the top of the
+  // document. The palette entry is where decision D9's other half starts -
+  // place a new one - so that is where the keyboard lands.
+  it("hands focus to the palette entry the order came from", () => {
+    const { slider } = renderPlacedLimit(25);
+
+    fireEvent.keyDown(slider, { key: "Delete" });
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Add Limit order" }),
+    );
+  });
+
+  // The cell listens for a click to place whatever is in hand. Without the
+  // control stopping its own click, removing a block while carrying a palette
+  // order would delete the block AND drop the carried order into its cell.
+  it("does not also place a carried order into the cell it emptied", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+
+    clickBlock(screen.getByRole("button", { name: "Add Limit order" }));
+    // The carry has to be live for this test to mean anything at all.
+    expect(announcement()).toContain("Picked up Limit order");
+
+    clickBlock(
+      screen.getByRole("button", { name: "Remove Market order, Entry column, row 2" }),
+    );
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(announcement()).toBe(
+      "Removed Market block from Entry column, row 2.",
+    );
+  });
+
+  // A palette entry is an order type rather than an order: there is nothing
+  // there to take away, and a Remove beside every one of them would offer to
+  // delete the palette.
+  it("offers no removal on a palette entry", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+  });
+
+  // The cell's scale belongs to the cell, not to whichever block happens to be
+  // first in it (decision D8), so removing one block must not re-price the one
+  // beside it. This is the same fact `removeBlockFromGrid` leaves alone by
+  // touching no direction at all.
+  it("leaves the block beside it drawn at exactly the price it was", () => {
+    // Through `addBlocksToCell`, because the invariant is D8's: the cell takes
+    // one scale when its first block lands and stamps every later arrival with
+    // it, so the survivors already carry the scale and a removal has no
+    // direction to choose. Pushed in raw, the Stop Loss would carry its own
+    // "upside" and flip to +15.00% $115,000 the moment the Limit went.
+    const withLimit = addBlocksToCell(
+      clearGrid(2, 3),
+      { col: 0, row: 1 },
+      [placedLimit(25, "b1")],
+      "bulk",
+    );
+    const grid = addBlocksToCell(
+      withLimit,
+      { col: 0, row: 1 },
+      [placedStopLoss(15, "s1")],
+      "bulk",
+    );
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+
+    expect(screen.getByText(limitPrice(15))).toBeInTheDocument();
+
+    tap(removeControl("Limit limit"));
+
+    expect(screen.queryByText(limitPrice(25))).toBeNull();
+    expect(screen.getByText(limitPrice(15))).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// A REMOVAL THAT WOULD OTHERWISE LEAVE A DANGLING LINK
+// =============================================================================
+//
+// `assertLinksAreFlat` in `api/orderMapper.ts` REFUSES a grid whose
+// `linkedBlockId` names a block that is not on it, rather than emitting the
+// primary order with its protective close silently gone. That refusal is
+// correct and is pinned in `orderMapper.test.ts`. It also means a removal that
+// only filtered would hand the user a strategy nothing could submit and no
+// control could mend - which is exactly the state making removal reachable
+// would have created for the first time.
+
+describe("GridArea, removing a block another block is linked to", () => {
+  const linkedGrid = (): GridData => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push({ ...placedMarket("primary"), linkedBlockId: "close" });
+    grid[0][0].push(placedLimit(25, "close"));
+    return grid;
+  };
+
+  const renderLinked = () => {
+    let stored: GridData = linkedGrid();
+    render(
+      <Harness
+        initialGrid={stored}
+        pattern="bulk"
+        onGrid={(next) => {
+          stored = next;
+        }}
+      />,
+    );
+    return { grid: () => stored };
+  };
+
+  it("refuses the strategy while the link dangles, so the guard is real", () => {
+    const dangling = clearGrid(2, 3);
+    dangling[0][1].push({ ...placedMarket("primary"), linkedBlockId: "close" });
+
+    expect(() =>
+      mapGridToOrders(dangling, {
+        market: BTC_USD,
+        currentPrice: MARKET_PRICE,
+        quantity: "0.5",
+      }),
+    ).toThrow(/no such block is on the grid/);
+  });
+
+  it("clears the link when the block it named is removed", () => {
+    const { grid } = renderLinked();
+
+    fireEvent.keyDown(screen.getByRole("slider"), { key: "Delete" });
+
+    const primary = grid()[0][1][0];
+    expect(primary).toBeDefined();
+    expect(primary).not.toHaveProperty("linkedBlockId");
+  });
+
+  it("leaves a strategy the mapper will still take", () => {
+    const { grid } = renderLinked();
+
+    fireEvent.keyDown(screen.getByRole("slider"), { key: "Delete" });
+
+    expect(() =>
+      mapGridToOrders(grid(), {
+        market: BTC_USD,
+        currentPrice: MARKET_PRICE,
+        quantity: "0.5",
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe("GridArea, what a completed drag says", () => {
   it("says the block was removed when the drag ends off the grid", () => {
     const { first } = renderTwoBlocks();
@@ -810,7 +1131,7 @@ describe("GridArea, what a completed drag says", () => {
     fireEvent(first, pointerAt("pointerup", 900, 900));
 
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
-    expect(announcement()).toBe("Removed Market block from the grid.");
+    expect(announcement()).toBe("Removed Market block from Entry column, row 2.");
   });
 
   it("names the cell a palette drag placed the order in", () => {
@@ -1056,7 +1377,7 @@ describe("GridArea, a drop whose block overlaps a cell it is not over", () => {
       "aria-label",
       "Entry column, row 2, empty",
     );
-    expect(announcement()).toBe("Removed Market block from the grid.");
+    expect(announcement()).toBe("Removed Market block from Entry column, row 2.");
   });
 });
 
@@ -1130,7 +1451,7 @@ describe("GridArea, a release the dragged block never receives", () => {
     dragAndReleaseElsewhere(first, 900, 900);
 
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
-    expect(announcement()).toBe("Removed Market block from the grid.");
+    expect(announcement()).toBe("Removed Market block from Entry column, row 2.");
     expect(dragOverlaySnapshot().active).toBe(false);
   });
 

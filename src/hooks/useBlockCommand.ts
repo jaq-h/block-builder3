@@ -15,10 +15,11 @@ import {
   validTargetsFor,
   type ActivationOrigin,
   type CarriedBlock,
+  type GridSource,
   type ProviderSource,
 } from "../utils/blockCommand";
 import { findBlockInGrid } from "../utils/grid";
-import { cellDrawsPriceAxis } from "../utils/blockMapping";
+import { cellDrawsPriceAxis, legInCell } from "../utils/blockMapping";
 import type { PickUpRefusal } from "../utils/gridAnnouncements";
 import { holdBlockInHand } from "./blockInHand";
 import type { GridAnnouncer } from "./useGridAnnouncer";
@@ -47,6 +48,21 @@ export interface CancelOptions {
   restoreFocus?: boolean;
 }
 
+export interface RemoveOptions {
+  /**
+   * The gesture that reached this removal had already taken a carry of the same
+   * subject out of the user's hand without saying so - see `releaseForDrag`.
+   *
+   * It is reported rather than acted on, because where such a clause belongs is
+   * the announcer's decision and not a caller's. For a removal the answer is
+   * "nowhere": the sentence already describes something happening to that very
+   * block, so `describeOutcome` appends nothing, exactly as it appends nothing
+   * to a placement. It travels anyway so the drag path can hand over what it
+   * knows without having to know that.
+   */
+  releasedCarry?: boolean;
+}
+
 export interface UseBlockCommandOptions {
   grid: GridData;
   strategyPattern: StrategyPattern;
@@ -55,6 +71,15 @@ export interface UseBlockCommandOptions {
   announcer: GridAnnouncer;
   /** Commit a new block from the palette, and report what the grid did. */
   placeProvider: (type: string, cell: CellPosition) => PlacementResult;
+  /**
+   * Take one block off the grid, links to it included.
+   *
+   * The owner is handed an id and nothing else: it looks the block up itself,
+   * so there is no cell travelling alongside the id for the two to disagree
+   * about. See `removeBlockFromGrid` in `utils/grid.ts` for why the removal and
+   * the link clearing are one function rather than two that agree.
+   */
+  removeFromGrid: (id: string) => void;
   /**
    * A placed block was activated, and it is not going anywhere.
    *
@@ -95,6 +120,21 @@ export interface UseBlockCommandReturn {
   activateBlock: (id: string, origin: ActivationOrigin) => void;
   /** A tap on a cell. Does nothing, silently, while nothing is carried. */
   activateCell: (cell: CellPosition) => void;
+  /**
+   * Take one placed block off the grid: Delete or Backspace on it, its own
+   * remove control, or a free drag released clear of every cell.
+   *
+   * **The app's one removal.** It was previously a branch inside the free
+   * drag's release handler, which is why it did not exist for most of the
+   * grid: `block.tsx` wires the vertical price drag instead of the free drag
+   * for every block a cell draws on a price axis, so a Limit, a Stop Loss or a
+   * Take Profit could not be removed by any input method at all, and Clear All
+   * - which destroys the whole strategy - was the only way out. Decision D9
+   * names delete-and-rebuild as *the* way to correct a misplaced order, so the
+   * removal has to be an operation of the command model rather than one
+   * gesture's side effect.
+   */
+  removeBlock: (id: string, options?: RemoveOptions) => void;
   moveTarget: (dCol: number, dRow: number) => void;
   /**
    * The cursor is over this cell, so it is the cell a click would place into.
@@ -130,6 +170,7 @@ export const useBlockCommand = ({
   providerBlocks,
   announcer,
   placeProvider,
+  removeFromGrid,
   refuseMove,
 }: UseBlockCommandOptions): UseBlockCommandReturn => {
   const [state, dispatch] = useReducer(commandReducer, IDLE_COMMAND_STATE);
@@ -205,6 +246,53 @@ export const useBlockCommand = ({
       via: "carry",
       releasedCarry: true,
     });
+  };
+
+  /**
+   * Remove one placed block, and put focus somewhere that still exists.
+   *
+   * Focus goes to the palette entry the order came from, which is the same
+   * place a cancelled carry hands it back to. Two reasons, and the first is not
+   * optional: the element that was focused is the block being removed, so
+   * leaving focus alone drops it to `<body>` and the next Tab restarts at the
+   * top of the document. The second is that decision D9 makes removal half of a
+   * correction - remove it, then place a new one - and the palette entry is
+   * where the other half starts, so the keyboard lands ready for it.
+   *
+   * A block the grid does not hold is not reported at all. A grid can be
+   * replaced under a gesture - Clear All, Reverse Blocks, a strategy load - and
+   * a sentence about a block that is not there names a cell the grid has not
+   * confirmed, which is the one thing `gridAnnouncements` refuses to do.
+   */
+  const removeBlock = (
+    id: string,
+    { releasedCarry = false }: RemoveOptions = {},
+  ) => {
+    const found = findBlockInGrid(grid, id);
+    if (!found) return;
+
+    const source: GridSource = {
+      kind: "grid",
+      id: found.block.id,
+      label: found.block.label,
+      origin: { col: found.col, row: found.row },
+    };
+
+    // Which leg of its order type this was, if its cell drew it on a price
+    // axis at all. A dual-axis order type puts two blocks in one cell under one
+    // label, so the sentence needs it to name the one that went - and this is
+    // the block's own cell, asked of `legInCell`, the one owner of that
+    // question and the same one that named the control the user just pressed.
+    const leg = legInCell(grid[found.col][found.row], found.block);
+
+    removeFromGrid(id);
+    // Only when the palette really offers that order type. A focus request
+    // naming nothing on screen is never honoured and sits waiting for whatever
+    // block happens to answer it next.
+    if (providerBlocks.some((entry) => entry.type === found.block.orderType)) {
+      setFocusRequest(found.block.orderType);
+    }
+    report({ kind: "removed", source, leg, releasedCarry });
   };
 
   const cancel = ({ restoreFocus = true }: CancelOptions = {}) => {
@@ -373,6 +461,7 @@ export const useBlockCommand = ({
     activateProvider,
     activateBlock,
     activateCell,
+    removeBlock,
     moveTarget,
     pointToTarget,
     cancel,

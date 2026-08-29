@@ -49,6 +49,7 @@ const renderCommand = (
   strategyPattern: StrategyPattern,
   placeProvider: (type: string, cell: { col: number; row: number }) => PlacementResult,
   onRefuse: RefuseMove = () => {},
+  removeFromGrid: (id: string) => void = () => {},
 ) =>
   renderHook(() => {
     const announcer = useGridAnnouncer(strategyPattern);
@@ -58,6 +59,7 @@ const renderCommand = (
       providerBlocks: ORDER_TYPES,
       announcer,
       placeProvider,
+      removeFromGrid,
       // Wired the way `GridArea` wires it: the refusal is reported to the one
       // announcer, and the owner does whatever else it needs to with the same
       // two facts - which for `GridArea` is putting the rule on screen.
@@ -85,6 +87,7 @@ const renderCommandWithReplaceableGrid = (initialGrid: GridData) =>
         providerBlocks: ORDER_TYPES,
         announcer,
         placeProvider: () => ({ status: "refused" }),
+        removeFromGrid: () => {},
         refuseMove: () => {},
       });
       return { ...command, announcement: announcer.announcement };
@@ -104,10 +107,20 @@ const setup = (
   // that refusal on screen as well as into the live region, which is why it is
   // a callback rather than an announcement composed here.
   const refuseMove = vi.fn<RefuseMove>();
+  // The grid's half of a removal: `GridArea` writes the block out and clears
+  // every link that named it. The command model owns the operation - who asked,
+  // what is said, where focus lands - and hands the write over.
+  const removeFromGrid = vi.fn<(id: string) => void>();
 
-  const view = renderCommand(grid, strategyPattern, placeProvider, refuseMove);
+  const view = renderCommand(
+    grid,
+    strategyPattern,
+    placeProvider,
+    refuseMove,
+    removeFromGrid,
+  );
 
-  return { ...view, placeProvider, refuseMove };
+  return { ...view, placeProvider, refuseMove, removeFromGrid };
 };
 
 /**
@@ -423,7 +436,7 @@ describe("useBlockCommand", () => {
         "onPriceAxis",
       );
       expect(result.current.announcement.text).toBe(
-        "Stop Loss Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price.",
+        "Stop Loss Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price, or Delete to remove it and place a new one.",
       );
     });
 
@@ -461,7 +474,7 @@ describe("useBlockCommand", () => {
         "staysInCell",
       );
       expect(result.current.announcement.text).toBe(
-        "Stop Loss Limit stays in the cell it was placed in. To put this order somewhere else, remove it and place a new one.",
+        "Stop Loss Limit stays in the cell it was placed in. To put this order somewhere else, press Delete to remove it and place a new one.",
       );
     });
 
@@ -596,5 +609,100 @@ describe("useBlockCommand", () => {
     act(() => result.current.clearFocusRequest());
 
     expect(result.current.focusRequest).toBeNull();
+  });
+
+  // ===========================================================================
+  // REMOVAL
+  // ===========================================================================
+  //
+  // One operation with one owner. It used to be a branch of the free drag's
+  // release handler, which is why it did not exist at all for a block whose
+  // cell draws a price axis - `block.tsx` wires the vertical price drag for
+  // those, so no free drag ever ended and no removal ever fired.
+
+  describe("removing a placed block", () => {
+    it("hands the write to the grid and says what went, and from where", () => {
+      const { result, removeFromGrid } = setup(gridWithLimit());
+
+      act(() => result.current.removeBlock("b1"));
+
+      expect(removeFromGrid).toHaveBeenCalledWith("b1");
+      expect(result.current.announcement.text).toBe(
+        "Removed Limit limit block from Entry column, primary row.",
+      );
+    });
+
+    // The leg, because the cell cannot separate what shares it: a dual-axis
+    // order type puts two blocks in one cell under one label, so "Removed Stop
+    // Loss Limit block from Entry column, primary row" was said identically for
+    // either leg and the survivor is half an order. `legInCell` is asked of the
+    // block's own cell rather than derived here, so the sentence names the same
+    // leg the control the user pressed was named with.
+    it("names which leg of a dual-axis order went", () => {
+      const { grid, blocks } = gridWithOrder("stop-loss-limit");
+      const { result } = setup(grid);
+      const trigger = blocks.find((block) => block.axes.includes("trigger"))!;
+      const limit = blocks.find((block) => block.axes.includes("limit"))!;
+
+      act(() => result.current.removeBlock(trigger.id));
+      expect(result.current.announcement.text).toBe(
+        "Removed Stop Loss Limit trigger block from Entry column, primary row.",
+      );
+
+      act(() => result.current.removeBlock(limit.id));
+      expect(result.current.announcement.text).toBe(
+        "Removed Stop Loss Limit limit block from Entry column, primary row.",
+      );
+    });
+
+    // A cell that draws no axis has no leg to name, and `legInCell` answers
+    // nothing for one. The sentence must not invent a leg from the block's own
+    // `axes`, which is the second derivation `blockMapping` exists to prevent.
+    it("names no leg for a block in a cell that draws no axis", () => {
+      const { result } = setup(gridWithMovableBlock());
+
+      act(() => result.current.removeBlock("b1"));
+
+      expect(result.current.announcement.text).toBe(
+        "Removed Market block from Entry column, primary row.",
+      );
+    });
+
+    // The element that was focused is the one being removed, so leaving focus
+    // alone drops it to `<body>` and the next Tab restarts at the top of the
+    // document. The palette entry is where decision D9's other half begins.
+    it("asks for focus on the palette entry the order came from", () => {
+      const { result } = setup(gridWithLimit());
+
+      act(() => result.current.removeBlock("b1"));
+
+      expect(result.current.focusRequest).toBe("limit");
+    });
+
+    // A grid can be replaced under a gesture - Clear All, Reverse Blocks, a
+    // strategy load - and a sentence about a block that is not there would name
+    // a cell the grid has not confirmed, which is the one claim this module
+    // refuses to make.
+    it("says nothing, and writes nothing, about a block the grid does not hold", () => {
+      const { result, removeFromGrid } = setup(gridWithLimit());
+
+      act(() => result.current.removeBlock("never-placed"));
+
+      expect(removeFromGrid).not.toHaveBeenCalled();
+      expect(result.current.announcement.text).toBe("");
+      expect(result.current.focusRequest).toBeNull();
+    });
+
+    // Removing a block is not putting down the order in your hand. The two are
+    // unrelated - the carry is a palette order, and a placed block is never
+    // carried (decision D9) - so a removal leaves it exactly where it was.
+    it("leaves a palette order still in hand", () => {
+      const { result } = setup(gridWithLimit());
+
+      act(() => result.current.activateProvider("limit", "keyboard"));
+      act(() => result.current.removeBlock("b1"));
+
+      expect(result.current.carrying?.source.type).toBe("limit");
+    });
   });
 });
