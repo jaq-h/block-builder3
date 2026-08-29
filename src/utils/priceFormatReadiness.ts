@@ -107,7 +107,8 @@ export const priceFormatReadiness = (
 };
 
 /**
- * The pair's rules, or `null` where there are none to be had *yet or ever*.
+ * The pair's rules, or `null` where there are none in hand right now - the
+ * request has not answered, or it settled without rules for this pair.
  *
  * For a caller that must refuse in both unready states and has nothing
  * different to do in either - the order path is the example, because a payload

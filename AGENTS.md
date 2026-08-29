@@ -332,7 +332,7 @@ The README's **Interaction model** section is authoritative. Twelve things bite 
 
 ## The chart panel
 
-`src/components/widgets/orderChart/` owns the price chart. Four rules keep it honest:
+`src/components/widgets/orderChart/` owns the price chart. Five rules keep it honest:
 
 - **The price scale is presentation and nothing else.** `priceScale.ts` holds the
   vocabulary - the kinds, the buttons offering them, the default - and `priceScaleMode.ts`
@@ -405,6 +405,17 @@ The README's **Interaction model** section is authoritative. Twelve things bite 
   removes. It also asserts those markers are *present* in a lazy chunk, so a build that dropped
   the library or a release that renamed a marker fails the file instead of passing an absence
   check that has stopped meaning anything.
+- **A cover over the chart plot needs `z-4`, and that is what makes it a cover.**
+  `OrderChart`'s two overlays - the pending one and the refusal - are opaque and `inset-0`,
+  and that is not enough: lightweight-charts positions its own layers with explicit
+  z-indexes, measured in Chrome as canvas 1, canvas 2 and its attribution anchor 3, and a
+  positioned element at `z-index: auto` paints below all of them however late it comes in
+  the DOM. Without it the refusal was drawn as a caption across a live plot - measured at
+  1440x900 with the rules refused, `elementFromPoint` at the panel's centre returned the
+  chart's CANVAS, and the axis read 130000.00 to 50000.00 at the library's two decimals with
+  a moving crosshair label, which is the exact drawing the cover exists to withhold. jsdom
+  lays nothing out and implements no canvas, so `OrderChart.dom.test.tsx` pins the class and
+  the geometry is a browser check.
 
 Chart controls are toggle buttons carrying `aria-pressed`; they announce themselves and
 must not reach for a live region (`aria-live` and `role="status"` alike).
@@ -859,18 +870,6 @@ under a name none of the rules spell - a re-export renamed on its way out, a val
 from a loosely typed `Map` - passes. `pending` and `unavailable` render the same in a text
 chip (`NO_PRECISION`), which is a rendering choice made where the distinction is visible,
 not a collapse.
-
-**A cover over the chart plot needs `z-4`, and that is what makes it a cover.**
-`OrderChart`'s two overlays - the pending one and the refusal - are opaque and `inset-0`,
-and that is not enough: lightweight-charts positions its own layers with explicit
-z-indexes, measured in Chrome as canvas 1, canvas 2 and its attribution anchor 3, and a
-positioned element at `z-index: auto` paints below all of them however late it comes in the
-DOM. Without it the refusal was drawn as a caption across a live plot - measured at
-1440x900 with the rules refused, `elementFromPoint` at the panel's centre returned the
-chart's CANVAS, and the axis read 130000.00 to 50000.00 at the library's two decimals with a
-moving crosshair label, which is the exact drawing the cover exists to withhold. jsdom lays
-nothing out and implements no canvas, so `OrderChart.dom.test.tsx` pins the class and the
-geometry is a browser check.
 
 ## The WebSocket layer
 
