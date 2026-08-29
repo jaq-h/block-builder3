@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   BLOCK_HEIGHT,
   SCALE_CONFIG,
+  getAxisColumnProps,
   getBlockPositionerProps,
   getBlockTopPx,
   positionFromPointer,
@@ -153,4 +154,71 @@ describe("the positioner centres a shrink-wrapped child", () => {
     expect(style.right).toBeDefined();
     expect(style.width).toBeUndefined();
   });
+});
+
+// =============================================================================
+// THE AXIS COLUMN'S HEIGHT COMES FROM STRETCH, NEVER FROM A PERCENTAGE
+// =============================================================================
+//
+// Everything the price axis draws is positioned against the axis column and
+// nothing else: the track and the percentage scale are `top`/`bottom` insets on
+// it, and `getBlockPositionerProps` lays a block out at
+// `calc((100% - TRACK_INSETpx) * percent)` within it. So one collapsed height
+// is not one defect, it is the whole axis at once.
+//
+// It carried `h-full`, and a percentage height needs a definite height to
+// resolve against. The chain above it is only definite while the grid columns
+// are flex items of a ROW; stacked below `sm` for the phone layout they are
+// items of a column with no definite height, because below `lg` the shell is
+// deliberately content-sized. `height: 100%` resolved to 0, and since every
+// child of this box is absolutely positioned there was no content to fall back
+// on. Measured in Chrome with a Limit in the Entry primary cell: the axis
+// column and the track stood at 150px/80px at 640 and above, and at 0px/0px at
+// 320, 360, 390 and 414 - no track to grab, the scale clumped into 60px, and
+// the offset mapped onto a NEGATIVE 70px range, which drew the block above the
+// market line and ran it the wrong way.
+//
+// `align-items: stretch` sizes it now. It is the default for a flex item and
+// `sliderArea` is a `flex-row` whose cross axis IS this height, so it needs no
+// definite parent height and holds in both forms of the layout.
+//
+// WHAT THIS TEST IS: an assertion about the utilities the function asks for.
+// jsdom applies no author stylesheet and lays nothing out, so it cannot watch a
+// height resolve; the pixel evidence is the browser measurement above. What it
+// CAN hold is that the one token whose collapse caused this cannot come back,
+// and that no pixel height is substituted for it - the axis is a proportion of
+// whatever height the cell has, so a number here would be a second owner of
+// `CELL_MIN_HEIGHT`'s job.
+
+describe("the axis column's height", () => {
+  // Both shapes: a single-axis order type gets `flex-1`, a dual-axis leg gets
+  // `flex-none w-1/2`. Neither may state a height.
+  for (const isSingleAxis of [true, false]) {
+    const shape = isSingleAxis ? "single-axis" : "dual-axis";
+
+    it(`takes no height of its own in the ${shape} form`, () => {
+      const tokens = getAxisColumnProps(isSingleAxis).split(/\s+/);
+
+      for (const token of tokens) {
+        expect(
+          token,
+          "the axis column is asking for a height again; a percentage collapses to 0 wherever the grid columns are stacked, which takes the track, the scale and the block position with it",
+        ).not.toMatch(/^(min-|max-)?h-/);
+      }
+    });
+
+    it(`stays a flex item its parent can stretch in the ${shape} form`, () => {
+      const tokens = getAxisColumnProps(isSingleAxis).split(/\s+/);
+
+      // `sliderArea` is a `flex-row`, so stretch is what supplies the height.
+      // An `self-start`/`self-end`/`self-center` here would opt out of it and
+      // collapse the box just as `h-full` did.
+      for (const token of tokens) {
+        expect(
+          token,
+          "the axis column has opted out of the stretch that gives it its height",
+        ).not.toMatch(/^self-(start|end|center|baseline)$/);
+      }
+    });
+  }
 });
