@@ -12,16 +12,27 @@
 // makes, and what keeps react-refresh able to hot-reload both.
 
 import { createContext } from "react";
-import type { ActiveMarket, Market, MarketPrecision } from "../types/markets";
+import type { Market } from "../types/markets";
+import {
+  pendingPriceFormat,
+  type PriceFormatReadiness,
+} from "../utils/priceFormatReadiness";
 import { DEFAULT_MARKET, MARKETS } from "../data/markets";
 
 export interface MarketContextValue {
   /** The pair the user selected. */
   market: Market;
-  /** Kraken's rules for it, or `null` until the metadata request answers. */
-  precision: MarketPrecision | null;
-  /** The two above as one value, for anything that needs both. */
-  activeMarket: ActiveMarket;
+  /**
+   * Whether this pair's prices can be written yet, and at what precision.
+   *
+   * The one answer every price-rendering surface reads. Kraken's rules reach a
+   * caller only through this value, and the two facts it is derived from - the
+   * precision-or-null and whether the request has answered - are deliberately
+   * **not** on this context. They were, and six surfaces recombined them into
+   * six independent judgements; see `utils/priceFormatReadiness.ts` for what
+   * that cost and `priceFormatReadiness.test.ts` for what stops it returning.
+   */
+  priceFormat: PriceFormatReadiness;
   /** Every pair the selector offers. */
   markets: readonly Market[];
   /**
@@ -34,19 +45,18 @@ export interface MarketContextValue {
    * previous selection in place.
    */
   selectMarket: (symbol: string) => boolean;
-  /** Why the metadata could not be loaded, if it could not. */
-  metadataError: string | null;
   /**
-   * Whether the metadata request has answered at all, either way.
+   * Why the *batch* could not be loaded, if it could not.
    *
-   * `precision` being `null` means two different things before and after this
-   * turns true - "not known yet" and "Kraken did not describe this pair" - and
-   * only the second is something to tell the user about. Without the
-   * distinction the selector's warning and the chart's suppressed plot both
-   * fire on every page load, while the request that would clear them is still
-   * in flight.
+   * **Not a readiness signal, and never to be read as one.** A batch that
+   * answers without one pair reports no error at all while that pair has no
+   * rules, and a request that fails after an earlier one succeeded reports an
+   * error over pairs whose rules are in hand - so this is wrong in both
+   * directions as a test of whether a price can be drawn. `priceFormat` is that
+   * test. This is the load failure, for a surface that wants to say what went
+   * wrong rather than whether anything did.
    */
-  metadataSettled: boolean;
+  metadataError: string | null;
 }
 
 /**
@@ -54,18 +64,16 @@ export interface MarketContextValue {
  *
  * It is a real default rather than a thrown error because these consumers are
  * grid components that render prices, and half the component tests mount them
- * on their own. `precision` is `null` here exactly as it is before the metadata
- * lands, so the no-provider case exercises the same "not known yet" branch the
- * running app does rather than a special one.
+ * on their own. The readiness is `pending` here exactly as it is before the
+ * metadata lands, so the no-provider case exercises the same "not known yet"
+ * branch the running app does rather than a special one.
  */
 const DEFAULT_CONTEXT: MarketContextValue = {
   market: DEFAULT_MARKET,
-  precision: null,
-  activeMarket: { market: DEFAULT_MARKET, precision: null },
+  priceFormat: pendingPriceFormat(DEFAULT_MARKET),
   markets: MARKETS,
   selectMarket: () => false,
   metadataError: null,
-  metadataSettled: false,
 };
 
 export const MarketContext = createContext<MarketContextValue>(DEFAULT_CONTEXT);

@@ -60,12 +60,10 @@ const market = findMarket("BTC/USD")!;
 
 const marketValue: MarketContextValue = {
   market,
-  precision: BTC_USD,
-  activeMarket: { market, precision: BTC_USD },
+  priceFormat: { status: "ready", market, precision: BTC_USD },
   markets: MARKETS,
   selectMarket: () => false,
   metadataError: null,
-  metadataSettled: true,
 };
 
 const InMarket: FC<{ children: ReactNode }> = ({ children }) => (

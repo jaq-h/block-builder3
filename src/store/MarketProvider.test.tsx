@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 
 import { MarketProvider } from "./MarketProvider";
+import { precisionOf } from "@utils/priceFormatReadiness";
 import { useMarket } from "./useMarket";
 import {
   ARB_USD,
@@ -25,10 +26,15 @@ import { METADATA_TIMEOUT_MS } from "@api/assetMetadata";
 // Kraken's own per-pair record, and no request leaves the process to get it.
 
 const Probe = () => {
-  const { market, precision, metadataError, selectMarket } = useMarket();
+  const { market, priceFormat, metadataError, selectMarket } = useMarket();
+  // The provider hands out one readiness rather than a precision and a settled
+  // flag, so this reads both what it says and what it carries. See
+  // `utils/priceFormatReadiness.ts`.
+  const precision = precisionOf(priceFormat);
   return (
     <div>
       <span data-testid="symbol">{market.symbol}</span>
+      <span data-testid="format-status">{priceFormat.status}</span>
       <span data-testid="decimals">{precision?.priceDecimals ?? "none"}</span>
       <span data-testid="order-min">{precision?.orderMin ?? "none"}</span>
       <span data-testid="error">{metadataError ?? "none"}</span>
@@ -152,6 +158,88 @@ describe("MarketProvider", () => {
       expect(screen.getByTestId("error")).toHaveTextContent("offline");
     });
     expect(screen.getByTestId("decimals")).toHaveTextContent("none");
+  });
+});
+
+// =============================================================================
+// THE READINESS THE PROVIDER HANDS OUT
+// =============================================================================
+//
+// One value with three states, and this is where they are pinned against the
+// provider that produces them rather than against the fold in isolation. What
+// makes them worth pinning here is that the two unready states are reached by
+// different routes through this file - one is simply "the request has not come
+// back", the other is "it came back and said nothing about this pair" - and a
+// surface reading them cannot tell which route it took, only which state it is
+// in. `utils/priceFormatReadiness.test.ts` is where nothing else is allowed to
+// answer the question at all.
+
+describe("MarketProvider's price format readiness", () => {
+  const status = () => screen.getByTestId("format-status").textContent;
+
+  it("is pending while the request is in flight, then ready with the rules", async () => {
+    let answer: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    // The window that used to be indistinguishable from "this pair has no
+    // rules", and the one every surface drew a confident wrong value in.
+    expect(status()).toBe("pending");
+    expect(screen.getByTestId("decimals")).toHaveTextContent("none");
+
+    await act(async () => {
+      answer(assetPairsOk());
+    });
+
+    await waitFor(() => {
+      expect(status()).toBe("ready");
+    });
+    expect(screen.getByTestId("decimals")).toHaveTextContent("1");
+  });
+
+  // Kraken answering normally about a catalogue it describes none of. There is
+  // nothing more to wait for, so this is not pending - and asking again returns
+  // the same answer.
+  it("is unavailable once an answer arrives without the pair", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(assetPairsEmpty());
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await waitFor(() => {
+      expect(status()).toBe("unavailable");
+    });
+    expect(screen.getByTestId("error")).toHaveTextContent("none");
+  });
+
+  // The same state by the other route: the request failed rather than answering
+  // short. A surface has the same thing to say about both - there are no rules
+  // and none are coming - which is why they are one state and not four.
+  it("is unavailable when the request fails outright", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+
+    render(
+      <MarketProvider>
+        <Probe />
+      </MarketProvider>,
+    );
+
+    await waitFor(() => {
+      expect(status()).toBe("unavailable");
+    });
+    expect(screen.getByTestId("error")).toHaveTextContent("offline");
   });
 });
 

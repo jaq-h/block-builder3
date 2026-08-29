@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
 import { MarketContext, type MarketContextValue } from "./MarketContext";
 import { DEFAULT_MARKET, MARKETS, findMarket } from "../data/markets";
 import { fetchMarketPrecisions } from "../api/assetMetadata";
+import { priceFormatReadiness } from "../utils/priceFormatReadiness";
 import type { Market, MarketPrecision } from "../types/markets";
 
 // =============================================================================
@@ -229,12 +230,20 @@ export const MarketProvider: FC<MarketProviderProps> = ({
     };
   }, [needsMetadata]);
 
-  const precision = precisions.get(market.symbol) ?? null;
+  // The last point in the app where the precision and the settled flag exist
+  // as two separate facts. They are folded into the tri-state here and neither
+  // leaves this file, so no consumer can recombine them into a judgement of its
+  // own - which is what six of them were doing. See
+  // `utils/priceFormatReadiness.ts`.
+  const priceFormat = priceFormatReadiness(
+    market,
+    precisions.get(market.symbol) ?? null,
+    metadataSettled,
+  );
 
   const value: MarketContextValue = {
     market,
-    precision,
-    activeMarket: { market, precision },
+    priceFormat,
     markets: MARKETS,
     // Reports whether it selected. A symbol the catalogue does not hold cannot
     // be selected, and a caller that acts on the selection - loading a saved
@@ -258,7 +267,6 @@ export const MarketProvider: FC<MarketProviderProps> = ({
       return true;
     },
     metadataError,
-    metadataSettled,
   };
 
   return (

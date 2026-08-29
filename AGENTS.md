@@ -53,6 +53,12 @@ SVG imports work in tests for the same reason.
   the chart's. `vite/buttonResetLayer.test.ts` is there for that reason and one more: it has
   to read `src/index.css` as text, and `src` is typechecked without node types while `vite/`
   has them - which is the second reason the bundle scan is there too.
+  `src/utils/priceFormatReadiness.test.ts` scans the repository from *inside* `src/`, and
+  that is not a contradiction: it reads its sources through `import.meta.glob(..., { query:
+  "?raw" })`, which is typed by `vite/client` and needs no `node:fs`, so the only reason the
+  two above sit in `vite/` does not apply and the guard can live with the module that owns
+  the fact. Reach for that glob before moving a new repository-wide `src/` guard out of the
+  tree it is about.
 
 A test may deliberately assert **current, wrong** behaviour, commented
 `CHARACTERISATION OF A KNOWN BUG - do not "fix" this expectation`. None are live today;
@@ -790,14 +796,43 @@ Three rules, and each replaced a defect that was invisible while the app was BTC
 market is dropped, so the previous pair's price can never be what a block is priced from
 during a switch.
 
-**Known gap: precision *readiness* has no owner.** "Does this pair have rules yet, are they
-known to be absent, or are they still loading" is currently answered independently by
-`MarketSelector`, `OrderChart`, `useLightweightChart`, `formatMarketPrice` and the order
-path, each from `metadataSettled` plus a precision of its own. Every defect in that class so
-far has been one of those five disagreeing with the other four - most recently the chart
-drawing a whole axis at lightweight-charts' `precision: 2` default while every chip beside
-it read `n/a` for the same pair. Owned by `bb3-price-format-readiness-owner`; a fix belongs
-in one readiness value the five read, not in a sixth `metadataSettled &&` expression.
+**Price-formatting readiness has one owner, and it is
+`src/utils/priceFormatReadiness.ts`.** "Can this pair's prices be written, and at what
+precision" is **three** states - `pending` (the AssetPairs request has not answered),
+`ready` (Kraken's rules are in hand, and this is the only state carrying a
+`MarketPrecision`), `unavailable` (it answered and described no rules for this pair) -
+and they are folded there, once, from the precision-or-null and the settled flag.
+`MarketProvider` performs that fold at the last point where those two facts exist
+separately, and **neither leaves that file**: the context carries `priceFormat` and not its
+ingredients, so there is nothing on it for a surface to recombine. Every surface consumes
+it - the selector readout and its warning, the grid chips, the read-only cards, the chart's
+axis and crosshair through `useLightweightChart`, the chart panel's own cover, and the order
+path through `precisionOf`.
+
+That shape is the fix for a defect found on **four consecutive review rounds** of the
+multi-pair work - candle `setData`, then the order price lines, then the series'
+`priceFormat`, then the pre-settle window - each correct about its own surface and teaching
+the next one nothing, because six surfaces each decided the question for themselves. So the
+guard is deliberately not a list of today's surfaces: `priceFormatReadiness.test.ts` scans
+every module under `src/` and fails when **any** of them names `metadataSettled`, declares
+an absent-able `MarketPrecision`, imports `fetchMarketPrecisions`, or reads `metadataError`
+- outside the few files named there with a reason each - and asserts the context's own key
+set. It strips comments before scanning, so this file's prose about the retired shape is not
+itself a finding. A new surface that derives readiness fails it on the day it is written.
+`pending` and `unavailable` render the same in a text chip (`NO_PRECISION`), which is a
+rendering choice made where the distinction is visible, not a collapse.
+
+**A cover over the chart plot needs `z-4`, and that is what makes it a cover.**
+`OrderChart`'s two overlays - the pending one and the refusal - are opaque and `inset-0`,
+and that is not enough: lightweight-charts positions its own layers with explicit
+z-indexes, measured in Chrome as canvas 1, canvas 2 and its attribution anchor 3, and a
+positioned element at `z-index: auto` paints below all of them however late it comes in the
+DOM. Without it the refusal was drawn as a caption across a live plot - measured at
+1440x900 with the rules refused, `elementFromPoint` at the panel's centre returned the
+chart's CANVAS, and the axis read 130000.00 to 50000.00 at the library's two decimals with a
+moving crosshair label, which is the exact drawing the cover exists to withhold. jsdom lays
+nothing out and implements no canvas, so `OrderChart.dom.test.tsx` pins the class and the
+geometry is a browser check.
 
 ## The WebSocket layer
 

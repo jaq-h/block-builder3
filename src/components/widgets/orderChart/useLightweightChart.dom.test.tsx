@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { useRef, type FC } from "react";
 
 // =============================================================================
@@ -49,43 +49,38 @@ import { useLightweightChart } from "./useLightweightChart";
 import { MarketContext, type MarketContextValue } from "@store/MarketContext";
 import { MARKETS, findMarket } from "@data/markets";
 import { ARB_USD, BTC_USD } from "@/test/marketFixtures";
+import { priceFormatReadiness } from "@utils/priceFormatReadiness";
 import type { MarketPrecision } from "@/types/markets";
 
 const Probe = () => {
   const ref = useRef<HTMLDivElement>(null);
-  // Rendered rather than captured, so what the assertions read is what a
-  // consumer of the hook would actually have to render from.
-  const { hasPriceFormat } = useLightweightChart(ref);
-  return (
-    <div ref={ref} data-testid="has-price-format">
-      {String(hasPriceFormat)}
-    </div>
-  );
+  useLightweightChart(ref);
+  return <div ref={ref} />;
 };
-
-/** What the hook reported about the format on the series it handed back. */
-const reportedPriceFormat = () =>
-  screen.getByTestId("has-price-format").textContent;
 
 /**
  * One component for every render, so a rerender updates the tree rather than
  * replacing it. A fresh wrapper function per render is a different component
  * type to React, which unmounts the chart and rebuilds it - hiding whether the
  * hook rebuilds it too, which is the thing worth knowing.
+ *
+ * The context is built through the real `priceFormatReadiness`, from the two
+ * facts the market store actually holds, so this exercises the same fold the
+ * app does rather than a status written by hand here.
  */
-const Harness: FC<{ symbol: string; precision: MarketPrecision | null }> = ({
-  symbol,
-  precision,
-}) => {
+const Harness: FC<{
+  symbol: string;
+  precision: MarketPrecision | null;
+  /** Whether the AssetPairs request has answered. Defaults to answered. */
+  settled?: boolean;
+}> = ({ symbol, precision, settled = true }) => {
   const market = findMarket(symbol)!;
   const value: MarketContextValue = {
     market,
-    precision,
-    activeMarket: { market, precision },
+    priceFormat: priceFormatReadiness(market, precision, settled),
     markets: MARKETS,
     selectMarket: () => false,
     metadataError: null,
-    metadataSettled: true,
   };
 
   return (
@@ -169,41 +164,54 @@ describe("the candlestick series' price format", () => {
 });
 
 // =============================================================================
-// SAYING WHEN THE PLOT IS NOT THIS PAIR'S
+// APPLYING NOTHING WHEN THERE IS NOTHING TO APPLY
 // =============================================================================
 //
 // There is no format to apply without a `MarketPrecision`, and a series keeps
 // whatever it was last given - the previous pair's rules, or the library's
 // two-decimal default. Neither can be presented as this pair's prices, and
-// there is no neutral width to substitute, so the hook reports the state and
-// the panel covers the plot rather than captioning a drawing it cannot trust.
+// there is no neutral width to substitute.
+//
+// The hook used to also *report* that, as a `hasPriceFormat` boolean, and
+// `OrderChart` recombined it with the store's settled flag to decide what to
+// draw. That boolean was a second derivation of a fact the store already holds,
+// so it is gone: the hook consumes the readiness like every other surface, and
+// the panel reads the same value rather than reassembling one. What the boolean
+// certified splits in two, and both halves are still covered - that the hook
+// applies no format and invents none is here, and what the panel draws in each
+// of the three states is pinned in `OrderChart.dom.test.tsx`, which now drives
+// it from the readiness directly.
 
-describe("what the hook reports about the format it applied", () => {
-  it("reports a format once the pair's own rules are in hand", () => {
-    render(<Harness symbol="ARB/USD" precision={ARB_USD} />);
+describe("a pair the hook has no rules for", () => {
+  it("applies no format while the request has not answered", () => {
+    render(<Harness symbol="ARB/USD" precision={null} settled={false} />);
 
-    expect(reportedPriceFormat()).toBe("true");
+    expect(addSeries).toHaveBeenCalled();
+    expect(priceFormats()).toEqual([]);
   });
 
-  it("reports none while the pair has no rules", () => {
-    render(<Harness symbol="ARB/USD" precision={null} />);
+  it("applies no format once the request has answered without the pair", () => {
+    render(<Harness symbol="ARB/USD" precision={null} settled />);
 
-    expect(reportedPriceFormat()).toBe("false");
+    expect(addSeries).toHaveBeenCalled();
+    expect(priceFormats()).toEqual([]);
   });
 
   // The market-switch case: a chart already formatted for BTC, moved to a pair
   // the metadata does not describe. The series still carries BTC's one decimal,
-  // which is exactly why the answer here has to be false.
-  it("stops reporting one when the selection moves to a pair with no rules", () => {
+  // which is exactly why nothing may be written over it here - and why the
+  // panel covers the plot rather than captioning a drawing it cannot trust.
+  it("invents nothing when the selection moves to a pair with no rules", () => {
     const { rerender } = render(
       <Harness symbol="BTC/USD" precision={BTC_USD} />,
     );
-    expect(reportedPriceFormat()).toBe("true");
+    const formatsBefore = priceFormats().length;
 
     rerender(<Harness symbol="ARB/USD" precision={null} />);
 
-    expect(reportedPriceFormat()).toBe("false");
-    // Nothing was invented to fill the gap.
+    // No further format written at all, and in particular not the library's own
+    // two-decimal default.
+    expect(priceFormats()).toHaveLength(formatsBefore);
     expect(priceFormats()).not.toContainEqual({
       type: "price",
       precision: 2,

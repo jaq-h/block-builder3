@@ -8,6 +8,8 @@ import { MarketContext, type MarketContextValue } from "@store/MarketContext";
 import { MARKETS, findMarket } from "@data/markets";
 import { ARB_USD, BTC_USD } from "@/test/marketFixtures";
 import { NO_PRECISION } from "@utils/marketFormat";
+import { priceFormatReadiness } from "@utils/priceFormatReadiness";
+import type { MarketPrecision } from "@/types/markets";
 
 // =============================================================================
 // MARKET SELECTOR
@@ -18,8 +20,28 @@ import { NO_PRECISION } from "@utils/marketFormat";
 // a fixed two decimals, which is the number of digits that made every market
 // look like BTC.
 
+/**
+ * The two facts the market store folds into a readiness, plus anything else
+ * about the context a case wants to set.
+ *
+ * They are named separately here and put through the real
+ * `priceFormatReadiness` rather than assembled into a status by hand: each case
+ * below describes a situation Kraken can actually put the app in - "the batch
+ * has not answered", "it answered without this pair", "it answered with this
+ * pair and a later request then failed" - and the point of the owner is that it
+ * is the one thing turning those into a state. A test that stamped the status
+ * itself would be asserting this component against its own idea of the
+ * mapping, which is the shape the whole lane exists to remove.
+ */
+interface HarnessOptions extends Partial<Omit<MarketContextValue, "priceFormat">> {
+  /** Kraken's rules for the selected pair, or `null` for none. */
+  precision?: MarketPrecision | null;
+  /** Whether the AssetPairs request has answered at all. */
+  settled?: boolean;
+}
+
 const harness = (
-  overrides: Partial<MarketContextValue> = {},
+  overrides: HarnessOptions = {},
 ): { Wrapper: FC<{ children: ReactNode }>; selectMarket: ReturnType<typeof vi.fn> } => {
   const selectMarket = vi.fn();
   const market = overrides.market ?? findMarket("BTC/USD")!;
@@ -27,16 +49,23 @@ const harness = (
   // metadata lands, which is a case worth rendering - back into BTC's.
   const precision =
     "precision" in overrides ? overrides.precision! : BTC_USD;
+  // The two harness-only options are dropped: they describe what the store
+  // holds, and the context carries the readiness folded from them instead.
+  const contextOverrides = { ...overrides };
+  delete contextOverrides.precision;
+  delete contextOverrides.settled;
 
   const value: MarketContextValue = {
     market,
-    precision,
-    activeMarket: { market, precision },
+    priceFormat: priceFormatReadiness(
+      market,
+      precision,
+      overrides.settled ?? true,
+    ),
     markets: MARKETS,
     selectMarket,
     metadataError: null,
-    metadataSettled: true,
-    ...overrides,
+    ...contextOverrides,
   };
 
   const Wrapper: FC<{ children: ReactNode }> = ({ children }) => (
@@ -220,7 +249,7 @@ describe("MarketSelector", () => {
     const { Wrapper } = harness({
       precision: null,
       metadataError: null,
-      metadataSettled: false,
+      settled: false,
     });
     render(
       <Wrapper>

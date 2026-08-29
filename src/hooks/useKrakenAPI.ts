@@ -18,6 +18,7 @@ import {
   type WebSocketErrorEvent,
 } from "../api";
 import { useTradingMode } from "./useTradingMode";
+import { precisionOf } from "../utils/priceFormatReadiness";
 import { useMarket } from "../store/useMarket";
 import type { GridData } from "../types/grid";
 
@@ -101,7 +102,13 @@ export const useKrakenAPI = (
 ): UseKrakenAPIReturn => {
   const { autoConnect = false, pollInterval = 30000 } = options;
 
-  const { market, precision } = useMarket();
+  // The order path needs the rules and has nothing different to do when they
+  // are merely late rather than absent - a payload cannot be built either way -
+  // so it takes the readiness through `precisionOf` rather than testing the
+  // status itself. It is still the one owner's answer; what it must not do is
+  // work out for itself whether there are rules to be had.
+  const { market, priceFormat } = useMarket();
+  const precision = precisionOf(priceFormat);
   const symbol = market.symbol;
 
   // Connection state
