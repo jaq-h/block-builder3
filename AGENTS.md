@@ -265,11 +265,23 @@ The README's **Interaction model** section is authoritative. Thirteen things bit
   replacement, so nudging a block's price with the arrow keys while carrying does
   **not** drop the carry; and in the *bulk* pattern every cell takes every order,
   so Clear All there leaves the promise true and the carry standing - nothing on
-  screen is stale, which is the whole of what a carry can get wrong. `removeBlock`
-  is the one caller that ends the carry by hand, inside `announcer.asOneEvent`,
-  because the check runs a render later and the removal has already spoken by
-  then: reported separately, the second live-region write replaces the sentence
-  naming which block went. `gridReplacement.dom.test.tsx` is the guard that
+  screen is stale, which is the whole of what a carry can get wrong.
+  **A removal is not an exception to any of this, and "a removal frees a cell so
+  it can only widen the offer" is false**: conditional validity is diagonal
+  adjacency to an OCCUPIED cell rather than emptiness, so removing a block
+  DELETES its diagonals and the cell it frees is the smaller half. Walking every
+  reachable occupancy of the 2x3 grid gives 28 removals that take a cell away
+  from a carry - the smallest being one block in the Entry primary cell, where a
+  carried Take Profit is offered the Exit upper conditional and loses exactly
+  that cell - and 0 that leave nothing on offer, so no user is ever stranded
+  holding an unplaceable order. `removeBlock` therefore applies the same
+  `gridStandsBehind` inside its own `announcer.asOneEvent`, on the grid
+  `removeFromGrid` hands back, which is why that callback returns what it wrote.
+  **That is the rule run one render early, not a second rule**: it is the one
+  grid write that also speaks, and reported as two events the second erases the
+  first - `LiveAnnouncer` alternates regions and clears the one it leaves, both
+  assertive - losing the only sentence naming which block went, with no undo.
+  `gridReplacement.dom.test.tsx` is the guard that
   matters - it is typed over `GridDataActions`, so a new action on the grid-data
   context fails the typecheck until it is classified and is then exercised
   against a live carry without a test being written for it.
@@ -993,9 +1005,10 @@ convenience.
 Three affordances reach it and there is no fourth: Delete or Backspace on a focused block,
 that block's own Remove control, and a free drag released clear of every cell. It writes
 through `removeFromGrid`, which `GridArea` answers with `removeBlockFromGrid` (the pure
-filter-plus-link-clear above), reports the `removed` outcome to the one announcer, ends any
-carry the user still has in the other hand (see the carry-lifecycle rule in **Interaction**
-for why that is one sentence rather than two), and asks
+filter-plus-link-clear above), ends a carry in the user's other hand **only when the removal
+takes a cell away from it** (see the carry-lifecycle rule in **Interaction**: the removal has
+no rule of its own, and its `removeFromGrid` returns the grid it wrote so that one rule can be
+applied in the same event), reports the `removed` outcome to the one announcer, and asks
 for focus on the palette entry the order came from - the element that was focused is the one
 being removed, so leaving focus alone drops it to `<body>`, and the palette is where D9's
 "place a new one" begins.

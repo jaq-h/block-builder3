@@ -73,14 +73,26 @@ export interface UseBlockCommandOptions {
   /** Commit a new block from the palette, and report what the grid did. */
   placeProvider: (type: string, cell: CellPosition) => PlacementResult;
   /**
-   * Take one block off the grid, links to it included.
+   * Take one block off the grid, links to it included, and hand back the grid
+   * that was written.
    *
    * The owner is handed an id and nothing else: it looks the block up itself,
    * so there is no cell travelling alongside the id for the two to disagree
    * about. See `removeBlockFromGrid` in `utils/grid.ts` for why the removal and
    * the link clearing are one function rather than two that agree.
+   *
+   * **It returns the grid because a removal is the one write this model makes
+   * that also speaks.** The carry's fate is decided by one rule - does the grid
+   * still stand behind the cells the carry offered - and everywhere else that
+   * rule is applied a render later, on the grid this hook is handed next. Here
+   * that is a render too late: the removal has already announced which block
+   * went, and a second live-region write erases it before it is read. So the
+   * owner returns what it wrote and the same rule runs in the same event, with
+   * `gridStandsBehind` and `removeBlockFromGrid` each used once rather than
+   * re-derived. There is no removal-shaped exception to the rule, and no second
+   * transition: this is the rule, run early, on the one path that needs it.
    */
-  removeFromGrid: (id: string) => void;
+  removeFromGrid: (id: string) => GridData;
   /**
    * A placed block was activated, and it is not going anywhere.
    *
@@ -250,6 +262,26 @@ export const useBlockCommand = ({
   };
 
   /**
+   * Does this grid still stand behind the cells that carry offered?
+   *
+   * The one statement of the rule, and the only thing that decides a carry's
+   * fate. `validTargetsFor` is the same function `pickUp` built the promise
+   * with, so this compares an offer with an offer rather than adding a second
+   * opinion about what a legal cell is. A palette that no longer lists the
+   * carried order type stands behind nothing: there is no order left to place.
+   */
+  const gridStandsBehind = (carry: CarriedBlock, against: GridData): boolean => {
+    const provider = providerBlocks.find(
+      (entry) => entry.type === carry.source.type,
+    );
+    if (!provider) return false;
+    return sameTargets(
+      validTargetsFor(provider.allowedRows, against, strategyPattern),
+      carry.targets,
+    );
+  };
+
+  /**
    * The grid this carry was offered against has been replaced beneath it, so
    * the carry ends.
    *
@@ -312,20 +344,24 @@ export const useBlockCommand = ({
     // question and the same one that named the control the user just pressed.
     const leg = legInCell(grid[found.col][found.row], found.block);
 
-    // One press, one message. The removal rewrites the grid, so a carry in the
-    // user's other hand ends with it - and both of those are this one press.
-    // Reported separately and the second live-region write replaces the first
-    // before it has been read, which for a *removal* would lose the only
-    // sentence saying which block went.
+    // One press, one message. A removal can take cells away from a carry in the
+    // user's other hand - conditional validity is diagonal adjacency to an
+    // OCCUPIED cell, so removing a block deletes its diagonals and the cell it
+    // frees is the smaller half - and both of those are this one press.
+    // Reported separately, the second live-region write erases the first:
+    // `LiveAnnouncer` alternates regions and clears the one it is leaving, and
+    // both are assertive. For a removal the sentence lost is the only one
+    // naming which block went, and there is no undo.
     //
-    // It ends the carry here rather than leaving it to the check below because
-    // the check runs a render later, after the removal has already spoken. That
-    // it ends the carry whether or not this particular removal happened to
-    // change which cells are on offer is deliberate: answering that would be
-    // `isCellValidForPlacement` derived a second time, next to a caller, which
-    // is the shape this model exists to refuse.
+    // So the rule runs here, in the same event, on the grid the owner just
+    // wrote. **This is not a removal-shaped exception to it.** It is the same
+    // `gridStandsBehind` the check below applies, asked one render earlier
+    // because this is the one write that also speaks - so a removal that leaves
+    // the same cells on offer, which is every removal in the bulk pattern and
+    // any that only empties a cell somebody else's diagonals already covered,
+    // still leaves the carry exactly where it was.
     announcer.asOneEvent(() => {
-      removeFromGrid(id);
+      const written = removeFromGrid(id);
       // Only when the palette really offers that order type. A focus request
       // naming nothing on screen is never honoured and sits waiting for
       // whatever block happens to answer it next.
@@ -333,7 +369,9 @@ export const useBlockCommand = ({
         setFocusRequest(found.block.orderType);
       }
       report({ kind: "removed", source, leg, releasedCarry });
-      endCarryOnGridChange();
+      if (carrying && !gridStandsBehind(carrying, written)) {
+        endCarryOnGridChange();
+      }
     });
   };
 
@@ -491,21 +529,11 @@ export const useBlockCommand = ({
   // this file. Asking the grid what it would offer *now* cannot be forgotten by
   // a path that does not exist yet, because there is nothing for it to remember.
   //
-  // Cheap, deliberately: it is `isCellValidForPlacement` over six cells, and it
-  // is the same function `pickUp` built the promise with - so this compares an
-  // offer with an offer rather than adding a second opinion about what a legal
-  // cell is. A palette that no longer lists the carried order type counts as
-  // stale too, for the same reason: there is nothing left to place.
-  const carriedProvider = carrying
-    ? providerBlocks.find((entry) => entry.type === carrying.source.type)
-    : undefined;
-  const offerIsStale =
-    carrying !== null &&
-    (!carriedProvider ||
-      !sameTargets(
-        validTargetsFor(carriedProvider.allowedRows, grid, strategyPattern),
-        carrying.targets,
-      ));
+  // Cheap, deliberately: `gridStandsBehind` is `isCellValidForPlacement` over
+  // six cells. It is the one statement of the rule, shared with the removal
+  // above, which asks it a render earlier because it is the one grid write that
+  // also speaks.
+  const offerIsStale = carrying !== null && !gridStandsBehind(carrying, grid);
 
   // Through a ref, and written from an effect, for the reason the register's
   // release below is: the callback closes over this render's grid and carry,

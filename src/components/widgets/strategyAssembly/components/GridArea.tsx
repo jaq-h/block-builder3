@@ -300,9 +300,18 @@ const GridArea: FC<GridAreaProps> = ({
    *
    * It takes no cell. The id is enough, and a cell travelling beside it is one
    * more pair of facts to keep in step.
+   *
+   * It returns what it wrote, because the command model decides the fate of a
+   * carry in the user's other hand from it - see `removeFromGrid` there for why
+   * that one path cannot wait for the next render. Computed from this render's
+   * `grid` rather than through an updater, deliberately: the model has already
+   * looked the block up in exactly this grid, so the value both of them reason
+   * about is one value rather than two that agree.
    */
   const removeBlockFromCell = (id: string) => {
-    setGrid((prev) => removeBlockFromGrid(prev, id));
+    const next = removeBlockFromGrid(grid, id);
+    setGrid(next);
+    return next;
   };
 
   // ─── Command model (select, arrows, place) ───────────────────────

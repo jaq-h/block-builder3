@@ -1037,10 +1037,57 @@ describe("GridArea, removing a placed block", () => {
     );
 
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
-    // The removal rewrites what the grid holds, so the carry ends with it - one
-    // press, one live-region write, the removal's own sentence first.
     expect(announcement()).toBe(
-      "Removed Market block from Entry column, row 2. Limit order returned to the palette: the grid changed underneath it.",
+      "Removed Market block from Entry column, row 2.",
+    );
+    // And the carry is untouched, because this is the bulk pattern: every cell
+    // takes every order whatever the grid holds, so the removal took no cell
+    // away from it. A carry ends when the grid stops standing behind the cells
+    // it offered, and nothing here stopped. The conditional pattern is where a
+    // removal does take cells away - see "a removal that takes cells away from
+    // a carry" below.
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(1);
+  });
+
+  // ===========================================================================
+  // A REMOVAL THAT TAKES CELLS AWAY FROM A CARRY
+  // ===========================================================================
+  //
+  // "A removal frees a cell, so it can only widen the offer" is false, and it
+  // is the assumption worth writing a test against. Conditional validity is
+  // diagonal adjacency to an OCCUPIED cell, not emptiness, so removing a block
+  // DELETES its diagonals; the cell it frees is the smaller half of the same
+  // move. Walking every reachable occupancy of this grid gives 28 removals that
+  // take a cell away from a carry, and the smallest of them is this one.
+  //
+  // The sibling test above is the other half of the same rule on the bulk
+  // pattern, where the offer cannot change and the carry stands.
+  it("ends a carry whose cell the removal takes away, without losing the removal's own sentence", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    // With a block in the Entry primary cell, a Take Profit is offered that
+    // block's diagonals - and the Exit upper conditional is the one it targets.
+    clickBlock(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    clickBlock(
+      screen.getByRole("button", {
+        name: "Remove Market order, Entry column, primary row",
+      }),
+    );
+
+    // The grid is empty, so only the primary row takes an order now: the cell
+    // this carry was pointing at is not one the grid will accept any more.
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+    // One press, one live-region write. Reported as two, the second erases the
+    // first - `LiveAnnouncer` alternates regions and clears the one it leaves -
+    // and for a removal the sentence lost is the only one naming which block
+    // went, with no undo. That is why the rule runs inside the removal rather
+    // than a render later.
+    expect(announcement()).toBe(
+      "Removed Market block from Entry column, primary row. Take Profit order returned to the palette: the grid changed underneath it.",
     );
   });
 

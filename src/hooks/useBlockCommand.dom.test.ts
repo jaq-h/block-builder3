@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useBlockCommand } from "./useBlockCommand";
 import { useGridAnnouncer } from "./useGridAnnouncer";
-import { clearGrid } from "@utils/grid";
+import { clearGrid, removeBlockFromGrid } from "@utils/grid";
 import { createBlocksFromOrderType } from "@utils/blockFactory";
 import { getOrderType, ORDER_TYPES } from "@data/orderTypes";
 import type {
@@ -49,7 +49,8 @@ const renderCommand = (
   strategyPattern: StrategyPattern,
   placeProvider: (type: string, cell: { col: number; row: number }) => PlacementResult,
   onRefuse: RefuseMove = () => {},
-  removeFromGrid: (id: string) => void = () => {},
+  removeFromGrid: (id: string) => GridData = (id) =>
+    removeBlockFromGrid(grid, id),
 ) =>
   renderHook(() => {
     const announcer = useGridAnnouncer(strategyPattern);
@@ -87,7 +88,7 @@ const renderCommandWithReplaceableGrid = (initialGrid: GridData) =>
         providerBlocks: ORDER_TYPES,
         announcer,
         placeProvider: () => ({ status: "refused" }),
-        removeFromGrid: () => {},
+        removeFromGrid: (id) => removeBlockFromGrid(grid, id),
         refuseMove: () => {},
       });
       return { ...command, announcement: announcer.announcement };
@@ -108,9 +109,13 @@ const setup = (
   // a callback rather than an announcement composed here.
   const refuseMove = vi.fn<RefuseMove>();
   // The grid's half of a removal: `GridArea` writes the block out and clears
-  // every link that named it. The command model owns the operation - who asked,
-  // what is said, where focus lands - and hands the write over.
-  const removeFromGrid = vi.fn<(id: string) => void>();
+  // every link that named it, and hands back what it wrote. The command model
+  // owns the operation - who asked, what is said, where focus lands - and reads
+  // that grid to decide whether a carry in the user's other hand can survive it.
+  // The real write, not a stub returning anything: the carry's fate turns on it.
+  const removeFromGrid = vi.fn<(id: string) => GridData>((id) =>
+    removeBlockFromGrid(grid, id),
+  );
 
   const view = renderCommand(
     grid,
@@ -736,12 +741,17 @@ describe("useBlockCommand", () => {
     });
 
     // FORMERLY "leaves a palette order still in hand", on the grounds that a
-    // removal and a carry are unrelated. They are not: a removal rewrites which
-    // cells will take the carried order - in the conditional pattern it can
-    // leave none at all - so a carry that outlived one went on offering cells
-    // the grid had stopped standing behind. It ends with the grid it was
-    // offered against, like every other change to what the grid holds.
-    it("ends the carry it was holding, in one sentence rather than two", () => {
+    // removal and a carry are unrelated. They are related, though not the way
+    // "a removal frees a cell" suggests: conditional validity is diagonal
+    // adjacency to an OCCUPIED cell, so removing this Limit DELETES the
+    // diagonals it was supplying, and the freed cell is the smaller half. The
+    // carry was offered the Exit upper conditional and is not offered it any
+    // more.
+    //
+    // The old rule is kept wherever it is meaningful: the removal does not end
+    // the carry, the offer changing does. See the sibling test below for a
+    // removal that changes nothing and leaves the carry exactly where it was.
+    it("ends the carry when the removal takes the offered cells away", () => {
       const { result } = setup(gridWithLimit());
 
       act(() => result.current.activateProvider("limit", "keyboard"));
@@ -753,6 +763,27 @@ describe("useBlockCommand", () => {
       // loses the only sentence saying which block went.
       expect(result.current.announcement.text).toBe(
         "Removed Limit limit block from Entry column, primary row. Limit order returned to the palette: the grid changed underneath it.",
+      );
+    });
+
+    // The other half of the same rule, and the removal lane's decision intact
+    // where it holds. In the bulk pattern every cell takes every order whatever
+    // the grid holds, so nothing a removal does can take a cell away from a
+    // carry - and the carry is left exactly where it was, with the removal's
+    // sentence the only thing said.
+    it("leaves a carry alone when the removal takes no cell away from it", () => {
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(limitBlock());
+      const { result } = setup(grid, "bulk");
+
+      act(() => result.current.activateProvider("limit", "keyboard"));
+      const offered = result.current.carrying?.targets;
+      act(() => result.current.removeBlock("b1"));
+
+      expect(result.current.carrying?.source.type).toBe("limit");
+      expect(result.current.carrying?.targets).toEqual(offered);
+      expect(result.current.announcement.text).toBe(
+        "Removed Limit limit block from Entry column, row 2.",
       );
     });
   });
