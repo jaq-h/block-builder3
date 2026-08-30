@@ -399,22 +399,36 @@ describe("describeOutcome, a cell cleared by its own control", () => {
       say({
         kind: "cellCleared",
         cell: { col: 0, row: 1 },
-        labels: ["Market"],
+        orders: [{ label: "Market", count: 1 }],
       }),
     ).toBe("Cleared Entry column, primary row. Removed Market order.");
   });
 
   // Both legs of a dual-axis order type carry the SAME label and are ONE order,
-  // so the caller hands the label over once. Naming it twice would tell the
-  // user two orders had been destroyed.
+  // so the caller counts them as one. Saying it twice, or as "2", would tell
+  // the user two orders had been destroyed.
   it("names a dual-axis order once, because it is one order", () => {
     expect(
       say({
         kind: "cellCleared",
         cell: { col: 0, row: 1 },
-        labels: ["Stop Loss Limit"],
+        orders: [{ label: "Stop Loss Limit", count: 1 }],
       }),
     ).toBe("Cleared Entry column, primary row. Removed Stop Loss Limit order.");
+  });
+
+  // THE OTHER SAME-LABEL CASE, AND IT IS THE OPPOSITE ANSWER. A bulk cell takes
+  // every order, so two INDEPENDENT Market orders can share a label there and
+  // are two orders. Named once each with no count, the sentence said one order
+  // went where two did - a false number reported about something with no undo.
+  it("counts independent orders that happen to share a label", () => {
+    expect(
+      say({
+        kind: "cellCleared",
+        cell: { col: 0, row: 1 },
+        orders: [{ label: "Market", count: 2 }],
+      }),
+    ).toBe("Cleared Entry column, primary row. Removed 2 Market orders.");
   });
 
   it("joins two orders with 'and', and pluralises", () => {
@@ -422,10 +436,30 @@ describe("describeOutcome, a cell cleared by its own control", () => {
       say({
         kind: "cellCleared",
         cell: { col: 1, row: 0 },
-        labels: ["Limit", "Market"],
+        orders: [
+          { label: "Limit", count: 1 },
+          { label: "Market", count: 1 },
+        ],
       }),
     ).toBe(
       "Cleared Exit column, upper conditional row. Removed Limit and Market orders.",
+    );
+  });
+
+  // The plural comes from the TOTAL number of orders rather than from the
+  // number of labels, because the total is what the user destroyed.
+  it("counts each label separately, and pluralises on the total", () => {
+    expect(
+      say({
+        kind: "cellCleared",
+        cell: { col: 1, row: 0 },
+        orders: [
+          { label: "Limit", count: 1 },
+          { label: "Market", count: 2 },
+        ],
+      }),
+    ).toBe(
+      "Cleared Exit column, upper conditional row. Removed Limit and 2 Market orders.",
     );
   });
 
@@ -434,7 +468,11 @@ describe("describeOutcome, a cell cleared by its own control", () => {
       say({
         kind: "cellCleared",
         cell: { col: 1, row: 0 },
-        labels: ["Limit", "Market", "Take Profit"],
+        orders: [
+          { label: "Limit", count: 1 },
+          { label: "Market", count: 1 },
+          { label: "Take Profit", count: 1 },
+        ],
       }),
     ).toBe(
       "Cleared Exit column, upper conditional row. Removed Limit, Market and Take Profit orders.",
@@ -446,7 +484,7 @@ describe("describeOutcome, a cell cleared by its own control", () => {
   // The sentence still has to be a sentence.
   it("says only what it can, for a cell that turned out to hold nothing", () => {
     expect(
-      say({ kind: "cellCleared", cell: { col: 0, row: 1 }, labels: [] }),
+      say({ kind: "cellCleared", cell: { col: 0, row: 1 }, orders: [] }),
     ).toBe("Cleared Entry column, primary row.");
   });
 });

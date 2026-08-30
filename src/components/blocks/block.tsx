@@ -381,9 +381,10 @@ const Block: FC<BlockProps> = ({
   // The block, named so that the two legs of one dual-axis order type can be
   // told apart. `createBlocksFromOrderType` gives both legs of a Stop Loss
   // Limit the same `label` and puts them in the same cell, so the label plus
-  // the cell names neither of them - the leg is the only thing left. Derived
-  // once, because the slider's name and the remove control's name are two names
-  // for one block and two derivations of that is how they come to disagree.
+  // the cell names neither of them - the leg is the only thing left. The
+  // slider's accessible name is its one consumer: removal is the keyboard's on
+  // this block and the cell's own control for the pointer, and neither renders
+  // a name here.
   //
   // `leg` is null wherever the cell draws no price axis at all - a Market order
   // in a bulk cell - and that block keeps its plain name. Its one owner is

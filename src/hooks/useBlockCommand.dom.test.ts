@@ -838,6 +838,56 @@ describe("useBlockCommand", () => {
       );
     });
 
+    // THE OTHER SAME-LABEL CASE, AND THE ONE DEDUPING BY LABEL GOT WRONG.
+    // The bulk pattern takes every order in every cell, so two INDEPENDENT
+    // Market orders can share a label and a cell - and they are two orders. The
+    // sentence used to name the label once and say one order went, which is a
+    // false number about something with no undo.
+    it("counts two independent orders that share a label as two", () => {
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(...blocksFor("market", 0), ...blocksFor("market", 1));
+      const { result } = setup(grid, "bulk");
+
+      act(() => result.current.clearCell({ col: 0, row: 1 }));
+
+      expect(result.current.announcement.text).toBe(
+        "Cleared Entry column, row 2. Removed 2 Market orders.",
+      );
+    });
+
+    // Two dual-axis orders are FOUR blocks under one label, and still two
+    // orders: the count is blocks divided by that order type's legs, so the
+    // same cell reports two rather than four.
+    it("counts two dual-axis orders of one type as two, not four blocks", () => {
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(
+        ...blocksFor("stop-loss-limit", 0),
+        ...blocksFor("stop-loss-limit", 2),
+      );
+      const { result } = setup(grid, "bulk");
+
+      act(() => result.current.clearCell({ col: 0, row: 1 }));
+
+      expect(result.current.announcement.text).toBe(
+        "Cleared Entry column, row 2. Removed 2 Stop Loss Limit orders.",
+      );
+    });
+
+    // Half an order, left behind by a keyboard Delete of the other leg. The
+    // division rounds UP, so the survivor is reported as the one order it is
+    // rather than rounded away to nothing.
+    it("counts a lone leg of a dual-axis order as one order", () => {
+      const { grid } = gridWithOrder("stop-loss-limit");
+      grid[0][1].splice(1, 1);
+      const { result } = setup(grid);
+
+      act(() => result.current.clearCell({ col: 0, row: 1 }));
+
+      expect(result.current.announcement.text).toBe(
+        "Cleared Entry column, primary row. Removed Stop Loss Limit order.",
+      );
+    });
+
     it("asks for focus on the palette entry the cell's order came from", () => {
       const { result } = setup(gridWithLimit());
 

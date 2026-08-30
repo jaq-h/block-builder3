@@ -773,8 +773,12 @@ cursor or the focus ring, and it is drawn only on a cell that holds something. *
 the cell** ("Clear Entry column, primary row") and nothing else, so it does not change while
 a voice-control user is deciding to say it; what the cell holds is already on the cell's own
 group label beside it. The sentence it produces names the cell first and then the orders,
-each label once: "Cleared Entry column, primary row. Removed Stop Loss Limit order." - one
-order, because both legs of a dual-axis order type carry one label and are one order.
+each label once and carrying a count where the cell held more than one order of that label:
+"Cleared Entry column, primary row. Removed Stop Loss Limit order." - one order, because both
+legs of a dual-axis order type carry one label and are one order; against "Cleared Entry
+column, row 2. Removed 2 Market orders." for a bulk cell holding two independent orders that
+also share a label. The unit is the **order** rather than the block or the label, counted as
+that label's blocks over its order type's legs, so only the count separates the two cases.
 
 The **block-level** sentence still carries the leg ("Removed Stop Loss Limit trigger block
 from Entry column, primary row."), because the keyboard removes one leg and nothing else

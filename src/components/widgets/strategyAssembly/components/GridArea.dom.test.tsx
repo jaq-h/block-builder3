@@ -1184,6 +1184,33 @@ describe("GridArea, clearing a cell", () => {
     );
   });
 
+  // TWO INDEPENDENT ORDERS THAT SHARE A LABEL, WHICH IS THE OPPOSITE ANSWER TO
+  // THE DUAL-AXIS CASE ABOVE AND WAS ONCE THE SAME ONE.
+  //
+  // `isCellValidForPlacement` returns true for every cell in the bulk pattern,
+  // so the same fixture the keyboard removal uses - two Market orders in one
+  // cell - is reachable by pointer too. Deduping the cell's blocks to distinct
+  // LABELS reported both as "Removed Market order.": one order named where two
+  // went, about an irreversible press. The count is what tells the two
+  // same-label cases apart.
+  it("counts two independent orders of one type, rather than naming them as one", () => {
+    const grid = addBlocksToCell(
+      addBlocksToCell(clearGrid(2, 3), { col: 0, row: 1 }, [placedMarket("m1")], "bulk"),
+      { col: 0, row: 1 },
+      [placedMarket("m2")],
+      "bulk",
+    );
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+    expect(screen.getAllByRole("button", { name: /^Market order,/ })).toHaveLength(2);
+
+    clickBlock(clearControl("Entry column, row 2"));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(announcement()).toBe(
+      "Cleared Entry column, row 2. Removed 2 Market orders.",
+    );
+  });
+
   // "x and edit will only affect that cell, not other cells." The two cells
   // hold orders of the SAME type here, so nothing but the cell separates them.
   it("leaves every other cell exactly as it was", () => {

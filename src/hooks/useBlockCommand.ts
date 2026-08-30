@@ -12,7 +12,7 @@ import type {
   PlacementResult,
   StrategyPattern,
 } from "../types/grid";
-import type { OrderTypeDefinition } from "../data/orderTypes";
+import { getOrderType, type OrderTypeDefinition } from "../data/orderTypes";
 import {
   commandReducer,
   IDLE_COMMAND_STATE,
@@ -212,6 +212,44 @@ export interface UseBlockCommandReturn {
   focusRequest: string | null;
   clearFocusRequest: () => void;
 }
+
+/**
+ * How many ORDERS a set of blocks in one cell is, label by label.
+ *
+ * A block is a leg rather than an order, and the two only coincide for a
+ * single-axis type. `createBlocksFromOrderType` emits one block per axis - and
+ * one for a Market order, which has none - so legs per order is the order
+ * type's own `axes.length`, floored at one. Orders of a label are therefore
+ * that label's blocks divided by its legs, and the division ROUNDS UP so half
+ * an order left behind by a keyboard Delete of one leg still counts as the one
+ * order it is rather than as none.
+ *
+ * The count is what tells the two same-label cases apart, and only a count
+ * can: both legs of one Stop Loss Limit are one order, while two Market orders
+ * a bulk cell accepted are two, and deduping by label reported both as one.
+ */
+const ordersHeldIn = (
+  blocks: BlockData[],
+): { label: string; count: number }[] => {
+  const tallies = new Map<string, { legs: number; blocks: number }>();
+
+  for (const block of blocks) {
+    const tally = tallies.get(block.label);
+    if (tally) {
+      tally.blocks += 1;
+      continue;
+    }
+    tallies.set(block.label, {
+      legs: Math.max(1, getOrderType(block.orderType)?.axes.length ?? 1),
+      blocks: 1,
+    });
+  }
+
+  return [...tallies].map(([label, { legs, blocks: held }]) => ({
+    label,
+    count: Math.ceil(held / legs),
+  }));
+};
 
 export const useBlockCommand = ({
   grid,
@@ -436,8 +474,11 @@ export const useBlockCommand = ({
    * is also where decision D9's other half begins: correcting a misplaced order
    * is removing it and placing a new one.
    *
-   * The labels are named once each. Both legs of a dual-axis order carry the
-   * same label and are one order; naming it twice would say two orders went.
+   * What is reported is orders rather than blocks or labels, counted by
+   * `ordersHeldIn`: both legs of a dual-axis order carry one label and are one
+   * order, while two independent orders in a bulk cell can carry one label and
+   * are two. The sentence is still `gridAnnouncements`' to write - this hands
+   * over the counts, not the words.
    */
   const clearCell = (cell: CellPosition) => {
     const held = grid[cell.col]?.[cell.row];
@@ -446,7 +487,7 @@ export const useBlockCommand = ({
     // rewritten under a press rather than a case a user can aim at.
     if (!held || held.length === 0) return;
 
-    const labels = [...new Set(held.map((block) => block.label))];
+    const orders = ordersHeldIn(held);
     const firstType = held[0].orderType;
 
     announcer.asOneEvent(() => {
@@ -457,7 +498,7 @@ export const useBlockCommand = ({
       if (providerBlocks.some((entry) => entry.type === firstType)) {
         setFocusRequest(firstType);
       }
-      report({ kind: "cellCleared", cell, labels });
+      report({ kind: "cellCleared", cell, orders });
       if (carrying && !gridStandsBehind(carrying, written)) {
         endCarryOnGridChange();
       }

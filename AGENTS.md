@@ -1514,6 +1514,17 @@ is about the cell: "Cleared Entry column, primary row. Removed Stop Loss Limit o
 label named ONCE, because both legs are one order and naming it twice would say two orders
 went.
 
+**Its unit is the ORDER, not the block and not the label, and the count is what makes that
+true.** A bulk cell takes every order, so two INDEPENDENT orders can share a label there and
+are two - while a dual-axis order's two blocks share one and are one. Deduping the cell's
+blocks to distinct labels answered both the same way and said "Removed Market order." where
+two went: a false number, about a press with no undo. So `clearCell` reports
+`orders: { label, count }[]`, counted by `ordersHeldIn` as that label's blocks over its order
+type's `axes.length` floored at one, rounded UP so a lone leg left by a keyboard Delete is
+still the one order it is. `gridAnnouncements.ts` writes the sentence from those facts as
+ever - each label once, with its count where that count is above one, pluralised on the
+TOTAL: "Cleared Entry column, row 2. Removed Limit and 2 Market orders."
+
 **Known and accepted: two blocks of the SAME order type on the same leg in one cell are
 still named identically** by the slider - "Limit limit price, Entry column, row 2" twice
 over, with only `aria-valuetext` differing. It is reachable: `isCellValidForPlacement`
@@ -1527,6 +1538,10 @@ Limits in one cell. Two reasons it is left rather than patched, and the second d
   all, and nothing but an ordinal could tell them apart - which then shifts when a sibling is
   removed. It is filed as one item covering whether "Limit limit" is the wording wanted at
   all. The pointer no longer meets this ambiguity, because its removal names the cell.
+
+What remains here is the SLIDER'S NAME alone. The clear sentence counts those two orders
+correctly - "Removed 2 Limit orders." - so what is accepted is two orders named identically,
+never two orders reported as one.
 
 **What moving the control to the cell DELETED, recorded so nobody restores it.** A per-block
 control had to be pinned inside its own 40px tile - overhanging it, a press on one block's

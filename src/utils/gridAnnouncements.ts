@@ -165,11 +165,22 @@ export type GridOutcome =
    * The pointer's removal is per CELL rather than per block, so this is not a
    * `removed` outcome repeated - it is one event with one sentence, and saying
    * it block by block would be several live-region writes each erasing the one
-   * before it. A dual-axis order type puts two blocks in one cell under one
-   * label, and clearing it is the user destroying one order, which is why the
-   * labels are named once each rather than counted.
+   * before it.
+   *
+   * The unit is the ORDER rather than the block or the label. A dual-axis
+   * order type puts two blocks in one cell under one label and is one order,
+   * so naming that label twice would say two orders went; but a bulk cell can
+   * hold two INDEPENDENT orders that also share a label, and naming it once
+   * there said one order went where two did. So the caller reports how many
+   * orders of each label it destroyed, and the count is what separates the two
+   * cases. Facts, not words: `describeOutcome` is still the only thing that
+   * turns them into a sentence.
    */
-  | { kind: "cellCleared"; cell: CellPosition; labels: string[] }
+  | {
+      kind: "cellCleared";
+      cell: CellPosition;
+      orders: { label: string; count: number }[];
+    }
   | {
       kind: "dragEnded";
       source: CommandSource;
@@ -528,15 +539,24 @@ export const describeOutcome = (
 
     // The cell first, because the cell is what the control the user pressed is
     // named for, and it is the fact that is true whatever the cell held. The
-    // orders follow it, named once each: the two legs of a dual-axis order
-    // share a label and are one order, and naming that label twice would read
-    // as two orders destroyed.
-    case "cellCleared":
-      return outcome.labels.length === 0
-        ? `Cleared ${describeCell(outcome.cell, pattern)}.`
-        : `Cleared ${describeCell(outcome.cell, pattern)}. Removed ${describeList(
-            outcome.labels,
-          )}${outcome.labels.length === 1 ? " order" : " orders"}.`;
+    // orders follow it, each label named once and carrying its count where the
+    // cell held more than one order of that label: the two legs of a dual-axis
+    // order share a label and are ONE order, while two independent orders in a
+    // bulk cell can share one too and are TWO. The plural is taken from the
+    // total, because that is the number of orders the user just destroyed.
+    case "cellCleared": {
+      const cellName = describeCell(outcome.cell, pattern);
+      if (outcome.orders.length === 0) return `Cleared ${cellName}.`;
+
+      const total = outcome.orders.reduce((sum, order) => sum + order.count, 0);
+      const named = outcome.orders.map((order) =>
+        order.count > 1 ? `${order.count} ${order.label}` : order.label,
+      );
+
+      return `Cleared ${cellName}. Removed ${describeList(named)}${
+        total === 1 ? " order" : " orders"
+      }.`;
+    }
 
     case "dragEnded":
       return outcome.reason === "offGrid"
