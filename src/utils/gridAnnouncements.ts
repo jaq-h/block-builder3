@@ -29,6 +29,7 @@
 
 import {
   describeCell,
+  describeColumn,
   describeSource,
   type ActivationOrigin,
   type CarryEndReason,
@@ -327,6 +328,23 @@ const describePlacement = (
       // will take it, because a placed block does not change cells at all
       // (decision D9) - so naming the cell would send the user hunting for a
       // cell that would say yes.
+      // Not a refusal by the placement rules either: the cell was simply not
+      // one the panel was offering, so the sentence points at the pager rather
+      // than at the cell or at decision D9.
+      //
+      // **The instruction NAMES the column and uses no pronoun**, and it comes
+      // before `wentNowhere` rather than after it. An "it" there would have the
+      // interpolated sentence's noun between itself and its antecedent - "...
+      // was not placed. Use the column buttons to show it first" reads as an
+      // instruction to reveal the ORDER, which is not something the pager does,
+      // and it is the one clause telling the user what to do next. Every other
+      // sentence here keeps a pronoun adjacent to what it refers to; this one
+      // has none at all, so no later composition can move its referent.
+      if (result.reason === "columnNotShown") {
+        return `${describeCell(cell, pattern)} is not on screen, so nothing can be placed there yet. Use the column buttons to show the ${describeColumn(
+          cell.col,
+        )} column first. ${wentNowhere(source, pattern, releasedCarry, result.at)}`;
+      }
       if (result.reason === "staysInCell") {
         return `${describeSource(source)} stays in the cell it was placed in, so it was not moved to ${describeCell(
           cell,

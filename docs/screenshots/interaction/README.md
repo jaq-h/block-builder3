@@ -36,13 +36,16 @@ is the authority on that change; the gestures and outcomes below are unaffected 
 
 **`03` and `04` also predate the phone layout the app draws today.** Both were shot
 while the assembly grid's three lanes were side by side at every width, which is why
-`03` shows the Exit column clipped off the right of a 390px viewport. The lanes now
-stack below `sm` - the palette lays its tiles across the panel and the Entry and Exit
-columns are full-width bands under it - so the arrangement in these two shots is the
-state that change replaced. The gestures and outcomes below are unaffected: tap to pick
-up and tap to place still reach every cell at every width, and the price axis still
-draws and drags at 390. `AGENTS.md` under "Layout and the CSS cascade" is the authority
-on both the stacking and on the price axis' height.
+`03` shows the Exit column clipped off the right of a 390px viewport with nothing
+offering a way to it. Below `sm` the palette is now a band of tiles above the grid
+rather than a lane beside it, and the Entry and Exit columns stay side by side inside a
+one-column viewport that a two-button pager moves between them, with 20% of the off-page
+column showing past the edge as a cue that there is more to view. So the arrangement in
+these two shots is the state that change replaced. The gestures and outcomes below are
+unaffected: tap to pick up and tap to place still reach every cell at every width, and
+the price axis still draws and drags at 390. `AGENTS.md` under "Layout and the CSS
+cascade" is the authority on the paged columns and on the price axis' height, and
+`README.md` under "Interaction model" on what the pager does to a carry.
 
 **They also predate the per-block Remove control.** Every placed block now carries a 24px
 remove button on its top-right corner, rendered at all times rather than revealed on hover,

@@ -56,3 +56,25 @@ globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
       `stub fetch in the test that needs it.`,
   );
 }) as typeof fetch;
+
+// =============================================================================
+// RESIZE OBSERVER
+// =============================================================================
+//
+// jsdom implements no layout, so it ships no `ResizeObserver` - and a component
+// that constructs one throws on mount rather than degrading, which takes down
+// every test that renders it however little the test cares about resizing.
+//
+// A no-op stand-in is the honest answer rather than a shim with behaviour: in a
+// document where nothing is laid out, no box ever changes size, so a faithful
+// implementation would call its callback exactly as often as this one does -
+// never. Anything a test needs to assert about what the callback DOES is
+// asserted by calling it directly, not by waiting for jsdom to notice a resize
+// it cannot see.
+class NoopResizeObserver implements ResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+globalThis.ResizeObserver ??= NoopResizeObserver;

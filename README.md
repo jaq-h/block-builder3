@@ -636,6 +636,93 @@ a reducer cannot supply: which outcome is reported to the announcer at each step
 focus lands afterwards. It chooses no wording of its own; see **Announcements have one
 owner** below.
 
+**One column at a time on a phone, and the carry comes with you.** Below the `sm` breakpoint
+the assembly panel cannot draw both grid columns at once - two `min-w-[220px]` columns and a
+gap need 446px against a 288px panel at a 320px viewport - so the columns stay side by side
+and the panel shows one of them through a viewport that `ColumnPager` moves. The control is
+two buttons naming the columns, `Entry` and `Exit`, each carrying `aria-pressed` and a tick
+in a slot both reserve, so which column is on screen is never said in colour alone. Stable
+names rather than one button whose label changes: a voice-control user targets a control by
+name, and the pair says where you are as well as where you can go.
+
+It is one mechanism rather than two. **Carrying a block, a press dispatches the same
+`moveTarget` the Left and Right arrow keys dispatch**, and the viewport follows the carry's
+target - so the cells a carry may reach, and the sentence it speaks on arriving, are the ones
+that already existed. A carry therefore survives the move and can be placed in the column it
+arrives at: paging changes no cell in the grid, so nothing about the carry has gone stale.
+One thing follows without being written anywhere: a press the carry refuses - "No cell
+available in that direction." - leaves the pager where it is, exactly as the arrow key does,
+so the button never claims a column the user is not on.
+
+**A pick-up starts at the first legal cell its offer has**, so an offer confined to the
+other column opens the pager there. No column is remembered between carries: a preference
+for the one the user last chose was tried and taken out again, because the rule it needed -
+a closed set of which events count as a choice - kept turning up a case nobody had listed.
+
+One press is written down, because it is the single press `moveTarget` cannot answer for:
+pressing the button for the column the carry is **already** on moves nothing and says
+nothing. No arrow key means "stay put", so a zero-step move leaves the target where it is and
+`moveTarget` would announce "No cell available in that direction." - a refusal of a press that
+asked for nothing. Carrying nothing, that same press is already silent, and the two have to
+agree. The case is reached by exactly the users the named pair was chosen for: a voice-control
+user saying the name of the column they are on, and a screen-reader user pressing the button
+without first reading `aria-pressed`.
+
+**Nothing moves keyboard focus when the panel pages, and the pager is what makes that
+safe.** Every key that drives a carry - the arrows, Enter and Escape - is handled on the
+carried order's palette tile or on a block rather than on the document. So focus left on a
+pager button mid-carry would be an order no key could put down. While a block is in hand the pager's buttons therefore leave the
+tab order, which removes the stranding rather than remedying it after the fact: a keyboard
+carrier cannot be stranded on a control they cannot reach. They stay clickable and keep their
+target size throughout, and carrying nothing they are an ordinary tab stop - a user who is not
+carrying has no arrow keys to cross with and needs them.
+
+Nothing cancels the press itself. Suppressing the focus a press gives a button was tried and
+withdrawn: it could not be verified on touch, which is this layout's primary input, and iOS
+Safari is documented to drop the synthesized click when the press is cancelled - which would
+leave the pager inert to touch for the whole of every carry. So a pointer press may focus the
+button, and that is accepted for the same reason the limits below are.
+
+A keyboard carrier never needs the pager, which is why this costs them nothing: the arrow keys
+already step the carry's target into the other column whenever a legal cell exists there, and
+the viewport follows. It is the control that is out of reach mid-carry, never the ability -
+reaching the other column while holding a block, and placing it there, stays fully available
+from the keyboard.
+
+Two limits are accepted rather than hidden. Assistive technology can still put focus on the
+buttons directly, and a user who does is not stranded - Shift+Tab leaves and the carry is
+still live. Taking a button out of the tab order does not blur it if it already holds focus,
+so focus that was on the pager when a carry began stays there; reaching that needs mixed
+input, since starting a carry from the keyboard moves focus to the palette tile. A third
+limit used to sit beside them and is now gone: focus already *inside* the column a press
+paged away was dropped to the document body, because a hidden element cannot hold focus.
+Drawing that column instead of hiding it removed it - nothing becomes unfocusable, so focus
+survives a page.
+
+The column that is not on screen is **drawn**: 20% of it shows past the viewport's edge as a
+cue that there is more to view. It keeps its box, which is what keeps the two columns beside
+each other, and it stays focusable, which is what lets focus survive a page. What it does not
+keep is hit testing - `offPageColumn` withholds that with `pointer-events: none` - and
+`dropTarget.ts` reads exactly that fact, so a cell the panel is not showing is never a drop
+candidate however much of it the user can see. It is **withheld rather than discarded**,
+though, and that distinction is a block the user does not get back: a free drag released
+clear of every cell removes the block, so reading a release over the drawn peek as "clear of
+every cell" destroyed the order the user had just dropped onto a cell they could see. A
+release there is refused instead, in the same words a release over any other cell it may not
+move to gets. **Both drag paths read it the same way**, because one geometry may not get two
+accounts: a palette order released in the sliver is refused too, and told that the column is
+not on screen and to page to it first, rather than being told it was released outside the
+grid. **Visible does not mean droppable**, and the
+peek is why that has to be said: a drop is resolved by greatest overlap of the dragged tile,
+and measured at 390 a release at the far right edge put 30px of the tile over an off-page
+Exit cell against 4px over the Entry cell it was drawn on. Tab is kept out of that column by
+`tabindex` rather than by `inert`, which would blur what it is applied to and bring the lost
+focus straight back. Above `sm` both columns are drawn and the viewport stops being a scroll
+container, while the pager is hidden in CSS: it is rendered at every width and
+`columnPagerRow`'s `sm:hidden` gives it `display: none`, so above `sm` it is not a flex item
+of `contentRow` at all rather than a zero-width one, and the desktop row is left exactly as
+it was.
+
 **What moves between cells, and what does not.** A **placed block never changes cells** -
 every block, by every input method, with no per-type carve-out. That is captain decision D9,
 asked directly and answered "every block": a cell owns the scale its blocks are priced on,
@@ -970,7 +1057,7 @@ src/
 │   │       ├── GridCell.tsx       # Interactive grid cell (Strategy Builder)
 │   │       ├── GridCell.styles.ts # Grid cell CVA styling
 │   │       ├── ReadOnlyGridCell.tsx # Read-only grid cell (Active Orders)
-│   │       ├── ProviderColumn.tsx # Order-type palette - a lane, a band when stacked
+│   │       ├── ProviderColumn.tsx # Order-type palette - a lane, a band below `sm`
 │   │       └── index.ts          # Barrel export
 │   │
 │   └── widgets/
@@ -990,6 +1077,7 @@ src/
 │       │   └── components/        # Extracted sub-components
 │       │       ├── GridArea.tsx        # Grid rendering & cell interaction
 │       │       ├── ExecuteTradePanel.tsx # Trade submission UI
+│       │       ├── ColumnPager.tsx     # Which grid column is on screen below `sm`
 │       │       ├── PatternSelector.tsx # Order pattern presets
 │       │       ├── UtilityButtons.tsx  # Clear / reset controls
 │       │       ├── DebugPanel.tsx      # Debug state inspector

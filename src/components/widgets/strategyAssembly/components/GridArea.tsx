@@ -1,5 +1,7 @@
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FC,
@@ -19,7 +21,7 @@ import {
   MIN_OFFSET_PERCENT,
   hasConditionalWithoutPrimary,
   createBlocksFromOrderType,
-  findDropCell,
+  resolveDrop,
   removeBlockFromGrid,
 } from "../../../../utils";
 import {
@@ -44,7 +46,9 @@ import {
   stopDragOverlay,
 } from "../../../common/dragOverlayStore";
 import { releaseBlockInHand } from "../../../../hooks/blockInHand";
+import { cn } from "../../../../lib/utils";
 import ProviderColumn from "../../../common/grid/ProviderColumn";
+import ColumnPager from "./ColumnPager";
 import GridCell from "../../../common/grid/GridCell";
 import LiveAnnouncer from "../../../common/LiveAnnouncer";
 import { BLOCK_INSTRUCTIONS_ID } from "../../../blocks/block";
@@ -65,6 +69,8 @@ import {
   columnHeaderText,
   gridPane,
   cellLockedNote,
+  pagedColumn,
+  offPageColumn,
 } from "../strategyAssembly.styles";
 
 interface GridAreaProps {
@@ -404,6 +410,21 @@ const GridArea: FC<GridAreaProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategyMarketUnavailable]);
 
+  // ─── The paged column viewport ───────────────────────────────────────
+  //
+  // WHICH COLUMN IS ON SCREEN. Below `sm` the panel cannot draw both grid
+  // columns at once - two `min-w-[220px]` columns and a 6px gap need 446px
+  // against a 288px panel at 320 - so `columnsWrapper` is a one-column viewport
+  // over the pair and this is which of them it shows. It is derived: it follows
+  // the carry's target ALWAYS, the target a pick-up starts on included, which
+  // is what makes a carry survive paging and what opens the pager on the other
+  // column when that is the only place an order may go. `ColumnPager` is the
+  // control; above `sm` the wrapper stops being a scroll container at all and
+  // this state stops meaning anything, which is why it is expressed as a scroll
+  // position rather than as a rule about what to render.
+  const [visibleColumn, setVisibleColumn] = useState(0);
+  const columnsViewportRef = useRef<HTMLDivElement>(null);
+
   const command = useBlockCommand({
     grid,
     strategyPattern,
@@ -422,6 +443,253 @@ const GridArea: FC<GridAreaProps> = ({
   });
 
   const carryingProviderType = command.carrying?.source.type ?? null;
+
+  // **The carry's target and the column on screen are one fact.** A carry
+  // highlights a cell and reads it out as `aria-current`, so a target in the
+  // column the viewport is not showing is an invitation the user cannot see -
+  // the mirror of the stale highlight the `gridReplaced` transition exists to
+  // stop. The target is the owner and the viewport follows it: the arrow keys
+  // move the target between columns, and `ColumnPager` dispatches that very
+  // same `moveTarget` rather than moving the viewport behind the carry's back.
+  //
+  // Keyed on the target's column alone, so nudging a carried block's target up
+  // and down a column does not re-run it, and so a page the user asked for
+  // while carrying nothing is not undone by the next render.
+  //
+  // A layout effect, because it must commit before the browser paints. As an
+  // ordinary effect it ran after the paint of the render in which the target
+  // had already moved, so for one frame the OLD column was on screen while
+  // `aria-current` sat on a cell inside the column `offPageColumn` had just
+  // withheld - the very state this pairing exists to prevent, on every
+  // cross-column move. The extra render is synchronous, and the scroll effect
+  // below still runs after it on `visibleColumn`.
+  //
+  // **It writes the viewport and nothing else, and nothing here touches DOM
+  // focus.** Nothing anywhere in this component does: see `ColumnPager` for
+  // why paging cannot strand a carry without a single focus call.
+  const carryTargetColumn = command.carrying?.target.col ?? null;
+  useLayoutEffect(() => {
+    if (carryTargetColumn === null) return;
+    setVisibleColumn(carryTargetColumn);
+  }, [carryTargetColumn]);
+
+  // Tab does not enter the column the pager is not showing.
+  //
+  // The peeking column is DRAWN (see `offPageColumn`), so unlike the
+  // `visibility: hidden` this replaced it is focusable, and a Tab into it would
+  // make the browser scroll the viewport to a column the pager did not choose -
+  // leaving the control claiming a column the user is not on, which is the
+  // stale offer the whole paging design exists to withhold.
+  //
+  // `tabindex` and not `inert`, and the difference is the point: `inert` blurs
+  // what it is applied to, so paging away from a focused block would drop focus
+  // to `<body>` - the exact defect that four rounds of focus hand-offs failed to
+  // close, reintroduced by the cure. Setting `tabindex` to -1 on an element that
+  // already holds focus does NOT blur it; the element keeps focus and merely
+  // leaves the sequential order. So nothing here ever moves focus, and this
+  // panel still contains no code that does.
+  //
+  // Which column is off page is read from the same inherited `pointer-events`
+  // that `cellBoxesFromDom` reads, rather than from `visibleColumn` plus a
+  // breakpoint of its own: one owner for "is this column reachable", so the tab
+  // order, the drop resolver and the target highlight cannot come to disagree
+  // about it. `visibleColumn` is what WRITES the class; it is not the answer,
+  // because above `sm` the class resolves to nothing and both columns are
+  // reachable whatever it says.
+  //
+  // **It is a function rather than an effect body because it has TWO triggers,
+  // and a rule read off the viewport cannot be derived from renders alone.**
+  // A render is what brings new focusables into a column; the viewport's own
+  // size is what decides whether that column is off page at all, and crossing
+  // `sm` changes that with no React render behind it. Both are below: the
+  // effect covers the first, and the viewport effect that follows calls this
+  // from the SAME `ResizeObserver` it already installs for the second. One
+  // observer on one box, because two watching it for the same reason is how
+  // they come to disagree.
+  //
+  // **Every read happens before any write, and a write already in place is
+  // skipped.** `getComputedStyle` after a DOM mutation forces a fresh style
+  // recalculation, and this runs after every render - including every
+  // `pointermove` of a drag, since the hover cell is re-derived there. Reading
+  // both columns first costs one recalculation rather than one per column, and
+  // the skip keeps a drag from re-writing every `tabindex` in the off-page
+  // column on each of those renders. Neither changes what the rule computes.
+  const [offPageColumns, setOffPageColumns] = useState(0);
+
+  const syncOffPageColumns = useCallback(() => {
+    const viewport = columnsViewportRef.current;
+    if (!viewport) return;
+
+    const columns = Array.from(viewport.children);
+    const withheld = columns.map(
+      (columnElement) =>
+        getComputedStyle(columnElement).pointerEvents === "none",
+    );
+
+    // Published as a bitmask so an unchanged answer is an unchanged value and
+    // React bails out of the re-render this would otherwise cause on every
+    // pass. An array would be a fresh reference each time and never settle.
+    setOffPageColumns(
+      withheld.reduce((mask, offPage, col) => mask | (Number(offPage) << col), 0),
+    );
+
+    columns.forEach((columnElement, col) => {
+      const focusable = columnElement.querySelectorAll<HTMLElement>(
+        "a[href], button, input, select, textarea, [tabindex]",
+      );
+      for (const element of Array.from(focusable)) {
+        if (withheld[col]) {
+          // Remember what the element asked for before this rule touched it, so
+          // restoring cannot invent a tab stop the component never wanted. It
+          // has to happen before the write below, and the guard is the record
+          // rather than the value: an element the rule has already touched
+          // reads `-1` for a reason that is not its own.
+          if (!element.hasAttribute("data-paged-tabindex")) {
+            element.setAttribute(
+              "data-paged-tabindex",
+              element.getAttribute("tabindex") ?? "",
+            );
+          }
+          if (element.getAttribute("tabindex") !== "-1") {
+            element.setAttribute("tabindex", "-1");
+          }
+        } else if (element.hasAttribute("data-paged-tabindex")) {
+          const previous = element.getAttribute("data-paged-tabindex");
+          if (previous) element.setAttribute("tabindex", previous);
+          else element.removeAttribute("tabindex");
+          element.removeAttribute("data-paged-tabindex");
+        }
+      }
+    });
+  }, []);
+
+  useLayoutEffect(syncOffPageColumns);
+
+  /** Whether the panel is withholding this column, from the read above. */
+  const isColumnOffPage = (col: number) => (offPageColumns & (1 << col)) !== 0;
+
+  // The state above, applied to the one thing that draws it.
+  //
+  // A layout effect, because it must commit before the browser paints, and
+  // re-run whenever the viewport is resized: crossing `sm` in either direction
+  // changes the box from a scroll container to a plain row and back, and a
+  // `scrollLeft` set while it was one is silently dropped when it stops being
+  // one. Reading the columns' own boxes rather than multiplying a page width by
+  // an index keeps the gap between them out of the arithmetic.
+  //
+  // The tab-order rule above rides the same observer, because it reads the same
+  // breakpoint off the same box. Left on renders alone it went stale on a
+  // rotation: paged to Exit and then turned landscape, every focusable in Entry
+  // kept `tabindex="-1"` at a width drawing both columns, and the reverse
+  // crossing left the peeking column tabbable - which is the state this rule
+  // exists to prevent.
+  useLayoutEffect(() => {
+    const viewport = columnsViewportRef.current;
+    if (!viewport) return;
+
+    const showColumn = () => {
+      const target = viewport.children[visibleColumn];
+      if (!target) return;
+      const offset =
+        target.getBoundingClientRect().left -
+        viewport.getBoundingClientRect().left;
+      // `scrollLeft` and not `scrollIntoView`: this box is the only thing that
+      // may move. `scrollIntoView` walks up the ancestors too, so it would drag
+      // the panel's vertical scroller - and the page under it - to wherever the
+      // column happened to be, in answer to a press about columns.
+      if (offset !== 0) viewport.scrollLeft += offset;
+    };
+
+    const syncToViewport = () => {
+      showColumn();
+      syncOffPageColumns();
+    };
+
+    syncToViewport();
+    const observer = new ResizeObserver(syncToViewport);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [visibleColumn, syncOffPageColumns]);
+
+  /**
+   * The pager was pressed.
+   *
+   * **Carrying nothing**, this is a view change and nothing else: the viewport
+   * moves to the column named, and nothing is announced, because
+   * `gridAnnouncements` speaks about a BLOCK and no block was touched.
+   *
+   * **Carrying a block**, it is `moveTarget`, the same action the Left and
+   * Right arrow keys dispatch: one mechanism for moving between columns, so the
+   * sentence the user hears and the cells a carry may reach are the ones that
+   * were already there. The viewport follows the target through the effect
+   * above, so a step the carry refuses ("no target that way") leaves the pager
+   * where it is and says why, exactly as the arrow key does.
+   *
+   * **The press naming the column the carry is ALREADY on is silent**, and it
+   * is the one case `moveTarget` cannot answer for. `moveTarget` is reused
+   * precisely so the pager and the arrow keys cannot drift, but a zero delta is
+   * the one press that has no arrow-key equivalent: there is no key meaning
+   * "stay put", so `stepTarget` returns the target unchanged, the reducer
+   * returns the identical state, and `moveTarget` reports `noTargetThatWay` -
+   * announcing a refusal for a press that asked for nothing. The two branches
+   * have to say the same thing for the same press, and the non-carrying branch
+   * is already silent for it, so this one is too. It reaches exactly the users
+   * the named pair was chosen for: a voice-control user saying the name of the
+   * column they are already on, and a screen-reader user activating the button
+   * without first reading `aria-pressed`.
+   *
+   * **It says nothing about focus, and must never be given anything to say.**
+   * Nothing in this panel moves DOM focus in answer to paging; `ColumnPager`
+   * carries the whole of why that is safe, and why a hand-off here is the
+   * wrong answer.
+   */
+  const handleShowColumn = (col: number) => {
+    if (command.carrying) {
+      if (col === command.carrying.target.col) return;
+      command.moveTarget(col - command.carrying.target.col, 0);
+      return;
+    }
+    setVisibleColumn(col);
+  };
+
+  // Activating a cell in the column the pager is not showing brings that
+  // column into view first.
+  //
+  // Only assistive technology can reach this. `offPageColumn` withholds the
+  // peeking column from hit testing, so no pointer press lands there, and the
+  // tab-order rule keeps the keyboard out - but `pointer-events` does not stop
+  // a DISPATCHED click, and a peeking cell is an ordinary element with an
+  // `onClick`, so AT activation reaches this handler. That exposure is
+  // deliberate and accepted (see AGENTS.md): the column is drawn, and hiding it
+  // from AT users alone would give them less than sighted users get.
+  //
+  // What is NOT accepted is where it used to lead. The activation placed the
+  // order into the column the panel was not showing, leaving the user looking
+  // at the other one with no way back to what they had just done - a stranding,
+  // and the same shape as the two traps this layout has already closed: the
+  // peek band that DELETED a free-dragged block, and the sliver that drew a
+  // valid-target highlight at cells the release then refused. Each time the
+  // answer was to make the behaviour match what the app appears to offer,
+  // rather than to write the mismatch down.
+  //
+  // Showing the column is therefore part of the activation rather than a
+  // reaction to it, and it goes through `visibleColumn` - the one owner of
+  // which column is on screen, which the pager and the carry-target effect
+  // already write - rather than a second path beside it. Above `sm` nothing is
+  // withheld, so `isColumnWithheld` is false for every cell and this is exactly
+  // `activateCell`.
+  const isColumnWithheld = (col: number) => {
+    const columnElement = columnsViewportRef.current?.children[col];
+    return (
+      columnElement instanceof HTMLElement &&
+      getComputedStyle(columnElement).pointerEvents === "none"
+    );
+  };
+
+  const activateCellInView = (cell: CellPosition) => {
+    if (isColumnWithheld(cell.col)) setVisibleColumn(cell.col);
+    command.activateCell(cell);
+  };
 
   // ─── The cursor half of a mouse carry ────────────────────────────────
   //
@@ -638,8 +906,25 @@ const GridArea: FC<GridAreaProps> = ({
    * pixel - see `utils/dropTarget.ts` for the rule and for the dead band around
    * every cell that testing the pointer alone left behind.
    */
-  const dropCellAt = (x: number, y: number) =>
-    findDropCell(x, y, BLOCK_HEIGHT);
+  const dropAt = (x: number, y: number) => resolveDrop(x, y, BLOCK_HEIGHT);
+
+  /**
+   * What the grid did about a release over a cell it is not showing: nothing.
+   *
+   * A `PlacementResult` like the ones `placeProviderInCell` and
+   * `keepBlockInItsCell` return, because the announcer may only be told what
+   * the grid did - and this one is the grid declining to be asked. It mutates
+   * nothing, so it is a value rather than a function.
+   *
+   * There is no second helper collapsing `withheld` into "no cell": that
+   * collapse is what told a user their release was outside the grid while they
+   * watched it land on a drawn column, and both drag paths now read
+   * `resolveDrop`'s three-way answer directly so a third cannot inherit it.
+   */
+  const COLUMN_NOT_SHOWN: PlacementResult = {
+    status: "refused",
+    reason: "columnNotShown",
+  };
 
   const handleProviderDragStart = (type: string) => {
     carryReleasedByDragRef.current = false;
@@ -671,17 +956,26 @@ const GridArea: FC<GridAreaProps> = ({
     // and which leg it is comes from `axesForBlockAxis`. Reading those off the
     // drop coordinates was two separate defects - a 0-100 reading written into
     // a 0-50 axis, and an `axis` rewritten without its matching `axes`.
-    const cell = dropCellAt(x, y);
+    const drop = dropAt(x, y);
     const source = providerSource(type);
 
     const releasedCarry = carryReleasedByDragRef.current;
 
-    if (cell) {
+    // A release over a WITHHELD cell is a release over a cell, exactly as it is
+    // on the placed-block path: the peeking column is drawn, so the user aimed
+    // at something they can see. Nothing is created there - the exclusion is
+    // unchanged - but "Released outside the grid" is a false account of a
+    // release inside the panel, and the two drag paths may not give different
+    // readings of one geometry.
+    if (drop.kind !== "offGrid") {
       announcer.report({
         kind: "placement",
         source,
-        cell,
-        result: placeProviderInCell(type, cell),
+        cell: drop.cell,
+        result:
+          drop.kind === "available"
+            ? placeProviderInCell(type, drop.cell)
+            : COLUMN_NOT_SHOWN,
         via: "drag",
         releasedCarry,
       });
@@ -838,7 +1132,7 @@ const GridArea: FC<GridAreaProps> = ({
 
   const handleDragEnd = (id: string, x: number, y: number) => {
     const blockInfo = findBlockInGrid(grid, id);
-    const cell = dropCellAt(x, y);
+    const drop = dropAt(x, y);
 
     // The block is not on the grid, so there is no fact to report about it.
     if (!blockInfo) {
@@ -855,8 +1149,16 @@ const GridArea: FC<GridAreaProps> = ({
     // the block's own cell reads as "stayed", not as a refusal by the cell the
     // block is sitting in - and a release over a *different* cell reads as the
     // rule that refused it rather than as a cell that happens to be full.
-    if (cell) {
-      const result = keepBlockInItsCell(id, cell);
+    // **A release over a WITHHELD cell is a release over a cell.** The peeking
+    // column is drawn, so a release in the 20% of it that shows is a release
+    // the user aimed at a cell they can see; reading it as "clear of every
+    // cell" was the false step, and it cost the block - the branch below
+    // REMOVES, so a Market order dragged into the sliver was destroyed with no
+    // undo. Nothing about the drop exclusion changes: `resolveDrop` still
+    // refuses to place there, and this refuses with the very same primitive and
+    // the very same sentence a release over any other cell gets.
+    if (drop.kind !== "offGrid") {
+      const result = keepBlockInItsCell(id, drop.cell);
       // Only a free drag reaches here, and `block.tsx` wires one for a cell
       // that draws no axis, so this refusal is always the removable case.
       if (result.status === "refused") {
@@ -870,18 +1172,18 @@ const GridArea: FC<GridAreaProps> = ({
       announcer.report({
         kind: "placement",
         source,
-        cell,
+        cell: drop.cell,
         result,
         via: "drag",
         releasedCarry,
       });
     } else {
-      // Dropped outside - remove only this block, through the command model's
-      // one removal rather than a branch of its own. It is no longer the ONLY
-      // way an order leaves a cell: Delete, Backspace and each block's own
-      // remove control reach the same operation, which is what finally makes
-      // decision D9's correction path - remove it, then place a new one -
-      // available to a block drawn on a price axis.
+      // Dropped clear of every cell - remove only this block, through the
+      // command model's one removal rather than a branch of its own. It is no
+      // longer the ONLY way an order leaves a cell: Delete, Backspace and each
+      // block's own remove control reach the same operation, which is what
+      // finally makes decision D9's correction path - remove it, then place a
+      // new one - available to a block drawn on a price axis.
       command.removeBlock(id, { releasedCarry });
     }
 
@@ -914,13 +1216,16 @@ const GridArea: FC<GridAreaProps> = ({
   // are the answer for a drag whose capture was refused too, where the target
   // is instead whatever happens to be under the cursor.
   //
-  // Through `dropCellAt`, the same resolver the release uses. The highlight is
-  // the only warning a user gets before letting go, so it has to name the cell
-  // the drop will actually resolve to; a highlight computed one way and a drop
-  // the other is the shape of defect this repository keeps paying for.
+  // Through `dropAt`, the same resolver the release uses. The highlight is the
+  // only warning a user gets before letting go, so it has to name the cell the
+  // drop will actually place into; a highlight computed one way and a drop the
+  // other is the shape of defect this repository keeps paying for. Only
+  // `available` highlights, because it is the only answer a release may place
+  // on - a withheld cell is refused rather than offered.
   const handlePointerMove = (e: PointerEvent) => {
     if (draggingId !== null || draggingFromProvider !== null) {
-      setHoverCell(dropCellAt(e.clientX, e.clientY));
+      const drop = dropAt(e.clientX, e.clientY);
+      setHoverCell(drop.kind === "available" ? drop.cell : null);
     }
   };
 
@@ -932,7 +1237,18 @@ const GridArea: FC<GridAreaProps> = ({
   const showValidTargets =
     draggingFromProvider !== null || hoveredProviderId !== null;
 
+  // **A cell the panel is not showing never draws itself as a target.** The
+  // valid-target treatment is the strongest affordance this app has - an accent
+  // border, a ring, the pattern and the breathing animation - and drawing the
+  // peek made it visible in a column every release is refused in: at 320 that
+  // is 38px of each Exit cell breathing "drop here" at a cell `resolveDrop`
+  // classifies as `withheld`. A highlight computed one way and a drop the other
+  // is the defect `dropTarget.ts` exists to prevent, so both take the same
+  // answer: the computed `pointer-events` read above, not a second notion of
+  // which column is on screen. Above `sm` nothing is withheld, so this costs
+  // the desktop layout nothing.
   const isValidTarget = (colIndex: number, rowIndex: number): boolean => {
+    if (isColumnOffPage(colIndex)) return false;
     if (command.carrying) {
       return command.carrying.targets.some((cell) =>
         samePosition(cell, { col: colIndex, row: rowIndex }),
@@ -998,8 +1314,17 @@ const GridArea: FC<GridAreaProps> = ({
           onFocusHandled={command.clearFocusRequest}
         />
 
+        {/* The control that moves the user to the other column, and the answer
+            to a panel too narrow to draw both. `sm:hidden`, so above `sm` it is
+            not a flex item of the row at all. */}
+        <ColumnPager
+          visibleColumn={visibleColumn}
+          isCarrying={command.carrying !== null}
+          onShowColumn={handleShowColumn}
+        />
+
         {/* Grid Columns */}
-        <div className={columnsWrapper}>
+        <div ref={columnsViewportRef} className={columnsWrapper}>
           {grid.map((gridColumn, colIndex) => {
             const headerTint =
               colIndex === 0
@@ -1013,7 +1338,14 @@ const GridArea: FC<GridAreaProps> = ({
             const colHeaderProps = getColumnHeaderProps(headerTint);
 
             return (
-              <div key={colIndex} className={column}>
+              <div
+                key={colIndex}
+                className={cn(
+                  column,
+                  pagedColumn,
+                  colIndex !== visibleColumn && offPageColumn,
+                )}
+              >
                 <div
                   className={colHeaderProps.className}
                   style={colHeaderProps.style}
@@ -1068,7 +1400,7 @@ const GridArea: FC<GridAreaProps> = ({
                     onBlockAdjustPrice={handleBlockAdjustPrice}
                     onBlockRemove={command.removeBlock}
                     onCellActivate={() =>
-                      command.activateCell({ col: colIndex, row: rowIndex })
+                      activateCellInView({ col: colIndex, row: rowIndex })
                     }
                     focusBlockId={command.focusRequest}
                     onBlockFocusHandled={command.clearFocusRequest}

@@ -143,36 +143,123 @@ export const resolveDropCell = (
   return [...tied].sort(byGridOrder)[0].cell;
 };
 
+/** Every rendered cell, split by whether the panel is offering it. */
+export interface CellBoxes {
+  /** Cells a release may land in. */
+  onPage: CellBox[];
+  /**
+   * Cells that are DRAWN but withheld from hit testing - the peeking column.
+   * They are never drop candidates; they are kept so a release over one can be
+   * told apart from a release over nothing at all.
+   */
+  offPage: CellBox[];
+}
+
 /**
  * Every rendered cell and where it is, read from the DOM.
  *
  * Coordinates rather than `elementFromPoint`: a dragged block holds pointer
  * capture, so the event target is the block itself for the whole drag, and the
  * ghost on the cursor would be under the point in any case.
+ *
+ * **A cell the user cannot reach is not a candidate.** Below `sm` the two grid
+ * columns are still side by side, with the panel showing one of them at a time
+ * through a paged viewport (`columnsWrapper`), and 20% of the off-page column
+ * shows past the viewport's edge as a cue that there is more to view. Its cells
+ * therefore report a rect that overlaps the viewport, and a tile dragged
+ * against that edge overlaps them: measured at a 390px viewport a release at
+ * the far right put 30px of the tile over an Exit cell against 4px over the
+ * Entry cell it was drawn on, so the greatest-overlap rule placed the order
+ * into a column that was not on screen, with no highlight to warn of it - the
+ * highlight is computed from this same list, so it was off screen too.
+ *
+ * **Visible does not mean droppable, and the peek is why that sentence has to
+ * be said.** The off-page column used to be `visibility: hidden`, so "can the
+ * user see it" and "may a drop land in it" were one fact and this module could
+ * read either. Drawing the peek separated them. `pointer-events` is what it
+ * reads now: `offPageColumn` withholds the peeking column from hit testing,
+ * which is the same question a drop is asking, so the two cannot drift.
+ *
+ * `pointer-events` is inherited, so one computed read per cell answers it for
+ * the whole column without this module knowing anything about how the panel
+ * pages - and it is written by a breakpoint, so above `sm`, where both columns
+ * are drawn and reachable, nothing is withheld.
+ *
+ * A cell is safe to read that way because a cell declares no `pointer-events`
+ * of its own. That is not true everywhere in the column - the block positioner
+ * opts its tile back in explicitly - so `offPageColumn` carries a second,
+ * subtree-wide rule for the elements that do declare one. This module is
+ * unaffected either way: what it reads still computes `none`, by inheritance
+ * before that rule and by declaration after it.
+ *
+ * **A withheld cell is SORTED OUT, not thrown away, and the difference is a
+ * block the user does not get back.** Dropping it here made "the tile was over
+ * a column the panel is not showing" and "the tile was over nothing at all"
+ * one answer, and the free drag of a placed block reads the second as "clear
+ * of the grid" and REMOVES the block. The peek put that band inside the panel:
+ * a tile centred past the on-page cell's right edge overlaps no candidate,
+ * which at a 320px viewport is every release from x 246 to the panel edge at
+ * 288 - 42px of drawn column in which a release destroyed the order, with no
+ * undo. Keeping the two apart is what lets `resolveDrop` refuse instead.
  */
-export const cellBoxesFromDom = (): CellBox[] => {
-  const cells: CellBox[] = [];
+export const cellBoxesFromDom = (): CellBoxes => {
+  const onPage: CellBox[] = [];
+  const offPage: CellBox[] = [];
   for (const element of Array.from(
     document.querySelectorAll("[data-col][data-row]"),
   )) {
     const col = Number.parseInt(element.getAttribute("data-col") ?? "", 10);
     const row = Number.parseInt(element.getAttribute("data-row") ?? "", 10);
     if (Number.isNaN(col) || Number.isNaN(row)) continue;
+    const withheld = getComputedStyle(element).pointerEvents === "none";
     const { left, top, right, bottom } = element.getBoundingClientRect();
-    cells.push({ cell: { col, row }, box: { left, top, right, bottom } });
+    const entry: CellBox = {
+      cell: { col, row },
+      box: { left, top, right, bottom },
+    };
+    (withheld ? offPage : onPage).push(entry);
   }
-  return cells;
+  return { onPage, offPage };
 };
 
 /**
- * The whole question in one call: a released tile of `blockSize`, centred on
- * (`x`, `y`), lands in this cell or in none.
+ * What a release at a point reached.
+ *
+ * Three answers rather than a cell-or-null, because the caller that removes a
+ * block on "no cell" has to be able to tell a release over a drawn column
+ * apart from a release over the page.
  */
-export const findDropCell = (
+export type DropResolution =
+  /** A cell the panel is showing. This is the only one a release may place in. */
+  | { kind: "available"; cell: CellPosition }
+  /**
+   * A cell that is drawn but withheld - the peek. Named so a release over it
+   * can be REFUSED, naming the cell it landed on; it is never placed in.
+   */
+  | { kind: "withheld"; cell: CellPosition }
+  /** No cell at all: the release really was clear of the grid. */
+  | { kind: "offGrid" };
+
+/**
+ * The whole question in one call: a released tile of `blockSize`, centred on
+ * (`x`, `y`), reached this cell, a withheld one, or none.
+ *
+ * The withheld half runs the same `resolveDropCell` over the withheld boxes, so
+ * a refusal names the cell by the tie-breaking rules a placement would have
+ * used rather than by a second geometry of its own.
+ */
+export const resolveDrop = (
   x: number,
   y: number,
   blockSize: number,
-): CellPosition | null => {
+): DropResolution => {
   const point = { x, y };
-  return resolveDropCell(blockBoxAt(point, blockSize), point, cellBoxesFromDom());
+  const block = blockBoxAt(point, blockSize);
+  const { onPage, offPage } = cellBoxesFromDom();
+
+  const available = resolveDropCell(block, point, onPage);
+  if (available) return { kind: "available", cell: available };
+
+  const withheld = resolveDropCell(block, point, offPage);
+  return withheld ? { kind: "withheld", cell: withheld } : { kind: "offGrid" };
 };

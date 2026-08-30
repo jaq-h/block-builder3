@@ -38,7 +38,10 @@ SVG imports work in tests for the same reason.
   (jsdom) for the split.
 - Globals are off. Import `describe`/`it`/`expect` from `vitest` explicitly.
 - `src/test/setup.ts` registers the jest-dom matchers, unmounts React trees after
-  each test, and replaces `fetch` for the whole suite: Kraken's `AssetPairs` request is
+  each test, supplies a no-op `ResizeObserver` (jsdom ships none, and a component
+  that constructs one throws on mount rather than degrading - a faithful
+  implementation would fire exactly as often in a document that is never laid
+  out, which is never), and replaces `fetch` for the whole suite: Kraken's `AssetPairs` request is
   answered from `marketFixtures.ts` and every other URL throws, so no test reaches the
   network. It is the mount that is the trap rather than any one file - anything rendering
   `MarketProvider` fetches - so a test needing its own response stubs `fetch` itself.
@@ -203,7 +206,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Thirteen things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Fourteen things bite in ordinary work:
 
 - **Never add a `window` *mouse* listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events. Mouse events are also suppressed during a drag,
@@ -309,6 +312,150 @@ The README's **Interaction model** section is authoritative. Thirteen things bit
   design. Do not "fix" either into the other, and do not read one sentence as a
   regression of the other. `gridReplacement.dom.test.tsx` pins both halves per
   control, under "a pointer press on %s" and "a keyboard press on %s".
+- **The column pager moves the CARRY'S TARGET, and the viewport follows it - not
+  the other way round.** Below `sm` the panel shows one grid column at a time
+  (see **Layout and the CSS cascade**), and `ColumnPager` is how the user gets to
+  the other one. Carrying nothing, its two buttons just move the viewport.
+  Carrying a block, a press dispatches the very same `moveTarget` the Left and
+  Right arrow keys dispatch, and `GridArea`'s effect on `carrying.target.col`
+  moves the viewport to wherever the target ended up. **The target and the column
+  on screen are one fact with one owner**, because the alternative is a
+  highlighted cell read out as `aria-current` in a column the user cannot see -
+  the mirror of the stale offer the `gridReplaced` transition exists to withdraw.
+  **This is the complete set of what that rule produces. It is a stated set
+  rather than a list to append to: a fifth item means the rule has changed and
+  needs restating, not extending.**
+
+  - **A pick-up whose only legal cells are in the other column opens the pager
+    there.** The viewport follows the target a pick-up starts on exactly as it
+    follows one that moves, so the user arrives holding the order in the one
+    place it can go.
+  - **A press the carry refuses leaves the pager where it is**, and says "No
+    cell available in that direction." - exactly what the arrow key does from
+    there, because it IS what the arrow key does. The button never claims a
+    column the user is not on.
+  - **A press for the column the carry is ALREADY targeting is deliberately
+    SILENT**, an early return in `handleShowColumn` before the dispatch, and it
+    is the one press `moveTarget` cannot answer for. Nothing moves and nothing
+    is said. No arrow key means "stay put", so a zero delta returns the state
+    unchanged and `moveTarget` would report `noTargetThatWay` - a refusal of a
+    press that asked for nothing. The non-carrying branch is already silent for that press and the
+    two must agree, so the fix REMOVES an untrue sentence rather than adding a
+    true one: no outcome for it exists in `gridAnnouncements.ts` and none should
+    be added. **That the case exists at all is the stated cost of the named
+    pair**: a single "Next" button always moves, so it has no stay-put press to
+    answer for, and two buttons naming their columns do. The cost is worth the
+    reason the pair was chosen, and it lands on exactly the users it was chosen
+    for - a voice-control user saying the name of the column they are on, and a
+    screen-reader user activating the button without first reading
+    `aria-pressed`.
+  - **While a block is in hand the pager is out of the tab order, and nothing
+    anywhere moves focus in answer to paging.** Every key that drives a carry -
+    the arrows, Enter, Escape - is handled ON the carried order's palette tile
+    or ON a block, with no document-level handler anywhere; so focus left on a
+    pager button mid-carry is a user holding an order that no key can put down.
+    Focus left in the column that pages off screen is NOT lost: that column is
+    DRAWN rather than hidden, so it can still hold focus, and Tab is kept out
+    of it by `tabindex` rather than by `inert`, which would blur it.
+
+  **The answer is reachability, not a hand-off**: `tabIndex={-1}` on
+  `ColumnPager`'s buttons, **only while carrying**, and nothing else. A
+  keyboard carrier cannot be stranded on a control they cannot reach. That
+  component's docblock is the authority and carries the whole derivation; five
+  things belong here because they are what a reader of this file would
+  otherwise undo:
+
+  - **Four rounds of focus hand-offs were tried and all four are withdrawn.**
+    Each was right about the paths beside it and blind to the next - the
+    carrying move, the bare pager press, the press that leaves focus on the
+    button, a rotation across `sm` that hides a column with no press at all -
+    and the last of them, written as a derived invariant, moved focus on a
+    desktop hover and re-rendered without settling when its request could not
+    land. **Do not reintroduce one.** No `focusCarriedSource`, no
+    `keepFocusUsable`, no per-writer hook: the carry-target-to-`visibleColumn`
+    layout effect writes the viewport and nothing else.
+  - **A keyboard carrier never needs the pager**, which is what makes taking it
+    out of their reach cost nothing. `validTargetsFor` scopes to no column and
+    `stepTarget` takes for a horizontal move every target on the far side, so
+    the arrows cross exactly when a legal cell exists there. **It is the
+    CONTROL that is out of reach mid-carry, never the ABILITY** - the arrows
+    move the carry across and the viewport follows, so a keyboard or
+    screen-reader user still reaches the other column and still places the
+    order there. Carrying nothing the buttons are an ordinary tab stop, so
+    "reachable by pointer, keyboard and screen reader" holds literally as
+    well. This is settled; do not re-file it as a gap.
+  - **Not focusable is not not operable.** The buttons stay clickable, keep the
+    24px target and stay in the accessibility tree; `disabled` would break the
+    paging pointer users depend on. Carrying nothing they are an ordinary tab
+    stop, because that user has no arrow keys to cross with.
+  - **NO HANDLER ON THESE BUTTONS CANCELS A PRESS, and none may be added.** A
+    `preventDefault` on `pointerdown` was tried, so a press would not focus
+    them either, and it is withdrawn - a `mousedown` equivalent is withdrawn
+    with it. It **could not be verified on touch**, which is this layout's
+    primary input: measured in Chrome with real trusted input a cancelled
+    press still fired `click` and still took no focus, but **that is not
+    evidence for touch and must not be cited as such**, and iOS Safari is
+    documented to drop the synthesized `click` when the touch-stream press is
+    cancelled - which would leave the pager inert to touch for the whole of
+    every carry. What it costs is small and is the limit this section already
+    accepts elsewhere: a pointer press may focus the button, which is not
+    stranding (Tab leaves, the carry stays live, a pointer user taps a cell),
+    and the tab-order gate still keeps a keyboard carrier away from it
+    entirely.
+  - **Two residuals, both accepted deliberately rather than unnoticed, and
+    both on the same terms: not stranding, and not reachable keyboard-only.**
+    Assistive technology can focus a `tabindex="-1"` element directly, so an AT
+    user can still land there mid-carry; they are not stranded - Shift+Tab
+    leaves and the carry is still live - but the control is not literally
+    unreachable. **`tabIndex` going to -1 does not blur an element that already
+    holds focus**, so focus that was on a button when the carry began stays
+    there; reaching that needs mixed input - Tab to the pager while carrying
+    nothing, then start a carry by pointer - because starting one from the
+    keyboard means activating a palette tile, which takes focus to that tile.
+    **A third residual is gone rather than accepted, and must not be re-filed**:
+    focus already INSIDE the column a press pages away used to drop to
+    `<body>`, because a hidden element cannot hold focus. Drawing the off-page
+    column deleted it - nothing becomes unfocusable now, so focus survives a
+    page. Verified in Chrome and pinned by `GridArea.dom.test.tsx` under "keeps
+    focus on a block whose column pages away". Do not answer anything here with
+    a focus hand-off.
+
+  `ColumnPager.dom.test.tsx` pins the tab order in both states and that the
+  control still pages while carrying; `GridArea.dom.test.tsx` pins the
+  behaviour under "pages a carry across and the arrived column places it",
+  "is out of the tab order
+  while a block is in hand, and in it when not", "lets the arrow keys cross
+  columns and back, with the viewport following" and "leaves focus alone where
+  both columns are drawn".
+
+  **A pick-up starts at the first legal cell its offer has, and no column is
+  remembered between carries.** A preference for the column the user last
+  chose was tried and taken out again: its rule was a closed enumeration of
+  which events counted as a choice, and cases kept being found one at a time,
+  each as a defect. Do not reintroduce one without deciding the whole set
+  first.
+
+  **Do not give the pager a move of its own, and do not end a carry on it**:
+  paging does not touch the grid, so nothing about the carry has gone stale.
+  **`ColumnPager` must stay INSIDE `placementSurfaceRef`, and that is a
+  placement constraint rather than an accident of where it was written.** The
+  dismissal hatch listens for `pointerdown` on the document in the capture phase
+  and empties the block-in-hand register for any target the surface does not
+  contain, so a pointer press on a pager rendered outside it would put the
+  carried block down and say "Cancelled." - breaking the one requirement the
+  control exists for. Moving it into `gridPane`, or above `contentWrapper`, is
+  the plausible edit here: it is a bar rather than a lane. A lane that wants to
+  do it has to answer the carry release first.
+  `GridArea.dom.test.tsx` pins this with a real `pointerdown` under "survives a
+  pointer press on the pager while carrying"; every other pager test uses
+  `fireEvent.click`, which dispatches no `pointerdown` and so never runs the
+  hatch at all. The
+  viewport follows the target in a `useLayoutEffect` rather than an effect,
+  because after a paint is one frame of the old column drawn while `aria-current`
+  already sits in the one `offPageColumn` has just withheld.
+  `GridArea.dom.test.tsx` pins every consequence above under "the column pager",
+  one test each because they are separate cases.
+
 - **A click outside the placement surface puts down whatever is in hand**, by emptying that
   register. The surface is the element `GridArea` draws - the palette a block is picked up
   from and the cells it can be put down in - and it is chosen by that element rather than by a
@@ -481,9 +628,9 @@ out the abbreviation renames "SMA 20" to something a voice-control user cannot s
 
 ## Layout and the CSS cascade
 
-Sixteen traps live in the layout, and each is easy to reintroduce. The two
-paragraphs below led **Known gap** are not among that sixteen: they record
-defects that are already there rather than ones you could bring back.
+Nineteen traps live in the layout, and each is easy to reintroduce. The one
+paragraph below led **Known gap** is not among that nineteen: it records a
+defect that is already there rather than one you could bring back.
 
 **The app's chrome wraps; it never scrolls.** A row of controls - a toolbar, a
 title bar, a tab strip - that cannot fit its width gets `flex-wrap`, and the row
@@ -518,10 +665,13 @@ against that box and nothing else: the track and the percentage scale are
 `calc((100% - TRACK_INSETpx) * percent)` within it. One collapsed height is
 therefore not one defect, it is the whole axis at once. It carried `h-full`, and
 a percentage height needs a definite height to resolve against - which the chain
-above it only has while the grid columns are flex items of a ROW. Stacked below
-`sm` by the trap below, they are items of a column with no definite height,
-because below `lg` the shell is deliberately content-sized (see the desktop
-shell trap). `height: 100%` resolved to 0, and since every child of the box is
+above it only has while the grid columns are flex items of a ROW. `columnsWrapper`
+STACKED them below `sm` at the time, so they were items of a column with no
+definite height, because below `lg` the shell is deliberately content-sized (see
+the desktop shell trap). **That stacking is gone** - the trap below puts the two
+columns side by side at every width and pages between them - so the collapse is
+recorded here rather than reproducible; what survives it is the rule.
+`height: 100%` resolved to 0, and since every child of the box is
 absolutely positioned there was nothing to fall back on. Measured in Chrome with
 a Limit in the Entry primary cell, axis column / track / block y: **150 / 80 /
 99.5 at 640 and above, and 0 / 0 / 24.5 at 320, 360, 390 and 414** - no track to
@@ -530,8 +680,8 @@ range, which draws the block above the market line and runs it backwards, while
 `positionFromPointer`'s `trackHeight <= 0` guard returned 0 for every drag. An
 order could not be priced at all on a phone. `align-items: stretch` sizes it
 now - the default for a flex item, and `sliderArea` is a `flex-row` whose cross
-axis IS this height, so it needs no definite parent height and holds in both
-forms of the layout; it was doing the work above `sm` all along, which is why
+axis IS this height, so it needs no definite parent height and cannot be taken
+away by anything above it; it was doing the work above `sm` all along, which is why
 removing `h-full` left 768, 1024 and 1440 measuring exactly what they measured
 before, the assembly grid pane pixel-identical at 1440. **Do not restore
 `h-full`, and do not answer a future collapse with a pixel height or a `min-h-*`
@@ -547,39 +697,191 @@ axis column has to remain `sliderArea`'s DIRECT child, so an extra wrapper in
 `GridCell` or `ReadOnlyGridCell` re-collapses the axis with both class lists
 untouched.
 
-**The assembly grid's three lanes stack when the panel is too narrow to draw
-them, and the row they are in has a derived minimum width.** The lanes are the
-order palette, the Entry column and the Exit column, each of the latter two
-carrying `min-w-[220px]` because that is where a cell still fits its own price
-chip - the chip is laid out at `calc(50% + 25px)` from the axis centre and is
-about 66px wide at a BTC price, so a 202px cell put `$58,322.4` at x 247..305.5
-against a cell edge at 323, 17.5px of slack. **The row's min-content width is
-542px: the palette's 90px min-width plus those two 220px columns plus two 6px
-gaps.** That floor is owned by the palette's `sm:min-w-22.5`, the constant this
-change moved behind a breakpoint, and not by its `sm:w-27.5` - 110px is the
-palette's PREFERRED width, and it shrinks 20px below it when the row cannot fit.
-Below `lg` the panel is the viewport less the shell's 32px of padding, so the
-row stops fitting at a 574px viewport, and it used to be drawn at that width
-anyway: measured in Chrome at 320, 360 and 390 the lanes collapsed to that same
-min-content 542px in all three - the palette squeezed to its 90px floor - and
-the Exit column sat at x 347..549, entirely outside the viewport. **That is a
-functional defect rather than a responsive gap** - a conditional strategy needs
-both an Entry and an Exit leg, so the app's core task could not be completed on
-a phone at all. `contentRow` and `columnsWrapper` are `flex-col sm:flex-row` for
-it: below `sm` the palette lays its tiles across the panel in an `auto-fill`
-grid and the two columns are full-width bands under it, and the panel's existing
-vertical scroll carries the lot. `sm` is a floor with room rather than a fitted
-number - at a 640px viewport the panel is 608px against that 542px min-content
-row, and measured there the palette is at its preferred 110px and each column at
-243px, so nothing is at its floor. Above `lg` the panel is never narrower than
-660px, measured at 1024 where the shell's `minmax(0,700px)` track is squeezed
-hardest - so the desktop layout never reaches the stacked form and is unchanged
-to the pixel.
+**The assembly grid's lanes have a derived minimum width, and what does not fit
+is answered by moving the PALETTE and paging the COLUMNS - not by stacking
+them.** The lanes are the order palette, the Entry column and the Exit column,
+each of the latter two carrying `min-w-[220px]` because that is where a cell
+still fits its own price chip - the chip is laid out at `calc(50% + 25px)` from
+the axis centre and is about 66px wide at a BTC price, so a 202px cell put
+`$58,322.4` at x 247..305.5 against a cell edge at 323, 17.5px of slack. **The
+row's min-content width is 542px: the palette's 90px min-width plus those two
+220px columns plus two 6px gaps.** That floor is owned by the palette's
+`sm:min-w-22.5` and not by its `sm:w-27.5` - 110px is the palette's PREFERRED
+width, and it shrinks 20px below it when the row cannot fit. Below `lg` the
+panel is the viewport less the shell's 32px of padding, so the row stops fitting
+at a 574px viewport, and it was once drawn at that width anyway: measured in
+Chrome at 320, 360 and 390 the lanes collapsed to that same min-content 542px in
+all three - the palette squeezed to its 90px floor - and the Exit column sat at
+x 347..549, entirely outside the viewport. **That is a functional defect rather
+than a responsive gap** - a conditional strategy needs both an Entry and an Exit
+leg, so the app's core task could not be completed on a phone at all.
+
+**The two columns stay side by side at every width; the panel shows one of them
+at a time.** `contentRow` is `flex-col sm:flex-row`, and that direction change
+now moves the PALETTE alone - below `sm` it lays its tiles across the panel in
+an `auto-fill` grid as a band, with the columns under it. `columnsWrapper` is a
+`flex-row` always, and below `sm` it is a one-column viewport over that row:
+each column is `w-[calc((100%-0.375rem)/1.2)] shrink-0` (`pagedColumn`, which
+gives it `sm:w-full sm:shrink` for the desktop form), the pair overflows to the
+right, and `ColumnPager` moves the viewport by setting `scrollLeft`. The
+palette is what moves because the arithmetic leaves no choice - with it still a
+lane the viewport would be the panel less 90px and a 6px gap, **192 / 232 / 262
+/ 286 at 320 / 360 / 390 / 414**, and 192 is under the 220px floor above. As a
+band, the WRAPPER gets those same 288 / 328 / 358 / 382, and the column inside
+it is narrower still, because 20% of its sibling has to show past the edge.
+**Measured in Chrome at 320 / 360 / 390 / 414 on this branch, the column is
+235.0 / 268.3 / 293.3 / 313.3 and the peek is exactly 20% at every one of
+them**, so the headroom over the 220px floor is **15.0 / 48.3 / 73.3 / 93.3,
+tightest at 320**. That is the number a later change is spending, and it is
+15px rather than the 68px this paragraph used to claim. What made 20% safe at
+that width is a chip check rather than the floor alone: measured at 320, a
+placed Limit's price chip runs to x 215.3 against a cell edge at 242, so 26.7px
+of slack. Three rules hold it together and none may be simplified away:
+
+- **`overflow-hidden`, never `-auto`, and on BOTH axes.** This is a scroll
+  container the user cannot drive, so it draws no scrollbar on any platform - it
+  cannot grow by a classic bar's gutter, and it cannot be scrolled to a column
+  the pager does not know about, which is what gives "which column is on screen"
+  one owner. The wraps-never-scrolls rule above governs *chrome* and these are
+  content lanes, so it does not forbid a box here; taking neither of its
+  measured harms anyway is what makes that reading safe rather than a loophole.
+  **`overflow-x-hidden` alone does not take neither, which is why it is not what
+  this says**: setting one axis to anything other than `visible` makes the
+  other's `visible` compute to `auto`, so naming only the axis that pages left
+  this a real user-drivable VERTICAL scrollport. Nothing overflows it that way
+  today - below `sm` it is an auto-height flex item - but the day anything
+  bounds its height there, that bar's gutter eats width from a column already
+  sized against the 220px floor above, and a guard reading the class list stays
+  green through it. `sm:overflow-visible` puts the scroll container away
+  entirely where both columns fit.
+- **The off-page column is DRAWN, and withheld from hit testing rather than
+  hidden.** 20% of it shows past the viewport's edge as a wayfinding cue that
+  there is more to view; the number is the captain's own. Both columns keep
+  their boxes and stay beside each other, and `offPageColumn` -
+  `pointer-events-none sm:pointer-events-auto`
+  `max-sm:[&:is(&)_*]:pointer-events-none` - is the whole of what withholds it.
+  **VISIBLE DOES NOT MEAN DROPPABLE, and the peek is why that has to be said
+  out loud.** A peeking cell steals releases: measured at 390, a release at the
+  far right edge put **30px of the dragged tile over an off-page Exit cell
+  against 4px over the Entry cell it was drawn on**, so greatest-overlap placed
+  the order into a column that was not on screen, with no highlight to warn of
+  it - the highlight comes from the same list, so it was off screen too.
+  `cellBoxesFromDom` therefore hands back every cell whose computed
+  `pointer-events` is `none` as WITHHELD rather than as a candidate. It is keyed
+  on that rather than on visibility because drawing the peek separated "can the
+  user see it" from "may a drop land in it", and hit testing is the same
+  question a drop asks, so the two cannot drift.
+  **Withheld is not discarded, and the difference is a block the user does not
+  get back.** A free drag released clear of every cell REMOVES the block, so
+  collapsing "over a column the panel is not showing" into "over nothing at all"
+  put a destructive band inside the panel: at 320 every release from x 246 to
+  the panel edge at 288 landed in drawn column and destroyed the order, with no
+  undo. `resolveDrop` answers `available`, `withheld` or `offGrid`, and **BOTH
+  drag paths read all three**: `handleDragEnd` refuses the middle one through
+  `keepBlockInItsCell`, with the `staysInCell` sentence a release over any other
+  cell gets, and `handleProviderDragEnd` refuses it as `columnNotShown`, which
+  names the column rather than blaming the cell - the placement rules might well
+  have taken that order and were never asked. There is deliberately **no helper
+  collapsing `withheld` into "no cell"**: that collapse is what told a palette
+  user their release was outside the grid while they watched it land on a drawn
+  column, and one geometry may not get two accounts. **The exclusion itself is
+  unchanged**: nothing is ever placed into a withheld cell, and NEITHER
+  highlight names one. The hover highlight takes `available` alone, and so does
+  `isValidTarget`, which draws the accent border, the ring, the pattern and the
+  breathing animation: drawing the peek made that treatment visible in a column
+  every release is refused in - 38px of each cell at 320 - and a highlight
+  computed one way with a drop the other is the defect this resolver exists to
+  prevent. Both read the same computed `pointer-events`, never `visibleColumn`,
+  which WRITES the class rather than answering the question and says nothing
+  above `sm`.
+  **Inheritance answers a cell but not a block, which is why the class carries
+  a second rule.** A cell declares no `pointer-events` of its own and so
+  inherits the refusal; `getBlockPositionerProps` declares one, opting the tile
+  back in with `*:pointer-events-auto` so the strip it draws does not swallow
+  presses meant for the cell under it. That left a block drawn in the sliver
+  tappable and draggable - a tap announcing a refusal for an order the user can
+  barely see, a vertical drag re-pricing it - while drop resolution stayed
+  correct throughout. The subtree rule closes it and wins by SPECIFICITY:
+  `:is(&)` repeats the class in the compound, so it lands at (0,2,0) against
+  the opt-in's (0,1,0), where a plain `[&_*]` would tie and be settled by
+  whichever utility Tailwind emitted second. It is `max-sm:` with **no `sm:`
+  counterpart**, deliberately - declaring `auto` across a subtree would beat
+  the positioner's own `pointer-events-none` and turn that strip into a hit
+  target at every desktop width.
+  **Nothing here may hide the column.** A hidden element cannot hold focus, so
+  hiding it dropped focus to `<body>` whenever the pager took away the column
+  the focused element lived in; drawing it is what deletes that defect. Tab is
+  kept out by the `tabindex` rule in `GridArea`, and `inert` is refused for the
+  same reason - it blurs what it is applied to, which would bring the defect
+  straight back. That rule reads the breakpoint off the viewport's own box, so
+  it rides the SAME `ResizeObserver` the scroll rule installs rather than a
+  second one: on renders alone it went stale across a rotation, leaving a whole
+  column at `tabindex="-1"` where both are drawn, or the peeking one tabbable.
+  **The peeking column is REACHABLE BY ASSISTIVE TECHNOLOGY, and that is
+  accepted deliberately. Firstmate's call, not the captain's** - the captain
+  asked for the peek, and this is its consequence. The column is in the
+  accessibility tree, so a screen-reader user can read it and activate a cell in
+  it, where under the withdrawn `visibility: hidden` they could not. **Do not
+  "restore" the old property**: no `aria-hidden`, no `inert`, and no
+  readable-but-not-activatable mode either. Three reasons, and the second
+  decides it:
+
+  - **It self-corrects, and that is code rather than hope.** Activating a
+    cell in the withheld column PLACES the order in it: `pointer-events: none`
+    withholds hit TESTING and not a dispatched click, so the activation reaches
+    `GridCell`'s `onClick` and commits the carry exactly as it would on screen.
+    On its own that stranded the user - the carry has ended, so the layout
+    effect keyed on `carrying.target.col` early-returns, and the panel went on
+    showing the OTHER column with the order they had just placed off screen and
+    no way back to it. `activateCellInView` in `GridArea` closes that: it shows
+    the cell's column BEFORE committing, through `visibleColumn`, the one owner
+    of which column is on screen that the pager and the carry-target effect
+    already write. Measured in Chrome at 390 in the bulk pattern, carrying a
+    Limit with the panel on Entry and activating the Exit lower cell: the panel
+    ends on **Exit**, `scrollLeft` **235** - which is the viewport's own maximum,
+    so the Exit column sits flush against the right edge with Entry peeking on
+    the left, the mirror of the ordinary case - the cell **holds the block**,
+    and the announcement is **"Placed Limit order in Exit column, row 3."**
+    Do not weaken this to a documented mismatch: an unrecoverable state for an
+    assistive-technology user is the same trap as the peek band that once
+    DELETED a free-dragged block and the sliver that once drew a valid-target
+    highlight at cells the release then refused, and all three were answered the
+    same way - make the behaviour match what the app appears to offer. Above
+    `sm` nothing is withheld, so this is exactly `activateCell`. Carrying
+    nothing the activation is silent, on this column and the one on screen
+    alike, and a cell outside the carry's offer is refused with
+    "... cannot take this order. Still carrying ...".
+  - **Nothing that was ever promised is being given up.** "Nothing in the
+    accessibility tree" was a PROPERTY OF THE HIDING MECHANISM the captain
+    replaced, not an independent guarantee this design made. A side effect
+    disappeared along with the thing that caused it; no rule was broken.
+  - **The obvious fix inverts the instruction it claims to implement.** Hiding
+    the peek from assistive technology would give those users LESS than sighted
+    users get. The captain asked for a cue that there is more to view, and
+    suppressing that cue for precisely the users who cannot see the sliver is
+    not implementing it carefully.
+- **`columnPagerRow` carries `px-2`, and it is not decoration.** The grid pane
+  has no horizontal padding, so a lane is flush with the panel's content edge -
+  and the panel clips there. Every lane's own focusable children are inset
+  within it, so nothing had been focusable at that edge before; a `flex-1`
+  button in a flush row is. Measured at 390 with the Exit button focused, its
+  box ended at x 374 against a clip at 374 and the ring's whole right segment
+  (2px outline at a 2px offset, x 376..378) was drawn nowhere.
+
+`sm` is a floor with room rather than a fitted number - at a 640px viewport the
+panel is 608px against that 542px min-content row, and measured there the
+palette is at its preferred 110px and each column at 243px, so nothing is at its
+floor. Above `lg` the panel is never narrower than 660px, measured at 1024 where
+the shell's `minmax(0,700px)` track is squeezed hardest. **Desktop is unchanged
+to the pixel**: swept at 640, 768, 1024, 1280 and 1440 against the commit before
+the pager, every rect is identical and the app container's row template is still
+a single `900px` track at 1024 and up. The pager itself is `sm:hidden`, so above
+`sm` it is not a flex item of `contentRow` at all rather than a zero-width one.
 `utilityRow` wraps for the same reason: Clear All and Reverse come to 219px
 beside a 203px Execute Trade against 326px of bar at 390, and unwrapped that
 button was drawn at x 267.5..470.8 with the panel's `overflow-hidden` clipping
 its last 80.8px, so the strategy could not be submitted. The Active Orders panel
-draws a card list at every width and has no lane row to stack; its
+draws a card list at every width and has no lane row to page; its
 `ActiveOrders.styles.ts` still exports a `columnClass`, a `columnsWrapper` and a
 `contentWrapper` carrying the same rigid geometry, but nothing imports any of
 the three - they are dead, not a second copy of this rule.
@@ -602,38 +904,45 @@ which is 56px and inside the floor. Only at 320px does it exceed 64, and there n
 two panels share a screen. The assembly and Active Orders bars take
 `panelTitleBar` unchanged. A new panel takes `panelTitleBar`, not this.
 
-**Known gap: below `sm` a pointer DRAG reaches only the cells already on
-screen, because nothing scrolls during a gesture.** `dropTarget.ts` hit-tests
-the dragged block's tile against each cell's viewport rect, the block follows a
-pointer that cannot leave the viewport, and there is no autoscroll anywhere in
-the drag path - so a cell off screen when the gesture starts cannot be dropped
-into. Stacked, the grid is taller than a phone: measured at 390x844 with a Limit
-placed, the page is 2020px and, with the palette in view at y 196..403, only the
-Entry upper conditional (y 459..648) and Entry primary (y 664..852) cells are
-reachable - **2 of 6**, with every Exit cell at y 1122..1719. Side by side on
-6067cf5 all six were reachable at the same viewport, though the Exit column was
-only reachable through the 43px strip of it inside the screen (x 347..549
-against a 390px viewport) with the rest clipped, which is the defect #30 fixed.
-So this is narrower reach by drag traded for a column that can be seen and
-submitted at all, not a path that used to work cleanly. **The command model is
-unaffected and reaches every cell at every width**: tap or click to pick up,
-scroll, tap to place - verified at 390 placing a Take Profit into the Exit
-column, which announced "Placed Take Profit order in Exit column, upper
-conditional row." The carry survives the scroll because its target is the cell
-that was tapped rather than a viewport position. What is missing is that a drag
-towards an off-screen cell silently does nothing and nothing tells the user to
-tap instead. Closing it properly means autoscrolling the scrollport under the
-gesture, which is inside the layer this file guards most heavily: the scroller
-differs by breakpoint (the document below `lg`, `contentWrapper` above it), the
-rects `dropTarget.ts` reads move under a running scroll so the highlight and the
-drop must be recomputed per scroll frame rather than per pointer move, and all
-six of `usePointerGesture`'s exits have to keep holding while it runs. Shortening
-the stacked grid is a different lever on the same symptom and does not close it
-either - four of the six cells are disabled conditional rows drawing nothing at
-all while each still claims `CELL_MIN_HEIGHT`, about 750px of the 2020 at 390,
-and even without them the Exit primary is below the fold from the palette.
-Tracked outside this repository; what is recorded here is the measurement and
-the fact that the keyboard and tap paths are whole.
+**A pointer drag still reaches only what is on screen, and the pager is what
+makes that enough.** `dropTarget.ts` hit-tests the dragged block's tile against
+each cell's viewport rect, the block follows a pointer that cannot leave the
+viewport, and there is no autoscroll anywhere in the drag path - so a cell off
+screen when the gesture starts cannot be dropped into. That has not changed, and
+it is why the *reach* is a property of the layout rather than of the drag.
+
+Stacked, the grid was taller than a phone and the drag reached **2 of 6** cells:
+measured at 390x844 with a Limit placed, the page was 2020px and, with the
+palette in view at y 196..403, only the Entry upper conditional (y 459..648) and
+Entry primary (y 664..852) could be dropped into, with every Exit cell at
+y 1122..1719. Paged, the page is **1201px** at the same viewport and the palette
+sits at y 245..364 above a single column whose three cells are at y 501..690,
+706..894 and 910..1099 - so one vertical scroll puts the palette and all three
+in view together, and the other column's three are the same three after one
+press of the pager. **6 of 6**, and verified rather than derived: at 390, paging
+to Exit and dragging a Limit from the palette into it announced "Placed Limit
+order in Exit column, primary row." At 320 the figures are a taller palette band
+(y 237..510) over cells at y 608..797, 813..1001 and 1017..1206 in a 1308px
+page, and the same holds.
+
+**The command model was always whole and still is**: tap or click to pick up,
+page or scroll, tap to place. Its carry survives both, for the same reason -
+the carry's target is a cell rather than a viewport position, and paging does
+not touch the grid, so the `gridReplaced` transition never fires.
+
+What remains, and it is smaller than the gap it replaces: a drag towards a cell
+that is off screen *vertically* still does nothing silently, and nothing tells
+the user to scroll or tap instead. Closing that properly still means
+autoscrolling the scrollport under the gesture, which is inside the layer this
+file guards most heavily: the scroller differs by breakpoint (the document below
+`lg`, `contentWrapper` above it), the rects `dropTarget.ts` reads move under a
+running scroll so the highlight and the drop must be recomputed per scroll frame
+rather than per pointer move, and all six of `usePointerGesture`'s exits have to
+keep holding while it runs. Note that the horizontal half of it is NOT such a
+case and must not be answered that way: the off-page column is withheld from
+hit testing, so its cells are not drop candidates at all and a release over
+them is refused rather than mis-resolved - refused, and never read as a release
+clear of the grid, which the free drag removes a block on. Tracked outside this repository.
 
 **Known gap: the assembly panel's pattern buttons overflow their header rail
 at narrow widths.** `patternSelectorRow` is `cn(panelHeaderBar, "gap-2")`, and
@@ -646,9 +955,10 @@ are painted 15.8px above it and 14.8px below, over the `MarketSelector` row
 above and the top of the Orders palette below. At 360, 81.0px with 9.0px above
 and 8.0px below; at 390, 65.0px with 1.0px above and 0.0px below. At 1024 and
 1440 they are 51.5px and fit with 5.8px and 6.8px of slack, so this is a
-narrow-width defect only. It is pre-existing rather than anything the lane
-stacking above introduced: identical figures were measured on that change's
-branch and on its base commit 6067cf5. Nor is it a matter of the buttons simply
+narrow-width defect only. It is pre-existing rather than anything the paging
+rules above introduced: identical figures were measured on the lane change that
+first met it and on its base commit 6067cf5, and again on the paging change and
+its own base. Nor is it a matter of the buttons simply
 being asked to fit - at 320 the bar has 256px of inner width, so two buttons at
 `min-w-[120px]` plus the 8px gap leave about 92px of text width each, in which
 the label takes two lines and the description three, and the only way that

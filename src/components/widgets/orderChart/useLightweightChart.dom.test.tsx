@@ -19,14 +19,9 @@ import { useRef, type FC } from "react";
 // anything in the source. A real chart cannot be measured here anyway: it draws
 // to a canvas jsdom does not implement.
 
-// jsdom ships no ResizeObserver, and the hook observes its container to keep
-// the chart sized. Nothing here resizes, so a no-op is the whole requirement.
-class NoopResizeObserver {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-vi.stubGlobal("ResizeObserver", NoopResizeObserver);
+// The hook observes its container to keep the chart sized, and jsdom ships no
+// ResizeObserver. Do not add one here: `src/test/setup.ts` supplies the no-op
+// for the whole suite, and a second copy is a stand-in with two owners.
 
 const addSeries = vi.fn();
 const applyOptions = vi.fn();

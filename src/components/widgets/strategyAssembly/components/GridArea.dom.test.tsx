@@ -1451,6 +1451,143 @@ describe("GridArea, a drop whose block overlaps a cell it is not over", () => {
     );
   });
 
+  // ── The peek is drawn, so a release over it is a release over a CELL ──
+  //
+  // Below `sm` the panel shows one column through a viewport and 20% of the
+  // other one peeks past its edge. Those cells are correctly withheld from drop
+  // resolution - visible does not mean droppable - but reading that as "clear
+  // of every cell" made the branch above DESTROY the order: at a 320px viewport
+  // every release from x 246 to the panel edge at 288 landed in drawn column
+  // and removed the block, with no undo.
+
+  let pagingRule: HTMLStyleElement | null = null;
+
+  /** The one declaration `offPageColumn` resolves to below `sm`. */
+  const pageTheColumns = () => {
+    pagingRule = document.createElement("style");
+    pagingRule.textContent = ".pointer-events-none { pointer-events: none; }";
+    document.head.appendChild(pagingRule);
+  };
+
+  afterEach(() => {
+    pagingRule?.remove();
+    pagingRule = null;
+  });
+
+  it("refuses a placed block released over the withheld peek, and keeps it", () => {
+    pageTheColumns();
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    renderTwoColumns(grid);
+
+    // Wholly inside the Exit column and clear of the Entry cell's right edge at
+    // 420, so the tile overlaps the withheld cell and nothing else.
+    const landing = RIGHT_COLUMN + 16;
+    fireEvent(
+      screen.getByRole("button", { name: /^Market order,/ }),
+      pointerAt("pointerdown", LEFT_COLUMN + 30, ROW_MID),
+    );
+    fireEvent(document.body, pointerAt("pointermove", landing, ROW_MID));
+    fireEvent(document.body, pointerAt("pointerup", landing, ROW_MID));
+
+    // Still on the grid, in the cell it started in, and nothing placed in the
+    // column the panel is not showing.
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Market",
+    );
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, row 2, empty",
+    );
+    // The same sentence a release over any other cell gets, rather than a
+    // second vocabulary for one outcome - and emphatically not a removal.
+    expect(announcement()).toBe(
+      "Market block stays in the cell it was placed in, so it was not moved to Exit column, row 2. To put this order somewhere else, remove it and place a new one. Market block stayed in Entry column, row 2.",
+    );
+  });
+
+  it("refuses a palette order released over the withheld peek, and says why", () => {
+    pageTheColumns();
+    renderTwoColumns();
+
+    // The identical geometry the placed-block release above uses. One release
+    // may not get two accounts, so this is refused rather than reported as
+    // having landed outside the grid - the user watched it land on a drawn
+    // column - and the sentence points at the pager rather than at the cell,
+    // which the placement rules were never asked about.
+    dragFromPalette(RIGHT_COLUMN + 16, ROW_MID);
+
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, row 2, empty",
+    );
+    expect(announcement()).toBe(
+      "Exit column, row 2 is not on screen, so nothing can be placed there yet. Use the column buttons to show the Exit column first. Market order was not placed.",
+    );
+  });
+
+  it("draws no valid-target treatment in the column it is not showing", () => {
+    // The valid-target tint is the strongest affordance this app has, and
+    // drawing the peek made it visible in a column every release is refused in
+    // - an unmistakable "drop here" at cells `resolveDrop` classifies as
+    // withheld. The highlight and the drop take the same answer, so it is
+    // withdrawn there, and the cells the panel IS showing keep it.
+    pageTheColumns();
+    renderTwoColumns();
+
+    // Held clear of every stubbed cell, so nothing is the hover target: the
+    // hover treatment would otherwise mask the validity one on the cell under
+    // the pointer, and it is the validity one this is about.
+    const palette = screen.getByRole("button", { name: "Add Market order" });
+    fireEvent(palette, pointerAt("pointerdown", 30, 20));
+    fireEvent(palette, pointerAt("pointermove", 30, 60));
+
+    const lit = (col: number, row: number) =>
+      (cell(col, row) as HTMLElement).className.includes(
+        "border-accent-primary",
+      );
+
+    expect(lit(0, 1)).toBe(true);
+    expect(lit(1, 1)).toBe(false);
+
+    fireEvent(palette, pointerAt("pointerup", 30, 60));
+  });
+
+  it("draws it in both columns where neither is withheld", () => {
+    // No `pageTheColumns()`: every column computes reachable, which is the
+    // desktop shape. Nothing is withdrawn there, and the test above would pass
+    // for the wrong reason without this one beside it.
+    renderTwoColumns();
+
+    const palette = screen.getByRole("button", { name: "Add Market order" });
+    fireEvent(palette, pointerAt("pointerdown", 30, 20));
+    fireEvent(palette, pointerAt("pointermove", 30, 60));
+
+    for (const col of [0, 1]) {
+      expect(
+        (cell(col, 1) as HTMLElement).className.includes(
+          "border-accent-primary",
+        ),
+      ).toBe(true);
+    }
+
+    fireEvent(palette, pointerAt("pointerup", 30, 60));
+  });
+
+  it("still says a palette order released clear of the grid was outside it", () => {
+    pageTheColumns();
+    renderTwoColumns();
+
+    // Half a tile clear of the left column and nowhere near the peek: the
+    // refusal above must not swallow the release that really is off the grid.
+    dragFromPalette(LEFT_COLUMN - 40, ROW_MID);
+
+    expect(announcement()).toBe(
+      "Released outside the grid. Market order was not placed.",
+    );
+  });
+
   it("still removes a placed block released clear of every cell", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));
@@ -2131,6 +2268,508 @@ const stopLossPrice = (yPosition: number) =>
     minimumFractionDigits: BTC_USD.priceDecimals,
     maximumFractionDigits: BTC_USD.priceDecimals,
   })}`;
+
+// =============================================================================
+// THE COLUMN PAGER
+// =============================================================================
+//
+// Below `sm` the panel cannot draw both grid columns at once - two
+// `min-w-[220px]` columns and a 6px gap need 446px against a 288px panel at a
+// 320px viewport - so they stay side by side and the panel shows one of them
+// through a viewport `ColumnPager` moves. jsdom applies no author stylesheet
+// and resolves no media query, so the *pixels* are browser measurement (see
+// `AGENTS.md`); what is testable here is the wiring, and that is where the
+// interesting rules live.
+//
+// The rule these hold: the carry's target and the column on screen are ONE
+// fact, with the target as its owner. A target in a column the viewport is not
+// showing is an invitation the user cannot see - the mirror of the stale
+// highlight the `gridReplaced` transition exists to stop - so the pager moves
+// the target and lets the viewport follow, rather than moving the viewport
+// behind the carry's back.
+
+describe("GridArea, the column pager", () => {
+  const pagerButton = (name: string) =>
+    within(screen.getByRole("group", { name: "Grid column shown" })).getByRole(
+      "button",
+      { name },
+    );
+
+  /** The column element a cell belongs to: the box `offPageColumn` is on. */
+  const columnOf = (col: number) => cell(col, 0).parentElement!;
+
+  const shownColumn = () =>
+    [0, 1].filter(
+      (col) =>
+        !columnOf(col)
+          .className.split(/\s+/)
+          .includes("pointer-events-none"),
+    );
+
+  let pagingRule: HTMLStyleElement | null = null;
+
+  /**
+   * Put the panel into its paged form, by supplying the one declaration
+   * `offPageColumn` resolves to below `sm`.
+   *
+   * jsdom applies no author stylesheet, so a class list alone computes to
+   * nothing and every column is reachable - which is exactly the DESKTOP
+   * shape, and is why the test below that asserts focus is left alone does not
+   * install this. The rule is read the way the app reads it, through
+   * `getComputedStyle().pointerEvents`, the same fact `cellBoxesFromDom`
+   * filters drop candidates by and the same one the tab-order rule reads; it is
+   * put on the class rather than on an element so it follows the pager, which
+   * is what the behaviour under test depends on.
+   */
+  const pageTheColumns = () => {
+    pagingRule = document.createElement("style");
+    pagingRule.textContent =
+      ".pointer-events-none { pointer-events: none; }";
+    document.head.appendChild(pagingRule);
+  };
+
+  afterEach(() => {
+    pagingRule?.remove();
+    pagingRule = null;
+  });
+
+  it("names both columns and says which one is on screen", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    // Stable names rather than one control whose label changes: a voice-control
+    // user targets a control BY name, and the pair states where the user is as
+    // well as where they can go. The state is `aria-pressed` as well as the
+    // accent border, because no control here says which of two things is chosen
+    // in colour alone.
+    expect(pagerButton("Entry")).toHaveAttribute("aria-pressed", "true");
+    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "false");
+    expect(shownColumn()).toEqual([0]);
+  });
+
+  it("shows the other column when it is pressed with nothing in hand", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    fireEvent.click(pagerButton("Exit"));
+
+    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
+    expect(shownColumn()).toEqual([1]);
+    // Nothing was carried, so nothing was announced: the button carries its own
+    // state and `gridAnnouncements` is for what happens to a BLOCK.
+    expect(announcement()).toBe("");
+  });
+
+  it("survives a pointer press on the pager while carrying", () => {
+    // The one requirement the control exists for, driven the way a finger
+    // drives it. Every other test here uses `fireEvent.click`, which
+    // dispatches no `pointerdown`, so the dismissal hatch never runs in them -
+    // and the hatch is the thing that could end this carry.
+    //
+    // What makes it survive is WHERE the pager is rendered: inside
+    // `placementSurfaceRef`, so the hatch's capture-phase `pointerdown`
+    // handler sees the press as inside the surface and leaves the register
+    // alone. Moving `<ColumnPager>` out of that element - into `gridPane`, or
+    // above `contentWrapper`, which is plausible for a bar rather than a lane -
+    // is the edit this test exists to catch: it would put the block down and
+    // say "Cancelled." while every click-driven test here stayed green.
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    tap(pagerButton("Exit"));
+
+    expect(announcement()).toBe("Exit column, primary row, ready to place.");
+    expect(announcement()).not.toContain("Cancelled");
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+
+    // Still in hand, so the arrived column can take it.
+    fireEvent.click(cell(1, 1));
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, primary row, Take Profit",
+    );
+  });
+
+  it("carries the block across, and the arrived column places it", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(pagerButton("Exit"));
+
+    // The same `moveTarget` the Right arrow key dispatches, so the sentence is
+    // the one that already existed and the offer is the one the carry made.
+    expect(announcement()).toBe("Exit column, primary row, ready to place.");
+    expect(shownColumn()).toEqual([1]);
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(cell(1, 1));
+
+    expect(announcement()).toBe(
+      "Placed Take Profit order in Exit column, primary row.",
+    );
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, primary row, Take Profit",
+    );
+  });
+
+  it("follows the carry when the arrow keys move it across", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    const palette = screen.getByRole("button", { name: "Add Take Profit order" });
+    tap(palette);
+    fireEvent.keyDown(palette, { key: "ArrowRight" });
+
+    // The target moved, so the viewport did: a highlighted cell the user cannot
+    // see is the thing this pairing exists to prevent.
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("opens on the column the carry's own offer starts in", () => {
+    // One block in the Entry primary cell, so the only cells a conditional
+    // order may take are that block's diagonals - both in the Exit column.
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+  });
+
+  it("stays where it is when the carry has nothing that way, and says so", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(shownColumn()).toEqual([1]);
+
+    fireEvent.click(pagerButton("Entry"));
+
+    // Exactly what the Left arrow key does from here, because it IS what the
+    // Left arrow key does. Moving the viewport anyway would leave the carry's
+    // one target off screen, and the button would be claiming a column the user
+    // is not on.
+    expect(announcement()).toBe("No cell available in that direction.");
+    expect(shownColumn()).toEqual([1]);
+    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  /**
+   * A live carry, with a placed block in each column and DOM focus standing on
+   * the one in Entry.
+   *
+   * Every step is one the app really wires. A tap on a palette tile or a block
+   * focuses it: `usePointerGesture` calls `preventDefault` on `pointerdown`,
+   * which suppresses the implicit focus, and moves focus by hand instead. The
+   * tap on the placed block leaves the carry alone, because its cell is
+   * occupied and so is not one of the carry's targets - the cell refuses the
+   * order rather than placing it.
+   *
+   * The press below does NOT take that focus away: the column it pages off is
+   * drawn rather than hidden, so the block keeps focus in a real browser. That
+   * is asserted where it can fail, under "keeps focus on a block whose column
+   * pages away"; here it is only the state the carry starts from.
+   */
+  const carryWithFocusInEntry = () => {
+    pageTheColumns();
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    grid[1][1].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} />);
+
+    const takeProfit = screen.getByRole("button", {
+      name: "Add Take Profit order",
+    });
+    tap(takeProfit);
+    expect(cell(0, 0)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([0]);
+
+    tap(within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    }));
+    expect(columnOf(0).contains(document.activeElement)).toBe(true);
+    expect(cell(0, 0)).toHaveAttribute("aria-current", "location");
+
+    return takeProfit;
+  };
+
+  it("pages a carry across and the arrived column places it", () => {
+    // The requirement the control exists for: the press moves the carry to the
+    // other column and the order can be put down there.
+    //
+    // **This deliberately asserts nothing about `document.activeElement`, and
+    // an assertion must not be added here.** jsdom moves no focus on a press,
+    // so every focus outcome of this press - the one the code produces and the
+    // one a regression would produce - is identical in this environment. An
+    // assertion that cannot fail reads as coverage while pinning nothing.
+    //
+    // Nor is there a focus contract here to pin. Nothing suppresses the focus
+    // a press gives the button, and a press taking it is accepted rather than
+    // prevented; `ColumnPager`'s docblock carries why. What that control does
+    // guarantee is the tab-order gate, and `ColumnPager.dom.test.tsx` pins it
+    // in both states, where it can actually fail.
+    const takeProfit = carryWithFocusInEntry();
+
+    tap(pagerButton("Exit"));
+
+    expect(shownColumn()).toEqual([1]);
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(cell(1, 0));
+    expect(announcement()).toBe(
+      "Placed Take Profit order in Exit column, upper conditional row.",
+    );
+    expect(takeProfit).toBeInTheDocument();
+  });
+
+  it("is out of the tab order while a block is in hand, and in it when not", () => {
+    // Reachability is the mechanism. A keyboard carrier crosses with the
+    // arrows - the test below - so nothing is taken from them; a keyboard user
+    // holding nothing has no arrow keys to cross with and keeps the control.
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    expect(pagerButton("Exit")).not.toHaveAttribute("tabindex");
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+
+    expect(pagerButton("Exit")).toHaveAttribute("tabindex", "-1");
+    expect(pagerButton("Entry")).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Add Take Profit order" }),
+      { key: "Escape" },
+    );
+
+    expect(pagerButton("Exit")).not.toHaveAttribute("tabindex");
+  });
+
+  it("lets the arrow keys cross columns and back, with the viewport following", () => {
+    // Why taking the pager out of a carrier's tab order costs them nothing:
+    // `validTargetsFor` scopes to no column and `stepTarget` takes every legal
+    // cell on the far side, so the arrows cross exactly when there is
+    // somewhere to cross to.
+    pageTheColumns();
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    const palette = screen.getByRole("button", {
+      name: "Add Take Profit order",
+    });
+    tap(palette);
+    expect(shownColumn()).toEqual([0]);
+
+    fireEvent.keyDown(palette, { key: "ArrowRight" });
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+    expect(document.activeElement).toBe(palette);
+
+    fireEvent.keyDown(palette, { key: "ArrowLeft" });
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([0]);
+    expect(document.activeElement).toBe(palette);
+  });
+
+  it("leaves focus alone where both columns are drawn", () => {
+    // Desktop unchanged, which is an acceptance criterion of this layout. No
+    // `pageTheColumns()`: every column computes `visible`, which is the shape
+    // at 1440. Nothing moves focus here in any case, and this is the test that
+    // would catch a hand-off being reintroduced.
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    grid[1][1].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} />);
+
+    clickBlock(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(0, 0)).toHaveAttribute("aria-current", "location");
+
+    const placed = within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    });
+    clickBlock(placed);
+    expect(document.activeElement).toBe(placed);
+
+    // A mouse carry tracks the cell under the cursor, so a sweep into the Exit
+    // column moves the target across without the user asking for anything.
+    fireEvent.mouseEnter(cell(1, 0));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    expect(document.activeElement).toBe(placed);
+  });
+
+  it("shows a withheld column before placing into it", () => {
+    // Only assistive technology reaches this: pointer-events withholds the
+    // peeking column from hit testing and the tab-order rule keeps the keyboard
+    // out, but neither stops a DISPATCHED click. Without the fix the order was
+    // placed into a column the panel was not showing, leaving the user looking
+    // at the other one - a stranding, and the same shape as the peek band that
+    // deleted a free-dragged block. Showing the column is part of the
+    // activation rather than a reaction to it.
+    pageTheColumns();
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+
+    clickBlock(screen.getByRole("button", { name: "Add Limit order" }));
+    expect(shownColumn()).toEqual([0]);
+
+    fireEvent.click(cell(1, 2) as HTMLElement);
+
+    expect(shownColumn()).toEqual([1]);
+    expect(announcement()).toContain("Exit column");
+  });
+
+  it("keeps focus on a block whose column pages away", () => {
+    // The whole reason the off-page column is DRAWN rather than hidden. A
+    // hidden element cannot hold focus, so paging away from a focused block
+    // dropped focus to `<body>` and left the user unable to drive or cancel a
+    // live carry - the defect four rounds of focus hand-offs failed to close.
+    // Nothing here becomes unfocusable, so nothing has to be handed anywhere.
+    //
+    // WHAT THIS CAN AND CANNOT CATCH, because a test that cannot fail reads as
+    // coverage and is worse than none. It FAILS if a focus hand-off is
+    // reintroduced anywhere in this panel, which is the regression worth
+    // guarding. It does NOT fail if `offPageColumn` goes back to hiding the
+    // column: jsdom does not drop focus from an element it computes as hidden,
+    // so the outcome here would be the same. That half is pinned where it can
+    // fail - the class guard in `strategyAssembly.layout.dom.test.tsx` asserts
+    // `offPageColumn` carries neither `invisible` nor `hidden`.
+    pageTheColumns();
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    const placed = within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    });
+    placed.focus();
+    expect(document.activeElement).toBe(placed);
+
+    fireEvent.click(pagerButton("Exit"));
+
+    expect(shownColumn()).toEqual([1]);
+    expect(document.activeElement).toBe(placed);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("takes the off-page column out of the tab order, and gives it back", () => {
+    // Drawing the column is what costs this: it stays focusable, so a Tab into
+    // it would have the browser scroll the viewport to a column the pager did
+    // not choose. `tabindex` rather than `inert`, because `inert` blurs what it
+    // is applied to and would reintroduce the very defect above.
+    pageTheColumns();
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    const placed = within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    });
+    expect(placed).not.toHaveAttribute("tabindex", "-1");
+
+    fireEvent.click(pagerButton("Exit"));
+    expect(placed).toHaveAttribute("tabindex", "-1");
+
+    // Paging back restores what the component asked for rather than inventing
+    // a tab stop it never wanted, and leaves no bookkeeping behind.
+    fireEvent.click(pagerButton("Entry"));
+    expect(placed).not.toHaveAttribute("tabindex", "-1");
+    expect(placed).not.toHaveAttribute("data-paged-tabindex");
+  });
+
+  /**
+   * Stand in for the `ResizeObserver` the panel installs, keeping every
+   * callback so a test can run one.
+   *
+   * The suite's global stand-in is a no-op, which is the honest answer in a
+   * document that lays nothing out - no box ever changes size, so a faithful
+   * implementation would fire exactly as often. What a test needs here is not a
+   * resize jsdom could notice but the callback the component registered for
+   * one, called by hand.
+   */
+  const captureResizeObservers = () => {
+    const callbacks: ResizeObserverCallback[] = [];
+    const original = globalThis.ResizeObserver;
+
+    class Capturing implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        callbacks.push(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+
+    globalThis.ResizeObserver = Capturing;
+    return {
+      resize: () => {
+        for (const callback of callbacks) callback([], {} as ResizeObserver);
+      },
+      restore: () => {
+        globalThis.ResizeObserver = original;
+      },
+    };
+  };
+
+  it("re-derives the tab order when the viewport crosses the breakpoint", () => {
+    // The rule reads the breakpoint off the viewport's own box, and crossing
+    // `sm` changes that fact with no React render behind it - a rotation into
+    // landscape, or a window dragged past 640px. Derived from renders alone the
+    // attributes went stale: every focusable in the column that had been off
+    // page kept `tabindex="-1"` at a width drawing both columns, until some
+    // unrelated render happened to heal it.
+    const observers = captureResizeObservers();
+    try {
+      pageTheColumns();
+      const grid = clearGrid(2, 3);
+      grid[1][1].push(placedMarket("b2"));
+      render(<Harness initialGrid={grid} />);
+
+      const placed = within(cell(1, 1) as HTMLElement).getByRole("button", {
+        name: "Market order, Exit column, primary row",
+      });
+      expect(placed).toHaveAttribute("tabindex", "-1");
+
+      // The crossing itself, and the point of the test: the class list is
+      // unchanged and nothing re-renders, exactly as a real resize leaves them.
+      // Only what `offPageColumn` resolves to has moved.
+      pagingRule?.remove();
+      pagingRule = null;
+      expect(placed).toHaveAttribute("tabindex", "-1");
+
+      observers.resize();
+
+      expect(placed).not.toHaveAttribute("tabindex");
+      expect(placed).not.toHaveAttribute("data-paged-tabindex");
+    } finally {
+      observers.restore();
+    }
+  });
+
+  it("says nothing when pressed for the column the carry is already on", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([0]);
+    const pickUp = announcement();
+
+    fireEvent.click(pagerButton("Entry"));
+
+    // Nothing was asked for and nothing was refused, so nothing is said. The
+    // refusal above is a different press: there the carry really had no cell
+    // that way, and here it was already on the one named. The non-carrying
+    // branch is silent for this press too, and the two have to agree.
+    expect(announcement()).toBe(pickUp);
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([0]);
+    expect(pagerButton("Entry")).toHaveAttribute("aria-pressed", "true");
+  });
+});
 
 describe("GridArea, a bulk cell holding two order families", () => {
   it("signs the announced value the way the price and the visible label do", () => {
