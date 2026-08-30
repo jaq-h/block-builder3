@@ -16,6 +16,7 @@ import {
   isCellValidForPlacement,
   isProviderBlockHighlighted,
   formatPrice,
+  clearCellInGrid,
   removeBlockFromGrid,
   reverseColumns,
 } from "@utils/grid";
@@ -265,6 +266,113 @@ describe("removeBlockFromGrid", () => {
     const grid = gridWith([{ col: 0, row: 1 }]);
 
     expect(countBlocks(removeBlockFromGrid(grid, "never-placed"))).toBe(1);
+  });
+});
+
+// =============================================================================
+// CLEARING ONE CELL
+// =============================================================================
+//
+// The pointer's removal, and the captain's rule: one press of a cell's clear
+// control takes every order in that cell, single-axis and dual-axis alike, and
+// touches no other cell's orders. It shares `removeBlockFromGrid`'s private
+// half, so the filtering and the link clearing cannot come apart on one path
+// and not the other.
+
+describe("clearCellInGrid", () => {
+  it("empties the cell, however many blocks it holds", () => {
+    const grid = gridWith([
+      { col: 0, row: 1, block: block({ id: "trigger", axes: ["trigger"] }) },
+      { col: 0, row: 1, block: block({ id: "limit" }) },
+      { col: 0, row: 1, block: block({ id: "third" }) },
+    ]);
+
+    const after = clearCellInGrid(grid, { col: 0, row: 1 });
+
+    expect(after[0][1]).toEqual([]);
+    expect(countBlocks(after)).toBe(0);
+  });
+
+  // "x and edit will only affect that cell, not other cells." Blocks of the
+  // same order type sit in three cells here, so nothing but the cell separates
+  // them.
+  it("leaves every other cell's orders exactly as they were", () => {
+    const elsewhere = block({ id: "elsewhere" });
+    const other = block({ id: "other" });
+    const grid = gridWith([
+      { col: 0, row: 1, block: block({ id: "doomed" }) },
+      { col: 0, row: 0, block: elsewhere },
+      { col: 1, row: 2, block: other },
+    ]);
+
+    const after = clearCellInGrid(grid, { col: 0, row: 1 });
+
+    expect(after[0][0]).toEqual([elsewhere]);
+    expect(after[1][2]).toEqual([other]);
+    expect(countBlocks(after)).toBe(2);
+  });
+
+  // The one place the cell-scoped rule and the link-clearing rule meet, and
+  // they do not conflict: no ORDER outside the cell is removed or altered, and
+  // what is dropped is a reference to an order this call has just destroyed.
+  // Leaving it would produce exactly the dangle `assertLinksAreFlat` refuses,
+  // so the user would hold a strategy they could not submit and no control
+  // could mend.
+  it("clears a link from another cell that named a block it removed", () => {
+    const grid = gridWith([
+      {
+        col: 0,
+        row: 1,
+        block: block({ id: "primary", linkedBlockId: "conditional" }),
+      },
+      { col: 0, row: 0, block: block({ id: "conditional" }) },
+    ]);
+
+    const after = clearCellInGrid(grid, { col: 0, row: 0 });
+
+    const primary = findBlockInGrid(after, "primary")!.block;
+    expect(primary).not.toHaveProperty("linkedBlockId");
+    // And nothing else about that order moved.
+    expect(primary.id).toBe("primary");
+    expect(primary.yPosition).toBe(25);
+  });
+
+  it("leaves a link that named a block in some other cell alone", () => {
+    const grid = gridWith([
+      { col: 0, row: 1, block: block({ id: "a", linkedBlockId: "kept" }) },
+      { col: 0, row: 0, block: block({ id: "kept" }) },
+      { col: 1, row: 1, block: block({ id: "doomed" }) },
+    ]);
+
+    const after = clearCellInGrid(grid, { col: 1, row: 1 });
+
+    expect(findBlockInGrid(after, "a")!.block.linkedBlockId).toBe("kept");
+  });
+
+  it("does not mutate the grid it was given", () => {
+    const grid = gridWith([
+      { col: 0, row: 1, block: block({ id: "a", linkedBlockId: "doomed" }) },
+      { col: 0, row: 0, block: block({ id: "doomed" }) },
+    ]);
+
+    clearCellInGrid(grid, { col: 0, row: 0 });
+
+    expect(countBlocks(grid)).toBe(2);
+    expect(findBlockInGrid(grid, "a")!.block.linkedBlockId).toBe("doomed");
+  });
+
+  it("returns an empty cell's grid unchanged", () => {
+    const grid = gridWith([{ col: 0, row: 1 }]);
+
+    expect(clearCellInGrid(grid, { col: 1, row: 2 })).toBe(grid);
+  });
+
+  // Pure over data a caller may have looked up a render ago, so an out-of-range
+  // cell is answered rather than thrown at.
+  it("returns the grid unchanged for a cell that is not on it", () => {
+    const grid = gridWith([{ col: 0, row: 1 }]);
+
+    expect(clearCellInGrid(grid, { col: 9, row: 9 })).toBe(grid);
   });
 });
 

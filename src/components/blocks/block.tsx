@@ -12,8 +12,7 @@ import {
   signedOffset,
   type PriceAxisLeg,
 } from "../../utils/blockMapping";
-import { BLOCK_TILE_SHAPE, REMOVE_CONTROL_SHAPE } from "./blockTile";
-import XIcon from "../../assets/icons/x.svg?react";
+import { BLOCK_TILE_SHAPE } from "./blockTile";
 
 /** The id every block's instructions are described by. Rendered once by GridArea. */
 export const BLOCK_INSTRUCTIONS_ID = "strategy-block-instructions";
@@ -86,27 +85,20 @@ const PRICE_STEP_PAGE = 10;
 /** Clamped by the grid, so this reaches the end of the axis from anywhere. */
 const PRICE_STEP_TO_END = MAX_OFFSET_PERCENT * 2;
 
-// THE POINTER'S REMOVAL AFFORDANCE, AND THE ONLY ONE MOST BLOCKS HAVE.
+// REMOVAL BY KEYBOARD, AND NO CONTROL ON THE TILE.
 //
-// Dragging a block clear of the grid removes it, and for a long time that was
-// the whole story - which meant it was no story at all for the majority of the
-// grid: a cell that draws a price axis wires `useVerticalDrag` instead of
-// `useFreeDrag`, so a placed Limit, Stop Loss or Take Profit could not be
-// dragged off at all and Clear All, which destroys the entire strategy, was the
-// only way to be rid of one. Decision D9 made that gap load-bearing by naming
-// delete-and-rebuild as *the* way to correct a misplaced order.
+// Delete and Backspace on a focused block take THAT block off the grid, which
+// is the fine-grained correction decision D9 names: remove the misplaced order
+// and place a new one. It is wired here because the block is what has focus.
 //
-// Its geometry and its colours are `REMOVE_CONTROL_SHAPE` in `./blockTile`,
-// beside the tile's own, because the one thing this control must never do is
-// leave the tile it belongs to: it is pinned INSIDE at `top-0 right-0`, and
-// that containment is checked against `BLOCK_TILE_SHAPE`'s own box in
-// `blockTile.test.ts`. A destructive control that reaches past the tile a user
-// can see removes a block the user was not aiming at, and it did - the two
-// class lists have to be readable together for that not to come back. One
-// geometry serves both of the grid's layouts, because a cell that draws a price
-// axis positions its blocks by their price and has no spacing to give. That
-// module's docblock is the authority on each class.
-const removeButton = cn(REMOVE_CONTROL_SHAPE);
+// The pointer's removal is NOT here and must not come back: it is one control
+// per CELL, drawn in the cell's own top-right rail by `GridCell`, and one press
+// of it clears the whole cell - both legs of a dual-axis order together, which
+// is what the captain asked for. A control on the tile could not do that, and
+// the geometry proved it could not be made safe either: containment inside a
+// 40px tile plus the 24px WCAG 2.2 SC 2.5.8 floor entails a target that covers
+// the tile's own centre, so the block was draggable from its lower half alone.
+// Moving the control to the cell gives the tile its whole face back.
 
 interface BlockProps {
   id: string;
@@ -179,10 +171,16 @@ interface BlockProps {
   /** Arrows on a placed block: move it along the price axis, towards higher prices. */
   onAdjustPrice?: (id: string, delta: number) => void;
   /**
-   * Take this block off the grid. Passed for a *placed* block only - a palette
-   * entry is an order type rather than an order, so there is nothing there to
-   * remove - which is what decides whether this component draws the remove
-   * control and whether Delete and Backspace do anything on it.
+   * Take THIS block off the grid, on Delete or Backspace. Passed for a *placed*
+   * block only - a palette entry is an order type rather than an order, so
+   * there is nothing there to remove - which is what decides whether those two
+   * keys do anything on it.
+   *
+   * This block alone, never its cell: the keyboard has focus on one block and
+   * so can name one, which is the fine-grained correction decision D9 asks for.
+   * The cell's own clear control is the pointer's removal and empties the whole
+   * cell; the two are deliberately different operations and `GridCell` owns
+   * that one.
    */
   onRemove?: (id: string) => void;
   onMouseEnter?: () => void;
@@ -473,38 +471,6 @@ const Block: FC<BlockProps> = ({
       >
         {iconContent}
       </button>
-      {onRemove && (
-        <button
-          type="button"
-          // Named for the order rather than for the glyph, and carrying the
-          // leg and the cell, because two cells can hold orders of the same
-          // type and one cell can hold both legs of the same order - a list of
-          // identical "Remove" buttons names none of them. `legName` is the
-          // same name the slider beside it takes.
-          aria-label={`Remove ${legName} order${
-            cellDescription ? `, ${cellDescription}` : ""
-          }`}
-          className={removeButton}
-          // ON `click`, DELIBERATELY, AND NEVER ON A POINTER EVENT.
-          //
-          // The control overlaps the tile's top-right corner, so a press aimed
-          // at starting a drag can land on it. A press that then travels away
-          // fires no click at all - the browser fires `click` at the nearest
-          // common ancestor of the pointer-down and pointer-up targets - so
-          // that gesture destroys nothing. Giving this an `onPointerDown` would
-          // turn every such press into a deleted order, with no undo.
-          onClick={(e) => {
-            // The cell listens for a click to place whatever is in hand.
-            // Removing a block is not placing one, so this click stops here -
-            // without it, deleting a block while carrying a palette order
-            // would delete the block AND drop the carried order into its cell.
-            e.stopPropagation();
-            onRemove(id);
-          }}
-        >
-          <XIcon />
-        </button>
-      )}
     </div>
   );
 };

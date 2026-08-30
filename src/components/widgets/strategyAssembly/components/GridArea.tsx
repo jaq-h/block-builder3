@@ -23,6 +23,7 @@ import {
   createBlocksFromOrderType,
   resolveDrop,
   removeBlockFromGrid,
+  clearCellInGrid,
 } from "../../../../utils";
 import {
   samePosition,
@@ -299,7 +300,7 @@ const GridArea: FC<GridAreaProps> = ({
   /**
    * Take a block off the grid entirely, links to it included.
    *
-   * This is the grid's half of the app's one removal: the command model owns
+   * This is the grid's half of the block-level removal: the command model owns
    * the operation - who asked, what is said, where focus lands - and this owns
    * the write. `removeBlockFromGrid` is where the write itself lives, so the
    * filtering and the link clearing cannot come apart; see its own note for why
@@ -320,16 +321,33 @@ const GridArea: FC<GridAreaProps> = ({
    * the product:** a value write does not compose with another grid write
    * batched into the same event, the way this file's other two `setGrid` callers
    * do - a second writer in one event would clobber this one and resurrect the
-   * block. No such path exists today: each of the three removal affordances
-   * (Delete or Backspace, the Remove control's click, a free drag released clear
-   * of every cell) fires once per event, and the placement and price writes are
-   * events of their own. Adding one means revisiting this, and the way out is
+   * block. No such path exists today: each removal affordance (Delete or
+   * Backspace, a free drag released clear of every cell, and the cell's own
+   * clear control, which writes through `clearCellInGridData` below) fires once
+   * per event, and the placement and price writes are events of their own. Adding one means revisiting this, and the way out is
    * not simply restoring the updater - the returned value is what makes the grid
    * the model reasons about and the grid this wrote provably the same object,
    * which is what keeps the removal's own sentence from being erased.
    */
   const removeBlockFromCell = (id: string) => {
     const next = removeBlockFromGrid(grid, id);
+    setGrid(next);
+    return next;
+  };
+
+  /**
+   * Empty one cell entirely, links to everything it held included.
+   *
+   * The grid's half of the pointer's removal, on the same terms as
+   * `removeBlockFromCell` above: `clearCellInGrid` owns the write so the
+   * filtering and the link clearing cannot come apart, and it returns what it
+   * wrote so the command model can decide a carry's fate in the same event
+   * rather than a render later. The same value-write caution applies - a second
+   * grid write batched into this event would clobber it and resurrect the
+   * orders - and there is no such path: the clear control fires once per event.
+   */
+  const clearCellInGridData = (cell: CellPosition) => {
+    const next = clearCellInGrid(grid, cell);
     setGrid(next);
     return next;
   };
@@ -432,6 +450,7 @@ const GridArea: FC<GridAreaProps> = ({
     announcer,
     placeProvider: placeProviderInCell,
     removeFromGrid: removeBlockFromCell,
+    clearFromGrid: clearCellInGridData,
     // A placed block is never carried, because it never changes cells
     // (decision D9), so the command model only ever commits palette orders.
     // `refuseMove` is what a press on a placed block reaches instead, and it
@@ -1179,11 +1198,12 @@ const GridArea: FC<GridAreaProps> = ({
       });
     } else {
       // Dropped clear of every cell - remove only this block, through the
-      // command model's one removal rather than a branch of its own. It is no
-      // longer the ONLY way an order leaves a cell: Delete, Backspace and each
-      // block's own remove control reach the same operation, which is what
-      // finally makes decision D9's correction path - remove it, then place a
-      // new one - available to a block drawn on a price axis.
+      // command model's block-level removal rather than a branch of its own. It
+      // is no longer the ONLY way an order leaves a cell: Delete and Backspace
+      // reach the same operation, and the cell's clear control empties the cell
+      // outright, which is what finally makes decision D9's correction path -
+      // remove it, then place a new one - available to a block drawn on a price
+      // axis.
       command.removeBlock(id, { releasedCarry });
     }
 
@@ -1289,7 +1309,8 @@ const GridArea: FC<GridAreaProps> = ({
         arrow keys to choose a cell and Enter again to place it. Escape returns
         it. A block already on the grid stays in the cell it was placed in: on a
         price axis the arrow keys move it along that axis, and Delete or
-        Backspace removes it, as does its own Remove button.
+        Backspace removes that one block. Each cell that holds an order also
+        has a clear button, which empties the whole cell in one press.
       </p>
       <div className={contentRow}>
         {/* Provider Column */}
@@ -1399,6 +1420,9 @@ const GridArea: FC<GridAreaProps> = ({
                     onBlockCommandCancel={command.cancel}
                     onBlockAdjustPrice={handleBlockAdjustPrice}
                     onBlockRemove={command.removeBlock}
+                    onCellClear={() =>
+                      command.clearCell({ col: colIndex, row: rowIndex })
+                    }
                     onCellActivate={() =>
                       activateCellInView({ col: colIndex, row: rowIndex })
                     }
@@ -1417,21 +1441,24 @@ const GridArea: FC<GridAreaProps> = ({
         // grid's one voice, and a second one would cut it off mid-sentence
         // during the very interaction that fires both.
         //
-        // Both refusals now end in the same correction, because both blocks now
-        // have it: the Remove button on the block, or Delete on it, takes any
-        // placed order off the grid whichever drag hook its cell wired. Only
-        // the extra clause differs, and it is the affordance that render really
-        // wires - the arrow keys exist for a block on a price axis and for no
-        // other. This note used to promise a drag-off removal to the one half
-        // of the grid that had it and name only the arrow keys to the half that
-        // had no removal at all.
+        // Both refusals end in the same correction, because both blocks have
+        // it: Delete on the block takes that one order off the grid whichever
+        // drag hook its cell wired. Only the extra clause differs, and it is
+        // the affordance that render really wires - the arrow keys exist for a
+        // block on a price axis and for no other.
+        //
+        // The last sentence names BOTH removals and says what each one takes,
+        // because they are not the same operation and offering them as
+        // alternatives would be a trap: the cell's clear button empties the
+        // whole cell, which in a bulk cell is orders this note is not about.
         <p className={cellLockedNote}>
           <strong>{refusedMove.label}</strong> stays in the cell it was placed
           in. Orders do not move between cells -{" "}
           {refusedMove.reason === "onPriceAxis"
             ? "use the arrow keys to change this one's price, or remove it and place a new one."
             : "to put this one somewhere else, remove it and place a new one."}{" "}
-          Remove it with its Remove button, or with Delete while it has focus.
+          Press Delete while it has focus to remove this order, or use the
+          cell's clear button to empty the whole cell.
         </p>
       )}
       <LiveAnnouncer announcement={announcer.announcement} />

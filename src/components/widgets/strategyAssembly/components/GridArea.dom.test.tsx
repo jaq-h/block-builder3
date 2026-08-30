@@ -718,7 +718,7 @@ describe("GridArea, tapping a placed block", () => {
 
     const note = screen.getByText(/Orders do not move between cells/);
     expect(note).toHaveTextContent(
-      "Limit stays in the cell it was placed in. Orders do not move between cells - use the arrow keys to change this one's price, or remove it and place a new one. Remove it with its Remove button, or with Delete while it has focus.",
+      "Limit stays in the cell it was placed in. Orders do not move between cells - use the arrow keys to change this one's price, or remove it and place a new one. Press Delete while it has focus to remove this order, or use the cell's clear button to empty the whole cell.",
     );
     expect(note.closest("[aria-live]")).toBeNull();
     expect(note).not.toHaveAttribute("role", "status");
@@ -729,17 +729,21 @@ describe("GridArea, tapping a placed block", () => {
   // and could not be dragged off the grid at all - so naming a removal would
   // have promised something the app could not do. Both halves of the grid have
   // a removal now, so the note offers it to both.
-  it("offers the removal to a priced block, which now has one", () => {
+  //
+  // It names BOTH removals and says what each takes, because they are not the
+  // same operation: Delete takes the one order the note is about, and the
+  // cell's clear control empties the cell, which in a bulk cell is orders this
+  // note is not about. Offering them as interchangeable would be a trap.
+  it("offers both removals to a priced block, and says what each one takes", () => {
     const { slider } = renderPlacedLimit(25);
 
     tap(slider);
 
     const note = screen.getByText(/Orders do not move between cells/);
-    expect(note).toHaveTextContent(/Remove button/);
+    expect(note).toHaveTextContent(/Press Delete while it has focus/);
+    expect(note).toHaveTextContent(/empty the whole cell/);
     expect(
-      screen.getByRole("button", {
-        name: "Remove Limit limit order, Entry column, primary row",
-      }),
+      screen.getByRole("button", { name: "Clear Entry column, primary row" }),
     ).toBeInTheDocument();
   });
 
@@ -838,13 +842,9 @@ describe("GridArea, tapping a placed block", () => {
 // misplaced order, which is a correction path the product did not have.
 
 describe("GridArea, removing a placed block", () => {
-  /**
-   * `name` is the order's label plus its leg where its cell draws one - the
-   * same pairing the slider beside it is named with - and the label alone where
-   * the cell draws no axis at all.
-   */
-  const removeControl = (name: string) =>
-    screen.getByRole("button", { name: new RegExp(`^Remove ${name} order,`) });
+  /** The slider for one leg of a dual-axis order, or for a single-axis one. */
+  const sliderFor = (name: string) =>
+    screen.getByRole("slider", { name: new RegExp(`^${name} price,`) });
 
   it("removes a block on a price axis from the keyboard, which nothing could", () => {
     const { slider } = renderPlacedLimit(25);
@@ -889,59 +889,20 @@ describe("GridArea, removing a placed block", () => {
     );
   });
 
-  it("removes a priced block on a mouse click of its own control", () => {
-    renderPlacedLimit(25);
-
-    clickBlock(removeControl("Limit limit"));
-
-    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
-    expect(announcement()).toBe(
-      "Removed Limit limit block from Entry column, primary row.",
-    );
-  });
-
-  // The affordance is rendered rather than revealed on hover, which is the
-  // whole reason a finger can reach it: there is no hover on a touch screen,
-  // and a control that appears only under a cursor exists for one device.
-  it("removes a priced block on a tap of its own control", () => {
-    renderPlacedLimit(25);
-
-    tap(removeControl("Limit limit"));
-
-    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
-  });
-
-  it("names the cell in the control, so two orders of one type are told apart", () => {
-    const grid = clearGrid(2, 3);
-    grid[0][1].push(placedMarket("b1"));
-    grid[1][0].push(placedMarket("b2"));
-    render(<Harness initialGrid={grid} pattern="bulk" />);
-
-    tap(
-      screen.getByRole("button", {
-        name: "Remove Market order, Exit column, row 1",
-      }),
-    );
-
-    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, empty");
-    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
-  });
-
   // TWO OF ONE KIND IN ONE CELL, WHERE ONLY IDENTITY SEPARATES THEM.
   //
   // Reachable in the bulk pattern, where `isCellValidForPlacement` returns true
   // for every cell: two Market orders share a label, a cell and therefore a
-  // control name, an ambiguity recorded in `AGENTS.md` as accepted. What is not
-  // acceptable is a control removing the OTHER one, which is what an overhanging
-  // control produced: while it hung 8px past its own tile it covered the
-  // neighbour, and a press aimed at one block destroyed another. The control is
-  // pinned inside its own tile now (`REMOVE_CONTROL_SHAPE`, held there by
-  // `blockTile.test.ts`), and the geometry that follows from that needs a real
-  // browser - jsdom computes no layout. What is pinned here is the wiring
-  // underneath it: each control takes away the block it belongs to and leaves
-  // the other standing, told apart by DOM identity rather than by a name they
-  // share.
-  it("removes the block its own control belongs to, not the one beside it", () => {
+  // name. The pointer no longer has to tell them apart at all - its removal is
+  // the cell's, and it takes both - but the KEYBOARD still does, and it can:
+  // focus is on one block, so Delete names that block by identity rather than
+  // by a name it shares with its neighbour.
+  //
+  // FORMERLY this was about a per-block control that hung 8px past its own tile
+  // and covered the neighbour, so a press aimed at one block destroyed another.
+  // That control is gone; what survives it is this invariant, on the path that
+  // still removes one block at a time.
+  it("removes the block that has focus, not the one beside it", () => {
     const grid = addBlocksToCell(
       addBlocksToCell(clearGrid(2, 3), { col: 0, row: 1 }, [placedMarket("m1")], "bulk"),
       { col: 0, row: 1 },
@@ -951,12 +912,10 @@ describe("GridArea, removing a placed block", () => {
     render(<Harness initialGrid={grid} pattern="bulk" />);
 
     const tiles = screen.getAllByRole("button", { name: /^Market order,/ });
-    const controls = screen.getAllByRole("button", { name: /^Remove Market order,/ });
     expect(tiles).toHaveLength(2);
-    expect(controls).toHaveLength(2);
-    const [firstTile] = tiles;
+    const [firstTile, secondTile] = tiles;
 
-    tap(controls[1]);
+    fireEvent.keyDown(secondTile, { key: "Delete" });
 
     const left = screen.getAllByRole("button", { name: /^Market order,/ });
     expect(left).toHaveLength(1);
@@ -987,25 +946,19 @@ describe("GridArea, removing a placed block", () => {
     };
 
     const { unmount } = place();
-    expect(
-      screen.getByRole("button", {
-        name: "Remove Stop Loss Limit trigger order, Entry column, primary row",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", {
-        name: "Remove Stop Loss Limit limit order, Entry column, primary row",
-      }),
-    ).toBeInTheDocument();
-
-    tap(removeControl("Stop Loss Limit trigger"));
+    fireEvent.keyDown(sliderFor("Stop Loss Limit trigger"), { key: "Delete" });
     expect(announcement()).toBe(
       "Removed Stop Loss Limit trigger block from Entry column, primary row.",
     );
+    // The other leg is still there: the keyboard removes the block it has, and
+    // the user is holding half an order deliberately rather than by accident.
+    // The POINTER cannot reach this state at all - one press of the cell's
+    // clear control takes both legs, which is the captain's rule.
+    expect(screen.getAllByRole("slider")).toHaveLength(1);
     unmount();
 
     place();
-    tap(removeControl("Stop Loss Limit limit"));
+    fireEvent.keyDown(sliderFor("Stop Loss Limit limit"), { key: "Delete" });
     expect(announcement()).toBe(
       "Removed Stop Loss Limit limit block from Entry column, primary row.",
     );
@@ -1025,9 +978,10 @@ describe("GridArea, removing a placed block", () => {
     );
   });
 
-  // The cell listens for a click to place whatever is in hand. Without the
-  // control stopping its own click, removing a block while carrying a palette
-  // order would delete the block AND drop the carried order into its cell.
+  // A keyboard removal is not a click on the cell, so the carry it happens
+  // beside is untouched by anything but the carry-lifecycle rule. The pointer's
+  // equivalent - the cell's clear control, which DOES sit inside the cell the
+  // click would place into - is pinned in "GridArea, clearing a cell".
   it("does not also place a carried order into the cell it emptied", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));
@@ -1037,8 +991,9 @@ describe("GridArea, removing a placed block", () => {
     // The carry has to be live for this test to mean anything at all.
     expect(announcement()).toContain("Picked up Limit order");
 
-    clickBlock(
-      screen.getByRole("button", { name: "Remove Market order, Entry column, row 2" }),
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Market order, Entry column, row 2" }),
+      { key: "Delete" },
     );
 
     expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
@@ -1077,10 +1032,11 @@ describe("GridArea, removing a placed block", () => {
     clickBlock(screen.getByRole("button", { name: "Add Take Profit order" }));
     expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
 
-    clickBlock(
+    fireEvent.keyDown(
       screen.getByRole("button", {
-        name: "Remove Market order, Entry column, primary row",
+        name: "Market order, Entry column, primary row",
       }),
+      { key: "Delete" },
     );
 
     // The grid is empty, so only the primary row takes an order now: the cell
@@ -1097,10 +1053,10 @@ describe("GridArea, removing a placed block", () => {
   });
 
   // A palette entry is an order type rather than an order: there is nothing
-  // there to take away, and a Remove beside every one of them would offer to
-  // delete the palette.
-  it("offers no removal on a palette entry", () => {
-    render(<Harness initialGrid={clearGrid(2, 3)} />);
+  // there to take away. And no tile anywhere carries a removal control now -
+  // the pointer's removal belongs to the cell.
+  it("draws no removal control on any tile", () => {
+    renderPlacedLimit(25);
 
     expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
   });
@@ -1131,10 +1087,239 @@ describe("GridArea, removing a placed block", () => {
 
     expect(screen.getByText(limitPrice(15))).toBeInTheDocument();
 
-    tap(removeControl("Limit limit"));
+    fireEvent.keyDown(sliderFor("Limit limit"), { key: "Delete" });
 
     expect(screen.queryByText(limitPrice(25))).toBeNull();
     expect(screen.getByText(limitPrice(15))).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// CLEARING A CELL - THE POINTER'S REMOVAL
+// =============================================================================
+//
+// The captain's rule, verbatim: "the x should clear all values and remove the
+// order from the cell, regardless if it is single or dual axis. x and edit will
+// only affect that cell, not other cells."
+//
+// So the pointer's removal is one control per CELL, in the cell's own top-right
+// rail, and one press empties that cell - both legs of a dual-axis order
+// together, and every independent order a bulk cell holds. The keyboard keeps
+// its fine-grained path (see the describe above): focus names one block, and a
+// press names one cell.
+//
+// Two things this deletes rather than mitigates. The per-block control
+// necessarily covered its own tile's geometric centre - a 24px round target
+// kept wholly inside a 40px tile sits at most sqrt(8^2 + 8^2) = 11.31px from
+// that centre against a 12px radius, so containment plus the WCAG 2.2 SC 2.5.8
+// floor ENTAILED it - and a placed block was therefore draggable from its lower
+// half alone. Measured in Chrome after this change, a press at the tile's
+// top-right corner starts a real vertical drag and re-prices the block, and
+// 1584 of the tile's 1600 pixels hit-test to the tile itself.
+
+describe("GridArea, clearing a cell", () => {
+  const clearControl = (cellName: string) =>
+    screen.getByRole("button", { name: `Clear ${cellName}` });
+
+  /** Both legs of a Stop Loss Limit in the Entry primary cell, via the factory. */
+  const renderDualAxis = () => {
+    const definition = getOrderType("stop-loss-limit");
+    if (!definition) throw new Error("stop-loss-limit is not a palette entry");
+    const grid = addBlocksToCell(
+      clearGrid(2, 3),
+      { col: 0, row: 1 },
+      createBlocksFromOrderType(definition, { baseId: "t", counter: 0 }).blocks,
+      "conditional",
+    );
+    return render(<Harness initialGrid={grid} pattern="conditional" />);
+  };
+
+  // THE CASE THE CAPTAIN NAMED. `createBlocksFromOrderType` places a dual-axis
+  // order type as TWO blocks in one cell, so a per-block control asked the user
+  // to press twice and left them holding half an order in between - a trigger
+  // leg with no limit leg is not an order anybody meant to build.
+  it("takes both legs of a dual-axis order in one press", () => {
+    renderDualAxis();
+    expect(screen.getAllByRole("slider")).toHaveLength(2);
+
+    clickBlock(clearControl("Entry column, primary row"));
+
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, primary row, empty",
+    );
+    // One order went, so the label is named once. Both legs carry the same
+    // `label`, and naming it twice would say two orders were destroyed.
+    expect(announcement()).toBe(
+      "Cleared Entry column, primary row. Removed Stop Loss Limit order.",
+    );
+  });
+
+  // The affordance is rendered rather than revealed on hover, which is the
+  // whole reason a finger can reach it: there is no hover on a touch screen,
+  // and a control that appears only under a cursor exists for one device.
+  it("clears on a tap as well as on a click", () => {
+    renderDualAxis();
+
+    tap(clearControl("Entry column, primary row"));
+
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+  });
+
+  it("takes every independent order a bulk cell holds, naming each once", () => {
+    const grid = addBlocksToCell(
+      addBlocksToCell(clearGrid(2, 3), { col: 0, row: 1 }, [placedLimit(25, "b1")], "bulk"),
+      { col: 0, row: 1 },
+      [placedMarket("m1")],
+      "bulk",
+    );
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+
+    clickBlock(clearControl("Entry column, row 2"));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(announcement()).toBe(
+      "Cleared Entry column, row 2. Removed Limit and Market orders.",
+    );
+  });
+
+  // "x and edit will only affect that cell, not other cells." The two cells
+  // hold orders of the SAME type here, so nothing but the cell separates them.
+  it("leaves every other cell exactly as it was", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    grid[1][0].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+
+    clickBlock(clearControl("Exit column, row 1"));
+
+    expect(cell(1, 0)).toHaveAttribute("aria-label", "Exit column, row 1, empty");
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, Market");
+  });
+
+  // An empty cell has nothing to clear, and a control offering to do nothing is
+  // a control a user has to learn to ignore.
+  it("offers no control on an empty cell", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+
+    expect(screen.queryByRole("button", { name: /^Clear Entry/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Clear Exit/ })).toBeNull();
+  });
+
+  // The name is the CELL and nothing else, so it does not change while the user
+  // is deciding to say it. A voice-control user targets a control by its name;
+  // what the cell holds is on the cell's own group label beside this.
+  it("names the cell, and keeps that name whatever the cell holds", () => {
+    const grid = addBlocksToCell(
+      clearGrid(2, 3),
+      { col: 0, row: 1 },
+      [placedLimit(25, "b1")],
+      "bulk",
+    );
+    const { rerender } = render(<Harness initialGrid={grid} pattern="bulk" />);
+    const before = clearControl("Entry column, row 2");
+
+    rerender(
+      <Harness
+        initialGrid={addBlocksToCell(grid, { col: 0, row: 1 }, [placedMarket("m1")], "bulk")}
+        pattern="bulk"
+      />,
+    );
+
+    expect(clearControl("Entry column, row 2")).toBe(before);
+  });
+
+  // 24px, the WCAG 2.2 SC 2.5.8 minimum target size, and `p-0` is what makes
+  // that number real: the layered `button` default is `padding: 0.6em 1.2em`,
+  // which a border-box `width` cannot shrink below. jsdom applies no author
+  // stylesheet, so the class list is what a rendering test can pin - measured
+  // in Chrome at 1440x900 the control's box is exactly 24 by 24.
+  it("is the 24px target the affordance is built around", () => {
+    renderDualAxis();
+
+    expect(clearControl("Entry column, primary row")).toHaveClass(
+      "p-0",
+      "w-6",
+      "h-6",
+    );
+  });
+
+  // THE RAIL'S ORDERING IS LOAD-BEARING, NOT AESTHETIC.
+  //
+  // It is right-anchored, so a group grows leftwards and an item added at the
+  // front moves nothing after it. The badge last is what keeps it in the same
+  // place whether or not the cell has a control - measured at 1440x900, 5px
+  // from the cell's right border edge and 8px from its top in both states -
+  // and it is what will let the planned cell-detail editor's icon join at the
+  // FRONT without moving the clear button out from under the user's finger.
+  it("keeps the row-label badge last in the rail, after the controls", () => {
+    renderDualAxis();
+    const control = clearControl("Entry column, primary row");
+    const rail = control.parentElement!;
+
+    // "Primary" in the DOM; the badge uppercases it in CSS.
+    const badge = within(rail).getByText("Primary");
+    expect(rail.lastElementChild).toBe(badge);
+    expect(rail.firstElementChild).toBe(control);
+  });
+
+  // The cell listens for a click to place whatever is in hand, and this control
+  // sits INSIDE that cell. Without it stopping its own click, clearing while
+  // carrying a palette order would empty the cell AND drop the carried order
+  // straight back into it.
+  it("does not also place a carried order into the cell it emptied", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} pattern="bulk" />);
+
+    clickBlock(screen.getByRole("button", { name: "Add Limit order" }));
+    // The carry has to be live for this test to mean anything at all.
+    expect(announcement()).toContain("Picked up Limit order");
+
+    clickBlock(clearControl("Entry column, row 2"));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-label", "Entry column, row 2, empty");
+    expect(announcement()).toBe(
+      "Cleared Entry column, row 2. Removed Market order.",
+    );
+    // The carry stands: this is the bulk pattern, where every cell takes every
+    // order whatever the grid holds, so the clear took no cell away from it.
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(1);
+  });
+
+  // The element that was focused is this cell's clear control, and the cell is
+  // about to hold nothing for it to clear - so the control goes with the
+  // orders, and leaving focus alone would drop it to `<body>`. The palette
+  // entry is where decision D9's other half starts: place a new one.
+  it("hands focus to the palette entry the cell's order came from", () => {
+    renderDualAxis();
+
+    clickBlock(clearControl("Entry column, primary row"));
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Add Stop Loss Limit order" }),
+    );
+  });
+
+  // The same rule the block-level removal runs, on the same terms: one press is
+  // one live-region write, so the carry-lifecycle check happens inside the
+  // clear rather than a render later, where the second write would erase the
+  // sentence naming what went.
+  it("ends a carry whose cell it takes away, without losing its own sentence", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    clickBlock(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    clickBlock(clearControl("Entry column, primary row"));
+
+    expect(document.querySelectorAll("[aria-current='location']")).toHaveLength(0);
+    expect(announcement()).toBe(
+      "Cleared Entry column, primary row. Removed Market order. Take Profit order returned to the palette: the grid changed underneath it.",
+    );
   });
 });
 
@@ -1199,6 +1384,42 @@ describe("GridArea, removing a block another block is linked to", () => {
     const { grid } = renderLinked();
 
     fireEvent.keyDown(screen.getByRole("slider"), { key: "Delete" });
+
+    expect(() =>
+      mapGridToOrders(grid(), {
+        market: BTC_USD,
+        currentPrice: MARKET_PRICE,
+        quantity: "0.5",
+      }),
+    ).not.toThrow();
+  });
+
+  // THE ONE PLACE THE CAPTAIN'S TWO RULES HAVE TO BE READ TOGETHER, AND THEY
+  // DO NOT CONFLICT.
+  //
+  // "x and edit will only affect that cell, not other cells" is about ORDERS: no
+  // order outside the cleared cell is removed or altered, which the assertion
+  // below states directly - the primary is still there, still a Market order,
+  // still in its own cell. A `linkedBlockId` is not an order; it is a reference
+  // to one this press has just destroyed. Leaving it would hand the user a grid
+  // `assertLinksAreFlat` REFUSES, so a legitimate strategy could not be
+  // submitted and no control could mend it. Tidying the reference is what keeps
+  // the cell-scoped rule from having a cost the captain did not ask for.
+  it("clears a link from another cell that named what it removed, and touches nothing else there", () => {
+    const { grid } = renderLinked();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear Entry column, row 1" }),
+    );
+
+    // The cleared cell is empty.
+    expect(grid()[0][0]).toHaveLength(0);
+    // The OTHER cell's order is untouched but for the reference.
+    const primary = grid()[0][1][0];
+    expect(primary).toBeDefined();
+    expect(primary.id).toBe("primary");
+    expect(primary.orderType).toBe("market");
+    expect(primary).not.toHaveProperty("linkedBlockId");
 
     expect(() =>
       mapGridToOrders(grid(), {

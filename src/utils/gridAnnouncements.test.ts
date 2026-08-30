@@ -384,6 +384,73 @@ describe("describeOutcome, what the grid actually did", () => {
   });
 });
 
+// =============================================================================
+// CLEARING A CELL
+// =============================================================================
+//
+// The pointer's removal is per CELL: one press empties it, both legs of a
+// dual-axis order together and every independent order a bulk cell holds. The
+// cell comes first, because the cell is what the control the user pressed is
+// named for and it is the fact that is true whatever the cell held.
+
+describe("describeOutcome, a cell cleared by its own control", () => {
+  it("names the cell and the one order that was in it", () => {
+    expect(
+      say({
+        kind: "cellCleared",
+        cell: { col: 0, row: 1 },
+        labels: ["Market"],
+      }),
+    ).toBe("Cleared Entry column, primary row. Removed Market order.");
+  });
+
+  // Both legs of a dual-axis order type carry the SAME label and are ONE order,
+  // so the caller hands the label over once. Naming it twice would tell the
+  // user two orders had been destroyed.
+  it("names a dual-axis order once, because it is one order", () => {
+    expect(
+      say({
+        kind: "cellCleared",
+        cell: { col: 0, row: 1 },
+        labels: ["Stop Loss Limit"],
+      }),
+    ).toBe("Cleared Entry column, primary row. Removed Stop Loss Limit order.");
+  });
+
+  it("joins two orders with 'and', and pluralises", () => {
+    expect(
+      say({
+        kind: "cellCleared",
+        cell: { col: 1, row: 0 },
+        labels: ["Limit", "Market"],
+      }),
+    ).toBe(
+      "Cleared Exit column, upper conditional row. Removed Limit and Market orders.",
+    );
+  });
+
+  it("reads three or more as a list rather than a dump", () => {
+    expect(
+      say({
+        kind: "cellCleared",
+        cell: { col: 1, row: 0 },
+        labels: ["Limit", "Market", "Take Profit"],
+      }),
+    ).toBe(
+      "Cleared Exit column, upper conditional row. Removed Limit, Market and Take Profit orders.",
+    );
+  });
+
+  // The command model refuses to clear an empty cell at all, so this is the
+  // grid being rewritten under a press rather than something a user can aim at.
+  // The sentence still has to be a sentence.
+  it("says only what it can, for a cell that turned out to hold nothing", () => {
+    expect(
+      say({ kind: "cellCleared", cell: { col: 0, row: 1 }, labels: [] }),
+    ).toBe("Cleared Entry column, primary row.");
+  });
+});
+
 describe("describeOutcome, a drag that ends without a placement", () => {
   it("says a block dragged off the grid was removed", () => {
     expect(say({ kind: "removed", source: placed })).toBe(
@@ -392,8 +459,9 @@ describe("describeOutcome, a drag that ends without a placement", () => {
   });
 
   // The two legs of a dual-axis order type share a label AND a cell, so neither
-  // names the one that went. The leg is the only thing left, and it is the same
-  // leg the block's own remove control is named with.
+  // names the one that went. The leg is the only thing left. This removal names
+  // one block because the keyboard had focus on one; the pointer's removal is
+  // per cell and reports `cellCleared`, below.
   it("names the leg a removed block was drawn on, where its cell drew one", () => {
     const stopLossLimit = { ...placed, label: "Stop Loss Limit" };
 

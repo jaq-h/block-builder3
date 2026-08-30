@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useBlockCommand } from "./useBlockCommand";
 import { useGridAnnouncer } from "./useGridAnnouncer";
-import { clearGrid, removeBlockFromGrid } from "@utils/grid";
+import { clearCellInGrid, clearGrid, removeBlockFromGrid } from "@utils/grid";
 import { createBlocksFromOrderType } from "@utils/blockFactory";
 import { getOrderType, ORDER_TYPES } from "@data/orderTypes";
 import type {
@@ -51,6 +51,8 @@ const renderCommand = (
   onRefuse: RefuseMove = () => {},
   removeFromGrid: (id: string) => GridData = (id) =>
     removeBlockFromGrid(grid, id),
+  clearFromGrid: (cell: CellPosition) => GridData = (cell) =>
+    clearCellInGrid(grid, cell),
 ) =>
   renderHook(() => {
     const announcer = useGridAnnouncer(strategyPattern);
@@ -61,6 +63,7 @@ const renderCommand = (
       announcer,
       placeProvider,
       removeFromGrid,
+      clearFromGrid,
       // Wired the way `GridArea` wires it: the refusal is reported to the one
       // announcer, and the owner does whatever else it needs to with the same
       // two facts - which for `GridArea` is putting the rule on screen.
@@ -94,6 +97,7 @@ const renderCommandWithReplaceableGrid = (initialGrid: GridData) =>
         announcer,
         placeProvider: () => ({ status: "refused" }),
         removeFromGrid: (id) => removeBlockFromGrid(grid, id),
+        clearFromGrid: (cell) => clearCellInGrid(grid, cell),
         refuseMove: () => {},
       });
       return { ...command, announcement: announcer.announcement };
@@ -121,6 +125,11 @@ const setup = (
   const removeFromGrid = vi.fn<(id: string) => GridData>((id) =>
     removeBlockFromGrid(grid, id),
   );
+  // The cell-level half of the same thing: `GridArea` empties the cell, clears
+  // every link naming what it held, and hands back what it wrote.
+  const clearFromGrid = vi.fn<(cell: CellPosition) => GridData>((cell) =>
+    clearCellInGrid(grid, cell),
+  );
 
   const view = renderCommand(
     grid,
@@ -128,9 +137,10 @@ const setup = (
     placeProvider,
     refuseMove,
     removeFromGrid,
+    clearFromGrid,
   );
 
-  return { ...view, placeProvider, refuseMove, removeFromGrid };
+  return { ...view, placeProvider, refuseMove, removeFromGrid, clearFromGrid };
 };
 
 /**
@@ -789,6 +799,97 @@ describe("useBlockCommand", () => {
       expect(result.current.carrying?.targets).toEqual(offered);
       expect(result.current.announcement.text).toBe(
         "Removed Limit limit block from Entry column, row 2.",
+      );
+    });
+  });
+
+  // ===========================================================================
+  // CLEARING A CELL - THE POINTER'S REMOVAL
+  // ===========================================================================
+  //
+  // "the x should clear all values and remove the order from the cell,
+  // regardless if it is single or dual axis. x and edit will only affect that
+  // cell, not other cells." One press, one cell, one message. `removeBlock`
+  // above stays fine-grained because the keyboard has focus on one block; this
+  // is the pointer's, and the pointer has a cell.
+  describe("clearing a cell", () => {
+    it("hands the write to the grid and names the cell and what was in it", () => {
+      const { result, clearFromGrid } = setup(gridWithLimit());
+
+      act(() => result.current.clearCell({ col: 0, row: 1 }));
+
+      expect(clearFromGrid).toHaveBeenCalledWith({ col: 0, row: 1 });
+      expect(result.current.announcement.text).toBe(
+        "Cleared Entry column, primary row. Removed Limit order.",
+      );
+    });
+
+    // THE CASE THE CAPTAIN NAMED. A dual-axis order type is two blocks in one
+    // cell under one label, and it is ONE order - so one press takes both and
+    // the sentence names the label once.
+    it("takes both legs of a dual-axis order, and names it as one order", () => {
+      const { grid } = gridWithOrder("stop-loss-limit");
+      const { result } = setup(grid);
+
+      act(() => result.current.clearCell({ col: 0, row: 1 }));
+
+      expect(result.current.announcement.text).toBe(
+        "Cleared Entry column, primary row. Removed Stop Loss Limit order.",
+      );
+    });
+
+    it("asks for focus on the palette entry the cell's order came from", () => {
+      const { result } = setup(gridWithLimit());
+
+      act(() => result.current.clearCell({ col: 0, row: 1 }));
+
+      expect(result.current.focusRequest).toBe("limit");
+    });
+
+    // The control is only rendered on a cell that holds something, so this is
+    // the grid being rewritten under a press rather than a case a user can aim
+    // at. Nothing happened, so nothing is written and nothing is said.
+    it("says nothing, and writes nothing, for a cell holding nothing", () => {
+      const { result, clearFromGrid } = setup(gridWithLimit());
+
+      act(() => result.current.clearCell({ col: 1, row: 2 }));
+
+      expect(clearFromGrid).not.toHaveBeenCalled();
+      expect(result.current.announcement.text).toBe("");
+      expect(result.current.focusRequest).toBeNull();
+    });
+
+    // The same carry-lifecycle rule the block removal runs, in the same event
+    // for the same reason: two live-region writes and the second erases the
+    // sentence naming what went, with no undo.
+    it("ends the carry when the clear takes the offered cells away", () => {
+      const { result } = setup(gridWithLimit());
+
+      act(() => result.current.activateProvider("limit", "keyboard"));
+      act(() => result.current.clearCell({ col: 0, row: 1 }));
+
+      expect(result.current.carrying).toBeNull();
+      expect(result.current.announcement.text).toBe(
+        "Cleared Entry column, primary row. Removed Limit order. Limit order returned to the palette: the grid changed underneath it.",
+      );
+    });
+
+    // The other half of the same rule. In the bulk pattern every cell takes
+    // every order whatever the grid holds, so nothing a clear does can take a
+    // cell away from a carry.
+    it("leaves a carry alone when the clear takes no cell away from it", () => {
+      const grid = clearGrid(2, 3);
+      grid[0][1].push(limitBlock());
+      const { result } = setup(grid, "bulk");
+
+      act(() => result.current.activateProvider("limit", "keyboard"));
+      const offered = result.current.carrying?.targets;
+      act(() => result.current.clearCell({ col: 0, row: 1 }));
+
+      expect(result.current.carrying?.source.type).toBe("limit");
+      expect(result.current.carrying?.targets).toEqual(offered);
+      expect(result.current.announcement.text).toBe(
+        "Cleared Entry column, row 2. Removed Limit order.",
       );
     });
   });

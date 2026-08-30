@@ -82,9 +82,9 @@ export const findBlockInGrid = (
 };
 
 /**
- * Take one block off the grid, and clear every link that pointed at it.
+ * Take blocks off the grid, and clear every link that pointed at any of them.
  *
- * The one removal path in the app, and the two halves are deliberately in one
+ * The one removal WRITE in the app, and the two halves are deliberately in one
  * function rather than in two that agree. `linkedBlockId` names a block by id,
  * so a removal that only filters leaves a *dangle* - a primary order naming a
  * conditional close that is no longer on the grid - and `assertLinksAreFlat` in
@@ -94,6 +94,13 @@ export const findBlockInGrid = (
  * refuses, because the user would then be stuck with a strategy they cannot
  * submit and no control that mends it.
  *
+ * **Clearing a link is not "affecting another cell".** The cell's own clear
+ * control is scoped to that cell - it removes no ORDER anywhere else, and the
+ * captain's rule is about orders. A `linkedBlockId` is not an order; it is a
+ * reference to one this call has just destroyed, and leaving it behind would
+ * block the user from submitting a strategy that is otherwise legitimate. See
+ * `AGENTS.md`, "Prices and order types", where the two rules are read together.
+ *
  * The link is dropped rather than nulled: the key's absence is what "no
  * conditional close" means everywhere else, and an explicit `undefined` is a
  * second spelling of it for `orderConfigFromGrid` and every serialiser to
@@ -102,20 +109,65 @@ export const findBlockInGrid = (
  * A cell's direction is untouched, because every block left behind already
  * carries it (decision D8) - that is what stops a Stop Loss flipping from
  * `-15.00% $85,000` to `+15.00% $115,000` when the block beside it goes.
+ *
+ * Private, and both of its callers are just below it: one block by id, and one
+ * whole cell. They differ only in which blocks go, so the filtering and the
+ * link clearing are written once and neither caller can forget the second half.
  */
-export const removeBlockFromGrid = (grid: GridData, id: string): GridData =>
+const withoutBlocks = (grid: GridData, removed: Set<string>): GridData =>
   grid.map((column) =>
     column.map((cell) =>
       cell
-        .filter((block) => block.id !== id)
+        .filter((block) => !removed.has(block.id))
         .map((block) => {
-          if (block.linkedBlockId !== id) return block;
+          if (
+            block.linkedBlockId === undefined ||
+            !removed.has(block.linkedBlockId)
+          ) {
+            return block;
+          }
           const cleared = { ...block };
           delete cleared.linkedBlockId;
           return cleared;
         }),
     ),
   );
+
+/**
+ * Take one block off the grid, links to it included.
+ *
+ * The keyboard's removal: Delete or Backspace on a focused block names exactly
+ * that block, which is the fine-grained correction decision D9 asks for.
+ */
+export const removeBlockFromGrid = (grid: GridData, id: string): GridData =>
+  withoutBlocks(grid, new Set([id]));
+
+/**
+ * Empty one cell, links to everything it held included.
+ *
+ * The pointer's removal, and the captain's rule: **one press of a cell's clear
+ * control takes every order out of that cell**, single-axis and dual-axis
+ * alike, and a bulk cell holding several independent orders empties in one go.
+ * A dual-axis order type is placed as two blocks in one cell, so anything that
+ * removed one block at a time left the user destroying half an order and
+ * holding a leg with no partner.
+ *
+ * **Nothing outside the cell is touched but a reference to what just went.**
+ * Every other cell's orders are returned exactly as they stood; see
+ * `withoutBlocks` above for why clearing a `linkedBlockId` naming a removed
+ * block is not an exception to that.
+ *
+ * A cell outside the grid returns the grid unchanged rather than throwing: this
+ * is a pure function over data a caller may have looked up a render ago.
+ */
+export const clearCellInGrid = (
+  grid: GridData,
+  cell: CellPosition,
+): GridData => {
+  const held = grid[cell.col]?.[cell.row];
+  if (!held || held.length === 0) return grid;
+  return withoutBlocks(grid, new Set(held.map((block) => block.id)));
+};
 
 /** Get all blocks from the grid as a flat array */
 export const getAllBlocks = (grid: GridData): BlockData[] => {

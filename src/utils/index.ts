@@ -16,6 +16,7 @@ export {
   countBlocks,
   findBlockInGrid,
   removeBlockFromGrid,
+  clearCellInGrid,
   getAllBlocks,
   reverseColumns,
   // Diagonal placement

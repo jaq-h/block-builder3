@@ -29,6 +29,8 @@ export {
   getPositionPercent,
   getInteractiveCellContainerProps,
   getReadOnlyCellContainerProps,
+  cellActionRail,
+  cellClearButton,
   rowLabelBadge,
   cellHeader,
   orderTypeLabel,

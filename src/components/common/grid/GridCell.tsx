@@ -17,8 +17,11 @@ import { useMarket } from "../../../store/useMarket";
 import type { CancelOptions } from "../../../hooks/useBlockCommand";
 import type { ActivationOrigin } from "../../../utils/blockCommand";
 import AlertTriangleIcon from "../../../assets/icons/alert-triangle.svg?react";
+import XIcon from "../../../assets/icons/x.svg?react";
 import {
   getInteractiveCellContainerProps,
+  cellActionRail,
+  cellClearButton,
   rowLabelBadge,
   cellHeader,
   orderTypeLabel,
@@ -72,12 +75,19 @@ interface GridCellProps {
   onBlockCommandCancel: (options?: CancelOptions) => void;
   onBlockAdjustPrice: (id: string, delta: number) => void;
   /**
-   * Take one block off the grid: its own remove control, or Delete/Backspace
-   * on it. Wired for every block this cell draws, axis or no axis - the point
-   * of the affordance is that removal no longer depends on which drag hook a
-   * block happened to get.
+   * Delete or Backspace on a focused block: take THAT block off the grid.
+   * Wired for every block this cell draws, axis or no axis - removal must not
+   * depend on which drag hook a block happened to get.
    */
   onBlockRemove: (id: string) => void;
+  /**
+   * The cell's own clear control: empty this cell, every order in it.
+   *
+   * The pointer's removal is per CELL rather than per block, on the captain's
+   * instruction, so one press takes both legs of a dual-axis order and every
+   * independent order a bulk cell holds. It affects no other cell.
+   */
+  onCellClear: () => void;
   /**
    * A click landed on this cell. It is wired unconditionally: whether a click
    * means anything is the command model's decision, and a cell that silently
@@ -117,6 +127,7 @@ const GridCell: FC<GridCellProps> = ({
   onBlockCommandCancel,
   onBlockAdjustPrice,
   onBlockRemove,
+  onCellClear,
   onCellActivate,
   focusBlockId,
   onBlockFocusHandled,
@@ -426,8 +437,51 @@ const GridCell: FC<GridCellProps> = ({
       onMouseLeave={onMouseLeave}
       onClick={onCellActivate}
     >
-      {rowLabel && !isDisabled && (
-        <div className={rowLabelBadge({ type: rowLabelType })}>{rowLabel}</div>
+      {/* THE CELL'S TOP-RIGHT RAIL: what can be done to this cell, and what it
+          is. `cellActionRail` in `styles/grid.ts` is the authority on the
+          ordering, which is load-bearing rather than aesthetic: the rail is
+          right-anchored and the badge is LAST, so the badge holds the same
+          position whether or not the cell has a control, and the planned
+          cell-detail editor's icon joins at the FRONT without moving the clear
+          button. The badge is drawn here rather than positioning itself, so one
+          element owns this corner. */}
+      {((rowLabel && !isDisabled) || blocks.length > 0) && (
+        <div className={cellActionRail}>
+          {blocks.length > 0 && (
+            <button
+              type="button"
+              // Named for the CELL, and stable whatever the cell holds. A
+              // voice-control user targets a control by its name, so a name
+              // that changed with the orders inside would change under them
+              // between deciding to say it and saying it. What the cell holds
+              // is already on the cell's own group label beside this.
+              aria-label={`Clear ${cellDescription}`}
+              className={cellClearButton}
+              // ON `click`, DELIBERATELY, AND NEVER ON A POINTER EVENT.
+              //
+              // A press that travels away fires no click at all - the browser
+              // fires `click` at the nearest common ancestor of the
+              // pointer-down and pointer-up targets - so a gesture that starts
+              // here and leaves destroys nothing. An `onPointerDown` would turn
+              // every such press into an emptied cell, with no undo.
+              onClick={(e) => {
+                // The cell listens for a click to place whatever is in hand.
+                // Clearing a cell is not placing into it, so this click stops
+                // here - without it, clearing while carrying a palette order
+                // would empty the cell AND drop the carried order into it.
+                e.stopPropagation();
+                onCellClear();
+              }}
+            >
+              <XIcon />
+            </button>
+          )}
+          {rowLabel && !isDisabled && (
+            <span className={rowLabelBadge({ type: rowLabelType })}>
+              {rowLabel}
+            </span>
+          )}
+        </div>
       )}
       {renderContent()}
     </div>

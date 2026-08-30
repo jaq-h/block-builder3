@@ -112,6 +112,7 @@ const renderCell = (blocks: BlockData[]) =>
         onBlockCommandCancel={noop}
         onBlockAdjustPrice={noop}
         onBlockRemove={noop}
+        onCellClear={noop}
         onCellActivate={noop}
         focusBlockId={null}
         onBlockFocusHandled={noop}

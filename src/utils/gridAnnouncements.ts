@@ -152,12 +152,24 @@ export type GridOutcome =
        *
        * A dual-axis order type places two blocks in one cell under one label,
        * so the cell alone tells them apart no better than the label does. This
-       * is the same leg the block's own remove control is named with, so what
-       * the user pressed and what they then hear are one fact.
+       * removal names one block because the keyboard had focus on one block;
+       * the pointer's removal is per cell and reports `cellCleared` instead.
        */
       leg?: PriceAxisLeg | null;
       releasedCarry?: boolean;
     }
+  /**
+   * One cell was emptied by its own clear control: every order it held, in one
+   * press.
+   *
+   * The pointer's removal is per CELL rather than per block, so this is not a
+   * `removed` outcome repeated - it is one event with one sentence, and saying
+   * it block by block would be several live-region writes each erasing the one
+   * before it. A dual-axis order type puts two blocks in one cell under one
+   * label, and clearing it is the user destroying one order, which is why the
+   * labels are named once each rather than counted.
+   */
+  | { kind: "cellCleared"; cell: CellPosition; labels: string[] }
   | {
       kind: "dragEnded";
       source: CommandSource;
@@ -296,6 +308,17 @@ const wentNowhere = (
   source.kind === "provider"
     ? `${describeSource(source)} was not placed${carryReleased(releasedCarry)}.`
     : `${describeSource(source)} stayed in ${describeCell(at ?? source.origin, pattern)}${carryReleased(releasedCarry)}.`;
+
+/**
+ * A list of names, as English rather than as a comma-joined dump. Two items get
+ * "and"; more get an Oxford list. It exists for the cell-clearing sentence,
+ * which is the one place the grid ever names more than one order at a time.
+ */
+const describeList = (items: string[]): string => {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+};
 
 const describePlacement = (
   source: CommandSource,
@@ -502,6 +525,18 @@ export const describeOutcome = (
           ? { ...outcome.source, label: `${outcome.source.label} ${outcome.leg}` }
           : outcome.source,
       )} from ${describeCell(outcome.source.origin, pattern)}.`;
+
+    // The cell first, because the cell is what the control the user pressed is
+    // named for, and it is the fact that is true whatever the cell held. The
+    // orders follow it, named once each: the two legs of a dual-axis order
+    // share a label and are one order, and naming that label twice would read
+    // as two orders destroyed.
+    case "cellCleared":
+      return outcome.labels.length === 0
+        ? `Cleared ${describeCell(outcome.cell, pattern)}.`
+        : `Cleared ${describeCell(outcome.cell, pattern)}. Removed ${describeList(
+            outcome.labels,
+          )}${outcome.labels.length === 1 ? " order" : " orders"}.`;
 
     case "dragEnded":
       return outcome.reason === "offGrid"

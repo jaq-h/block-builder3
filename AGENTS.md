@@ -287,13 +287,14 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   from a carry - the smallest being one block in the Entry primary cell, where a
   carried Take Profit is offered the Exit upper conditional and loses exactly
   that cell - and 0 that leave nothing on offer, so no user is ever stranded
-  holding an unplaceable order. `removeBlock` therefore applies the same
-  `gridStandsBehind` inside its own `announcer.asOneEvent`, on the grid
-  `removeFromGrid` hands back, which is why that callback returns what it wrote.
-  **That is the rule run one render early, not a second rule**: it is the one
-  grid write that also speaks, and reported as two events the second erases the
+  holding an unplaceable order. `removeBlock` and `clearCell` therefore apply
+  the same `gridStandsBehind` inside their own `announcer.asOneEvent`, on the
+  grid `removeFromGrid` and `clearFromGrid` hand back, which is why those two
+  callbacks return what they wrote.
+  **That is the rule run one render early, not a second rule**: they are the
+  grid writes that also speak, and reported as two events the second erases the
   first - `LiveAnnouncer` alternates regions and clears the one it leaves, both
-  assertive - losing the only sentence naming which block went, with no undo.
+  assertive - losing the only sentence naming what went, with no undo.
   `gridReplacement.dom.test.tsx` is the guard that
   matters - it is typed over `GridDataActions`, so a new action on the grid-data
   context fails the typecheck until it is classified and is then exercised
@@ -1346,12 +1347,15 @@ The invariants the order path depends on, each of which was previously violated 
   the resolver has already discarded.
 
   **Deleting a block clears every link that named it, and the two are one function.**
-  `removeBlockFromGrid` in `src/utils/grid.ts` filters the block out and drops the
-  `linkedBlockId` of anything pointing at it, in one pass, because the refusal above is only
-  safe while nothing in the app can *produce* a dangle. Reachable removal is exactly what
-  would have produced one - it landed in the same change for that reason - so a user
-  deleting a linked block never ends up holding a strategy the mapper refuses and no control
-  can mend. Do not weaken the refusal to accommodate a dangle; fix whatever wrote it.
+  `withoutBlocks` in `src/utils/grid.ts` filters the blocks out and drops the `linkedBlockId`
+  of anything pointing at any of them, in one pass. Both removals go through it -
+  `removeBlockFromGrid` for one block and `clearCellInGrid` for a whole cell - so neither
+  path can be given the filter without the link clearing. The refusal above is only safe
+  while nothing in the app can *produce* a dangle, and reachable removal is exactly what
+  would have produced one, so a user deleting a linked block never ends up holding a strategy
+  the mapper refuses and no control can mend. Do not weaken the refusal to accommodate a
+  dangle; fix whatever wrote it. See **Prices and order types**' removal entry for why
+  clearing that reference is not the cell-scoped rule being broken.
 
 `src/api/orderMapper.ts` refuses rather than guesses: an unrecognised order type, a block
 claiming both axes, a link graph that is not flat, an incomplete conditional close, and a
@@ -1399,201 +1403,173 @@ comment. A misplaced order is corrected by removing it and placing a new one, un
 cell-detail editor ships - which is why the removal below is D9's other half rather than a
 convenience.
 
-**Removing one placed block has exactly one owner: `useBlockCommand`'s `removeBlock`.**
-Three affordances reach it and there is no fourth: Delete or Backspace on a focused block,
-that block's own Remove control, and a free drag released clear of every cell. It writes
-through `removeFromGrid`, which `GridArea` answers with `removeBlockFromGrid` (the pure
-filter-plus-link-clear above), ends a carry in the user's other hand **only when the removal
-takes a cell away from it** (see the carry-lifecycle rule in **Interaction**: the removal has
-no rule of its own, and its `removeFromGrid` returns the grid it wrote so that one rule can be
-applied in the same event), reports the `removed` outcome to the one announcer, and asks
-for focus on the palette entry the order came from - the element that was focused is the one
+**Removal comes in two operations, and which one a user gets is decided by what their input
+method can name.** The keyboard has focus on ONE block, so it removes one. A pointer press
+has a CELL, so it clears the cell. They are deliberately different, not two routes to one
+thing, and neither may be folded into the other.
+
+- **One block: `useBlockCommand`'s `removeBlock`.** Reached by Delete or Backspace on a
+  focused block, and by a free drag released clear of every cell. It writes through
+  `removeFromGrid`, which `GridArea` answers with `removeBlockFromGrid`, and reports the
+  `removed` outcome. This is D9's correction path at its finest grain: it names one leg of a
+  dual-axis order, so a user who means to remove exactly that leg can.
+- **One cell: `useBlockCommand`'s `clearCell`.** Reached by the cell's own clear control, the
+  only removal a pointer has. It writes through `clearFromGrid`, which `GridArea` answers
+  with `clearCellInGrid`, and reports the `cellCleared` outcome. **One press empties the
+  cell** - both legs of a dual-axis order together, and every independent order a bulk cell
+  holds. That is the captain's instruction, and it is also what stops a pointer user
+  destroying half an order: a trigger leg with no limit leg is not an order anybody meant to
+  build, and a per-block pointer control asked for two presses to avoid producing one.
+
+Both end a carry in the user's other hand **only when the removal takes a cell away from
+it** (see the carry-lifecycle rule in **Interaction**: neither has a rule of its own, and
+each returns the grid it wrote so that one rule can be applied in the same event), and both
+ask for focus on the palette entry the order came from - the element that was focused is
 being removed, so leaving focus alone drops it to `<body>`, and the palette is where D9's
-"place a new one" begins.
+"place a new one" begins. For a cleared cell the palette entry is the FIRST order the cell
+held; a bulk cell can hold several, and any of them lands the keyboard beside the rest.
 
-It was a branch of the free drag's release handler, and that is what made it unreachable
-for most of the grid: `block.tsx` wires `useVerticalDrag` instead of `useFreeDrag` for every
-block whose cell draws a price axis, so a placed Limit, Stop Loss or Take Profit could not
-be dragged off at all and Clear All - which destroys the whole strategy - was the only way
-to be rid of one. A removal that is one gesture's side effect is a removal only that gesture
-has; do not put it back.
+**"Only that cell" and the link clearing are one rule read together, not two in tension.**
+The captain's words are "x and edit will only affect that cell, not other cells", and that
+is about ORDERS: nothing outside the cleared cell is removed or altered. A `linkedBlockId` is
+not an order - it is a reference to one the press has just destroyed - and `withoutBlocks` in
+`utils/grid.ts` drops it in the same pass that filters the blocks out, for both operations.
+Skipping it would leave the dangle `assertLinksAreFlat` REFUSES, so the user would hold a
+legitimate strategy nothing could submit and no control could mend. Tidying the reference is
+what keeps the cell-scoped rule from costing something the captain did not ask for. Do not
+read the two as contradictory, and do not weaken either.
 
-The Remove control is **rendered, never revealed on hover**, and that is the decision the
-affordance turns on rather than a styling choice: a control shown on `:hover` exists for a
-mouse and for nothing else, and the sticky `:hover` a tap leaves behind on some browsers is
-an accident rather than an affordance. It carries `p-0` alongside `w-6 h-6` because the
-layered `button` default is `padding: 0.6em 1.2em` and a border-box `width` cannot shrink a
-box below its own padding - without it the 24px WCAG 2.2 SC 2.5.8 target measured 40.375px
-in Chrome, wider than the 40px tile it sits on. Measure a new control rather than reasoning
-about its classes.
+Removal was once a branch of the free drag's release handler, and that is what made it
+unreachable for most of the grid: `block.tsx` wires `useVerticalDrag` instead of
+`useFreeDrag` for every block whose cell draws a price axis, so a placed Limit, Stop Loss or
+Take Profit could not be dragged off at all and Clear All - which destroys the whole strategy
+- was the only way to be rid of one. A removal that is one gesture's side effect is a removal
+only that gesture has; do not put it back.
 
-**Its name and the removal sentence both carry the block's LEG, and from one owner.**
+**The clear control lives in the cell's own top-right rail, and the rail's ordering is a
+commitment rather than a look.** `cellActionRail` in `src/styles/grid.ts` is one absolutely
+positioned cluster holding the cell's controls and then the row-label badge; `rowLabelBadge`
+no longer positions itself, because two things owning one corner is how they come to
+overlap. The rail is right-anchored and **the badge is its LAST child**, which is what makes
+every position in it final: a right-anchored group grows leftwards, so an item added at the
+front moves nothing after it. Two consequences, both measured at 1440x900 rather than
+assumed:
+
+- **The badge never moves.** It sits 5px from the cell's right border edge and 8px from its
+  top whether the cell is empty or holds an order (`min-h-6` on the rail is what holds the
+  second number; without it an empty cell's badge sits 3px higher). Put the badge first and
+  it slides 28px left the moment a cell takes an order, and a column of cells stops lining
+  its badges up.
+- **The clear button never moves either.** The planned cell-detail editor (an edit icon that
+  flips the cell to its rear side to type values in) joins this rail at the FRONT, so the
+  control stays exactly where the user last pressed it. Do not reorder this rail to put a
+  growing set of controls to the right of a fixed one.
+
+A pleasant consequence rather than the reason: the extreme corner is the inert badge, so a
+press aimed vaguely at a cell's corner does not destroy its orders.
+
+**The control needs no `activateCellInView` counterpart, and adding one would be wrong.**
+Below `sm` the off-page column is withheld from hit testing, so a pointer cannot reach its
+clear control at all (verified in Chrome at 390: the withheld column's control computes
+`pointer-events: none` and sits at `tabindex="-1"`). Assistive technology can still activate
+it, and that leaves nobody stranded - clearing produces nothing to find, focus lands on the
+palette entry, which is on screen, and the sentence names the cell. `activateCellInView`
+exists for the opposite case, where a placement puts a new order in a column the panel is
+not showing.
+
+It is **rendered, never revealed on hover**, and that is the decision the affordance turns on
+rather than a styling choice: a control shown on `:hover` exists for a mouse and for nothing
+else, and the sticky `:hover` a tap leaves behind on some browsers is an accident rather than
+an affordance. It carries `p-0` alongside `w-6 h-6` because the layered `button` default is
+`padding: 0.6em 1.2em` and a border-box `width` cannot shrink a box below its own padding -
+without it the 24px WCAG 2.2 SC 2.5.8 target measured 40.375px in Chrome. Measured at
+1440x900 after the move, its box is exactly 24 by 24, inset 5px from the cell's top and right
+border edges. It is drawn only on a cell that holds something: a control offering to do
+nothing is one a user has to learn to ignore.
+
+**Its name is the CELL and nothing else** - `Clear Entry column, primary row` - and that is
+deliberate rather than terse. A voice-control user targets a control BY name, so a name that
+changed with the orders inside would change between deciding to say it and saying it. What
+the cell holds is already on the cell's own `role="group"` label beside it.
+
+**It fires on `click`, and must never be given a pointer-down handler.** The browser fires
+`click` at the nearest common ancestor of the pointer-down and pointer-up targets, so a press
+that begins on the control and travels away fires none at all and destroys nothing. An
+`onPointerDown` would turn every such press into an emptied cell, with no undo. It also
+**stops its own click**: the cell listens for a click to place whatever is in hand, so
+without that, clearing while carrying a palette order would empty the cell AND drop the
+carried order straight back into it.
+
+**The block-level sentence carries the block's LEG, and from one owner.**
 `createBlocksFromOrderType` gives both legs of a dual-axis order type the same `label` and
-puts them in the same cell, so the label plus the cell names neither of them: two controls
-read "Remove Stop Loss Limit order, Entry column, primary row" and either removal said the
-same sentence, leaving a screen-reader or voice-control user unable to tell which leg they
-destroyed and holding half an order. The name is `Remove <label> <leg> order, <cell>` and
-the sentence is "Removed Stop Loss Limit trigger block from Entry column, primary row."
-The leg appears **only where the cell really draws the block on a price axis** - a Market
-order in a bulk cell keeps "Remove Market order, <cell>" - and it comes from `legInCell` in
-`blockMapping.ts`, the one owner of axis membership, asked by `GridCell` for the control and
-by `removeBlock` for the `removed` outcome. Neither may re-derive it from `axis` or `axes`.
-`Block` derives the control's name and the slider's from one `legName`, so the two names a
-block carries cannot drift.
+puts them in the same cell, so the label plus the cell names neither of them: "Removed Stop
+Loss Limit block from Entry column, primary row" was said identically for either leg, leaving
+a screen-reader user unable to tell which leg they had destroyed and holding half an order.
+The sentence is "Removed Stop Loss Limit trigger block from Entry column, primary row." The
+leg appears **only where the cell really draws the block on a price axis** - a Market order in
+a bulk cell keeps its plain name - and it comes from `legInCell` in `blockMapping.ts`, the one
+owner of axis membership, asked by `removeBlock` for the `removed` outcome. It must not be
+re-derived from `axis` or `axes`. The cell-clearing sentence needs no leg at all, because it
+is about the cell: "Cleared Entry column, primary row. Removed Stop Loss Limit order." - the
+label named ONCE, because both legs are one order and naming it twice would say two orders
+went.
 
 **Known and accepted: two blocks of the SAME order type on the same leg in one cell are
-still named identically**, by the control and by the sentence alike - "Remove Limit limit
-order, Entry column, row 2" twice over. It is reachable: `isCellValidForPlacement` returns
-`true` for every cell in the bulk pattern, so a deliberate double placement puts two Limits
-in one cell. Three reasons it is left rather than patched here, and the third is the one
-that decides it:
+still named identically** by the slider - "Limit limit price, Entry column, row 2" twice
+over, with only `aria-valuetext` differing. It is reachable: `isCellValidForPlacement`
+returns `true` for every cell in the bulk pattern, so a deliberate double placement puts two
+Limits in one cell. Two reasons it is left rather than patched, and the second decides it:
 
 - Only the offset separates them, and folding a percentage into a control's accessible name
   makes that name change while the user drags the block. Voice control targets a control BY
   name, so an unstable name is worse for the users this would be for than an ambiguous one.
 - It would not close the case anyway: two Market orders in one bulk cell carry no price at
-  all, and nothing but an ordinal could tell them apart - which then shifts when a sibling
-  is removed.
-- **The slider already carries the same ambiguity** (its name is identical for both; only
-  `aria-valuetext` differs), so this lane did not introduce it, and fixing it on the Remove
-  control alone would leave the two surfaces disagreeing about how one fact is named. That
-  is the half-fix this file exists to refuse. It is filed as ONE item covering both
-  surfaces, and covering whether "Limit limit order" is the wording wanted at all.
+  all, and nothing but an ordinal could tell them apart - which then shifts when a sibling is
+  removed. It is filed as one item covering whether "Limit limit" is the wording wanted at
+  all. The pointer no longer meets this ambiguity, because its removal names the cell.
 
-**The control is pinned INSIDE the tile it belongs to (`top-0 right-0`), and must never
-overhang it again.** A destructive control that extends past the tile a user can see is a
-control that removes a block the user was not aiming at, with nothing on screen saying so and
-no undo. At `-top-2 -right-2` it hung 8px out and did that in **both** layouts:
+**What moving the control to the cell DELETED, recorded so nobody restores it.** A per-block
+control had to be pinned inside its own 40px tile - overhanging it, a press on one block's
+visible face destroyed a DIFFERENT block, measured in Chrome in both cell layouts - and
+containment plus the 24px SC 2.5.8 floor then ENTAILED a covered centre: a 24px disc lying
+wholly inside a 40px tile has its centre at most `sqrt(8^2 + 8^2) = 11.31px` from the tile's
+centre, against its own radius of 12, so no placement avoided it. The control took 493 of the
+tile's 1600 pixels and the block was draggable from its lower half alone; a later block on a
+price axis could bury an earlier one's control. **All of that is gone with the control.**
+Measured in Chrome at 1440x900 after the move, by sampling all 1600 pixels of a placed
+block's tile with `elementFromPoint`: **1584 of 1600 hit-test to the tile itself**, the
+remaining 16 being its own `rounded-md` corners, and a synthetic-but-real pointer sequence
+beginning at the tile's top-right corner - the region the control used to own - starts a
+vertical drag and re-prices the block from 10.00% to 0.00%. Do not reintroduce a control on
+the tile: the geometry above is what it costs, and it was proved rather than merely observed.
 
-- **Axis-less cells**, where blocks sit side by side in `centeredContainer`. Flush tiles put
-  the control over the next tile's top-left corner and above it in the stacking order -
-  measured in Chrome at 1440 with two Market orders in one bulk cell, `elementFromPoint` 3px
-  inside the second tile returned the FIRST block's control, and the click removed that first
-  block.
-- **Cells that DRAW a price axis**, which is most of the grid. Blocks there are positioned by
-  `getBlockPositionerProps`, so **a block's position IS its price** and there is no spacing to
-  give at all. Two Limits in one bulk cell at -25% and -35%, 16px apart: tile A y282-322, tile
-  B y298-338, B's control y290-314, so the band y290-298 lay over A's face and over no part of
-  B's. `elementFromPoint` there returned B's control, and the click destroyed the -35% block
-  while the user pressed the visible lower-right corner of the -25% one.
-
-**One geometry answers both, and a per-layout offset would be one fact styled two ways.**
-`REMOVE_CONTROL_SHAPE` in `src/components/blocks/blockTile.ts` is the authority;
-`blockTile.test.ts` pins containment on both axes against `BLOCK_TILE_SHAPE`'s own size, so a
-negative offset on either axis, or a control grown past the tile, fails there. **Containment is
-the whole of the guarantee** - `centeredContainer` carries no spacing between sibling tiles and
-must not be given any on this invariant's account: spacing could only ever have answered the
-axis-less layout, and a cell that draws a price axis has none to give.
-
-**The price is deliberate: the control owns 30.8% of its own tile's face, and that includes
-the tile's geometric CENTRE.** Both ways of undoing it are rejected - shrinking the control
-below `w-6 h-6` loses the 24px WCAG 2.2 SC 2.5.8 target, and hiding it behind `:hover` gives
-it to a mouse alone, which is the opposite of why the affordance exists.
-
-The covered centre is not an oversight and **cannot be fixed by moving the control**: it is
-the arithmetic consequence of the two rules already decided above, containment and a 24px
-circular target. A 24px disc lying wholly inside a 40px tile has its centre at most 8px from
-the tile's centre on each axis, so at most `sqrt(8^2 + 8^2) = 11.31px` away, against a radius
-of 12. **11.31 < 12, so the tile's centre falls inside the disc at EVERY contained position**,
-not merely the corner-flush one this file describes. Only shrinking below the 24px floor could
-uncover it, trading an accessibility requirement for a nicety, or letting the control leave
-the tile, which is the neighbour case rejected above as its own category.
-
-Measured in Chrome by sampling all 1600 pixels of a placed block's tile with
-`elementFromPoint`, rather than derived from the classes - do not re-derive these:
-
-- **The tile's geometric centre hit-tests to the Remove control**, because browsers hit-test
-  `border-radius` and the disc reaches it as the arithmetic says.
-- **The control takes 493 of the tile's 1600 pixels, 30.8%.** A `24x24` square would be 36%
-  and an ideal disc 28.3%; the measured figure sits between them because the hit test is the
-  rounded border box. Any of those three quoted as the others is wrong - this is the one that
-  was measured.
-- **A press at the centre that drags away is inert**, by the click-only rule below: the
-  control takes the `pointerdown`, the tile receives none, so the block does not drag from
-  dead centre and nothing is removed. A **tap** at the centre removes the block, which is the
-  aimed-and-recoverable case accepted in 1.
-- **The block is still draggable and still priceable.** Below 24px from the tile's top the
-  control is out of the way across the full 40px width (the last 3px taper to 34px on the
-  tile's own `rounded-md` corners); in the top half the grabbable width narrows to 15-24px;
-  and the keyboard slider, which is the price affordance that matters most, is untouched.
-
-**Two consequences of the pin that are true, undiscoverable, and filed rather than solved
-here.** Neither is a regression this lane introduced; both are recorded so the next reader
-meets them in writing rather than in the product:
-
-- **A block is now dragged from its LOWER HALF.** The control owns the top-right disc and
-  takes the `pointerdown` there, so the grabbable area is what the measurement above gives:
-  clear across the full 40px from 24px below the tile's top, tapering to 34px over the last
-  three rows on the tile's own `rounded-md` corners, and narrowed to 15-24px in the top half.
-  A press that lands on the control and drags away is inert rather than destructive, because
-  removal is click-only - nothing is removed and the block does not drag. Nothing on screen
-  says where to grab, which is why this is filed separately rather than papered over here.
-- **A later block on a price axis can BURY an earlier one's Remove control.** Each block in an
-  axis cell gets its own positioner at the same `z-2`, so paint order is DOM order and the
-  later block in the cell's array paints over the earlier. With the control inside its tile,
-  a block priced within 40px of the one before it covers most of that block's control - at a
-  2px offset difference only a sliver is left. This is the pre-existing axis-column overlap
-  the lane inherits, not something the pin created, and the failure mode is safe: the topmost
-  element is the covering block's own tile, so a press there acts on the block the user can
-  see, and the buried block is still removable by Delete or Backspace with focus on it, which
-  is the keyboard parity this lane was built for.
-
-**The control fires on `click`, and must never be given a pointer-down handler.** Two
-behaviours of the tile's top-right corner follow from that, and both are deliberate - do not
-"fix" either:
-
-1. **A tap landing on the region the control occupies REMOVES the block** rather than
-   selecting it. That is 30.8% of a 40px tile's face and reaches its centre, not a sliver at
-   its edge, and it is accepted rather than overlooked - on two grounds, both of which have to hold. It is
-   an **aimed** mistake: the control is drawn where it acts, so the block destroyed is the
-   block under the finger, which is exactly what separates this from the neighbour case
-   above. And it is **recoverable**: D9 makes delete-and-rebuild the sanctioned correction for
-   a misplaced block, so the cost of the mistake is re-placing one block from the palette
-   beside it, not lost work. Taxing every pointer removal with an arm-then-confirm second
-   press to guard a recoverable, aimed mistake is the wrong trade, and an undo affordance
-   would be a new product surface. It grew from a sixth of the tile to 30.8% of it, centre
-   included, when the control moved inside; that is the price paid for the neighbour case and
-   it was weighed as such, with the proof above showing no placement avoids it.
-2. **A press that BEGINS on the control and drags away is inert**: nothing is removed and
-   the block does not drag. The control is a sibling drawn on top of the tile rather than a
-   descendant, so the tile's `onPointerDown` never fires. Left as it is - forwarding the
-   gesture into `useFreeDrag`/`useVerticalDrag` would reach into the gesture layer this file
-   guards most heavily, for a non-destructive annoyance.
-
-The click-only rule is what makes 2 inert rather than dangerous: the browser fires `click` at
-the nearest common ancestor of the pointer-down and pointer-up targets, so a press aimed at
-the corner that travels away fires none at all. `block.dom.test.tsx` pins it under "removes
-on no pointer event" - jsdom neither synthesises `click` from pointer events nor implements
-that target algorithm, so the test asserts the component's wiring in a pair with the click
-that does remove, rather than resting on jsdom's missing click.
-
-`GridArea.dom.test.tsx` pins the wiring under "removes the block its own control belongs to".
-The geometry itself is checkable only in a real browser - jsdom computes no layout and its
-`elementFromPoint` is not layout-aware - so a coordinate test there would pass for the wrong
-reason and must not be written. What CI can hold is stated in full at the top of
-`blockTile.test.ts`, holes included: it compares the two class lists' offset and size tokens
-and nothing about the rendered boxes, so it would stay green if `absolute` were dropped, if
-the positioning context moved, or if `Block`'s wrapper grew past the tile the offsets are
-measured from. That last one is the assumption the whole derivation rests on, and it has two
-halves with different owners: the wrapper carries no box of its own (`block.dom.test.tsx`,
-"keeps the remove control's wrapper the tile's own box") **and** its parent lets it
-shrink-wrap - `centeredContainer`'s flex row in an axis-less cell, and in an axis cell the
-`flex justify-center` positioner from `getBlockPositionerProps`, which spans the column and
-would otherwise leave the wrapper block-level and the control at the column's edge
-(`styles/grid.test.ts`, "the positioner centres a shrink-wrapped child"). Both halves are
-token checks; the geometry they add up to is still only measurable in a browser.
+`GridArea.dom.test.tsx` pins the wiring, under "GridArea, clearing a cell" for the cell's
+control and "GridArea, removing a placed block" for the keyboard's. The tile's own geometry
+is checkable only in a real browser - jsdom computes no layout and its `elementFromPoint` is
+not layout-aware - so a coordinate test there would pass for the wrong reason and must not be
+written. What CI holds instead is the token check on the control's 24px size and the
+structural check that `Block`'s wrapper shrink-wraps its tile (`block.dom.test.tsx`, "keeps
+the tile's wrapper the tile's own box") with its parent letting it -
+`centeredContainer`'s flex row in an axis-less cell, and in an axis cell the
+`flex justify-center` positioner from `getBlockPositionerProps` (`styles/grid.test.ts`, "the
+positioner centres a shrink-wrapped child"). Those are what keep a tile drawn at the price it
+says it is.
 
 **The refusal is legible, not silent.** Three things say so together and none of them is
 optional: the announcer's `moveRefused` sentences, a visible note under the grid
 (`cellLockedNote`, ordinary text - never a second live region), and no cell drawing itself
 as a target while a placed block is dragged (`getActiveAllowedRows` returns none for one).
 A gesture that simply does nothing is indistinguishable from a broken control, which is what
-D9 asks this to avoid. The note is shown for **both** refusals and both now end in the same
-correction, because both blocks now have it - remove it and place a new one. Only the extra
+D9 asks this to avoid. The note is shown for **both** refusals and both end in the same
+correction, because both blocks have it - remove it and place a new one. Only the extra
 clause differs, and it is the affordance that render really wires: the arrow keys exist for
 a block on a price axis and for no other. The wordings were further apart while a priced
 block had no removal at all, and the note promising a drag-off to the half of the grid that
 had one is how it came to offer a removal the app could not perform.
+**Its closing sentence names BOTH removals and says what each one takes**, rather than
+offering them as alternatives: Delete takes the one order the note is about, and the cell's
+clear control empties the cell, which in a bulk cell is orders the note is not about. A user
+sent to the wrong one loses work the note never mentioned.
 
 **Two closed gaps, recorded because the shape recurs.** Both were one fact derived twice.
 
