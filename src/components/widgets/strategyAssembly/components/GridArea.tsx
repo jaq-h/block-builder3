@@ -438,25 +438,51 @@ const GridArea: FC<GridAreaProps> = ({
   // 1440 a Take Profit whose only legal cells are the Exit diagonals of a
   // placed block opens the viewport on Exit, and reading that back as a
   // preference left the NEXT pick-up on a cleared grid starting in Exit, where
-  // it has always started in Entry. A choice is what the user expressed, never
-  // a column the app ended up showing them.
+  // it has always started in Entry.
   //
-  // **WHICH events count is enforced by WHERE the write is, and by nothing
-  // else.** There are exactly two writers and both are below: a PAGER PRESS,
-  // whether or not something is carried and including the press for the column
-  // the carry is already on, which is silent but still a column the user named;
-  // and `moveTargetAndRemember`, the one wrapper every `moveTarget` call goes
-  // through, which writes only when the move CROSSES into another column.
-  // Nothing watches the target and works out
-  // afterwards what must have moved it. That inference was tried, as a ref
-  // holding the previous carry column, and it was wrong for every path that
-  // moves a target without being an arrow key: swapping the carried order type
-  // dispatches `pickUp` while a carry is live, so the new carry's FALLBACK
-  // target read as a move, and a mouse hover dispatches `pointAt`, so sweeping
-  // the cursor across the other column and pressing Escape left a preference
-  // for a column the user never chose and was never told about. Three paths
-  // therefore write nothing, by construction rather than by exclusion: a fresh
-  // pick-up, a swap pick-up, and a hover. None of them is a `moveTarget`.
+  // ─── THE RULE, IN FULL. THIS IS THE ONE STATEMENT OF IT. ─────────────
+  //
+  // The preference is the column a later pick-up starts in, and it is written
+  // by, and ONLY by, an action in which the USER NAMED A COLUMN. Every other
+  // description of it in this repository - `handleShowColumn` below,
+  // `useBlockCommand`, `initialTarget`, AGENTS.md, README - states the set as
+  // closed and points back here rather than restating a part of it. Four
+  // partial paraphrases is how five of these nine cases came to be found one at
+  // a time, each as a defect; **a tenth case is a change to this rule and gets
+  // decided here, not answered ad hoc at whichever call site meets it.**
+  //
+  // IT IS WRITTEN BY FOUR THINGS:
+  // 1. A pager press with nothing in hand, recording the pressed column.
+  // 2. A pager press while carrying that moves the target across columns,
+  //    recording the column it LANDED in.
+  // 3. A pager press while carrying for the column already targeted, recording
+  //    that column silently - the silence is about what the press SAYS, and
+  //    what it records is a separate question.
+  // 4. An arrow-key move of a live carry that lands in a different column,
+  //    recording the landed column. That includes a VERTICAL press that lands
+  //    in the other column, since `stepTarget` takes the nearest legal cell
+  //    when nothing is straight ahead.
+  //
+  // IT IS NOT WRITTEN BY FIVE THINGS:
+  // 5. A fresh pick-up: that target came from `initialTarget`, the app
+  //    answering rather than the user.
+  // 6. A swap pick-up, for the same reason - it is a `pickUp` dispatch and
+  //    never a move.
+  // 7. A move that lands in the same column, such as a vertical nudge, which
+  //    chose no column.
+  // 8. A move the carry refuses, where nothing landed.
+  // 9. A mouse hover crossing into the other column: `pointAt` is silent by
+  //    design and fires for every cell a sweep crosses, so counting it would
+  //    mean the user chose every column the cursor passed over.
+  //
+  // **HOW IT IS ENFORCED, which is what makes 5 to 9 true by construction
+  // rather than by a test remembering to check them:** the write happens at
+  // exactly two call sites - `handleShowColumn` and `moveTargetAndRemember`,
+  // the single `moveTarget` wrapper - and is never inferred from a state
+  // transition, so `pickUp` and `pointAt` cannot reach either. Nothing watches
+  // the target and works out afterwards what must have moved it. That
+  // inference was tried, as a ref holding the previous carry column, and it
+  // could not see the swap or the hover; do not reintroduce it.
   const [preferredColumn, setPreferredColumn] = useState<number | null>(null);
 
   const command = useBlockCommand({
@@ -527,7 +553,9 @@ const GridArea: FC<GridAreaProps> = ({
    * rather than two. A cross-column move is the user choosing a column, so this
    * is where the preference is written - at the call, where what happened is
    * known, rather than inferred later from a target that every other path can
-   * move as well.
+   * move as well. This wrapper and `handleShowColumn` are the ONLY two writers;
+   * the closed set of what does and does not write is stated in full at
+   * `preferredColumn`'s declaration, and this covers cases 2, 4, 7 and 8 of it.
    *
    * From the cell the move ACTUALLY landed on, which is why the hook hands it
    * back: a move the carry refuses returns `null` and writes nothing, so the
@@ -619,8 +647,10 @@ const GridArea: FC<GridAreaProps> = ({
    * without first reading `aria-pressed`.
    *
    * **The preference is recorded in ALL THREE of those cases, because the press
-   * is an expressed choice in all three.** The silence above is about what the
-   * press SAYS, never about what it records, and the two questions are answered
+   * is an expressed choice in all three** - cases 1, 2 and 3 of the rule stated
+   * in full at `preferredColumn`'s declaration, which is the closed set and the
+   * only place it is enumerated. The silence above is about what the press
+   * SAYS, never about what it records, and the two questions are answered
    * separately here on purpose: they were decided in different rounds, and
    * letting one early return answer both is what once made a press that chose a
    * column record nothing at all. A cross-column press records through

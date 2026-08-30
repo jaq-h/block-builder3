@@ -205,10 +205,12 @@ export const sameTargets = (
  *
  * It is a choice the user EXPRESSED, never a column the app merely ended up
  * showing them, which is why it is `null` until one is made rather than
- * defaulting to 0. `GridArea` owns which events count; the reason it matters
- * here is that the target a pick-up starts on must not feed back in. That
- * target can be this function's own fallback, and taking it as a preference
- * would make one pick-up's fallback silently decide the next one's start.
+ * defaulting to 0. **Which events count is a closed set, enumerated in exactly
+ * one place: `preferredColumn`'s declaration in `GridArea`. Do not restate part
+ * of it here.** All that matters on this side is that the target a pick-up
+ * starts on is not one of them - it can be this function's own fallback, and
+ * taking it as a preference would make one pick-up's fallback silently decide
+ * the next one's start.
  *
  * **The fallback is exactly the first legal cell**, taken whenever there is no
  * preference or the preferred column offers no legal cell. That is what keeps a

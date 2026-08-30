@@ -87,14 +87,13 @@ export interface UseBlockCommandOptions {
    * rule everywhere rather than a phone-only concept.
    *
    * Which events count as a choice is `GridArea`'s to decide, and it decides it
-   * by WHERE the write is rather than by anything worked out afterwards: a
-   * pager press with nothing in hand, and its one `moveTarget` wrapper. What
-   * matters on this side is that a pick-up's own starting target is not one of
-   * them - it can be `initialTarget`'s fallback, and a fallback deciding the
-   * next pick-up is the bug this shape exists to make unreachable. Three paths
-   * therefore leave it alone: a fresh pick-up, a pick-up that swaps what is
-   * carried, and a mouse hover through `pointToTarget`. See `initialTarget` for
-   * the fallback.
+   * by WHERE the write is rather than by anything worked out afterwards. **That
+   * set is closed and is enumerated in exactly one place, at `preferredColumn`'s
+   * declaration in `GridArea`; do not restate a part of it here or anywhere
+   * else.** What matters on this side is only what the set implies for this
+   * hook: a pick-up's own starting target never becomes a preference, because
+   * it can be `initialTarget`'s fallback, and `pickUp` and `pointAt` cannot
+   * reach either writer at all. See `initialTarget` for the fallback.
    */
   preferredColumn: number | null;
   /** Commit a new block from the palette, and report what the grid did. */

@@ -373,38 +373,41 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   expressed, never a column the app ended up showing them.**
 
   **Which events count is settled by WHERE the write is, and by nothing that
-  looks at the target afterwards.** There are exactly two writers: a PAGER
-  PRESS, carrying or not, the silent same-column press included - that press
-  says nothing because nothing moved, but the user still named a column, and
-  what a press SAYS and what it RECORDS are separate questions that must be
-  answered separately; and `moveTargetAndRemember`, the one wrapper every
-  `moveTarget` call in `GridArea` goes through - the arrow keys as
-  `onCommandMove` and `onBlockCommandMove`, and the pager's cross-column
-  carrying branch, which is what keeps the press and the key one mechanism
-  rather than two. It
-  takes the column from the cell the move ACTUALLY landed on, which is why
-  `useBlockCommand.moveTarget` returns it: a refused move returns `null` and
-  writes nothing, so the preference can never name a column the user was left
-  off. **It writes only when that column DIFFERS from the one the move started
-  in.** A vertical press that stays in its column expressed no column choice,
-  and letting it write is how a carry that started on `initialTarget`'s
-  fallback had that fallback recorded as a choice. **The comparison may not be
-  swapped for a test on `dCol`**, even though the two agree on every move
-  today: `stepTarget` takes the nearest legal cell that way when nothing is
-  straight ahead, so a vertical press CAN return the other column, and that
-  would be a real choice `dCol !== 0` discards. No occupancy of today's 2x3
-  grid reaches it, swept over all of them against every order type's rows in
-  both patterns, so this is about asking the right question rather than a live
-  bug - a third column, another row, or a new row set changes it.
+  looks at the target afterwards.** There are exactly two writers -
+  `handleShowColumn` and `moveTargetAndRemember`, the one wrapper every
+  `moveTarget` call in `GridArea` goes through - and **the closed set of what
+  does and does not write is enumerated in exactly ONE place: the comment on
+  `preferredColumn`'s declaration in `GridArea.tsx`, nine cases, four that write
+  and five that do not.** Read it there before touching any of this. It is
+  stated once rather than summarised here because four partial paraphrases of it
+  is precisely how five of those nine cases came to be found one at a time, each
+  as a defect; **a tenth case is a change to that rule and is decided there.**
+  Do not restate a part of it in this file, and do not read the consequence list
+  above as that set - the list above is what the pager DOES, and the enumeration
+  there is what the preference REMEMBERS.
+
+  Two properties of the enforcement belong here, because they are what a reader
+  of this file would otherwise undo. The wrapper takes the column from the cell
+  the move ACTUALLY landed on, which is why `useBlockCommand.moveTarget` returns
+  it: a refused move returns `null` and writes nothing, so the preference can
+  never name a column the user was left off. And it writes only when that column
+  DIFFERS from the one the move started in - **a comparison that may not be
+  swapped for a test on `dCol`**, even though the two agree on every move today:
+  `stepTarget` takes the nearest legal cell that way when nothing is straight
+  ahead, so a vertical press CAN return the other column, and that would be a
+  real choice `dCol !== 0` discards. No occupancy of today's 2x3 grid reaches
+  it, swept over all of them against every order type's rows in both patterns,
+  so this is about asking the right question rather than a live bug - a third
+  column, another row, or a new row set changes it.
   **Do not put the decision back into an effect that watches the target.**
   That was tried, as a ref holding the previous carry column, and it could not
   see what had moved one: swapping the carried order type dispatches `pickUp`
   while a carry is live, so the new carry's FALLBACK target read as a move, and
   a mouse hover dispatches `pointAt`, so a cursor swept across the other column
   and an Escape left a preference for a column the user neither chose nor was
-  told about. **Three paths write nothing, by construction rather than by a list
-  of exceptions**: a fresh pick-up, a swap pick-up, and a hover, none of which
-  is a `moveTarget`.
+  told about. Those are cases 6 and 9 of the enumeration, and they hold **by
+  construction rather than by a list of exceptions**: neither dispatch can reach
+  either writer.
 
   **It is one rule at every width, and deliberately not gated on a layout read
   or a breakpoint.** A cross-column arrow move is an expressed choice on a
@@ -416,7 +419,20 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   announce one cell while `aria-current` sat on another.
 
   **Do not give the pager a move of its own, and do not end a carry on it**:
-  paging does not touch the grid, so nothing about the carry has gone stale. The
+  paging does not touch the grid, so nothing about the carry has gone stale.
+  **`ColumnPager` must stay INSIDE `placementSurfaceRef`, and that is a
+  placement constraint rather than an accident of where it was written.** The
+  dismissal hatch listens for `pointerdown` on the document in the capture phase
+  and empties the block-in-hand register for any target the surface does not
+  contain, so a pointer press on a pager rendered outside it would put the
+  carried block down and say "Cancelled." - breaking the one requirement the
+  control exists for. Moving it into `gridPane`, or above `contentWrapper`, is
+  the plausible edit here: it is a bar rather than a lane. A lane that wants to
+  do it has to answer the carry release first.
+  `GridArea.dom.test.tsx` pins this with a real `pointerdown` under "survives a
+  pointer press on the pager while carrying"; every other pager test uses
+  `fireEvent.click`, which dispatches no `pointerdown` and so never runs the
+  hatch at all. The
   viewport follows the target in a `useLayoutEffect` rather than an effect,
   because after a paint is one frame of the old column drawn while `aria-current`
   already sits in the one `hiddenColumn` has marked invisible.
@@ -595,9 +611,9 @@ out the abbreviation renames "SMA 20" to something a voice-control user cannot s
 
 ## Layout and the CSS cascade
 
-Sixteen traps live in the layout, and each is easy to reintroduce. The two
-paragraphs below led **Known gap** are not among that sixteen: they record
-defects that are already there rather than ones you could bring back.
+Nineteen traps live in the layout, and each is easy to reintroduce. The one
+paragraph below led **Known gap** is not among that nineteen: it records a
+defect that is already there rather than one you could bring back.
 
 **The app's chrome wraps; it never scrolls.** A row of controls - a toolbar, a
 title bar, a tab strip - that cannot fit its width gets `flex-wrap`, and the row
@@ -817,9 +833,10 @@ are painted 15.8px above it and 14.8px below, over the `MarketSelector` row
 above and the top of the Orders palette below. At 360, 81.0px with 9.0px above
 and 8.0px below; at 390, 65.0px with 1.0px above and 0.0px below. At 1024 and
 1440 they are 51.5px and fit with 5.8px and 6.8px of slack, so this is a
-narrow-width defect only. It is pre-existing rather than anything the lane
-stacking above introduced: identical figures were measured on that change's
-branch and on its base commit 6067cf5. Nor is it a matter of the buttons simply
+narrow-width defect only. It is pre-existing rather than anything the paging
+rules above introduced: identical figures were measured on the lane change that
+first met it and on its base commit 6067cf5, and again on the paging change and
+its own base. Nor is it a matter of the buttons simply
 being asked to fit - at 320 the bar has 256px of inner width, so two buttons at
 `min-w-[120px]` plus the 8px gap leave about 92px of text width each, in which
 the label takes two lines and the description three, and the only way that

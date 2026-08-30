@@ -662,29 +662,19 @@ target is chosen rather than correcting it afterwards, so the sentence the pick-
 names the cell the user is left on.
 
 A column the user *chose* is what counts, and that is a different fact from the column the
-app happens to be showing them. Paging with nothing in hand is a choice, and so is moving a
-live carry across with the arrow keys or the pager; the column a pick-up merely *lands* in is
-not, because that can be the fallback rather than anything asked for. It is one rule at every
-width rather than a phone-only concept - a cross-column arrow move on a desktop is just as
-much a choice - and it is what stops one pick-up's fallback deciding the next one's start.
+app happens to be showing them - the column a pick-up merely *lands* in can be the fallback
+rather than anything asked for, and treating it as a choice is what let one pick-up's
+fallback decide the next one's start. It is one rule at every width rather than a phone-only
+concept: a cross-column arrow move on a desktop is just as much a choice.
 
 **Which events count is decided by where the choice is recorded, not by watching the target
-afterwards.** The preference is written at the two places a choice is actually made: a pager
-press, carrying or not, and the single wrapper every target move goes through, which takes
-the column from the cell the move landed on so a refused move records nothing. The press for
-the column already being targeted records it too, even though it says nothing: what a press
-*says* and what it *records* are separate questions, and it stays quiet only because nothing
-moved and nothing was refused.
-That wrapper records only a move that lands in a *different* column, since a nudge up or
-down inside one column chose no column at all - and it asks that by comparing the columns
-rather than by looking at which arrow was pressed, because a vertical press can land in the
-other column when the current one has nothing straight ahead, and that crossing would be a
-real choice.
-Three further paths deliberately record nothing at all, and they do so because none of them
-is a move: picking an order up, swapping it for another while still holding one, and
-sweeping a mouse across a cell. Watching the target instead cannot tell those apart from a
-move, which is exactly how a fallback and a silent hover each came to be remembered as a
-choice.
+afterwards.** The preference is written at the two places a choice is actually made: the
+pager's press handler, and the single wrapper every target move goes through. Which actions
+those two cover is a **closed set of nine cases, four that record and five that do not**, and
+it is written out in exactly one place - the comment on `preferredColumn` in
+`GridArea.tsx`. It is stated once on purpose: four partial paraphrases of it is how five of
+those nine came to be found one at a time, each as a defect, so a tenth case is a change to
+that rule rather than something to settle wherever it turns up.
 
 One further case is written down, because it is the single press `moveTarget` cannot answer
 for: pressing the button for the column the carry is **already** on moves nothing and says

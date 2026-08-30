@@ -2191,6 +2191,39 @@ describe("GridArea, the column pager", () => {
     expect(announcement()).toBe("");
   });
 
+  it("survives a pointer press on the pager while carrying", () => {
+    // The one requirement the control exists for, driven the way a finger
+    // drives it. Every other test here uses `fireEvent.click`, which
+    // dispatches no `pointerdown`, so the dismissal hatch never runs in them -
+    // and the hatch is the thing that could end this carry.
+    //
+    // What makes it survive is WHERE the pager is rendered: inside
+    // `placementSurfaceRef`, so the hatch's capture-phase `pointerdown`
+    // handler sees the press as inside the surface and leaves the register
+    // alone. Moving `<ColumnPager>` out of that element - into `gridPane`, or
+    // above `contentWrapper`, which is plausible for a bar rather than a lane -
+    // is the edit this test exists to catch: it would put the block down and
+    // say "Cancelled." while every click-driven test here stayed green.
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    tap(pagerButton("Exit"));
+
+    expect(announcement()).toBe("Exit column, primary row, ready to place.");
+    expect(announcement()).not.toContain("Cancelled");
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+
+    // Still in hand, so the arrived column can take it.
+    fireEvent.click(cell(1, 1));
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, primary row, Take Profit",
+    );
+  });
+
   it("carries the block across, and the arrived column places it", () => {
     render(<Harness initialGrid={clearGrid(2, 3)} />);
 
