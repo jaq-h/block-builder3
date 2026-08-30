@@ -350,13 +350,13 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     screen-reader user activating the button without first reading
     `aria-pressed`.
   - **While a block is in hand the pager is out of the tab order, and nothing
-    anywhere moves focus in answer to paging.** The off-page column is
-    `visibility: hidden` and every key that drives a carry - the arrows, Enter,
-    Escape - is handled ON the carried order's palette tile or ON a block,
-    with no document-level handler anywhere; so focus left on a pager button
-    mid-carry is a user holding an order that no key can put down, and focus
-    left in the column that has just gone off screen is dropped to `<body>` by
-    the browser.
+    anywhere moves focus in answer to paging.** Every key that drives a carry -
+    the arrows, Enter, Escape - is handled ON the carried order's palette tile
+    or ON a block, with no document-level handler anywhere; so focus left on a
+    pager button mid-carry is a user holding an order that no key can put down.
+    Focus left in the column that pages off screen is NOT lost: that column is
+    DRAWN rather than hidden, so it can still hold focus, and Tab is kept out
+    of it by `tabindex` rather than by `inert`, which would blur it.
 
   **The answer is reachability, not a hand-off**: `tabIndex={-1}` on
   `ColumnPager`'s buttons, **only while carrying**, and nothing else. A
@@ -402,8 +402,8 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     stranding (Tab leaves, the carry stays live, a pointer user taps a cell),
     and the tab-order gate still keeps a keyboard carrier away from it
     entirely.
-  - **Three residuals, all accepted deliberately rather than unnoticed, and
-    all on the same terms: not stranding, and not reachable keyboard-only.**
+  - **Two residuals, both accepted deliberately rather than unnoticed, and
+    both on the same terms: not stranding, and not reachable keyboard-only.**
     Assistive technology can focus a `tabindex="-1"` element directly, so an AT
     user can still land there mid-carry; they are not stranded - Shift+Tab
     leaves and the carry is still live - but the control is not literally
@@ -412,17 +412,13 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     there; reaching that needs mixed input - Tab to the pager while carrying
     nothing, then start a carry by pointer - because starting one from the
     keyboard means activating a palette tile, which takes focus to that tile.
-    And **focus already INSIDE the column a press hides is still lost**: a
-    pointer user taps a placed block (`usePointerGesture` focuses it), then
-    taps the other column, and the browser drops focus to `<body>`.
-    The rule above keeps focus off the BUTTON and says nothing about where
-    focus already was. **There is no remedy that does not move focus** - the
-    thing holding it is exactly what is being hidden - and this is what the
-    four withdrawn rounds cost. It is **not** the defect that was ruled
-    unshippable: the carry stays live, Tab leaves, and a pointer user taps the
-    cell. It also needs a pointer user to reach for the keyboard mid-carry,
-    since both halves are pointer presses; a keyboard-only user crosses with
-    the arrows and never touches the control.
+    **A third residual is gone rather than accepted, and must not be re-filed**:
+    focus already INSIDE the column a press pages away used to drop to
+    `<body>`, because a hidden element cannot hold focus. Drawing the off-page
+    column deleted it - nothing becomes unfocusable now, so focus survives a
+    page. Verified in Chrome and pinned by `GridArea.dom.test.tsx` under "keeps
+    focus on a block whose column pages away". Do not answer anything here with
+    a focus hand-off.
 
   `ColumnPager.dom.test.tsx` pins the tab order in both states and that the
   control still pages while carrying; `GridArea.dom.test.tsx` pins the
@@ -456,7 +452,7 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   hatch at all. The
   viewport follows the target in a `useLayoutEffect` rather than an effect,
   because after a paint is one frame of the old column drawn while `aria-current`
-  already sits in the one `hiddenColumn` has marked invisible.
+  already sits in the one `offPageColumn` has just withheld.
   `GridArea.dom.test.tsx` pins every consequence above under "the column pager",
   one test each because they are separate cases.
 
@@ -749,20 +745,42 @@ them. Three rules hold it together and none may be simplified away:
   sized against the 220px floor above, and a guard reading the class list stays
   green through it. `sm:overflow-visible` puts the scroll container away
   entirely where both columns fit.
-- **The off-page column is `invisible sm:visible` (`hiddenColumn`), not
-  hidden.** `visibility: hidden` keeps its box, which is what keeps the columns
-  BESIDE each other - a removed box is not beside anything - while buying
-  everything `display: none` would: no tab stop, nothing in the accessibility
-  tree, no hit testing. That last one is load-bearing twice over. It stops the
-  browser scrolling the viewport to a focused block the pager did not put there
-  and leaving the control claiming a column the user is not on; and
-  `cellBoxesFromDom` reads the same computed `visibility` so an off-screen cell
-  is not a drop candidate. Without that, measured at 390, a release at the far
-  right edge put **30px of the dragged tile over an Exit cell against 4px over
-  the Entry cell it was drawn on**, so greatest-overlap placed the order into a
-  column that was not on screen, with no highlight to warn of it - the highlight
-  comes from the same list, so it was off screen too. That is also the reason
-  there is **no peek**: a sliver of the next column is a real drop target.
+- **The off-page column is DRAWN, and withheld from hit testing rather than
+  hidden.** 20% of it shows past the viewport's edge as a wayfinding cue that
+  there is more to view; the number is the captain's own. Both columns keep
+  their boxes and stay beside each other, and `offPageColumn` -
+  `pointer-events-none sm:pointer-events-auto`
+  `max-sm:[&:is(&)_*]:pointer-events-none` - is the whole of what withholds it.
+  **VISIBLE DOES NOT MEAN DROPPABLE, and the peek is why that has to be said
+  out loud.** A peeking cell steals releases: measured at 390, a release at the
+  far right edge put **30px of the dragged tile over an off-page Exit cell
+  against 4px over the Entry cell it was drawn on**, so greatest-overlap placed
+  the order into a column that was not on screen, with no highlight to warn of
+  it - the highlight comes from the same list, so it was off screen too.
+  `cellBoxesFromDom` therefore drops every cell whose computed `pointer-events`
+  is `none`. It is keyed on that rather than on visibility because drawing the
+  peek separated "can the user see it" from "may a drop land in it", and hit
+  testing is the same question a drop asks, so the two cannot drift.
+  **Inheritance answers a cell but not a block, which is why the class carries
+  a second rule.** A cell declares no `pointer-events` of its own and so
+  inherits the refusal; `getBlockPositionerProps` declares one, opting the tile
+  back in with `*:pointer-events-auto` so the strip it draws does not swallow
+  presses meant for the cell under it. That left a block drawn in the sliver
+  tappable and draggable - a tap announcing a refusal for an order the user can
+  barely see, a vertical drag re-pricing it - while drop resolution stayed
+  correct throughout. The subtree rule closes it and wins by SPECIFICITY:
+  `:is(&)` repeats the class in the compound, so it lands at (0,2,0) against
+  the opt-in's (0,1,0), where a plain `[&_*]` would tie and be settled by
+  whichever utility Tailwind emitted second. It is `max-sm:` with **no `sm:`
+  counterpart**, deliberately - declaring `auto` across a subtree would beat
+  the positioner's own `pointer-events-none` and turn that strip into a hit
+  target at every desktop width.
+  **Nothing here may hide the column.** A hidden element cannot hold focus, so
+  hiding it dropped focus to `<body>` whenever the pager took away the column
+  the focused element lived in; drawing it is what deletes that defect. Tab is
+  kept out by the `tabindex` rule in `GridArea`, and `inert` is refused for the
+  same reason - it blurs what it is applied to, which would bring the defect
+  straight back.
 - **`columnPagerRow` carries `px-2`, and it is not decoration.** The grid pane
   has no horizontal padding, so a lane is flush with the panel's content edge -
   and the panel clips there. Every lane's own focusable children are inset
@@ -842,9 +860,9 @@ file guards most heavily: the scroller differs by breakpoint (the document below
 running scroll so the highlight and the drop must be recomputed per scroll frame
 rather than per pointer move, and all six of `usePointerGesture`'s exits have to
 keep holding while it runs. Note that the horizontal half of it is NOT such a
-case and must not be answered that way: the off-page column is `invisible`, so
-its cells are not drop candidates at all and a drag towards them is refused
-rather than mis-resolved. Tracked outside this repository.
+case and must not be answered that way: the off-page column is withheld from
+hit testing, so its cells are not drop candidates at all and a drag towards
+them is refused rather than mis-resolved. Tracked outside this repository.
 
 **Known gap: the assembly panel's pattern buttons overflow their header rail
 at narrow widths.** `patternSelectorRow` is `cn(panelHeaderBar, "gap-2")`, and

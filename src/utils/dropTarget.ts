@@ -172,6 +172,13 @@ export const resolveDropCell = (
  * the whole column without this module knowing anything about how the panel
  * pages - and it is written by a breakpoint, so above `sm`, where both columns
  * are drawn and reachable, it excludes nothing.
+ *
+ * A cell is safe to read that way because a cell declares no `pointer-events`
+ * of its own. That is not true everywhere in the column - the block positioner
+ * opts its tile back in explicitly - so `offPageColumn` carries a second,
+ * subtree-wide rule for the elements that do declare one. This module is
+ * unaffected either way: what it reads still computes `none`, by inheritance
+ * before that rule and by declaration after it.
  */
 export const cellBoxesFromDom = (): CellBox[] => {
   const cells: CellBox[] = [];

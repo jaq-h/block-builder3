@@ -225,12 +225,45 @@ export const pagedColumn =
 // reason this class exists at all.
 //
 // `pointer-events: none` is what withholds it, and it is doing three jobs at
-// once. It takes the peeking column out of hit testing, so a tap on the sliver
-// does nothing. It is INHERITED, so one computed read per cell answers it for
-// the whole column - which is how `cellBoxesFromDom` excludes those cells
-// without knowing anything about how the panel pages. And it is written by a
-// breakpoint, so it says "off page" only where paging exists; from `sm` both
-// columns are drawn and it resolves to nothing.
+// once. It takes the peeking column out of hit testing, so a press on the
+// sliver does nothing. It is INHERITED, so one computed read per cell answers
+// it for the whole column - which is how `cellBoxesFromDom` excludes those
+// cells without knowing anything about how the panel pages, and how
+// `GridArea`'s tab-order rule finds the column that is off page. And it is
+// written by a breakpoint, so it says "off page" only where paging exists;
+// from `sm` both columns are drawn and it resolves to nothing.
+//
+// **Inheritance alone does not do the first of those jobs, and that is why the
+// rule is written twice.** An inherited value is what an element gets when
+// nothing declares one for it, and one thing inside a column does declare one:
+// `getBlockPositionerProps` draws every block on a price axis inside an
+// absolutely positioned strip that is itself `pointer-events-none`, with
+// `*:pointer-events-auto` opting the tile back in so the strip does not
+// swallow presses meant for the cell under it. That opt-in beat the column, so
+// a block drawn in the peeking sliver stayed tappable and draggable: a tap
+// announced the `staysInCell` refusal for an order the user can barely see, and
+// a vertical drag re-priced it, with no highlight and the pager still reading
+// `aria-pressed="true"` on the column the block is not in. Derived from the
+// constants rather than measured, a dual-axis cell's leading leg leaves about
+// 14px of its 40px tile drawn and live inside the sliver at 320 and about 16px
+// at 414. **Only DIRECT interaction with a block ever leaked**: a cell declares
+// no `pointer-events` of its own, so it does inherit the refusal, and
+// `cellBoxesFromDom` reads the cell - drop resolution was never wrong and this
+// does not change it.
+//
+// `[&:is(&)_*]` answers it over the whole subtree, and it wins by SPECIFICITY
+// rather than by stylesheet order. `:is(&)` repeats this class in the compound,
+// so the rule lands at (0,2,0) against the positioner's (0,1,0) `:is(& > *)`;
+// a plain `[&_*]` would tie at (0,1,0) and be settled by whichever of the two
+// utilities Tailwind happened to emit second, which is the same "two things
+// that merely agree" the width comment above refuses.
+//
+// It is written `max-sm:` and has deliberately NO `sm:` counterpart. Reversing
+// a subtree rule means declaring `auto` on every descendant, and at (0,2,0)
+// that would beat the positioner's own `pointer-events-none` and turn a strip
+// spanning each cell into a hit target at every width above `sm`. So the rule
+// does not exist where both columns are drawn, which is also where nothing
+// needs withholding.
 //
 // What it deliberately does NOT do is hide the column, and that is the whole
 // difference from the `visibility: hidden` this replaced. A hidden element
@@ -239,7 +272,8 @@ export const pagedColumn =
 // of focus hand-offs failed to close. Nothing here becomes unfocusable, so
 // that defect is gone rather than accepted. Tab is kept out of the off-page
 // column by `tabindex`, in `GridArea`, which does not blur what it applies to.
-export const offPageColumn = "pointer-events-none sm:pointer-events-auto";
+export const offPageColumn =
+  "pointer-events-none sm:pointer-events-auto max-sm:[&:is(&)_*]:pointer-events-none";
 
 export function getColumnHeaderProps(tint?: string) {
   const className = "p-2 text-center border-b border-border-dimmed";

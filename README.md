@@ -669,10 +669,9 @@ user saying the name of the column they are on, and a screen-reader user pressin
 without first reading `aria-pressed`.
 
 **Nothing moves keyboard focus when the panel pages, and the pager is what makes that
-safe.** The column going off screen is held by `visibility: hidden`, and every key that drives
-a carry - the arrows, Enter and Escape - is handled on the carried order's palette tile or on
-a block rather than on the document. So focus left on a pager button mid-carry would be an
-order no key could put down. While a block is in hand the pager's buttons therefore leave the
+safe.** Every key that drives a carry - the arrows, Enter and Escape - is handled on the
+carried order's palette tile or on a block rather than on the document. So focus left on a
+pager button mid-carry would be an order no key could put down. While a block is in hand the pager's buttons therefore leave the
 tab order, which removes the stranding rather than remedying it after the fact: a keyboard
 carrier cannot be stranded on a control they cannot reach. They stay clickable and keep their
 target size throughout, and carrying nothing they are an ordinary tab stop - a user who is not
@@ -690,25 +689,27 @@ the viewport follows. It is the control that is out of reach mid-carry, never th
 reaching the other column while holding a block, and placing it there, stays fully available
 from the keyboard.
 
-Three limits are accepted rather than hidden. Assistive technology can still put focus on the
+Two limits are accepted rather than hidden. Assistive technology can still put focus on the
 buttons directly, and a user who does is not stranded - Shift+Tab leaves and the carry is
 still live. Taking a button out of the tab order does not blur it if it already holds focus,
 so focus that was on the pager when a carry began stays there; reaching that needs mixed
-input, since starting a carry from the keyboard moves focus to the palette tile. And focus
-that is already *inside* the column a press hides is still lost: tap a
-placed block, then page away from it, and the browser drops focus to the document body. There
-is no remedy for that which does not move focus, and moving focus is what this design removed
-after it produced a desktop regression and a re-render loop; the carry itself survives, Tab
-leaves, and a pointer user places by tapping a cell. Reaching it needs a pointer user to
-switch to the keyboard mid-carry, which is why it is a limitation rather than a defect.
+input, since starting a carry from the keyboard moves focus to the palette tile. A third
+limit used to sit beside them and is now gone: focus already *inside* the column a press
+paged away was dropped to the document body, because a hidden element cannot hold focus.
+Drawing that column instead of hiding it removed it - nothing becomes unfocusable, so focus
+survives a page.
 
-The column that is not on screen is held by `visibility: hidden` rather than removed. It
-keeps its box, which is what keeps the two columns beside each other, while staying out of
-the tab order, out of the accessibility tree and out of hit testing - and `dropTarget.ts`
-reads that same fact, so a cell the user cannot see is never a drop candidate. That is also
-why the panel shows a whole column and not a sliver of the next: a drop is resolved by
-greatest overlap of the dragged tile, so a peeking cell would steal releases aimed at the
-column in view. Above `sm` both columns are drawn and the viewport stops being a scroll
+The column that is not on screen is **drawn**: 20% of it shows past the viewport's edge as a
+cue that there is more to view. It keeps its box, which is what keeps the two columns beside
+each other, and it stays focusable, which is what lets focus survive a page. What it does not
+keep is hit testing - `offPageColumn` withholds that with `pointer-events: none` - and
+`dropTarget.ts` reads exactly that fact, so a cell the panel is not showing is never a drop
+candidate however much of it the user can see. **Visible does not mean droppable**, and the
+peek is why that has to be said: a drop is resolved by greatest overlap of the dragged tile,
+and measured at 390 a release at the far right edge put 30px of the tile over an off-page
+Exit cell against 4px over the Entry cell it was drawn on. Tab is kept out of that column by
+`tabindex` rather than by `inert`, which would blur what it is applied to and bring the lost
+focus straight back. Above `sm` both columns are drawn and the viewport stops being a scroll
 container, while the pager is hidden in CSS: it is rendered at every width and
 `columnPagerRow`'s `sm:hidden` gives it `display: none`, so above `sm` it is not a flex item
 of `contentRow` at all rather than a zero-width one, and the desktop row is left exactly as

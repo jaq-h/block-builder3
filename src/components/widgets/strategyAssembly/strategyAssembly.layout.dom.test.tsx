@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 
 import ProviderColumn from "../../common/grid/ProviderColumn";
 import { ORDER_TYPES } from "../../../data/orderTypes";
+import { getBlockPositionerProps } from "../../../styles/grid";
 import { createEmptyGrid } from "../../../utils";
 import {
   columnPagerRow,
@@ -144,6 +145,39 @@ describe("the assembly grid's lanes", () => {
     // drawing the column is what removes.
     expect(classes).not.toContain("invisible");
     expect(classes).not.toContain("hidden");
+  });
+
+  it("withholds the whole off-page column, not only the box the class is on", () => {
+    // Inheritance carries `pointer-events: none` to everything that declares
+    // nothing of its own, which is every cell - and one thing that is not.
+    // `getBlockPositionerProps` draws a block on a price axis inside a strip
+    // that is `pointer-events-none` with `*:pointer-events-auto` opting the
+    // tile back in, and an explicit declaration beats an inherited value: the
+    // tile stayed tappable and draggable inside the peeking sliver, so a press
+    // there reached a block in the column the panel is not showing. Only direct
+    // interaction with a block leaked - `cellBoxesFromDom` reads the CELL,
+    // which does inherit - which is why the guard is written against these two
+    // constants together rather than against the drop resolver.
+    const offPage = offPageColumn.split(/\s+/);
+    const positioner = getBlockPositionerProps(25).className.split(/\s+/);
+
+    // The opt-in this has to beat. If it ever goes, the rule below is no longer
+    // answering anything and this test should be revisited rather than deleted.
+    expect(positioner).toContain("*:pointer-events-auto");
+
+    // `:is(&)` repeats the class in the compound, so the subtree rule lands at
+    // (0,2,0) against the opt-in's (0,1,0) and wins by specificity. A plain
+    // `[&_*]` would tie and be settled by whichever utility Tailwind emitted
+    // second, which is not a rule at all.
+    expect(offPage).toContain("max-sm:[&:is(&)_*]:pointer-events-none");
+
+    // And no `sm:` counterpart, ever. Reversing a subtree rule declares `auto`
+    // on every descendant, which at that specificity would beat the
+    // positioner's own `pointer-events-none` and make a strip spanning each
+    // cell a hit target at every width above `sm`.
+    for (const utility of offPage) {
+      expect(utility).not.toMatch(/^sm:\[.*_\*\]:pointer-events-/);
+    }
   });
 
   it("insets the pager so its focus rings are inside the pane that clips them", () => {

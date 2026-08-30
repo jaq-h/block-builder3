@@ -51,15 +51,15 @@ interface ColumnPagerProps {
  * **Nothing in this app moves DOM focus in answer to paging, and this is what
  * makes that safe.**
  *
- * **The problem it removes.** The off-page column is `visibility: hidden`, and
- * every key that drives a carry - the arrows, Enter, Escape - is handled ON
- * the carried order's palette tile or ON a block; there is no document-level
- * handler. So focus resting on one of these buttons during a carry is a user
- * holding an order that no key can put down: Enter is the same press again,
- * Escape does nothing, the arrows do nothing. Four rounds of answering that
- * with a focus hand-off each found a further path the last one could not see,
- * and a hand-off is expensive in its own right - it moves focus where the user
- * did not ask, and a request that cannot land re-renders without settling.
+ * **The problem it removes.** Every key that drives a carry - the arrows,
+ * Enter, Escape - is handled ON the carried order's palette tile or ON a
+ * block; there is no document-level handler anywhere. So focus resting on one
+ * of these buttons during a carry is a user holding an order that no key can
+ * put down: Enter is the same press again, Escape does nothing, the arrows do
+ * nothing. Four rounds of answering that with a focus hand-off each found a
+ * further path the last one could not see, and a hand-off is expensive in its
+ * own right - it moves focus where the user did not ask, and a request that
+ * cannot land re-renders without settling.
  * **Stranding is removed here instead of remedied there: you cannot be
  * stranded on a control you cannot reach.**
  *
@@ -115,8 +115,8 @@ interface ColumnPagerProps {
  *    accepted once.** Without the cancellation a pointer press may focus the
  *    button. That is not stranding: Tab leaves, the carry stays live, and a
  *    pointer user places by tapping a cell - the same reasoning the
- *    focus-in-a-hidden-column limitation below rests on. A keyboard-only user
- *    is unaffected either way, since they cross with the arrows.
+ *    limitations below rest on. A keyboard-only user is unaffected either
+ *    way, since they cross with the arrows.
  * 3. **The tab-order gate still does the work it was chosen for.** A keyboard
  *    carrier cannot land here at all, so cannot be stranded here. Only a
  *    pointer press can put focus on one of these buttons, and a pointer user
@@ -126,46 +126,37 @@ interface ColumnPagerProps {
  * consequence rather than an oversight, and tidying it up is what must not
  * happen.
  *
- * ─── TWO LIMITATIONS, ACCEPTED AND WRITTEN DOWN RATHER THAN HIDDEN ───
+ * ─── PAGING TAKES NOBODY'S FOCUS AWAY, AND THAT IS WHY THE COLUMN IS DRAWN ─
  *
- * **Focus already INSIDE the column a press hides is still lost.** A pointer
- * user taps a placed block - `usePointerGesture` focuses it - and then taps
- * the other column here; that column goes `visibility: hidden` under the
- * focused block and the browser drops focus to `<body>`. Nothing above
- * prevents that: this rule keeps focus off the BUTTON, and says nothing about
- * where focus already was.
+ * The off-page column is drawn - 20% of it peeks past the viewport's edge - and
+ * withheld from hit testing instead of hidden (`offPageColumn`). That is what
+ * removed the one limitation this section used to carry: a hidden element
+ * cannot hold focus, so paging away from a focused block dropped focus to
+ * `<body>` and left the user holding a live carry with no key to drive or
+ * cancel it. Nothing here becomes unfocusable now, so focus survives a page -
+ * verified in Chrome and pinned by `GridArea.dom.test.tsx` under "keeps focus
+ * on a block whose column pages away". **Do not re-file it, and do not answer
+ * anything in this component with a focus hand-off.** Tab is kept out of the
+ * off-page column by `tabindex` in `GridArea`, which - unlike `inert` - does
+ * not blur what it is applied to and so cannot bring that defect back.
  *
- * **It is accepted deliberately, and the trade is the point.** There is no
- * remedy that does not move focus - something has to be holding it, and the
- * thing holding it is exactly what is being hidden - and focus-moving is the
- * mechanism four consecutive rounds removed: it produced a desktop regression
- * (focus stolen at 1440 where nothing was hidden at all) and a re-render loop
- * that never settled when the request could not land, each round's point fix
- * exposing the next path. **This is not the defect that was ruled
- * unshippable**: that one left the user unable to place or cancel what they
- * were holding. Here the carry stays live, Tab leaves for the palette, and a
- * pointer user simply taps the cell. And the path needs a pointer user to
- * switch to the keyboard mid-carry, because both halves of it are pointer
- * presses - a keyboard-only user cannot reach it at all, since they cross
- * columns with the arrows, which never touch this control. The users most
- * harmed by lost focus are the ones who cannot hit it. **Do not answer this
- * with a focus hand-off.**
+ * ─── THREE WAYS FOCUS CAN BE ON A BUTTON HERE MID-CARRY, ALL ACCEPTED ─
  *
- * **Two ways focus can be on a button here mid-carry anyway**, so "a keyboard
- * carrier cannot land on the pager" carries its qualifier rather than being
- * overstated. Assistive technology can put focus on a `tabindex="-1"` element
- * directly. And `tabIndex` going to -1 on an element that ALREADY HOLDS focus
- * does not blur it - the element keeps focus and merely leaves the sequential
- * order - so focus that was on a button when the carry began stays there. That
- * second one needs MIXED input to reach: Tab to the pager while carrying
- * nothing, when it is legitimately focusable, then start a carry by pointer
- * from the palette. Keyboard-only cannot get there, because starting a carry
- * means activating a palette tile, which moves focus to that tile.
+ * So "a keyboard carrier cannot land on the pager" carries its qualifier
+ * rather than being overstated. A pointer press may leave focus on the button
+ * pressed, since nothing cancels the press (above). Assistive technology can
+ * put focus on a `tabindex="-1"` element directly. And `tabIndex` going to -1
+ * on an element that ALREADY HOLDS focus does not blur it - the element keeps
+ * focus and merely leaves the sequential order - so focus that was on a button
+ * when the carry began stays there. That last one needs MIXED input to reach:
+ * Tab to the pager while carrying nothing, when it is legitimately focusable,
+ * then start a carry by pointer from the palette. Keyboard-only cannot get
+ * there, because starting a carry means activating a palette tile, which moves
+ * focus to that tile.
  *
- * Both are accepted on the same terms as the pointer-press case above and the
- * hidden-column case below: not stranding, and pointer-initiated. Shift+Tab or
- * Tab leaves, the carry is still live when they get back, and tapping a cell
- * places the order.
+ * All are accepted on the same terms: not stranding, and not reachable
+ * keyboard-only. Shift+Tab or Tab leaves, the carry is still live when they
+ * get back, and tapping a cell places the order.
  */
 const ColumnPager: FC<ColumnPagerProps> = ({
   visibleColumn,

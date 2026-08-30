@@ -2336,10 +2336,10 @@ describe("GridArea, the column pager", () => {
    * occupied and so is not one of the carry's targets - the cell refuses the
    * order rather than placing it.
    *
-   * This is also the state of the accepted limitation recorded on
-   * `ColumnPager`: in a real browser the press below hides the column holding
-   * that focused block, so the browser drops focus to `<body>`. jsdom performs
-   * no such fixup, which is why nothing here asserts about focus at all.
+   * The press below does NOT take that focus away: the column it pages off is
+   * drawn rather than hidden, so the block keeps focus in a real browser. That
+   * is asserted where it can fail, under "keeps focus on a block whose column
+   * pages away"; here it is only the state the carry starts from.
    */
   const carryWithFocusInEntry = () => {
     pageTheColumns();
@@ -2369,10 +2369,9 @@ describe("GridArea, the column pager", () => {
     // other column and the order can be put down there.
     //
     // **This deliberately asserts nothing about `document.activeElement`, and
-    // an assertion must not be added here.** jsdom moves no focus on a press
-    // and performs no focus fixup when a subtree is hidden, so every focus
-    // outcome of this press - the one the code produces and the one a
-    // regression would produce - is identical in this environment. An
+    // an assertion must not be added here.** jsdom moves no focus on a press,
+    // so every focus outcome of this press - the one the code produces and the
+    // one a regression would produce - is identical in this environment. An
     // assertion that cannot fail reads as coverage while pinning nothing.
     //
     // Nor is there a focus contract here to pin. Nothing suppresses the focus

@@ -9,25 +9,29 @@ import { cellBoxesFromDom } from "./dropTarget";
 //
 // `resolveDropCell` is tested in `dropTarget.test.ts` against fixtures. This
 // file covers the other half - what the DOM hands it - and there is one rule
-// there worth an executable guard: a cell the user cannot see is not a drop
-// target.
+// there worth an executable guard: a cell the panel is not showing is not a
+// drop target, however much of it the user can see.
 //
 // Below `sm` the two grid columns stay side by side and the panel shows one at
-// a time through a paged viewport, with the off-page column held by
-// `visibility: hidden` rather than removed. That is deliberate - the columns
-// have to keep their boxes to be beside each other - and it means the hidden
-// column's cells still report a rect, immediately to the right of the
-// viewport's own edge. A released tile is 40px wide and centred on the pointer,
-// so a release against that edge overlaps them: measured in Chrome at a 390px
-// viewport, a release at the far right put 30px of the tile over an Exit cell
-// against 4px over the Entry cell it was drawn on, and greatest-overlap-wins
-// placed the order into a column that was not on screen. The highlight comes
-// from this same list, so nothing warned of it either.
+// a time through a paged viewport, with 20% of the off-page column DRAWN past
+// its edge as a cue that there is more to view. So that column's cells report a
+// rect immediately to the right of the viewport's own edge. A released tile is
+// 40px wide and centred on the pointer, so a release against that edge overlaps
+// them: measured in Chrome at a 390px viewport, a release at the far right put
+// 30px of the tile over an Exit cell against 4px over the Entry cell it was
+// drawn on, and greatest-overlap-wins placed the order into a column that was
+// not on screen. The highlight comes from this same list, so nothing warned of
+// it either.
+//
+// **Visible does not mean droppable**, which is why the filter is keyed on
+// `pointer-events` rather than on visibility: the peek separated "can the user
+// see it" from "may a drop land in it", and hit testing is the same question a
+// drop asks.
 //
 // jsdom lays nothing out, so the rects here are stubbed. What it CAN see is the
-// thing that matters: that the filter reads computed `visibility` and that
-// `visibility` reaching a cell from an ancestor is enough, which is what lets
-// the whole column be hidden by one class.
+// thing that matters: that the filter reads computed `pointer-events` and that
+// the value reaching a cell from an ancestor is enough, which is what lets the
+// whole column be withheld by one class.
 
 const CELL_SIZE = { width: 100, height: 50 };
 
