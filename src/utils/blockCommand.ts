@@ -308,12 +308,21 @@ export const commandReducer = (
 const COLUMN_NAMES = ["Entry", "Exit"];
 const ROW_NAMES = ["upper conditional", "primary", "lower conditional"];
 
+/**
+ * Human-readable name for a grid column, from the same table `describeCell`
+ * reads. A sentence that has to name a column on its own - the pager refusal
+ * in `gridAnnouncements.ts` - takes it from here rather than slicing a cell's
+ * description or keeping a second list.
+ */
+export const describeColumn = (col: number): string =>
+  COLUMN_NAMES[col] ?? `column ${col + 1}`;
+
 /** Human-readable name for a cell, used in labels and announcements alike. */
 export const describeCell = (
   cell: CellPosition,
   pattern: StrategyPattern = "conditional",
 ): string => {
-  const column = COLUMN_NAMES[cell.col] ?? `column ${cell.col + 1}`;
+  const column = describeColumn(cell.col);
   if (pattern === "bulk") return `${column} column, row ${cell.row + 1}`;
   const row = ROW_NAMES[cell.row] ?? `row ${cell.row + 1}`;
   return `${column} column, ${row} row`;

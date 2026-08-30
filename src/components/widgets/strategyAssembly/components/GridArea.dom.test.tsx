@@ -1523,7 +1523,7 @@ describe("GridArea, a drop whose block overlaps a cell it is not over", () => {
       "Exit column, row 2, empty",
     );
     expect(announcement()).toBe(
-      "Exit column, row 2 is not on screen, so nothing can be placed there yet. Market order was not placed. Use the column buttons to show it first.",
+      "Exit column, row 2 is not on screen, so nothing can be placed there yet. Use the column buttons to show the Exit column first. Market order was not placed.",
     );
   });
 

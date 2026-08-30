@@ -344,6 +344,36 @@ describe("describeOutcome, what the grid actually did", () => {
     ).toBe("Market block is no longer on the grid, and is no longer picked up.");
   });
 
+  it("names the column to page to, rather than leaving a pronoun to find it", () => {
+    // The instruction clause is the one part of this sentence that tells the
+    // user what to do next, and it must not be readable as being about their
+    // order. "Use the column buttons to show it first" placed after
+    // "Market order was not placed." puts the order between the pronoun and
+    // the column it means, so the column is named and no pronoun is used.
+    const refusal = say({
+      kind: "placement",
+      source: palette,
+      cell,
+      result: { status: "refused", reason: "columnNotShown" },
+      via: "drag",
+    });
+
+    expect(refusal).toBe(
+      "Exit column, upper conditional row is not on screen, so nothing can be placed there yet. Use the column buttons to show the Exit column first. Market order was not placed.",
+    );
+    expect(refusal).not.toContain("show it first");
+  });
+
+  it("still names where a refused block is after a column refusal", () => {
+    // A grid source keeps the clause that says where the block still is, and
+    // it stays last, so the instruction cannot be separated from the column.
+    expect(
+      placement({ status: "refused", reason: "columnNotShown" }, "drag"),
+    ).toBe(
+      "Exit column, upper conditional row is not on screen, so nothing can be placed there yet. Use the column buttons to show the Exit column first. Market block stayed in Entry column, primary row.",
+    );
+  });
+
   it("says 'any more' only for a carry, whose targets were offered", () => {
     // The arrow keys walk cells the grid offered at pick-up time, so a refusal
     // there means the grid has changed since. A drag can be released over any

@@ -89,9 +89,13 @@ export const contentRow = "flex flex-col sm:flex-row min-h-full gap-1.5";
 //
 // Above `sm` it is the row it has always been and both columns are drawn in it.
 // Below `sm` two of them will not fit - 446px of column against a 288px panel
-// at 320 - so this becomes a one-column viewport over the same row: the columns
-// are each the viewport's own width (`pagedColumn` below), the row overflows it
-// to the right, and `ColumnPager` pages between them by setting `scrollLeft`.
+// at 320 - so this becomes a one-column viewport over the same row: each column
+// takes this box's width less the 20% peek and the 6px gap, which `pagedColumn`
+// below owns the arithmetic for, the row overflows to the right, and
+// `ColumnPager` pages between them by setting `scrollLeft`. Measured in Chrome
+// at 320 / 360 / 390 / 414 the column is 235.0 / 268.3 / 293.3 / 313.3 against
+// a wrapper of 288 / 328 / 358 / 382 - so the column is NOT this box's own
+// width, and the 220px floor has 15px of headroom at the tightest of them.
 //
 // **`hidden` rather than `auto`, and that is the whole difference between this
 // and the horizontal scroller AGENTS.md rejects.** A hidden overflow is a
