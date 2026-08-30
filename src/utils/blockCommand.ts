@@ -109,6 +109,8 @@ export type CommandAction =
       source: ProviderSource;
       targets: CellPosition[];
       origin: ActivationOrigin;
+      /** The column the user is looking at; see `initialTarget`. */
+      preferredCol: number;
     }
   | { type: "moveTarget"; dCol: number; dRow: number }
   /**
@@ -179,17 +181,36 @@ export const sameTargets = (
   a.length === b.length && a.every((cell, index) => samePosition(cell, b[index]));
 
 /**
- * Where a pick-up starts: the first legal cell.
+ * Where a pick-up starts: the first legal cell in the column the user is
+ * looking at, and otherwise the first legal cell there is.
  *
  * A carried block is always a palette order now, so there is no cell it "came
  * from" to prefer. `withOriginCell` used to insert a placed block's own cell
  * into the target list for exactly that; it went with the cross-cell move
  * (decision D9), because a carry whose only legal destination is where the
  * block already sits is not a move, it is a no-op with extra steps.
+ *
+ * `preferredCol` is what replaced it, and it is a different kind of preference:
+ * not where the block came from, but which column the user is standing in.
+ * Below `sm` the panel shows one grid column at a time and the carry's target
+ * owns which one that is, so a pick-up landing in the first legal cell outright
+ * would throw a user who had paged to Exit back to Entry the moment they
+ * reached for an order - every time, since an empty grid makes some Entry cell
+ * legal and the target list is walked column-major. It is applied whatever the
+ * width, with no layout read and no breakpoint test: `preferredCol` means "the
+ * column the user last chose", which is true at every size and stays 0 for
+ * anyone who never paged, so above `sm` it selects the cell `targets[0]` would
+ * have given anyway in every ordinary session.
+ *
+ * **The fallback is exactly the first legal cell**, which is what keeps a
+ * pick-up whose only legal cells are in the OTHER column opening the pager
+ * there: nothing in the shown column means nothing to prefer.
  */
 export const initialTarget = (
   targets: CellPosition[],
-): CellPosition | null => targets[0] ?? null;
+  preferredCol: number,
+): CellPosition | null =>
+  targets.find((cell) => cell.col === preferredCol) ?? targets[0] ?? null;
 
 /**
  * Step the target one cell in a direction, considering only legal cells - so
@@ -250,7 +271,7 @@ export const commandReducer = (
 ): CommandState => {
   switch (action.type) {
     case "pickUp": {
-      const target = initialTarget(action.targets);
+      const target = initialTarget(action.targets, action.preferredCol);
       // A block with nowhere legal to go is not picked up at all, so the user
       // can never get stuck carrying something that cannot be put down.
       if (!target) return state;

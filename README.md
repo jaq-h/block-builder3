@@ -650,12 +650,18 @@ It is one mechanism rather than two. **Carrying a block, a press dispatches the 
 target - so the cells a carry may reach, and the sentence it speaks on arriving, are the ones
 that already existed. A carry therefore survives the move and can be placed in the column it
 arrives at: paging changes no cell in the grid, so nothing about the carry has gone stale.
-Two things follow without being written anywhere. A pick-up whose only legal cells are in the
-other column opens the pager there. And a press the carry refuses - "No cell available in
-that direction." - leaves the pager where it is, exactly as the arrow key does, so the button
-never claims a column the user is not on.
+One thing follows without being written anywhere: a press the carry refuses - "No cell
+available in that direction." - leaves the pager where it is, exactly as the arrow key does,
+so the button never claims a column the user is not on.
 
-One case is written down instead, because it is the single press `moveTarget` cannot answer
+**A pick-up starts in the column on screen** whenever its offer reaches one, and falls back
+to the first legal cell there is - so an offer confined to the other column still opens the
+pager there, and an offer spanning both leaves the user in the column they paged to instead
+of dragging them back to Entry. That preference reaches the point where the target is chosen
+rather than correcting it afterwards, so the sentence the pick-up speaks names the cell the
+user is left on.
+
+One further case is written down, because it is the single press `moveTarget` cannot answer
 for: pressing the button for the column the carry is **already** on does nothing and says
 nothing. No arrow key means "stay put", so a zero-step move leaves the target where it is and
 `moveTarget` would announce "No cell available in that direction." - a refusal of a press that
@@ -670,8 +676,12 @@ the tab order, out of the accessibility tree and out of hit testing - and `dropT
 reads that same fact, so a cell the user cannot see is never a drop candidate. That is also
 why the panel shows a whole column and not a sliver of the next: a drop is resolved by
 greatest overlap of the dragged tile, so a peeking cell would steal releases aimed at the
-column in view. Above `sm` both columns are drawn, the viewport stops being a scroll
-container, and the pager is not rendered at all.
+column in view. Above `sm` both columns are drawn and the viewport stops being a scroll
+container, while the pager is hidden in CSS: it is rendered at every width and
+`columnPagerRow`'s `sm:hidden` gives it `display: none`, so above `sm` it is not a flex item
+of `contentRow` at all rather than a zero-width one, and the desktop row is left exactly as
+it was. Hiding it by not rendering it would look the same above `sm` and remount the control
+on every crossing of the breakpoint, losing which column it was showing.
 
 **What moves between cells, and what does not.** A **placed block never changes cells** -
 every block, by every input method, with no per-type carve-out. That is captain decision D9,

@@ -322,11 +322,28 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   on screen are one fact with one owner**, because the alternative is a
   highlighted cell read out as `aria-current` in a column the user cannot see -
   the mirror of the stale offer the `gridReplaced` transition exists to withdraw.
-  Two consequences fall out of that rather than being written anywhere, and
-  neither is a bug: a pick-up whose only legal cells are in the other column
-  opens the pager there, and a press the carry refuses ("No cell available in
-  that direction.") leaves the pager where it is, exactly as the arrow key does,
-  so the button never claims a column the user is not on. **A third case is
+  One consequence falls out of that rather than being written anywhere, and it
+  is not a bug: a press the carry refuses ("No cell available in that
+  direction.") leaves the pager where it is, exactly as the arrow key does, so
+  the button never claims a column the user is not on. **The other direction of
+  the pairing is written down, in `initialTarget`: a pick-up starts in the
+  column on screen whenever its offer reaches one**, with the first legal cell
+  as the fallback. Without it the target owning the viewport was a one-way
+  street - an empty grid makes some Entry cell legal and the offer is walked
+  column-major, so reaching for an order while paged to Exit landed the target
+  in Entry and threw the user back there, on the main path for building an Exit
+  leg on a phone. Two things about how it is done are load-bearing. It is not
+  gated on a layout read or a breakpoint: the preferred column means "the column
+  the user last chose", which is meaningful at every width and stays 0 for
+  anyone who never paged, so above `sm` it selects the cell `targets[0]` would
+  have given anyway - and a `scrollWidth > clientWidth` guard would be a branch
+  jsdom can never take, shipping the behaviour unpinned. And the preference
+  travels into the reducer's own `pickUp` rather than correcting the target
+  after the fact, because `pointToTarget` is silent by design and a correction
+  there would announce one cell while `aria-current` sat on another. **The
+  fallback is exactly the first legal cell**, which is what keeps a pick-up
+  whose only legal cells are in the OTHER column opening the pager there.
+  **A third case is
   written down, because it is the one press `moveTarget` cannot answer for:
   pressing the button for the column the carry is ALREADY on is a deliberate
   silent no-op**, an early return in `handleShowColumn` before the dispatch.
@@ -335,14 +352,20 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   press that asked for nothing. The non-carrying branch is already silent for
   that press and the two must agree, so the fix REMOVES an untrue sentence
   rather than adding a true one: no outcome for it exists in
-  `gridAnnouncements.ts` and none should be added. It reaches the users the
-  named pair was chosen for - a voice-control user saying the name of the column
-  they are on, and a screen-reader user activating the button without first
-  reading `aria-pressed`. **Do not give the pager
+  `gridAnnouncements.ts` and none should be added. **That the case exists at all
+  is the stated cost of the named pair**: a single "Next" button always moves,
+  so it has no stay-put press to answer for, and two buttons naming their
+  columns do. The cost is worth the reason the pair was chosen, and it lands on
+  exactly the users it was chosen for - a voice-control user saying the name of
+  the column they are on, and a screen-reader user activating the button without
+  first reading `aria-pressed`. **Do not give the pager
   a move of its own, and do not end a carry on it**: paging does not touch the
-  grid, so nothing about the carry has gone stale. `GridArea.dom.test.tsx` pins
-  all of it under "the column pager", the refusal and the silent no-op as
-  separate tests because they are separate cases.
+  grid, so nothing about the carry has gone stale. The viewport follows the
+  target in a `useLayoutEffect` rather than an effect, because after a paint is
+  one frame of the old column drawn while `aria-current` already sits in the one
+  `hiddenColumn` has marked invisible. `GridArea.dom.test.tsx` pins
+  all of it under "the column pager", the refusal, the silent no-op and the
+  pick-up's preferred column as separate tests because they are separate cases.
 
 - **A click outside the placement surface puts down whatever is in hand**, by emptying that
   register. The surface is the element `GridArea` draws - the palette a block is picked up

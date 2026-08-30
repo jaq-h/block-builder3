@@ -76,6 +76,18 @@ export interface UseBlockCommandOptions {
   providerBlocks: OrderTypeDefinition[];
   /** The one voice of the grid; see `useGridAnnouncer`. */
   announcer: GridAnnouncer;
+  /**
+   * The grid column the user is looking at, which a pick-up starts in whenever
+   * it has a legal cell there.
+   *
+   * Below `sm` the panel shows one column at a time and the carry's target owns
+   * which one, so without this a pick-up would drag the user back to Entry the
+   * moment they reached for an order from Exit. It is not gated on the width:
+   * it means "the column the user last chose", which stays 0 for anyone who
+   * never paged, so above `sm` it picks the cell the first-legal-cell rule
+   * would have picked anyway. See `initialTarget` for the fallback.
+   */
+  preferredColumn: number;
   /** Commit a new block from the palette, and report what the grid did. */
   placeProvider: (type: string, cell: CellPosition) => PlacementResult;
   /**
@@ -188,6 +200,7 @@ export const useBlockCommand = ({
   strategyPattern,
   providerBlocks,
   announcer,
+  preferredColumn,
   placeProvider,
   removeFromGrid,
   refuseMove,
@@ -220,10 +233,11 @@ export const useBlockCommand = ({
       });
       return false;
     }
-    dispatch({ type: "pickUp", source, targets, origin });
-    // The same choice the reducer makes, so the announcement can never name a
-    // cell other than the one that is actually the target.
-    const target = initialTarget(targets) ?? targets[0];
+    dispatch({ type: "pickUp", source, targets, origin, preferredCol: preferredColumn });
+    // The same choice the reducer makes, from the same function and the same
+    // preferred column, so the announcement can never name a cell other than
+    // the one that is actually the target.
+    const target = initialTarget(targets, preferredColumn) ?? targets[0];
     report({ kind: "pickedUp", source, target, origin });
     return true;
   };

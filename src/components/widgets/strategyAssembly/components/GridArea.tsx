@@ -409,11 +409,32 @@ const GridArea: FC<GridAreaProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategyMarketUnavailable]);
 
+  // ─── The paged column viewport ───────────────────────────────────────
+  //
+  // Below `sm` the panel cannot draw both grid columns at once - two
+  // `min-w-[220px]` columns and a 6px gap need 446px against a 288px panel at
+  // 320 - so `columnsWrapper` is a one-column viewport over the pair and this
+  // is which of them it shows. `ColumnPager` is the control; above `sm` the
+  // wrapper stops being a scroll container at all and this state stops meaning
+  // anything, which is why it is expressed as a scroll position rather than as
+  // a rule about what to render.
+  const [visibleColumn, setVisibleColumn] = useState(0);
+  const columnsViewportRef = useRef<HTMLDivElement>(null);
+
   const command = useBlockCommand({
     grid,
     strategyPattern,
     providerBlocks,
     announcer,
+    // Where a pick-up starts, when the offer reaches the column on screen. The
+    // carry's target owns the viewport, so without this reaching for an order
+    // while paged to Exit would land the target in Entry and throw the user
+    // back there - the main path for building an Exit leg on a phone. The
+    // preference travels into the reducer rather than being corrected after the
+    // fact, so the sentence the pick-up speaks names the cell the user is left
+    // on; a `pointToTarget` afterwards is silent by design and would have said
+    // one cell while `aria-current` sat on another.
+    preferredColumn: visibleColumn,
     placeProvider: placeProviderInCell,
     removeFromGrid: removeBlockFromCell,
     // A placed block is never carried, because it never changes cells
@@ -428,18 +449,6 @@ const GridArea: FC<GridAreaProps> = ({
 
   const carryingProviderType = command.carrying?.source.type ?? null;
 
-  // ─── The paged column viewport ───────────────────────────────────────
-  //
-  // Below `sm` the panel cannot draw both grid columns at once - two
-  // `min-w-[220px]` columns and a 6px gap need 446px against a 288px panel at
-  // 320 - so `columnsWrapper` is a one-column viewport over the pair and this
-  // is which of them it shows. `ColumnPager` is the control; above `sm` the
-  // wrapper stops being a scroll container at all and this state stops meaning
-  // anything, which is why it is expressed as a scroll position rather than as
-  // a rule about what to render.
-  const [visibleColumn, setVisibleColumn] = useState(0);
-  const columnsViewportRef = useRef<HTMLDivElement>(null);
-
   // **The carry's target and the column on screen are one fact.** A carry
   // highlights a cell and reads it out as `aria-current`, so a target in the
   // column the viewport is not showing is an invitation the user cannot see -
@@ -451,8 +460,16 @@ const GridArea: FC<GridAreaProps> = ({
   // Keyed on the target's column alone, so nudging a carried block's target up
   // and down a column does not re-run it, and so a page the user asked for
   // while carrying nothing is not undone by the next render.
+  //
+  // A layout effect, because it must commit before the browser paints. As an
+  // ordinary effect it ran after the paint of the render in which the target
+  // had already moved, so for one frame the OLD column was on screen while
+  // `aria-current` sat on a cell inside the column `hiddenColumn` had just
+  // marked invisible - the very state this pairing exists to prevent, on every
+  // cross-column move. The extra render is synchronous, and the scroll effect
+  // below still runs after it on `visibleColumn`.
   const carryTargetColumn = command.carrying?.target.col ?? null;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (carryTargetColumn === null) return;
     setVisibleColumn(carryTargetColumn);
   }, [carryTargetColumn]);

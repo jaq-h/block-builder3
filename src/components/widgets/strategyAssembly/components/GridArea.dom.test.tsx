@@ -2243,6 +2243,28 @@ describe("GridArea, the column pager", () => {
     expect(shownColumn()).toEqual([1]);
   });
 
+  it("picks up into the column the user paged to, rather than pulling them back", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    fireEvent.click(pagerButton("Exit"));
+    expect(shownColumn()).toEqual([1]);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+
+    // Both columns are on offer on an empty grid, and the offer is walked
+    // column-major, so the first legal cell is in Entry. Starting there would
+    // throw a user who had deliberately paged to Exit back to Entry every time
+    // they reached for an order, which is the main path for building an Exit
+    // leg on a phone.
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
+    // The preference reaches the point the target is chosen, so the sentence
+    // names the cell the user is actually left on.
+    expect(announcement()).toContain("Target: Exit column, primary row.");
+    expect(announcement()).not.toContain("Entry column");
+  });
+
   it("stays where it is when the carry has nothing that way, and says so", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));

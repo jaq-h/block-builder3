@@ -108,21 +108,30 @@ describe("validTargetsFor", () => {
 });
 
 describe("initialTarget", () => {
-  // It used to take a preferred cell, which was the carried block's own - the
-  // one place a placed block could always be put back. Only a palette order is
-  // carried now (decision D9), and a palette order is nowhere, so there is
-  // nothing to prefer and the first legal cell is the answer.
-  it("starts at the first legal cell", () => {
-    const targets = [
-      { col: 0, row: 0 },
-      { col: 1, row: 2 },
-    ];
+  const targets = [
+    { col: 0, row: 0 },
+    { col: 1, row: 2 },
+  ];
 
-    expect(initialTarget(targets)).toEqual({ col: 0, row: 0 });
+  // It used to take a preferred CELL, which was the carried block's own - the
+  // one place a placed block could always be put back. Only a palette order is
+  // carried now (decision D9), and a palette order is nowhere. What it takes
+  // instead is the column the user is looking at, which is a fact about the
+  // viewport rather than about the block.
+  it("starts at the first legal cell in the column on screen", () => {
+    expect(initialTarget(targets, 1)).toEqual({ col: 1, row: 2 });
+  });
+
+  it("falls back to the first legal cell when that column offers none", () => {
+    expect(initialTarget([{ col: 1, row: 2 }], 0)).toEqual({ col: 1, row: 2 });
+  });
+
+  it("starts at the first legal cell for a user who never paged", () => {
+    expect(initialTarget(targets, 0)).toEqual({ col: 0, row: 0 });
   });
 
   it("is null when the order cannot be placed anywhere", () => {
-    expect(initialTarget([])).toBeNull();
+    expect(initialTarget([], 0)).toBeNull();
   });
 });
 
@@ -196,6 +205,7 @@ describe("commandReducer", () => {
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
         origin: "keyboard",
+        preferredCol: 0,
         source: providerSource,
         targets,
       });
@@ -212,6 +222,7 @@ describe("commandReducer", () => {
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
         origin: "keyboard",
+        preferredCol: 0,
         source: providerSource,
         targets: [
           { col: 1, row: 0 },
@@ -227,6 +238,7 @@ describe("commandReducer", () => {
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
         origin: "keyboard",
+        preferredCol: 0,
         source: providerSource,
         targets: [],
       });
@@ -238,6 +250,7 @@ describe("commandReducer", () => {
       const next = commandReducer(carrying(providerSource), {
         type: "pickUp",
         origin: "keyboard",
+        preferredCol: 0,
         source: takeProfitSource,
         targets: [{ col: 1, row: 2 }],
       });
@@ -376,6 +389,7 @@ describe("commandReducer", () => {
     let state = commandReducer(IDLE_COMMAND_STATE, {
       type: "pickUp",
       origin: "keyboard",
+      preferredCol: 0,
       source: providerSource,
       targets: [
         { col: 0, row: 1 },
