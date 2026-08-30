@@ -680,8 +680,15 @@ ordinary tab stop - a user who is not carrying has no arrow keys to cross with a
 
 A keyboard carrier never needs the pager, which is why this costs them nothing: the arrow keys
 already step the carry's target into the other column whenever a legal cell exists there.
-Assistive technology can still put focus on the buttons directly, and a user who does is not
-stranded - Shift+Tab leaves and the carry is still live.
+
+Two limits are accepted rather than hidden. Assistive technology can still put focus on the
+buttons directly, and a user who does is not stranded - Shift+Tab leaves and the carry is
+still live. And focus that is already *inside* the column a press hides is still lost: tap a
+placed block, then page away from it, and the browser drops focus to the document body. There
+is no remedy for that which does not move focus, and moving focus is what this design removed
+after it produced a desktop regression and a re-render loop; the carry itself survives, Tab
+leaves, and a pointer user places by tapping a cell. Reaching it needs a pointer user to
+switch to the keyboard mid-carry, which is why it is a limitation rather than a defect.
 
 The column that is not on screen is held by `visibility: hidden` rather than removed. It
 keeps its box, which is what keeps the two columns beside each other, while staying out of

@@ -86,11 +86,36 @@ interface ColumnPagerProps {
  * a press says is unchanged either way: the same-column press is a silent
  * no-op and a refused move still announces the refusal.
  *
- * **The residual, stated rather than overstated.** Assistive technology can
- * put focus on a `tabindex="-1"` element directly, so an AT user can still
- * land here mid-carry. They are not stranded - Shift+Tab leaves, and the carry
- * is still live when they get back - but the control is not literally
- * unreachable, and this rule should not be read as claiming it is.
+ * ─── TWO LIMITATIONS, ACCEPTED AND WRITTEN DOWN RATHER THAN HIDDEN ───
+ *
+ * **Focus already INSIDE the column a press hides is still lost.** A pointer
+ * user taps a placed block - `usePointerGesture` focuses it - and then taps
+ * the other column here; that column goes `visibility: hidden` under the
+ * focused block and the browser drops focus to `<body>`. Nothing above
+ * prevents that: this rule keeps focus off the BUTTON, and says nothing about
+ * where focus already was.
+ *
+ * **It is accepted deliberately, and the trade is the point.** There is no
+ * remedy that does not move focus - something has to be holding it, and the
+ * thing holding it is exactly what is being hidden - and focus-moving is the
+ * mechanism four consecutive rounds removed: it produced a desktop regression
+ * (focus stolen at 1440 where nothing was hidden at all) and a re-render loop
+ * that never settled when the request could not land, each round's point fix
+ * exposing the next path. **This is not the defect that was ruled
+ * unshippable**: that one left the user unable to place or cancel what they
+ * were holding. Here the carry stays live, Tab leaves for the palette, and a
+ * pointer user simply taps the cell. And the path needs a pointer user to
+ * switch to the keyboard mid-carry, because both halves of it are pointer
+ * presses - a keyboard-only user cannot reach it at all, since they cross
+ * columns with the arrows, which never touch this control. The users most
+ * harmed by lost focus are the ones who cannot hit it. **Do not answer this
+ * with a focus hand-off.**
+ *
+ * **Assistive technology can put focus on a `tabindex="-1"` element
+ * directly**, so an AT user can still land here mid-carry. They are not
+ * stranded - Shift+Tab leaves, and the carry is still live when they get back -
+ * but the control is not literally unreachable, and the rule above should not
+ * be read as claiming it is.
  */
 const ColumnPager: FC<ColumnPagerProps> = ({
   visibleColumn,

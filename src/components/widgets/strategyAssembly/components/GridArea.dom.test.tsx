@@ -2321,9 +2321,8 @@ describe("GridArea, the column pager", () => {
   });
 
   /**
-   * A live carry with DOM focus standing on a placed block in the Entry
-   * column - the state that used to be stranded when the column went off
-   * screen, and the one these tests hold focus still through.
+   * A live carry, with a placed block in each column and DOM focus standing on
+   * the one in Entry.
    *
    * Every step is one the app really wires. A tap on a palette tile or a block
    * focuses it: `usePointerGesture` calls `preventDefault` on `pointerdown`,
@@ -2331,6 +2330,11 @@ describe("GridArea, the column pager", () => {
    * tap on the placed block leaves the carry alone, because its cell is
    * occupied and so is not one of the carry's targets - the cell refuses the
    * order rather than placing it.
+   *
+   * This is also the state of the accepted limitation recorded on
+   * `ColumnPager`: in a real browser the press below hides the column holding
+   * that focused block, so the browser drops focus to `<body>`. jsdom performs
+   * no such fixup, which is why nothing here asserts about focus at all.
    */
   const carryWithFocusInEntry = () => {
     pageTheColumns();
@@ -2355,22 +2359,27 @@ describe("GridArea, the column pager", () => {
     return takeProfit;
   };
 
-  it("pages a carry across without taking the focus off what holds it", () => {
-    // The requirement, and the whole of what replaced four rounds of focus
-    // hand-offs: the press moves the carry to the other column and DOM focus
-    // does not move at all. `ColumnPager` suppresses the focus a press would
-    // take while a block is in hand, so there is no stranding to answer for.
+  it("pages a carry across and the arrived column places it", () => {
+    // The requirement the control exists for: the press moves the carry to the
+    // other column and the order can be put down there.
+    //
+    // **This deliberately asserts nothing about `document.activeElement`, and
+    // an assertion must not be added here.** jsdom moves no focus on a press
+    // and performs no focus fixup when a subtree is hidden, so every focus
+    // outcome of this press - the one the code produces and the one a
+    // regression would produce - is identical in this environment. An
+    // assertion that cannot fail reads as coverage while pinning nothing. The
+    // load-bearing evidence lives where it can actually fail:
+    // `ColumnPager.dom.test.tsx` pins the prevented `pointerdown` default and
+    // the tab order in both states, which is the whole of what suppresses the
+    // focus a press would otherwise take.
     const takeProfit = carryWithFocusInEntry();
-    const placed = document.activeElement;
 
     tap(pagerButton("Exit"));
 
     expect(shownColumn()).toEqual([1]);
     expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
-    expect(document.activeElement).toBe(placed);
-    expect(document.activeElement).not.toBe(pagerButton("Exit"));
 
-    // And the carry is still in hand, which is what the control exists for.
     fireEvent.click(cell(1, 0));
     expect(announcement()).toBe(
       "Placed Take Profit order in Exit column, upper conditional row.",

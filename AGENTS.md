@@ -382,10 +382,21 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     24px target and stay in the accessibility tree; `disabled` would break the
     paging pointer users depend on. Carrying nothing they are an ordinary tab
     stop, because that user has no arrow keys to cross with.
-  - **The residual, stated rather than overstated:** assistive technology can
-    focus a `tabindex="-1"` element directly, so an AT user can still land
-    there mid-carry. They are not stranded - Shift+Tab leaves and the carry is
-    still live - but the control is not literally unreachable.
+  - **Two residuals, both accepted deliberately rather than unnoticed.**
+    Assistive technology can focus a `tabindex="-1"` element directly, so an AT
+    user can still land there mid-carry; they are not stranded - Shift+Tab
+    leaves and the carry is still live - but the control is not literally
+    unreachable. And **focus already INSIDE the column a press hides is still
+    lost**: a pointer user taps a placed block (`usePointerGesture` focuses
+    it), then taps the other column, and the browser drops focus to `<body>`.
+    The rule above keeps focus off the BUTTON and says nothing about where
+    focus already was. **There is no remedy that does not move focus** - the
+    thing holding it is exactly what is being hidden - and this is what the
+    four withdrawn rounds cost. It is **not** the defect that was ruled
+    unshippable: the carry stays live, Tab leaves, and a pointer user taps the
+    cell. It also needs a pointer user to reach for the keyboard mid-carry,
+    since both halves are pointer presses; a keyboard-only user crosses with
+    the arrows and never touches the control.
 
   `ColumnPager.dom.test.tsx` pins the tab order and the suppressed press in
   both states; `GridArea.dom.test.tsx` pins the behaviour under "pages a carry
