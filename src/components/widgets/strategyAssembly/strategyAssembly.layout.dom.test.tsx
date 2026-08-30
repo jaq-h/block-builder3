@@ -101,7 +101,15 @@ describe("the assembly grid's lanes", () => {
     // gutter nor be scrolled to a column the pager does not know about. That is
     // what gives "which column is on screen" one owner. `expectNoScroller` is
     // the other half and is asserted rather than assumed here.
-    expect(classes).toContain("overflow-x-hidden");
+    //
+    // Both axes, and `overflow-x-hidden` is specifically not enough: one axis
+    // set to anything but `visible` makes the other's `visible` compute to
+    // `auto`, so naming only the axis that pages leaves a real vertical
+    // scrollport whose bar would eat width from the paged column the day
+    // anything bounds this box's height. `expectNoScroller` cannot catch that -
+    // it judges the utilities written, and the computed axis is not one.
+    expect(classes).toContain("overflow-hidden");
+    expect(classes).not.toContain("overflow-x-hidden");
     expect(classes).toContain("sm:overflow-visible");
     expectNoScroller(columnsWrapper);
   });

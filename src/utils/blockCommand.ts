@@ -109,8 +109,11 @@ export type CommandAction =
       source: ProviderSource;
       targets: CellPosition[];
       origin: ActivationOrigin;
-      /** The column the user is looking at; see `initialTarget`. */
-      preferredCol: number;
+      /**
+       * The column the user was last working in, or `null` if they have not
+       * chosen one; see `initialTarget`.
+       */
+      preferredCol: number | null;
     }
   | { type: "moveTarget"; dCol: number; dRow: number }
   /**
@@ -191,24 +194,30 @@ export const sameTargets = (
  * block already sits is not a move, it is a no-op with extra steps.
  *
  * `preferredCol` is what replaced it, and it is a different kind of preference:
- * not where the block came from, but which column the user is standing in.
- * Below `sm` the panel shows one grid column at a time and the carry's target
- * owns which one that is, so a pick-up landing in the first legal cell outright
- * would throw a user who had paged to Exit back to Entry the moment they
- * reached for an order - every time, since an empty grid makes some Entry cell
- * legal and the target list is walked column-major. It is applied whatever the
- * width, with no layout read and no breakpoint test: `preferredCol` means "the
- * column the user last chose", which is true at every size and stays 0 for
- * anyone who never paged, so above `sm` it selects the cell `targets[0]` would
- * have given anyway in every ordinary session.
+ * not where the block came from, but **the column the user was last working
+ * in**. Below `sm` the panel shows one grid column at a time, so a pick-up
+ * landing in the first legal cell outright would throw a user who had paged to
+ * Exit back to Entry the moment they reached for an order - every time, since
+ * an empty grid makes some Entry cell legal and the target list is walked
+ * column-major. It is one rule at every width rather than a phone-only concept:
+ * a cross-column arrow move is an expressed choice on a desktop too, and a
+ * pick-up starting where the user was last working is right there as well.
  *
- * **The fallback is exactly the first legal cell**, which is what keeps a
+ * It is a choice the user EXPRESSED, never a column the app merely ended up
+ * showing them, which is why it is `null` until one is made rather than
+ * defaulting to 0. `GridArea` owns which events count; the reason it matters
+ * here is that the target a pick-up starts on must not feed back in. That
+ * target can be this function's own fallback, and taking it as a preference
+ * would make one pick-up's fallback silently decide the next one's start.
+ *
+ * **The fallback is exactly the first legal cell**, taken whenever there is no
+ * preference or the preferred column offers no legal cell. That is what keeps a
  * pick-up whose only legal cells are in the OTHER column opening the pager
- * there: nothing in the shown column means nothing to prefer.
+ * there.
  */
 export const initialTarget = (
   targets: CellPosition[],
-  preferredCol: number,
+  preferredCol: number | null,
 ): CellPosition | null =>
   targets.find((cell) => cell.col === preferredCol) ?? targets[0] ?? null;
 

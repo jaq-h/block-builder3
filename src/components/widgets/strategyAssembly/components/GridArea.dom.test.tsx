@@ -2265,6 +2265,61 @@ describe("GridArea, the column pager", () => {
     expect(announcement()).not.toContain("Entry column");
   });
 
+  it("does not treat the column a pick-up merely landed in as a choice", () => {
+    // The desktop leak. Nothing here pages at all - the pager is `display: none`
+    // above `sm` - so every write to "which column is on screen" comes from a
+    // carry the user never asked to be in a column at all.
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
+
+    // The offer is only the placed block's diagonals, both in Exit, so the
+    // target is `initialTarget`'s FALLBACK and the viewport follows it there.
+    // That much is the approved behaviour and the test above pins it.
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+
+    fireEvent.click(cell(1, 0));
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    // On a cleared grid both columns are on offer again, and this pick-up has
+    // to start where it has always started. Reading the viewport back as a
+    // preference started it in Exit instead, from a column the user never chose
+    // and cannot see, set or clear.
+    tap(screen.getByRole("button", { name: "Add Limit order" }));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    expect(announcement()).toContain("Target: Entry column, primary row.");
+  });
+
+  it("remembers the column an arrow key moved the carry to, not the one it was paged to", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} gridReplacement={clearGrid(2, 3)} />);
+
+    fireEvent.click(pagerButton("Exit"));
+    const palette = screen.getByRole("button", { name: "Add Take Profit order" });
+    tap(palette);
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+
+    // The mirror of the case above: paging is a choice, and so is moving a live
+    // carry out of the column it was paged to. Taking the preference from the
+    // pager press alone would throw this user back to Exit.
+    fireEvent.keyDown(palette, { key: "ArrowLeft" });
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(cell(0, 1));
+    // Cleared, so the next offer spans both columns again. Left as it is, the
+    // Entry block's diagonals are the only legal cells and the assertion would
+    // be about the fallback rather than about the preference.
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([0]);
+    expect(pagerButton("Entry")).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("stays where it is when the carry has nothing that way, and says so", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));

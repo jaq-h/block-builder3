@@ -77,17 +77,19 @@ export interface UseBlockCommandOptions {
   /** The one voice of the grid; see `useGridAnnouncer`. */
   announcer: GridAnnouncer;
   /**
-   * The grid column the user is looking at, which a pick-up starts in whenever
-   * it has a legal cell there.
+   * The grid column the user was last working in, which a pick-up starts in
+   * whenever it has a legal cell there, and `null` until they have chosen one.
    *
    * Below `sm` the panel shows one column at a time and the carry's target owns
    * which one, so without this a pick-up would drag the user back to Entry the
-   * moment they reached for an order from Exit. It is not gated on the width:
-   * it means "the column the user last chose", which stays 0 for anyone who
-   * never paged, so above `sm` it picks the cell the first-legal-cell rule
-   * would have picked anyway. See `initialTarget` for the fallback.
+   * moment they reached for an order from Exit. It is not gated on the width,
+   * because a cross-column arrow move is an expressed choice at any size: one
+   * rule everywhere rather than a phone-only concept. Which events count as a
+   * choice is `GridArea`'s to decide; what matters here is that a pick-up's own
+   * starting target is not one of them, or a fallback would decide the next
+   * pick-up. See `initialTarget` for that fallback.
    */
-  preferredColumn: number;
+  preferredColumn: number | null;
   /** Commit a new block from the palette, and report what the grid did. */
   placeProvider: (type: string, cell: CellPosition) => PlacementResult;
   /**

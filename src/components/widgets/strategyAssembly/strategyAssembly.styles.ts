@@ -89,20 +89,30 @@ export const contentRow = "flex flex-col sm:flex-row min-h-full gap-1.5";
 // are each the viewport's own width (`pagedColumn` below), the row overflows it
 // to the right, and `ColumnPager` pages between them by setting `scrollLeft`.
 //
-// **`overflow-x-hidden` rather than `overflow-x-auto`, and that is the whole
-// difference between this and the horizontal scroller AGENTS.md rejects.** A
-// hidden overflow is a scroll container the *user* cannot drive: it draws no
-// scrollbar, so it cannot grow by a classic scrollbar's gutter on Windows, and
-// it cannot be scrolled to a position the pager does not know about. The pager
-// is the one thing that moves it, so which column is on screen has exactly one
-// owner. It is also what keeps the off-screen column from making the panel
-// itself scroll sideways.
+// **`hidden` rather than `auto`, and that is the whole difference between this
+// and the horizontal scroller AGENTS.md rejects.** A hidden overflow is a
+// scroll container the *user* cannot drive: it draws no scrollbar, so it cannot
+// grow by a classic scrollbar's gutter on Windows, and it cannot be scrolled to
+// a position the pager does not know about. The pager is the one thing that
+// moves it, so which column is on screen has exactly one owner. It is also what
+// keeps the off-screen column from making the panel itself scroll sideways.
+//
+// **It is `overflow-hidden` on BOTH axes, and naming only the one that pages
+// would be a box that does not do what the paragraph above claims.** Setting
+// one axis to something other than `visible` makes the other's `visible`
+// compute to `auto`, so `overflow-x-hidden` alone left this a real vertical
+// scrollport. Nothing overflows it vertically today - below `sm` it is an
+// auto-height flex item, so its height is its tallest column's - but the moment
+// anything gives it a bounded height there, a bar the user CAN drive appears
+// inside it and its gutter eats width from a paged column already sized against
+// a 220px floor. A guard reading the class list would stay green through that,
+// which is the second reason to say it in the constant rather than rely on one.
 //
 // It stays a plain row from `sm`, where both columns fit and there is nothing
 // to page: `sm:overflow-visible` puts the scroll container away entirely, so a
 // focus ring on a block at a column's edge is drawn rather than clipped.
 export const columnsWrapper =
-  "flex flex-row overflow-x-hidden sm:overflow-visible sm:flex-1 gap-1.5";
+  "flex flex-row overflow-hidden sm:overflow-visible sm:flex-1 gap-1.5";
 
 // =============================================================================
 // HEADER

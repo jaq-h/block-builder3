@@ -654,12 +654,19 @@ One thing follows without being written anywhere: a press the carry refuses - "N
 available in that direction." - leaves the pager where it is, exactly as the arrow key does,
 so the button never claims a column the user is not on.
 
-**A pick-up starts in the column on screen** whenever its offer reaches one, and falls back
-to the first legal cell there is - so an offer confined to the other column still opens the
-pager there, and an offer spanning both leaves the user in the column they paged to instead
-of dragging them back to Entry. That preference reaches the point where the target is chosen
-rather than correcting it afterwards, so the sentence the pick-up speaks names the cell the
-user is left on.
+**A pick-up starts in the column the user was last working in** whenever its offer reaches
+one, and falls back to the first legal cell there is - so an offer confined to the other
+column still opens the pager there, and an offer spanning both leaves the user where they
+were instead of dragging them back to Entry. That preference reaches the point where the
+target is chosen rather than correcting it afterwards, so the sentence the pick-up speaks
+names the cell the user is left on.
+
+A column the user *chose* is what counts, and that is a different fact from the column the
+app happens to be showing them. Paging with nothing in hand is a choice, and so is moving a
+live carry across with the arrow keys or the pager; the column a pick-up merely *lands* in is
+not, because that can be the fallback rather than anything asked for. It is one rule at every
+width rather than a phone-only concept - a cross-column arrow move on a desktop is just as
+much a choice - and it is what stops one pick-up's fallback deciding the next one's start.
 
 One further case is written down, because it is the single press `moveTarget` cannot answer
 for: pressing the button for the column the carry is **already** on does nothing and says

@@ -411,30 +411,58 @@ const GridArea: FC<GridAreaProps> = ({
 
   // ─── The paged column viewport ───────────────────────────────────────
   //
-  // Below `sm` the panel cannot draw both grid columns at once - two
-  // `min-w-[220px]` columns and a 6px gap need 446px against a 288px panel at
-  // 320 - so `columnsWrapper` is a one-column viewport over the pair and this
-  // is which of them it shows. `ColumnPager` is the control; above `sm` the
-  // wrapper stops being a scroll container at all and this state stops meaning
-  // anything, which is why it is expressed as a scroll position rather than as
-  // a rule about what to render.
+  // **Two states, two different facts.** They agree most of the time, which is
+  // exactly why they are written down as distinct: collapsing them back into
+  // one is how the pick-up bias came to be driven by a column the user had
+  // never chosen.
+  //
+  // WHICH COLUMN IS ON SCREEN. Below `sm` the panel cannot draw both grid
+  // columns at once - two `min-w-[220px]` columns and a 6px gap need 446px
+  // against a 288px panel at 320 - so `columnsWrapper` is a one-column viewport
+  // over the pair and this is which of them it shows. It is derived: it follows
+  // the carry's target ALWAYS, the target a pick-up starts on included, which
+  // is what makes a carry survive paging and what opens the pager on the other
+  // column when that is the only place an order may go. `ColumnPager` is the
+  // control; above `sm` the wrapper stops being a scroll container at all and
+  // this state stops meaning anything, which is why it is expressed as a scroll
+  // position rather than as a rule about what to render.
   const [visibleColumn, setVisibleColumn] = useState(0);
   const columnsViewportRef = useRef<HTMLDivElement>(null);
+
+  // WHICH COLUMN THE USER LAST CHOSE, and `null` until they choose one. Written
+  // only by an expressed choice - a pager press with nothing in hand, and a
+  // cross-column move of a live carry, which is the arrow keys and the pager
+  // press while carrying alike - and read only by the pick-up bias below.
+  //
+  // It is not the state above, and the difference is the whole of the rule. The
+  // viewport also follows the target a pick-up STARTS on, and that target can
+  // be `initialTarget`'s fallback rather than anything the user asked for: at
+  // 1440 a Take Profit whose only legal cells are the Exit diagonals of a
+  // placed block opens the viewport on Exit, and reading that back as a
+  // preference left the NEXT pick-up on a cleared grid starting in Exit, where
+  // it has always started in Entry. A choice is what the user expressed, never
+  // a column the app ended up showing them.
+  //
+  // It is taken from where a move's target ACTUALLY ended up rather than from
+  // what the press asked for, because a move the carry refuses leaves the
+  // viewport where it is - and a preference naming a column the user is not on
+  // would be the same defect somewhere new.
+  const [preferredColumn, setPreferredColumn] = useState<number | null>(null);
 
   const command = useBlockCommand({
     grid,
     strategyPattern,
     providerBlocks,
     announcer,
-    // Where a pick-up starts, when the offer reaches the column on screen. The
-    // carry's target owns the viewport, so without this reaching for an order
-    // while paged to Exit would land the target in Entry and throw the user
-    // back there - the main path for building an Exit leg on a phone. The
-    // preference travels into the reducer rather than being corrected after the
-    // fact, so the sentence the pick-up speaks names the cell the user is left
-    // on; a `pointToTarget` afterwards is silent by design and would have said
-    // one cell while `aria-current` sat on another.
-    preferredColumn: visibleColumn,
+    // Where a pick-up starts, when the offer reaches the column the user was
+    // last working in. The carry's target owns the viewport, so without this
+    // reaching for an order while paged to Exit would land the target in Entry
+    // and throw the user back there - the main path for building an Exit leg on
+    // a phone. The preference travels into the reducer rather than being
+    // corrected after the fact, so the sentence the pick-up speaks names the
+    // cell the user is left on; a `pointToTarget` afterwards is silent by
+    // design and would have said one cell while `aria-current` sat on another.
+    preferredColumn,
     placeProvider: placeProviderInCell,
     removeFromGrid: removeBlockFromCell,
     // A placed block is never carried, because it never changes cells
@@ -468,10 +496,23 @@ const GridArea: FC<GridAreaProps> = ({
   // marked invisible - the very state this pairing exists to prevent, on every
   // cross-column move. The extra render is synchronous, and the scroll effect
   // below still runs after it on `visibleColumn`.
+  //
+  // It writes the PREFERENCE as well, but only for the second of the two things
+  // that can put a carry's target in a new column, and the ref is what tells
+  // them apart. No previous column means a carry just STARTED: that target came
+  // from `initialTarget`, which is the app answering rather than the user, so
+  // the viewport follows it and nothing is remembered. A previous column and a
+  // different one now means a live carry MOVED, by an arrow key or by the pager
+  // press that dispatches the same `moveTarget` - the user chose a column, and
+  // the column they actually landed in is what is remembered.
   const carryTargetColumn = command.carrying?.target.col ?? null;
+  const previousCarryColumn = useRef<number | null>(null);
   useLayoutEffect(() => {
+    const previous = previousCarryColumn.current;
+    previousCarryColumn.current = carryTargetColumn;
     if (carryTargetColumn === null) return;
     setVisibleColumn(carryTargetColumn);
+    if (previous !== null) setPreferredColumn(carryTargetColumn);
   }, [carryTargetColumn]);
 
   // The state above, applied to the one thing that draws it.
@@ -515,6 +556,11 @@ const GridArea: FC<GridAreaProps> = ({
    * refuses ("no target that way") leaves the pager where it is and says why,
    * exactly as the arrow key does.
    *
+   * Either way the press is a column the user chose, so it is remembered as the
+   * one a later pick-up starts in. Only the non-carrying branch records it
+   * here; carrying, the move may be refused, so the preference is taken from
+   * where the target actually ended up, in the effect above.
+   *
    * The press naming the column the carry is ALREADY on is the one case
    * `moveTarget` cannot answer for, and it is silent by design. `moveTarget` is
    * reused precisely so the pager and the arrow keys cannot drift, but a zero
@@ -536,6 +582,7 @@ const GridArea: FC<GridAreaProps> = ({
       return;
     }
     setVisibleColumn(col);
+    setPreferredColumn(col);
   };
 
   // ─── The cursor half of a mouse carry ────────────────────────────────
