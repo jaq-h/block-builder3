@@ -826,18 +826,30 @@ of slack. Three rules hold it together and none may be simplified away:
   readable-but-not-activatable mode either. Three reasons, and the second
   decides it:
 
-  - **It strands nobody, though nothing self-corrects either.** Activating a
-    cell there PLACES the order in it: `pointer-events: none` withholds hit
-    TESTING and not a dispatched click, so the activation reaches `GridCell`'s
-    `onClick` and `activateCell` commits the carry exactly as it would on
-    screen. The viewport does NOT follow - the carry has ended, so the layout
-    effect keyed on `carrying.target.col` early-returns and the panel is still
-    showing the other column. What holds instead is that the user is told:
-    the placement sentence names where it went ("Placed Limit order in Exit
-    column, primary row."), focus goes to the block just placed, which can
-    hold it because the column is DRAWN, and the pager reaches that column.
-    Carrying nothing the activation is silent, on this column and the one on
-    screen alike, and a cell outside the carry's offer is refused with
+  - **It self-corrects, and that is code rather than hope.** Activating a
+    cell in the withheld column PLACES the order in it: `pointer-events: none`
+    withholds hit TESTING and not a dispatched click, so the activation reaches
+    `GridCell`'s `onClick` and commits the carry exactly as it would on screen.
+    On its own that stranded the user - the carry has ended, so the layout
+    effect keyed on `carrying.target.col` early-returns, and the panel went on
+    showing the OTHER column with the order they had just placed off screen and
+    no way back to it. `activateCellInView` in `GridArea` closes that: it shows
+    the cell's column BEFORE committing, through `visibleColumn`, the one owner
+    of which column is on screen that the pager and the carry-target effect
+    already write. Measured in Chrome at 390 in the bulk pattern, carrying a
+    Limit with the panel on Entry and activating the Exit lower cell: the panel
+    ends on **Exit**, `scrollLeft` **235** - which is the viewport's own maximum,
+    so the Exit column sits flush against the right edge with Entry peeking on
+    the left, the mirror of the ordinary case - the cell **holds the block**,
+    and the announcement is **"Placed Limit order in Exit column, row 3."**
+    Do not weaken this to a documented mismatch: an unrecoverable state for an
+    assistive-technology user is the same trap as the peek band that once
+    DELETED a free-dragged block and the sliver that once drew a valid-target
+    highlight at cells the release then refused, and all three were answered the
+    same way - make the behaviour match what the app appears to offer. Above
+    `sm` nothing is withheld, so this is exactly `activateCell`. Carrying
+    nothing the activation is silent, on this column and the one on screen
+    alike, and a cell outside the carry's offer is refused with
     "... cannot take this order. Still carrying ...".
   - **Nothing that was ever promised is being given up.** "Nothing in the
     accessibility tree" was a PROPERTY OF THE HIDING MECHANISM the captain

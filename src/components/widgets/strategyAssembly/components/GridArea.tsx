@@ -652,6 +652,45 @@ const GridArea: FC<GridAreaProps> = ({
     setVisibleColumn(col);
   };
 
+  // Activating a cell in the column the pager is not showing brings that
+  // column into view first.
+  //
+  // Only assistive technology can reach this. `offPageColumn` withholds the
+  // peeking column from hit testing, so no pointer press lands there, and the
+  // tab-order rule keeps the keyboard out - but `pointer-events` does not stop
+  // a DISPATCHED click, and a peeking cell is an ordinary element with an
+  // `onClick`, so AT activation reaches this handler. That exposure is
+  // deliberate and accepted (see AGENTS.md): the column is drawn, and hiding it
+  // from AT users alone would give them less than sighted users get.
+  //
+  // What is NOT accepted is where it used to lead. The activation placed the
+  // order into the column the panel was not showing, leaving the user looking
+  // at the other one with no way back to what they had just done - a stranding,
+  // and the same shape as the two traps this layout has already closed: the
+  // peek band that DELETED a free-dragged block, and the sliver that drew a
+  // valid-target highlight at cells the release then refused. Each time the
+  // answer was to make the behaviour match what the app appears to offer,
+  // rather than to write the mismatch down.
+  //
+  // Showing the column is therefore part of the activation rather than a
+  // reaction to it, and it goes through `visibleColumn` - the one owner of
+  // which column is on screen, which the pager and the carry-target effect
+  // already write - rather than a second path beside it. Above `sm` nothing is
+  // withheld, so `isColumnWithheld` is false for every cell and this is exactly
+  // `activateCell`.
+  const isColumnWithheld = (col: number) => {
+    const columnElement = columnsViewportRef.current?.children[col];
+    return (
+      columnElement instanceof HTMLElement &&
+      getComputedStyle(columnElement).pointerEvents === "none"
+    );
+  };
+
+  const activateCellInView = (cell: CellPosition) => {
+    if (isColumnWithheld(cell.col)) setVisibleColumn(cell.col);
+    command.activateCell(cell);
+  };
+
   // ─── The cursor half of a mouse carry ────────────────────────────────
   //
   // A mouse user was asked to click instead of hold, so the block has to follow
@@ -1361,7 +1400,7 @@ const GridArea: FC<GridAreaProps> = ({
                     onBlockAdjustPrice={handleBlockAdjustPrice}
                     onBlockRemove={command.removeBlock}
                     onCellActivate={() =>
-                      command.activateCell({ col: colIndex, row: rowIndex })
+                      activateCellInView({ col: colIndex, row: rowIndex })
                     }
                     focusBlockId={command.focusRequest}
                     onBlockFocusHandled={command.clearFocusRequest}

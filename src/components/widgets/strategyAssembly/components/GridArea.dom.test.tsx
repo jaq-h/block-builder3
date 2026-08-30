@@ -2603,6 +2603,26 @@ describe("GridArea, the column pager", () => {
     expect(document.activeElement).toBe(placed);
   });
 
+  it("shows a withheld column before placing into it", () => {
+    // Only assistive technology reaches this: pointer-events withholds the
+    // peeking column from hit testing and the tab-order rule keeps the keyboard
+    // out, but neither stops a DISPATCHED click. Without the fix the order was
+    // placed into a column the panel was not showing, leaving the user looking
+    // at the other one - a stranding, and the same shape as the peek band that
+    // deleted a free-dragged block. Showing the column is part of the
+    // activation rather than a reaction to it.
+    pageTheColumns();
+    render(<Harness initialGrid={clearGrid(2, 3)} pattern="bulk" />);
+
+    clickBlock(screen.getByRole("button", { name: "Add Limit order" }));
+    expect(shownColumn()).toEqual([0]);
+
+    fireEvent.click(cell(1, 2) as HTMLElement);
+
+    expect(shownColumn()).toEqual([1]);
+    expect(announcement()).toContain("Exit column");
+  });
+
   it("keeps focus on a block whose column pages away", () => {
     // The whole reason the off-page column is DRAWN rather than hidden. A
     // hidden element cannot hold focus, so paging away from a focused block
