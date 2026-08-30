@@ -654,10 +654,18 @@ One thing follows without being written anywhere: a press the carry refuses - "N
 available in that direction." - leaves the pager where it is, exactly as the arrow key does,
 so the button never claims a column the user is not on.
 
-**A pick-up starts at the first legal cell its offer has**, so an offer confined to the
-other column opens the pager there. No column is remembered between carries: a preference
-for the one the user last chose was tried and taken out again, because the rule it needed -
-a closed set of which events count as a choice - kept turning up a case nobody had listed.
+**A pick-up starts in the column the panel is showing**, so paging to Exit and reaching for
+an order builds the Exit leg where you already are rather than throwing you back to Entry.
+It falls back to the first legal cell of the whole offer when the column on screen has none,
+which is what still opens the pager on the far column for an order that can only go there.
+Above `sm` the panel shows every column, so there is no column to start in and the offer
+decides on its own, exactly as it always did.
+
+No column is remembered between carries, and reading the one on screen is not that: a
+preference for the one the user last *chose* was tried and taken out again, because the rule
+it needed - a closed set of which events count as a choice - kept turning up a case nobody had
+listed. Nothing here observes a change; the panel is showing one column or it is showing them
+all, and a pick-up reads which at the instant it happens.
 
 One press is written down, because it is the single press `moveTarget` cannot answer for:
 pressing the button for the column the carry is **already** on moves nothing and says
