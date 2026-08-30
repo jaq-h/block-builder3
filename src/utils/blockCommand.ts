@@ -110,6 +110,14 @@ export type CommandAction =
       source: ProviderSource;
       targets: CellPosition[];
       origin: ActivationOrigin;
+      /**
+       * The one grid column the panel is showing, or `null` while it is
+       * showing them all. Carried on the action rather than read from
+       * anywhere, because the pick-up is the moment the answer matters and
+       * the dispatcher is the only thing that can see the panel; see
+       * `initialTarget`.
+       */
+      shownColumn: number | null;
     }
   | { type: "moveTarget"; dCol: number; dRow: number }
   /**
@@ -180,7 +188,10 @@ export const sameTargets = (
   a.length === b.length && a.every((cell, index) => samePosition(cell, b[index]));
 
 /**
- * Where a pick-up starts: the first legal cell.
+ * Where a pick-up starts: the first legal cell in the column the panel is
+ * showing, and the first legal cell of the whole offer when that column has
+ * none - or when the panel is showing every column, which is every width at
+ * `sm` and above.
  *
  * A carried block is always a palette order now, so there is no cell it "came
  * from" to prefer. `withOriginCell` used to insert a placed block's own cell
@@ -188,13 +199,30 @@ export const sameTargets = (
  * (decision D9), because a carry whose only legal destination is where the
  * block already sits is not a move, it is a no-op with extra steps.
  *
- * The offer is walked column-major, so an offer confined to the other grid
- * column starts there - which is what makes a pick-up open the paged viewport
- * on the one column its order may go in. See `GridArea`.
+ * **`shownColumn` is a fact about the panel, read at the moment of the
+ * pick-up, and never a preference remembered between carries.** The
+ * distinction is the whole of why this is safe, and the reason a preference
+ * was tried here and withdrawn: a remembered column has to decide which state
+ * changes count as the user choosing one, and that question has more entry
+ * points than can be enumerated - eight review rounds found a new writer or
+ * non-writer every time. There is nothing to enumerate here. The panel is
+ * showing one column or it is showing them all, the pick-up starts in the one
+ * that is on screen, and no event anywhere is observed to work that out.
+ *
+ * `null` is not "column 0": it means the question does not arise, so the offer
+ * decides on its own and desktop is exactly what it was. `GridArea` owns the
+ * value - see the `shownColumn` it derives there - and passes it in rather
+ * than this module reaching for a viewport it cannot see.
  */
 export const initialTarget = (
   targets: CellPosition[],
-): CellPosition | null => targets[0] ?? null;
+  shownColumn: number | null,
+): CellPosition | null =>
+  (shownColumn === null
+    ? undefined
+    : targets.find((cell) => cell.col === shownColumn)) ??
+  targets[0] ??
+  null;
 
 /**
  * Step the target one cell in a direction, considering only legal cells - so
@@ -255,7 +283,7 @@ export const commandReducer = (
 ): CommandState => {
   switch (action.type) {
     case "pickUp": {
-      const target = initialTarget(action.targets);
+      const target = initialTarget(action.targets, action.shownColumn);
       // A block with nowhere legal to go is not picked up at all, so the user
       // can never get stuck carrying something that cannot be put down.
       if (!target) return state;

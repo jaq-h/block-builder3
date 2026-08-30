@@ -74,6 +74,16 @@ export interface UseBlockCommandOptions {
   grid: GridData;
   strategyPattern: StrategyPattern;
   providerBlocks: OrderTypeDefinition[];
+  /**
+   * The one grid column the panel is showing, or `null` while it is showing
+   * them all - which is every width at `sm` and above, where nothing is paged.
+   *
+   * A pick-up starts in it (see `initialTarget`), and that is the only thing
+   * it is for. It is a plain value read at the moment of a pick-up rather than
+   * anything this model subscribes to: nothing here watches it change, and no
+   * transition anywhere asks whether it changed. `GridArea` owns it.
+   */
+  shownColumn: number | null;
   /** The one voice of the grid; see `useGridAnnouncer`. */
   announcer: GridAnnouncer;
   /** Commit a new block from the palette, and report what the grid did. */
@@ -255,6 +265,7 @@ export const useBlockCommand = ({
   grid,
   strategyPattern,
   providerBlocks,
+  shownColumn,
   announcer,
   placeProvider,
   removeFromGrid,
@@ -289,10 +300,11 @@ export const useBlockCommand = ({
       });
       return false;
     }
-    dispatch({ type: "pickUp", source, targets, origin });
-    // The same choice the reducer makes, so the announcement can never name a
-    // cell other than the one that is actually the target.
-    const target = initialTarget(targets) ?? targets[0];
+    dispatch({ type: "pickUp", source, targets, origin, shownColumn });
+    // The same choice the reducer makes, from the same function and the same
+    // arguments, so the announcement can never name a cell other than the one
+    // that is actually the target.
+    const target = initialTarget(targets, shownColumn) ?? targets[0];
     report({ kind: "pickedUp", source, target, origin });
     return true;
   };

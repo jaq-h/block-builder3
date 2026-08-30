@@ -60,6 +60,11 @@ const renderCommand = (
       grid,
       strategyPattern,
       providerBlocks: ORDER_TYPES,
+      // The desktop shape: the panel shows both columns, so a pick-up has no
+      // column to start in and takes the first legal cell of its offer. What
+      // the paged shape does instead is `initialTarget`'s own to pin, and
+      // `GridArea.dom.test.tsx` drives it end to end.
+      shownColumn: null,
       announcer,
       placeProvider,
       removeFromGrid,
@@ -94,6 +99,7 @@ const renderCommandWithReplaceableGrid = (initialGrid: GridData) =>
         grid,
         strategyPattern: "conditional",
         providerBlocks: ORDER_TYPES,
+        shownColumn: null,
         announcer,
         placeProvider: () => ({ status: "refused" }),
         removeFromGrid: (id) => removeBlockFromGrid(grid, id),

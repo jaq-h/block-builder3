@@ -108,21 +108,47 @@ describe("validTargetsFor", () => {
 });
 
 describe("initialTarget", () => {
+  const targets = [
+    { col: 0, row: 0 },
+    { col: 1, row: 1 },
+    { col: 1, row: 2 },
+  ];
+
   // It used to take a preferred cell, which was the carried block's own - the
   // one place a placed block could always be put back. Only a palette order is
   // carried now (decision D9), and a palette order is nowhere, so there is
-  // nothing to prefer and the first legal cell is the answer.
-  it("starts at the first legal cell", () => {
-    const targets = [
-      { col: 0, row: 0 },
-      { col: 1, row: 2 },
-    ];
+  // nothing about the BLOCK to prefer. What is preferred is a fact about the
+  // PANEL: the column it is showing, which below `sm` is one of the two.
+  it("starts at the first legal cell when every column is on screen", () => {
+    // `null` is the desktop shape, and it is not "column 0": it says the
+    // question does not arise, so the offer decides on its own exactly as it
+    // always did.
+    expect(initialTarget(targets, null)).toEqual({ col: 0, row: 0 });
+  });
 
-    expect(initialTarget(targets)).toEqual({ col: 0, row: 0 });
+  it("starts in the column the panel is showing", () => {
+    // The defect this closes: paged to Exit on a phone, a pick-up landed in
+    // Entry, and the viewport - which follows the carry's target - threw the
+    // user back to the column they had deliberately left.
+    expect(initialTarget(targets, 1)).toEqual({ col: 1, row: 1 });
+  });
+
+  it("takes the first legal cell of that column, not of the offer", () => {
+    expect(initialTarget(targets, 0)).toEqual({ col: 0, row: 0 });
+  });
+
+  it("falls back to the whole offer when the shown column has no legal cell", () => {
+    // A pick-up whose only legal cells are in the other column still opens the
+    // pager there: the viewport follows the target, so the user arrives holding
+    // the order in the one place it can go.
+    expect(
+      initialTarget([{ col: 1, row: 0 }], 0),
+    ).toEqual({ col: 1, row: 0 });
   });
 
   it("is null when the order cannot be placed anywhere", () => {
-    expect(initialTarget([])).toBeNull();
+    expect(initialTarget([], null)).toBeNull();
+    expect(initialTarget([], 1)).toBeNull();
   });
 });
 
@@ -196,6 +222,7 @@ describe("commandReducer", () => {
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
         origin: "keyboard",
+        shownColumn: null,
         source: providerSource,
         targets,
       });
@@ -212,6 +239,7 @@ describe("commandReducer", () => {
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
         origin: "keyboard",
+        shownColumn: null,
         source: providerSource,
         targets: [
           { col: 1, row: 0 },
@@ -222,11 +250,29 @@ describe("commandReducer", () => {
       expect(next.carrying?.target).toEqual({ col: 1, row: 0 });
     });
 
+    it("starts in the column the panel is showing, when it is showing one", () => {
+      // The action carries the answer rather than the reducer reaching for a
+      // viewport it cannot see; `GridArea` is the one thing that can read it.
+      const next = commandReducer(IDLE_COMMAND_STATE, {
+        type: "pickUp",
+        origin: "keyboard",
+        shownColumn: 1,
+        source: providerSource,
+        targets: [
+          { col: 0, row: 1 },
+          { col: 1, row: 1 },
+        ],
+      });
+
+      expect(next.carrying?.target).toEqual({ col: 1, row: 1 });
+    });
+
     it("refuses to pick up a block that has nowhere legal to go", () => {
       // Otherwise the user ends up holding something they cannot put down.
       const next = commandReducer(IDLE_COMMAND_STATE, {
         type: "pickUp",
         origin: "keyboard",
+        shownColumn: null,
         source: providerSource,
         targets: [],
       });
@@ -238,6 +284,7 @@ describe("commandReducer", () => {
       const next = commandReducer(carrying(providerSource), {
         type: "pickUp",
         origin: "keyboard",
+        shownColumn: null,
         source: takeProfitSource,
         targets: [{ col: 1, row: 2 }],
       });
@@ -376,6 +423,7 @@ describe("commandReducer", () => {
     let state = commandReducer(IDLE_COMMAND_STATE, {
       type: "pickUp",
       origin: "keyboard",
+      shownColumn: null,
       source: providerSource,
       targets: [
         { col: 0, row: 1 },

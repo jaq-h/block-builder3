@@ -2678,6 +2678,58 @@ describe("GridArea, the column pager", () => {
     expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("starts a pick-up in the column it is showing", () => {
+    // THE DEFECT THIS CLOSES. A pick-up used to take the first legal cell of
+    // its offer in column-major order, so on a phone paged to Exit it landed in
+    // Entry and the viewport - which follows the carry's target - threw the user
+    // back to the column they had deliberately left, with the Exit leg they came
+    // to build a pager press away again.
+    //
+    // `pageTheColumns()` is what makes this test mean anything: without the
+    // declaration `offPageColumn` resolves to below `sm`, every column computes
+    // reachable, which is the DESKTOP shape - and the desktop answer is the old
+    // one, asserted in "leaves a pick-up on the offer's own first cell where
+    // both columns are drawn" below.
+    pageTheColumns();
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    fireEvent.click(pagerButton("Exit"));
+    expect(shownColumn()).toEqual([1]);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+    expect(announcement()).toContain("Target: Exit column, primary row.");
+  });
+
+  it("leaves a pick-up on the offer's own first cell where both columns are drawn", () => {
+    // Desktop, which is an acceptance criterion of this behaviour: the panel is
+    // showing every column, so there is no column to start in and the offer
+    // decides on its own exactly as it always did. No `pageTheColumns()`, which
+    // is the shape at 1024 and above.
+    //
+    // It also pins that nothing is REMEMBERED: the carry below is walked into
+    // the Exit column and cancelled, and the next pick-up is back at the offer's
+    // own first cell. A preference for the column the user last chose was tried
+    // in this lane and withdrawn - see `shownColumn` in `GridArea` for why the
+    // fact being read here is a different thing from that.
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    const takeProfit = screen.getByRole("button", {
+      name: "Add Take Profit order",
+    });
+    tap(takeProfit);
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.keyDown(takeProfit, { key: "ArrowRight" });
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    fireEvent.keyDown(takeProfit, { key: "Escape" });
+
+    tap(screen.getByRole("button", { name: "Add Limit order" }));
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+  });
+
   it("opens on the column the carry's own offer starts in", () => {
     // One block in the Entry primary cell, so the only cells a conditional
     // order may take are that block's diagonals - both in the Exit column.
