@@ -115,13 +115,16 @@ describe("the assembly grid's lanes", () => {
     expectNoScroller(columnsWrapper);
   });
 
-  it("gives each column the viewport's whole width while it is paged", () => {
+  it("keeps each paged column from shrinking into its sibling", () => {
     const classes = pagedColumn.split(/\s+/);
 
     // Refusing to shrink is what makes the pair overflow the viewport rather
     // than squeezing into it - two 220px columns and a gap need 446px against a
-    // 288px panel at 320, and a squeezed column clips its own price chip. It
-    // gives that up from `sm`, where both fit and the row shares itself out.
+    // 288px panel at 320, and a squeezed column clips its own price chip. The
+    // column takes the viewport's width less the 20% peek and the gap, measured
+    // at 235.0 / 268.3 / 293.3 / 313.3 for 320 / 360 / 390 / 414, so the
+    // headroom over that floor is 15px at its tightest. It gives the whole
+    // arrangement up from `sm`, where both fit and the row shares itself out.
     expect(classes).toContain("shrink-0");
     expect(classes).toContain("sm:shrink");
   });

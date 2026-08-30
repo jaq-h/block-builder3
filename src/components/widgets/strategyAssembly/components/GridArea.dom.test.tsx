@@ -1507,6 +1507,39 @@ describe("GridArea, a drop whose block overlaps a cell it is not over", () => {
     );
   });
 
+  it("refuses a palette order released over the withheld peek, and says why", () => {
+    pageTheColumns();
+    renderTwoColumns();
+
+    // The identical geometry the placed-block release above uses. One release
+    // may not get two accounts, so this is refused rather than reported as
+    // having landed outside the grid - the user watched it land on a drawn
+    // column - and the sentence points at the pager rather than at the cell,
+    // which the placement rules were never asked about.
+    dragFromPalette(RIGHT_COLUMN + 16, ROW_MID);
+
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, row 2, empty",
+    );
+    expect(announcement()).toBe(
+      "Exit column, row 2 is not on screen, so nothing can be placed there yet. Market order was not placed. Use the column buttons to show it first.",
+    );
+  });
+
+  it("still says a palette order released clear of the grid was outside it", () => {
+    pageTheColumns();
+    renderTwoColumns();
+
+    // Half a tile clear of the left column and nowhere near the peek: the
+    // refusal above must not swallow the release that really is off the grid.
+    dragFromPalette(LEFT_COLUMN - 40, ROW_MID);
+
+    expect(announcement()).toBe(
+      "Released outside the grid. Market order was not placed.",
+    );
+  });
+
   it("still removes a placed block released clear of every cell", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));

@@ -327,6 +327,17 @@ const describePlacement = (
       // will take it, because a placed block does not change cells at all
       // (decision D9) - so naming the cell would send the user hunting for a
       // cell that would say yes.
+      // Not a refusal by the placement rules either: the cell was simply not
+      // one the panel was offering, so the sentence points at the pager rather
+      // than at the cell or at decision D9.
+      if (result.reason === "columnNotShown") {
+        return `${describeCell(cell, pattern)} is not on screen, so nothing can be placed there yet. ${wentNowhere(
+          source,
+          pattern,
+          releasedCarry,
+          result.at,
+        )} Use the column buttons to show it first.`;
+      }
       if (result.reason === "staysInCell") {
         return `${describeSource(source)} stays in the cell it was placed in, so it was not moved to ${describeCell(
           cell,

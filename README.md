@@ -709,7 +709,10 @@ though, and that distinction is a block the user does not get back: a free drag 
 clear of every cell removes the block, so reading a release over the drawn peek as "clear of
 every cell" destroyed the order the user had just dropped onto a cell they could see. A
 release there is refused instead, in the same words a release over any other cell it may not
-move to gets. **Visible does not mean droppable**, and the
+move to gets. **Both drag paths read it the same way**, because one geometry may not get two
+accounts: a palette order released in the sliver is refused too, and told that the column is
+not on screen and to page to it first, rather than being told it was released outside the
+grid. **Visible does not mean droppable**, and the
 peek is why that has to be said: a drop is resolved by greatest overlap of the dragged tile,
 and measured at 390 a release at the far right edge put 30px of the tile over an off-page
 Exit cell against 4px over the Entry cell it was drawn on. Tab is kept out of that column by
@@ -718,9 +721,7 @@ focus straight back. Above `sm` both columns are drawn and the viewport stops be
 container, while the pager is hidden in CSS: it is rendered at every width and
 `columnPagerRow`'s `sm:hidden` gives it `display: none`, so above `sm` it is not a flex item
 of `contentRow` at all rather than a zero-width one, and the desktop row is left exactly as
-it was. CSS is what decides it because nothing in this panel reads the breakpoint from
-JavaScript - which column is on screen is state in `GridArea`, and the width the pager is
-wanted at is a media query.
+it was.
 
 **What moves between cells, and what does not.** A **placed block never changes cells** -
 every block, by every input method, with no per-type carve-out. That is captain decision D9,

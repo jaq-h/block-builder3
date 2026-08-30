@@ -836,10 +836,22 @@ const GridArea: FC<GridAreaProps> = ({
    */
   const dropAt = (x: number, y: number) => resolveDrop(x, y, BLOCK_HEIGHT);
 
-  /** The cell a release may actually place into, and no other. */
-  const placeableCellAt = (x: number, y: number) => {
-    const drop = dropAt(x, y);
-    return drop.kind === "available" ? drop.cell : null;
+  /**
+   * What the grid did about a release over a cell it is not showing: nothing.
+   *
+   * A `PlacementResult` like the ones `placeProviderInCell` and
+   * `keepBlockInItsCell` return, because the announcer may only be told what
+   * the grid did - and this one is the grid declining to be asked. It mutates
+   * nothing, so it is a value rather than a function.
+   *
+   * There is no second helper collapsing `withheld` into "no cell": that
+   * collapse is what told a user their release was outside the grid while they
+   * watched it land on a drawn column, and both drag paths now read
+   * `resolveDrop`'s three-way answer directly so a third cannot inherit it.
+   */
+  const COLUMN_NOT_SHOWN: PlacementResult = {
+    status: "refused",
+    reason: "columnNotShown",
   };
 
   const handleProviderDragStart = (type: string) => {
@@ -872,17 +884,26 @@ const GridArea: FC<GridAreaProps> = ({
     // and which leg it is comes from `axesForBlockAxis`. Reading those off the
     // drop coordinates was two separate defects - a 0-100 reading written into
     // a 0-50 axis, and an `axis` rewritten without its matching `axes`.
-    const cell = placeableCellAt(x, y);
+    const drop = dropAt(x, y);
     const source = providerSource(type);
 
     const releasedCarry = carryReleasedByDragRef.current;
 
-    if (cell) {
+    // A release over a WITHHELD cell is a release over a cell, exactly as it is
+    // on the placed-block path: the peeking column is drawn, so the user aimed
+    // at something they can see. Nothing is created there - the exclusion is
+    // unchanged - but "Released outside the grid" is a false account of a
+    // release inside the panel, and the two drag paths may not give different
+    // readings of one geometry.
+    if (drop.kind !== "offGrid") {
       announcer.report({
         kind: "placement",
         source,
-        cell,
-        result: placeProviderInCell(type, cell),
+        cell: drop.cell,
+        result:
+          drop.kind === "available"
+            ? placeProviderInCell(type, drop.cell)
+            : COLUMN_NOT_SHOWN,
         via: "drag",
         releasedCarry,
       });
@@ -1123,15 +1144,16 @@ const GridArea: FC<GridAreaProps> = ({
   // are the answer for a drag whose capture was refused too, where the target
   // is instead whatever happens to be under the cursor.
   //
-  // Through `placeableCellAt`, the same resolver the release uses. The
-  // highlight is the only warning a user gets before letting go, so it has to
-  // name the cell the drop will actually place into; a highlight computed one
-  // way and a drop the other is the shape of defect this repository keeps
-  // paying for. A withheld cell highlights nothing, because nothing may be
-  // placed there.
+  // Through `dropAt`, the same resolver the release uses. The highlight is the
+  // only warning a user gets before letting go, so it has to name the cell the
+  // drop will actually place into; a highlight computed one way and a drop the
+  // other is the shape of defect this repository keeps paying for. Only
+  // `available` highlights, because it is the only answer a release may place
+  // on - a withheld cell is refused rather than offered.
   const handlePointerMove = (e: PointerEvent) => {
     if (draggingId !== null || draggingFromProvider !== null) {
-      setHoverCell(placeableCellAt(e.clientX, e.clientY));
+      const drop = dropAt(e.clientX, e.clientY);
+      setHoverCell(drop.kind === "available" ? drop.cell : null);
     }
   };
 

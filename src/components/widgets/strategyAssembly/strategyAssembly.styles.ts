@@ -67,8 +67,12 @@ export const cellLockedNote =
 // at the narrowest end and nowhere else: with the palette still a lane, the
 // viewport would be the panel less the palette's 90px floor and a 6px gap -
 // 192 / 232 / 262 / 286 at 320 / 360 / 390 / 414 - and 192px is under the 220px
-// a column needs to keep its own price chip. As a band above, the column gets
-// 288 / 328 / 358 / 382, clear of that floor by 68px at the worst of them.
+// a column needs to keep its own price chip. As a band above, the WRAPPER gets
+// those same 288 / 328 / 358 / 382; the column inside it is narrower, since
+// `pagedColumn` leaves 20% of the sibling showing. Measured in Chrome at those
+// four widths the column is 235.0 / 268.3 / 293.3 / 313.3, so the headroom over
+// the 220px floor is 15.0 / 48.3 / 73.3 / 93.3 - tightest at 320, and 15px is
+// what a later change has to spend from.
 //
 // `sm` is where the palette returns to the lane, and it is a floor with room
 // rather than a fitted number: at a 640px viewport the panel measures 608px
@@ -189,7 +193,11 @@ export const patternDescription = "text-[9px] opacity-70 mt-0.5";
 // margin either side: measured at 390, a 202px cell put `$58,322.4` at
 // x 247..305.5 with the cell edge at 323, so 17.5px of slack. Narrower and the
 // price the user is about to trade at is clipped, which is why the paged form
-// above gives a column the panel's whole width rather than squeezing two in.
+// above gives a column all the width it can rather than squeezing two in - the
+// viewport's whole width less the 20% peek and the gap. Measured at the
+// narrowest width that leaves, 320, a placed Limit's chip runs to x 215.3
+// against a cell edge at 242: 26.7px of slack, which is what makes the peek
+// safe there.
 // Width is deliberately NOT here: `pagedColumn` owns it in both forms of the
 // layout, because below `sm` it is a proportion of the paged viewport and from
 // `sm` it is a share of the row. Two width utilities on one element resolve by

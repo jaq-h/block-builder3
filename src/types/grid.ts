@@ -64,8 +64,15 @@ export type PlacementResult =
    * no cell will take because placed blocks do not change cells at all
    * (decision D9). One is about the cell; the other is about the rule.
    *
-   * Only the rule needs naming, so the member is one value and its absence.
-   * A placement-rules refusal leaves it off and takes the fallthrough sentence
+   * `columnNotShown` is the third, and it is about neither: below `sm` the
+   * panel shows one grid column at a time and draws 20% of the other past the
+   * viewport's edge, and a release in that sliver landed on a cell the panel is
+   * not offering. The placement rules may well have taken the order; they were
+   * never asked. Saying the cell "cannot take this order" would send the user
+   * looking for a different cell when what they need is the pager.
+   *
+   * Only a rule needs naming, so the member is a value or its absence. A
+   * placement-rules refusal leaves it off and takes the fallthrough sentence
    * in `describePlacement`, which already words that case correctly - a second
    * name meaning "the default" would read as a distinction the announcer does
    * not draw.
@@ -73,7 +80,7 @@ export type PlacementResult =
   | {
       status: "refused";
       at?: CellPosition;
-      reason?: "staysInCell";
+      reason?: "staysInCell" | "columnNotShown";
     }
   /**
    * The grid does not hold the block named. There is no cell to name in

@@ -721,13 +721,22 @@ at a time.** `contentRow` is `flex-col sm:flex-row`, and that direction change
 now moves the PALETTE alone - below `sm` it lays its tiles across the panel in
 an `auto-fill` grid as a band, with the columns under it. `columnsWrapper` is a
 `flex-row` always, and below `sm` it is a one-column viewport over that row:
-each column is `w-full shrink-0` (`pagedColumn`), the pair overflows to the
+each column is `w-[calc((100%-0.375rem)/1.2)] shrink-0` (`pagedColumn`, which
+gives it `sm:w-full sm:shrink` for the desktop form), the pair overflows to the
 right, and `ColumnPager` moves the viewport by setting `scrollLeft`. The
 palette is what moves because the arithmetic leaves no choice - with it still a
 lane the viewport would be the panel less 90px and a 6px gap, **192 / 232 / 262
-/ 286 at 320 / 360 / 390 / 414**, and 192 is under the 220px floor above; as a
-band the column gets **288 / 328 / 358 / 382**, clear by 68px at the worst of
-them. Three rules hold it together and none may be simplified away:
+/ 286 at 320 / 360 / 390 / 414**, and 192 is under the 220px floor above. As a
+band, the WRAPPER gets those same 288 / 328 / 358 / 382, and the column inside
+it is narrower still, because 20% of its sibling has to show past the edge.
+**Measured in Chrome at 320 / 360 / 390 / 414 on this branch, the column is
+235.0 / 268.3 / 293.3 / 313.3 and the peek is exactly 20% at every one of
+them**, so the headroom over the 220px floor is **15.0 / 48.3 / 73.3 / 93.3,
+tightest at 320**. That is the number a later change is spending, and it is
+15px rather than the 68px this paragraph used to claim. What made 20% safe at
+that width is a chip check rather than the floor alone: measured at 320, a
+placed Limit's price chip runs to x 215.3 against a cell edge at 242, so 26.7px
+of slack. Three rules hold it together and none may be simplified away:
 
 - **`overflow-hidden`, never `-auto`, and on BOTH axes.** This is a scroll
   container the user cannot drive, so it draws no scrollbar on any platform - it
@@ -767,10 +776,15 @@ them. Three rules hold it together and none may be simplified away:
   collapsing "over a column the panel is not showing" into "over nothing at all"
   put a destructive band inside the panel: at 320 every release from x 246 to
   the panel edge at 288 landed in drawn column and destroyed the order, with no
-  undo. `resolveDrop` answers `available`, `withheld` or `offGrid`, and
-  `handleDragEnd` refuses on the middle one - through `keepBlockInItsCell` and
-  the same `staysInCell` sentence a release over any other cell gets, because
-  one outcome does not get two vocabularies. **The exclusion itself is
+  undo. `resolveDrop` answers `available`, `withheld` or `offGrid`, and **BOTH
+  drag paths read all three**: `handleDragEnd` refuses the middle one through
+  `keepBlockInItsCell`, with the `staysInCell` sentence a release over any other
+  cell gets, and `handleProviderDragEnd` refuses it as `columnNotShown`, which
+  names the column rather than blaming the cell - the placement rules might well
+  have taken that order and were never asked. There is deliberately **no helper
+  collapsing `withheld` into "no cell"**: that collapse is what told a palette
+  user their release was outside the grid while they watched it land on a drawn
+  column, and one geometry may not get two accounts. **The exclusion itself is
   unchanged**: nothing is ever placed into a withheld cell, and the highlight
   still names only a cell a release may land in.
   **Inheritance answers a cell but not a block, which is why the class carries
