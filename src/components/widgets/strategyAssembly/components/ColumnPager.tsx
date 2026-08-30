@@ -45,12 +45,11 @@ interface ColumnPagerProps {
  * about which cells a carry may reach, are the ones that were already there.
  * The viewport follows the carry's target; see `GridArea`.
  *
- * ─── WHILE A BLOCK IS IN HAND, THESE BUTTONS TAKE NO FOCUS ───────────
+ * ─── WHILE A BLOCK IS IN HAND, THESE BUTTONS ARE OUT OF THE TAB ORDER ─
  *
- * `tabIndex={-1}` takes them out of the tab order, and the `pointerdown`
- * default is prevented so a press does not focus them either. Both only while
- * carrying. **Nothing in this app moves DOM focus in answer to paging, and
- * this is what makes that safe.**
+ * `tabIndex={-1}`, and only while carrying. That is the whole mechanism.
+ * **Nothing in this app moves DOM focus in answer to paging, and this is what
+ * makes that safe.**
  *
  * **The problem it removes.** The off-page column is `visibility: hidden`, and
  * every key that drives a carry - the arrows, Enter, Escape - is handled ON
@@ -65,8 +64,8 @@ interface ColumnPagerProps {
  * stranded on a control you cannot reach.**
  *
  * **This is NOT the "paging never moves focus" option that was rejected.**
- * That one left focus standing ON the button and called it acceptable. This
- * one takes away the reachability that put focus there.
+ * That one left a KEYBOARD carrier standing on the button with no way off it.
+ * This one takes the button out of their reach entirely, so they never arrive.
  *
  * **A keyboard carrier never needs this control**, which is what makes taking
  * it out of their reach a removal rather than a loss. `validTargetsFor` walks
@@ -75,7 +74,7 @@ interface ColumnPagerProps {
  * which from an Entry target is every legal Exit target. So the arrows cross
  * to the other column exactly when a legal cell exists there, and when none
  * exists there is nothing to cross to. Keyboard users cross with the arrows;
- * pointer users tap here and then tap a cell; focus does not move for either.
+ * pointer users tap here and then tap a cell.
  *
  * **Not focusable is not not operable, and the three limits on it are not
  * optional.** The buttons stay fully clickable, keep their 24px WCAG 2.2 SC
@@ -85,6 +84,37 @@ interface ColumnPagerProps {
  * carrying has no arrow keys to cross with and genuinely needs this. And what
  * a press says is unchanged either way: the same-column press is a silent
  * no-op and a refused move still announces the refusal.
+ *
+ * ─── NO HANDLER HERE CANCELS A PRESS, AND NONE MAY BE ADDED ──────────
+ *
+ * A `preventDefault` on `pointerdown` was tried, to stop a press focusing the
+ * button as well. **It is withdrawn, and neither it nor a `mousedown`
+ * equivalent may be reinstated.** Three reasons, and the first decides it:
+ *
+ * 1. **It could not be verified on the input this control exists for.**
+ *    Measured in Chrome with real trusted input, a cancelled `pointerdown`
+ *    still fired `click` and still took no focus - so it worked there. **That
+ *    Chrome result is not evidence for touch and must not be cited as such.**
+ *    Real touch could not be tested, and iOS Safari is documented to suppress
+ *    the synthesized `click` when the touch-stream press is cancelled. If it
+ *    does, this pager is completely inert to touch for the whole duration of
+ *    every carry - on a phone layout, where touch is the primary input. A
+ *    phone feature whose primary input cannot be tested does not ship on a
+ *    mechanism with that failure mode.
+ * 2. **What is given up is small, and it is the limit this lane has already
+ *    accepted once.** Without the cancellation a pointer press may focus the
+ *    button. That is not stranding: Tab leaves, the carry stays live, and a
+ *    pointer user places by tapping a cell - the same reasoning the
+ *    focus-in-a-hidden-column limitation below rests on. A keyboard-only user
+ *    is unaffected either way, since they cross with the arrows.
+ * 3. **The tab-order gate still does the work it was chosen for.** A keyboard
+ *    carrier cannot land here at all, so cannot be stranded here. Only a
+ *    pointer press can put focus on one of these buttons, and a pointer user
+ *    is by definition able to tap a cell to put the order down.
+ *
+ * So a pressed button taking focus mid-carry is a deliberate accepted
+ * consequence rather than an oversight, and tidying it up is what must not
+ * happen.
  *
  * ─── TWO LIMITATIONS, ACCEPTED AND WRITTEN DOWN RATHER THAN HIDDEN ───
  *
@@ -132,16 +162,6 @@ const ColumnPager: FC<ColumnPagerProps> = ({
           aria-pressed={isActive}
           tabIndex={isCarrying ? -1 : undefined}
           className={columnPagerButton({ isActive })}
-          // The press that pages without moving focus. Preventing the
-          // `pointerdown` default suppresses the implicit focus - the same
-          // thing `usePointerGesture` does before placing focus by hand - and
-          // leaves the `click` that follows it alone, so the button still
-          // pages for every pointer. It is the pointer half of the rule above;
-          // `tabIndex` is the keyboard half, and each is useless without the
-          // other.
-          onPointerDown={
-            isCarrying ? (event) => event.preventDefault() : undefined
-          }
           onClick={() => onShowColumn(col)}
         >
           {/* The cue that survives with no colour at all, in a slot both

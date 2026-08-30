@@ -120,39 +120,21 @@ describe("ColumnPager", () => {
     }
   });
 
-  it("refuses the focus a press would otherwise take, while carrying", () => {
-    renderPager(0, true);
-
-    // Preventing the `pointerdown` default is what suppresses the implicit
-    // focus a press gives a button on Chrome and on every keyboard
-    // activation. `fireEvent` reports back whether the default survived.
-    const pressed = fireEvent.pointerDown(
-      screen.getByRole("button", { name: "Exit" }),
-    );
-
-    expect(pressed).toBe(false);
-  });
-
-  it("takes the focus a press gives it while nothing is carried", () => {
-    renderPager(0, false);
-
-    const pressed = fireEvent.pointerDown(
-      screen.getByRole("button", { name: "Exit" }),
-    );
-
-    expect(pressed).toBe(true);
-  });
-
-  it("still pages on a press that took no focus", () => {
+  it("still pages while a block is in hand", () => {
     const { onShowColumn } = renderPager(0, true);
-    const exit = screen.getByRole("button", { name: "Exit" });
 
-    // Not focusable is not not operable: the press still pages, which is the
-    // whole point of suppressing the focus rather than disabling the button.
-    fireEvent.pointerDown(exit);
-    fireEvent.pointerUp(exit);
-    fireEvent.click(exit);
+    // Out of the tab order is not out of use: the control that the carry
+    // depends on has to keep working for every pointer.
+    fireEvent.click(screen.getByRole("button", { name: "Exit" }));
 
     expect(onShowColumn).toHaveBeenCalledWith(1);
   });
+
+  // Nothing here pins a cancelled press, because nothing cancels one any more.
+  // A `preventDefault` on `pointerdown` was tried and withdrawn: it could not
+  // be verified on touch, which is this layout's primary input, and iOS Safari
+  // is documented to drop the synthesized `click` when the press is cancelled.
+  // `ColumnPager`'s docblock carries the whole reason. A press may therefore
+  // focus the button, which is accepted - do not add a suppression back, and do
+  // not add a test that would pin one.
 });

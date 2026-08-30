@@ -349,8 +349,8 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     for - a voice-control user saying the name of the column they are on, and a
     screen-reader user activating the button without first reading
     `aria-pressed`.
-  - **While a block is in hand the pager takes no focus, and nothing anywhere
-    moves focus in answer to paging.** The off-page column is
+  - **While a block is in hand the pager is out of the tab order, and nothing
+    anywhere moves focus in answer to paging.** The off-page column is
     `visibility: hidden` and every key that drives a carry - the arrows, Enter,
     Escape - is handled ON the carried order's palette tile or ON a block,
     with no document-level handler anywhere; so focus left on a pager button
@@ -358,10 +358,10 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     left in the column that has just gone off screen is dropped to `<body>` by
     the browser.
 
-  **The answer is reachability, not a hand-off**: `tabIndex={-1}` plus a
-  prevented `pointerdown` default on `ColumnPager`'s buttons, both **only while
-  carrying**. You cannot be stranded on a control you cannot reach. That
-  component's docblock is the authority and carries the whole derivation; four
+  **The answer is reachability, not a hand-off**: `tabIndex={-1}` on
+  `ColumnPager`'s buttons, **only while carrying**, and nothing else. A
+  keyboard carrier cannot be stranded on a control they cannot reach. That
+  component's docblock is the authority and carries the whole derivation; five
   things belong here because they are what a reader of this file would
   otherwise undo:
 
@@ -382,6 +382,20 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     24px target and stay in the accessibility tree; `disabled` would break the
     paging pointer users depend on. Carrying nothing they are an ordinary tab
     stop, because that user has no arrow keys to cross with.
+  - **NO HANDLER ON THESE BUTTONS CANCELS A PRESS, and none may be added.** A
+    `preventDefault` on `pointerdown` was tried, so a press would not focus
+    them either, and it is withdrawn - a `mousedown` equivalent is withdrawn
+    with it. It **could not be verified on touch**, which is this layout's
+    primary input: measured in Chrome with real trusted input a cancelled
+    press still fired `click` and still took no focus, but **that is not
+    evidence for touch and must not be cited as such**, and iOS Safari is
+    documented to drop the synthesized `click` when the touch-stream press is
+    cancelled - which would leave the pager inert to touch for the whole of
+    every carry. What it costs is small and is the limit this section already
+    accepts elsewhere: a pointer press may focus the button, which is not
+    stranding (Tab leaves, the carry stays live, a pointer user taps a cell),
+    and the tab-order gate still keeps a keyboard carrier away from it
+    entirely.
   - **Two residuals, both accepted deliberately rather than unnoticed.**
     Assistive technology can focus a `tabindex="-1"` element directly, so an AT
     user can still land there mid-carry; they are not stranded - Shift+Tab
@@ -398,9 +412,10 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     since both halves are pointer presses; a keyboard-only user crosses with
     the arrows and never touches the control.
 
-  `ColumnPager.dom.test.tsx` pins the tab order and the suppressed press in
-  both states; `GridArea.dom.test.tsx` pins the behaviour under "pages a carry
-  across without taking the focus off what holds it", "is out of the tab order
+  `ColumnPager.dom.test.tsx` pins the tab order in both states and that the
+  control still pages while carrying; `GridArea.dom.test.tsx` pins the
+  behaviour under "pages a carry across and the arrived column places it",
+  "is out of the tab order
   while a block is in hand, and in it when not", "lets the arrow keys cross
   columns and back, with the viewport following" and "leaves focus alone where
   both columns are drawn".

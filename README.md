@@ -673,10 +673,16 @@ safe.** The column going off screen is held by `visibility: hidden`, and every k
 a carry - the arrows, Enter and Escape - is handled on the carried order's palette tile or on
 a block rather than on the document. So focus left on a pager button mid-carry would be an
 order no key could put down. While a block is in hand the pager's buttons therefore leave the
-tab order and refuse the focus a press would give them, which removes the stranding rather
-than remedying it after the fact: you cannot be stranded on a control you cannot reach. They
-stay clickable and keep their target size throughout, and carrying nothing they are an
-ordinary tab stop - a user who is not carrying has no arrow keys to cross with and needs them.
+tab order, which removes the stranding rather than remedying it after the fact: a keyboard
+carrier cannot be stranded on a control they cannot reach. They stay clickable and keep their
+target size throughout, and carrying nothing they are an ordinary tab stop - a user who is not
+carrying has no arrow keys to cross with and needs them.
+
+Nothing cancels the press itself. Suppressing the focus a press gives a button was tried and
+withdrawn: it could not be verified on touch, which is this layout's primary input, and iOS
+Safari is documented to drop the synthesized click when the press is cancelled - which would
+leave the pager inert to touch for the whole of every carry. So a pointer press may focus the
+button, and that is accepted for the same reason the limits below are.
 
 A keyboard carrier never needs the pager, which is why this costs them nothing: the arrow keys
 already step the carry's target into the other column whenever a legal cell exists there.
