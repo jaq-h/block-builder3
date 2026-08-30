@@ -238,11 +238,88 @@ export function getReadOnlyCellContainerProps(tint?: string) {
 }
 
 // =============================================================================
+// THE CELL'S TOP-RIGHT RAIL
+// =============================================================================
+//
+// One absolutely positioned cluster in the cell's top-right corner, holding the
+// cell's own controls and then the row-label badge. It exists because the cell
+// now has a control at all: removal is per CELL rather than per block, so there
+// is one clear button for the cell and it needs a home that is not a block's
+// tile. The badge no longer positions itself, because two things owning one
+// corner is how they come to overlap.
+//
+// **The rail is right-anchored and the badge is its LAST child, which is what
+// makes every position in it final.** A right-anchored group grows leftwards,
+// so an item added at the front moves nothing that follows it. That buys two
+// things at once, and both were measured rather than assumed:
+//
+//   - **The badge never moves.** An empty cell shows the badge alone and an
+//     occupied one shows the clear button beside it; measured in Chrome at
+//     1440x900 down the Exit column, the badge sits 5px from the cell's right
+//     border edge and 8px from its top in BOTH states. Put the badge first and
+//     it slides 28px left the moment the cell takes an order, so a column of
+//     cells no longer lines its badges up.
+//   - **The clear button never moves either.** A cell-detail editor is planned
+//     - an edit icon that flips the cell to its rear side to type values in -
+//     and it joins this rail at the FRONT, so the clear button stays exactly
+//     where the user last pressed it. Nothing in this rail may be reordered to
+//     put a growing set of controls to the right of a fixed one.
+//
+// A pleasant consequence rather than the reason: the extreme corner is the
+// inert badge, so a press aimed vaguely at "the corner" of a cell does not
+// destroy its orders.
+//
+// `items-center` with `min-h-6`: the badge is about 17px tall and a control is
+// 24px, so the rail is 24px tall whether or not it holds a control, and a
+// cluster whose parts share a centre line reads as one thing. Without the
+// floor the badge would sit 3px higher on an empty cell than on a full one.
+//
+// The z-index puts it over the axis furniture below it. Nothing in the axis is
+// drawn this high in the cell today - the price chips ride at `z-9999` but sit
+// on their block's own offset, which starts below the market line - so this is
+// the belt to that brace rather than a fix for an overlap on screen.
+export const cellActionRail =
+  "absolute top-1 right-1 z-10 flex items-center gap-1 min-h-6";
+
+/**
+ * A control in the rail above: 24px square, which is the WCAG 2.2 SC 2.5.8
+ * minimum target size and the same floor `chartToggleButton` carries.
+ *
+ * `p-0` beside it is load-bearing rather than tidiness. `src/index.css`'s
+ * layered `button` default is `padding: 0.6em 1.2em`, and under
+ * `box-sizing: border-box` a `width` cannot shrink a box below its own padding
+ * and border - so `w-6` alone asks for 24px and gets 40.375px, measured in
+ * Chrome on the control this replaced. The app has exactly one mechanism for a
+ * control that wants to look different, and it is stating the utility
+ * (`AGENTS.md`, "Layout and the CSS cascade"); this is that.
+ *
+ * It is rendered, never revealed on hover: a control shown on `:hover` exists
+ * for a mouse and for nothing else, and the sticky `:hover` a tap leaves behind
+ * on some browsers is an accident rather than an affordance.
+ *
+ * Quiet at rest and red under the cursor or the focus ring. A grid full of red
+ * dots would spend, on the least-used control on screen, exactly the visual
+ * weight the block tiles need for saying what they are.
+ */
+export const cellClearButton = cn(
+  "p-0 w-6 h-6 flex items-center justify-center rounded-full cursor-pointer",
+  "border border-border-neutral bg-bg-column text-white-70",
+  "transition-colors duration-150",
+  "hover:bg-status-red-bg-strong hover:border-status-red-border hover:text-text-primary",
+  "focus-visible:bg-status-red-bg-strong focus-visible:border-status-red-border focus-visible:text-text-primary",
+  "[&_svg]:w-3 [&_svg]:h-3 [&_svg]:stroke-current [&_svg]:pointer-events-none",
+);
+
+// =============================================================================
 // ROW LABEL BADGE (CVA)
 // =============================================================================
+//
+// Positioned by `cellActionRail` above rather than by itself. It used to carry
+// its own `absolute top-1 right-1`, which is the corner the cell's controls now
+// need; two things owning one corner is how they come to overlap.
 
 export const rowLabelBadge = cva(
-  "absolute top-1 right-1 px-1.5 py-0.5 rounded-[3px] text-[8px] font-semibold uppercase tracking-wide border",
+  "px-1.5 py-0.5 rounded-[3px] text-[8px] font-semibold uppercase tracking-wide border whitespace-nowrap",
   {
     variants: {
       type: {

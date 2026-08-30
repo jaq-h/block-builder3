@@ -20,6 +20,10 @@ export {
   getInteractiveCellContainerProps,
   getReadOnlyCellContainerProps,
 
+  // Cell action rail
+  cellActionRail,
+  cellClearButton,
+
   // Row label badge
   rowLabelBadge,
 

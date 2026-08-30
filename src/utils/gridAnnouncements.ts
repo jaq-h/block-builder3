@@ -152,11 +152,34 @@ export type GridOutcome =
        *
        * A dual-axis order type places two blocks in one cell under one label,
        * so the cell alone tells them apart no better than the label does. This
-       * is the same leg the block's own remove control is named with, so what
-       * the user pressed and what they then hear are one fact.
+       * removal names one block because the keyboard had focus on one block;
+       * the pointer's removal is per cell and reports `cellCleared` instead.
        */
       leg?: PriceAxisLeg | null;
       releasedCarry?: boolean;
+    }
+  /**
+   * One cell was emptied by its own clear control: every order it held, in one
+   * press.
+   *
+   * The pointer's removal is per CELL rather than per block, so this is not a
+   * `removed` outcome repeated - it is one event with one sentence, and saying
+   * it block by block would be several live-region writes each erasing the one
+   * before it.
+   *
+   * The unit is the ORDER rather than the block or the label. A dual-axis
+   * order type puts two blocks in one cell under one label and is one order,
+   * so naming that label twice would say two orders went; but a bulk cell can
+   * hold two INDEPENDENT orders that also share a label, and naming it once
+   * there said one order went where two did. So the caller reports how many
+   * orders of each label it destroyed, and the count is what separates the two
+   * cases. Facts, not words: `describeOutcome` is still the only thing that
+   * turns them into a sentence.
+   */
+  | {
+      kind: "cellCleared";
+      cell: CellPosition;
+      orders: { label: string; count: number }[];
     }
   | {
       kind: "dragEnded";
@@ -296,6 +319,17 @@ const wentNowhere = (
   source.kind === "provider"
     ? `${describeSource(source)} was not placed${carryReleased(releasedCarry)}.`
     : `${describeSource(source)} stayed in ${describeCell(at ?? source.origin, pattern)}${carryReleased(releasedCarry)}.`;
+
+/**
+ * A list of names, as English rather than as a comma-joined dump. Two items get
+ * "and"; more get an Oxford list. It exists for the cell-clearing sentence,
+ * which is the one place the grid ever names more than one order at a time.
+ */
+const describeList = (items: string[]): string => {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+};
 
 const describePlacement = (
   source: CommandSource,
@@ -502,6 +536,27 @@ export const describeOutcome = (
           ? { ...outcome.source, label: `${outcome.source.label} ${outcome.leg}` }
           : outcome.source,
       )} from ${describeCell(outcome.source.origin, pattern)}.`;
+
+    // The cell first, because the cell is what the control the user pressed is
+    // named for, and it is the fact that is true whatever the cell held. The
+    // orders follow it, each label named once and carrying its count where the
+    // cell held more than one order of that label: the two legs of a dual-axis
+    // order share a label and are ONE order, while two independent orders in a
+    // bulk cell can share one too and are TWO. The plural is taken from the
+    // total, because that is the number of orders the user just destroyed.
+    case "cellCleared": {
+      const cellName = describeCell(outcome.cell, pattern);
+      if (outcome.orders.length === 0) return `Cleared ${cellName}.`;
+
+      const total = outcome.orders.reduce((sum, order) => sum + order.count, 0);
+      const named = outcome.orders.map((order) =>
+        order.count > 1 ? `${order.count} ${order.label}` : order.label,
+      );
+
+      return `Cleared ${cellName}. Removed ${describeList(named)}${
+        total === 1 ? " order" : " orders"
+      }.`;
+    }
 
     case "dragEnded":
       return outcome.reason === "offGrid"

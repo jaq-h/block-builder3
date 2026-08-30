@@ -12,7 +12,7 @@ import type {
   PlacementResult,
   StrategyPattern,
 } from "../types/grid";
-import type { OrderTypeDefinition } from "../data/orderTypes";
+import { getOrderType, type OrderTypeDefinition } from "../data/orderTypes";
 import {
   commandReducer,
   IDLE_COMMAND_STATE,
@@ -100,6 +100,17 @@ export interface UseBlockCommandOptions {
    */
   removeFromGrid: (id: string) => GridData;
   /**
+   * Empty one cell, links to what it held included, and hand back the grid that
+   * was written.
+   *
+   * The pointer's removal. It returns the grid for the same reason
+   * `removeFromGrid` does: clearing a cell is a grid write that also speaks, so
+   * the carry-lifecycle rule has to run in the same event rather than a render
+   * later, where a second live-region write would erase the sentence naming
+   * what went.
+   */
+  clearFromGrid: (cell: CellPosition) => GridData;
+  /**
    * A placed block was activated, and it is not going anywhere.
    *
    * Decision D9: once a block is placed, its cell is where it lives - every
@@ -140,20 +151,39 @@ export interface UseBlockCommandReturn {
   /** A tap on a cell. Does nothing, silently, while nothing is carried. */
   activateCell: (cell: CellPosition) => void;
   /**
-   * Take one placed block off the grid: Delete or Backspace on it, its own
-   * remove control, or a free drag released clear of every cell.
+   * Take one placed block off the grid: Delete or Backspace on it, or a free
+   * drag released clear of every cell.
    *
-   * **The app's one removal.** It was previously a branch inside the free
-   * drag's release handler, which is why it did not exist for most of the
-   * grid: `block.tsx` wires the vertical price drag instead of the free drag
-   * for every block a cell draws on a price axis, so a Limit, a Stop Loss or a
-   * Take Profit could not be removed by any input method at all, and Clear All
-   * - which destroys the whole strategy - was the only way out. Decision D9
-   * names delete-and-rebuild as *the* way to correct a misplaced order, so the
-   * removal has to be an operation of the command model rather than one
-   * gesture's side effect.
+   * **The fine-grained removal, and the keyboard's.** It was previously a
+   * branch inside the free drag's release handler, which is why it did not
+   * exist for most of the grid: `block.tsx` wires the vertical price drag
+   * instead of the free drag for every block a cell draws on a price axis, so a
+   * Limit, a Stop Loss or a Take Profit could not be removed by any input
+   * method at all, and Clear All - which destroys the whole strategy - was the
+   * only way out. Decision D9 names delete-and-rebuild as *the* way to correct
+   * a misplaced order, so the removal has to be an operation of the command
+   * model rather than one gesture's side effect.
+   *
+   * The POINTER's removal is `clearCell` below, which empties the whole cell.
+   * The two are not rivals: focus names one block and a press names one cell.
    */
   removeBlock: (id: string, options?: RemoveOptions) => void;
+  /**
+   * Empty one cell: every order in it, in one press.
+   *
+   * **The pointer's removal, and the captain's rule.** A dual-axis order type
+   * is two blocks in one cell, and a bulk cell can hold several independent
+   * orders; one press of a cell's clear control takes all of them, so a user
+   * can never destroy half an order and be left holding a leg with no partner.
+   * `removeBlock` above is the keyboard's, and it stays fine-grained because
+   * the keyboard has focus on ONE block and so can name one.
+   *
+   * It touches no other cell's orders. The links it clears name blocks it has
+   * just removed, which is tidying a reference rather than altering an order -
+   * see `clearCellInGrid` in `utils/grid.ts`, and `AGENTS.md` where the two
+   * rules are read together.
+   */
+  clearCell: (cell: CellPosition) => void;
   moveTarget: (dCol: number, dRow: number) => void;
   /**
    * The cursor is over this cell, so it is the cell a click would place into.
@@ -183,6 +213,44 @@ export interface UseBlockCommandReturn {
   clearFocusRequest: () => void;
 }
 
+/**
+ * How many ORDERS a set of blocks in one cell is, label by label.
+ *
+ * A block is a leg rather than an order, and the two only coincide for a
+ * single-axis type. `createBlocksFromOrderType` emits one block per axis - and
+ * one for a Market order, which has none - so legs per order is the order
+ * type's own `axes.length`, floored at one. Orders of a label are therefore
+ * that label's blocks divided by its legs, and the division ROUNDS UP so half
+ * an order left behind by a keyboard Delete of one leg still counts as the one
+ * order it is rather than as none.
+ *
+ * The count is what tells the two same-label cases apart, and only a count
+ * can: both legs of one Stop Loss Limit are one order, while two Market orders
+ * a bulk cell accepted are two, and deduping by label reported both as one.
+ */
+const ordersHeldIn = (
+  blocks: BlockData[],
+): { label: string; count: number }[] => {
+  const tallies = new Map<string, { legs: number; blocks: number }>();
+
+  for (const block of blocks) {
+    const tally = tallies.get(block.label);
+    if (tally) {
+      tally.blocks += 1;
+      continue;
+    }
+    tallies.set(block.label, {
+      legs: Math.max(1, getOrderType(block.orderType)?.axes.length ?? 1),
+      blocks: 1,
+    });
+  }
+
+  return [...tallies].map(([label, { legs, blocks: held }]) => ({
+    label,
+    count: Math.ceil(held / legs),
+  }));
+};
+
 export const useBlockCommand = ({
   grid,
   strategyPattern,
@@ -190,6 +258,7 @@ export const useBlockCommand = ({
   announcer,
   placeProvider,
   removeFromGrid,
+  clearFromGrid,
   refuseMove,
 }: UseBlockCommandOptions): UseBlockCommandReturn => {
   const [state, dispatch] = useReducer(commandReducer, IDLE_COMMAND_STATE);
@@ -381,6 +450,55 @@ export const useBlockCommand = ({
         setFocusRequest(found.block.orderType);
       }
       report({ kind: "removed", source, leg, releasedCarry });
+      if (carrying && !gridStandsBehind(carrying, written)) {
+        endCarryOnGridChange();
+      }
+    });
+  };
+
+  /**
+   * Empty one cell, and put focus somewhere that still exists.
+   *
+   * **One press, one message, one event** - the same shape `removeBlock` uses
+   * and for the same reason. Clearing a cell can take cells away from a carry
+   * in the user's other hand (conditional validity is diagonal adjacency to an
+   * OCCUPIED cell, so emptying a cell deletes its diagonals), and reported
+   * separately the second live-region write erases the first. So the grid write,
+   * the sentence and the carry-lifecycle rule all run inside one
+   * `asOneEvent`, on the grid the owner just wrote.
+   *
+   * Focus goes to the palette entry the cell's first order came from. The
+   * element that was focused is this cell's clear control, and the cell is
+   * about to hold nothing for it to clear - so leaving focus alone drops it to
+   * `<body>` and the next Tab restarts at the top of the document. The palette
+   * is also where decision D9's other half begins: correcting a misplaced order
+   * is removing it and placing a new one.
+   *
+   * What is reported is orders rather than blocks or labels, counted by
+   * `ordersHeldIn`: both legs of a dual-axis order carry one label and are one
+   * order, while two independent orders in a bulk cell can carry one label and
+   * are two. The sentence is still `gridAnnouncements`' to write - this hands
+   * over the counts, not the words.
+   */
+  const clearCell = (cell: CellPosition) => {
+    const held = grid[cell.col]?.[cell.row];
+    // Nothing to clear, so nothing happened and nothing is said. The control is
+    // only rendered on a cell that holds something, so this is the grid being
+    // rewritten under a press rather than a case a user can aim at.
+    if (!held || held.length === 0) return;
+
+    const orders = ordersHeldIn(held);
+    const firstType = held[0].orderType;
+
+    announcer.asOneEvent(() => {
+      const written = clearFromGrid(cell);
+      // Only when the palette really offers that order type. A focus request
+      // naming nothing on screen is never honoured and sits waiting for
+      // whatever block happens to answer it next.
+      if (providerBlocks.some((entry) => entry.type === firstType)) {
+        setFocusRequest(firstType);
+      }
+      report({ kind: "cellCleared", cell, orders });
       if (carrying && !gridStandsBehind(carrying, written)) {
         endCarryOnGridChange();
       }
@@ -598,6 +716,7 @@ export const useBlockCommand = ({
     activateBlock,
     activateCell,
     removeBlock,
+    clearCell,
     moveTarget,
     pointToTarget,
     cancel,

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   BLOCK_HEIGHT,
+  cellActionRail,
   SCALE_CONFIG,
   getAxisColumnProps,
   getBlockPositionerProps,
@@ -130,19 +131,20 @@ describe("track geometry", () => {
 // element is a centring flex container, which makes that wrapper a shrink-
 // wrapped flex item.
 //
-// That is what the Remove control's containment rests on in this layout. The
-// control is pinned `top-0 right-0` INSIDE the tile, but those offsets resolve
-// against `Block`'s wrapper, so the moment the wrapper stops being a flex item
-// it becomes a block-level box filling the column and `right-0` puts a
-// DESTRUCTIVE control at the column's edge - clear of the 40px tile, over the
-// price label and the neighbouring axis - while every class-list token
-// `blockTile.test.ts` reads and every token on the wrapper itself stays
-// unchanged. `blockTile.test.ts`'s REACH paragraph names this as half 3b of the
-// wrapper-equals-tile assumption; this is the half of it that lives here.
+// That is what puts the tile where its own price says it is. Stop centring and
+// the wrapper becomes a block-level box filling the column, so the tile is
+// drawn at the column's left edge while the price chip and the dashed indicator
+// beside it still point at the offset - a block that reads one price and is
+// drawn at another, with every class-list token on the wrapper unchanged.
+//
+// FORMERLY this paragraph was also the reason a per-block Remove control stayed
+// inside its own tile: that control resolved its offsets against this same
+// wrapper. The control is gone - removal by pointer is the cell's now - and the
+// centring is load-bearing without it.
 //
 // It asserts the declared display and alignment, which is this function's own
 // output contract. What it cannot do is measure the boxes that follow - that is
-// a browser's job, and hole 4 of the same paragraph says so.
+// a browser's job.
 
 describe("the positioner centres a shrink-wrapped child", () => {
   it("declares a flex container that centres what GridCell puts in it", () => {
@@ -150,7 +152,7 @@ describe("the positioner centres a shrink-wrapped child", () => {
 
     expect(
       tokens,
-      "the positioner is no longer a flex container, so Block's wrapper fills the axis column and the remove control leaves its tile",
+      "the positioner is no longer a flex container, so Block's wrapper fills the axis column and the tile is drawn away from its own price",
     ).toContain("flex");
     expect(
       tokens,
@@ -306,5 +308,41 @@ describe("the box that stretches the axis column", () => {
         "sliderArea has aligned its children instead of stretching them, which takes the price axis' height away just as h-full did",
       ).not.toMatch(ALIGNS_ITS_CHILDREN);
     }
+  });
+});
+
+// =============================================================================
+// THE CELL'S TOP-RIGHT RAIL RESERVES A CONTROL'S HEIGHT
+// =============================================================================
+//
+// The rail holds the cell's clear control and then the row-label badge, and it
+// is what keeps the badge in one place across a cell filling and emptying. The
+// horizontal half of that is the ordering, pinned in `GridArea.dom.test.tsx`;
+// the vertical half is this floor. A control is 24px and the badge is about
+// 17px, so without `min-h-6` a centred badge sits 3px higher on an empty cell
+// than on a full one - measured at 1440x900, 5px from the cell's right border
+// edge and 8px from its top in both states with the floor in place.
+//
+// jsdom applies no author stylesheet and lays nothing out, so the token is what
+// CI can hold; the geometry it produces is a browser's to measure.
+
+describe("the cell action rail", () => {
+  const tokens = cellActionRail.split(/\s+/);
+
+  it("reserves a control's height whether or not it holds one", () => {
+    expect(
+      tokens,
+      "the rail no longer reserves 24px, so the row-label badge moves vertically when a cell takes an order",
+    ).toContain("min-h-6");
+  });
+
+  it("centres what it holds, so the badge and a control share a line", () => {
+    expect(tokens).toContain("items-center");
+  });
+
+  // Right-anchored is the other half of the ordering rule: a group that grows
+  // leftwards moves nothing that follows the item added to it.
+  it("anchors to the cell's top-right corner", () => {
+    expect(tokens).toEqual(expect.arrayContaining(["absolute", "top-1", "right-1"]));
   });
 });

@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import Block, { BLOCK_INSTRUCTIONS_ID } from "./block";
 import { getSnapshot } from "@common/dragOverlayStore";
-import type { PriceAxisLeg } from "@utils/blockMapping";
 import {
   installPointerCapture,
   type PointerCaptureTracker,
@@ -510,8 +509,18 @@ describe("the wrapper tokens that would break containment", () => {
 // REMOVAL
 // =============================================================================
 //
-// Wired for a placed block and for nothing else: a palette entry is an order
-// type rather than an order, so there is nothing there to take away.
+// KEYBOARD ONLY, AND THAT IS THE WHOLE OF WHAT THIS COMPONENT OFFERS.
+//
+// Delete and Backspace on a focused block take THAT block off the grid. The
+// pointer's removal is one control per CELL, drawn by `GridCell` in the cell's
+// own top-right rail, and one press of it clears the whole cell - both legs of
+// a dual-axis order together. The two are different operations on purpose:
+// focus names one block, and a press names one cell.
+//
+// This component draws no control of its own any more, which is what gives the
+// tile its whole face back to a drag. `GridArea.dom.test.tsx` covers the cell's
+// control; what is asserted here is that the keyboard path survived the move
+// and that nothing on the tile removes anything.
 
 describe("Block, the removal it offers", () => {
   const placed = (props: Record<string, unknown> = {}) =>
@@ -529,113 +538,6 @@ describe("Block, the removal it offers", () => {
       />,
     );
 
-  it("names the order, its leg and its cell, so two of a kind are told apart", () => {
-    placed({ onRemove: vi.fn() });
-
-    expect(
-      screen.getByRole("button", {
-        name: "Remove Limit limit order, Entry column, primary row",
-      }),
-    ).toBeInTheDocument();
-  });
-
-  // The two legs of a dual-axis order type carry the SAME label and sit in the
-  // SAME cell - `createBlocksFromOrderType` gives both "Stop Loss Limit" - so
-  // without the leg both controls are named identically and a screen-reader or
-  // voice-control user cannot tell which one they are about to destroy.
-  it("separates the two legs of one order type by their leg", () => {
-    const legName = (leg: PriceAxisLeg) => {
-      const { unmount } = render(
-        <Block
-          id={`b-${leg}`}
-          abrv="SLL"
-          label="Stop Loss Limit"
-          leg={leg}
-          yPosition={25}
-          direction="upside"
-          cellDescription="Entry column, primary row"
-          onRemove={vi.fn()}
-        />,
-      );
-      const name = screen
-        .getByRole("button", { name: /^Remove / })
-        .getAttribute("aria-label");
-      unmount();
-      return name;
-    };
-
-    expect(legName("trigger")).toBe(
-      "Remove Stop Loss Limit trigger order, Entry column, primary row",
-    );
-    expect(legName("limit")).toBe(
-      "Remove Stop Loss Limit limit order, Entry column, primary row",
-    );
-  });
-
-  // `legInCell` answers nothing for a cell that draws no axis - a Market order
-  // in a bulk cell - and the name must not invent one. This component must
-  // never work the answer out again from `axis` or `axes`; the cell is the only
-  // thing that can answer it.
-  it("names no leg for a block its cell draws on no axis at all", () => {
-    render(
-      <Block
-        id="m1"
-        abrv="Mkt"
-        label="Market"
-        leg={null}
-        cellDescription="Entry column, row 2"
-        onRemove={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByRole("button", { name: /^Remove / }),
-    ).toHaveAttribute("aria-label", "Remove Market order, Entry column, row 2");
-  });
-
-  it("removes on a click, for a block no drag could take off the grid", () => {
-    const onRemove = vi.fn();
-    placed({ onRemove });
-
-    fireEvent.click(screen.getByRole("button", { name: /^Remove Limit limit order/ }));
-
-    expect(onRemove).toHaveBeenCalledWith("b1");
-  });
-
-  // THE CONTROL REMOVES ON `click` AND ON NOTHING ELSE.
-  //
-  // It overlaps the tile's top-right corner, so a press meant to start a drag
-  // can land on it. In a browser that press destroys nothing: `click` fires at
-  // the nearest common ancestor of the pointer-down and pointer-up targets, so
-  // a press that travels away fires no click on the control at all.
-  //
-  // That behaviour cannot be reproduced here - jsdom neither synthesises
-  // `click` from pointer events nor implements the common-ancestor target
-  // algorithm - so asserting "no removal" after firing pointer events alone
-  // would pass on jsdom's missing click and prove nothing. What IS testable is
-  // the component's own wiring, which is the thing that could regress: the
-  // control must carry no pointer handler that removes. The click above and the
-  // pointer sequence below are asserted as a pair, so the test can only pass
-  // when removal is bound to `click` and to nothing else.
-  it("removes on no pointer event, so a press that travels away destroys nothing", () => {
-    const onRemove = vi.fn();
-    placed({ onRemove });
-    const remove = screen.getByRole("button", {
-      name: /^Remove Limit limit order/,
-    });
-
-    fireEvent(remove, pointer("pointerdown", { x: 0, y: 0 }));
-    fireEvent(remove, pointer("pointermove", { x: 80, y: 80 }));
-    fireEvent(remove, pointer("pointerup", { x: 80, y: 80 }));
-
-    expect(onRemove).not.toHaveBeenCalled();
-
-    // The same control, the same render: a genuine click still removes, so the
-    // assertion above is about the handler and not about a dead control.
-    fireEvent.click(remove);
-    expect(onRemove).toHaveBeenCalledWith("b1");
-  });
-
   it("removes on Delete and on Backspace alike", () => {
     const onRemove = vi.fn();
     placed({ onRemove });
@@ -646,6 +548,15 @@ describe("Block, the removal it offers", () => {
 
     expect(onRemove).toHaveBeenCalledTimes(2);
     expect(onRemove).toHaveBeenNthCalledWith(2, "b1");
+  });
+
+  it("removes the block that has focus, not its cell", () => {
+    const onRemove = vi.fn();
+    placed({ onRemove });
+
+    fireEvent.keyDown(screen.getByRole("slider"), { key: "Delete" });
+
+    expect(onRemove).toHaveBeenCalledWith("b1");
   });
 
   // The arrow keys are the block's other keyboard affordance, and the two must
@@ -661,24 +572,26 @@ describe("Block, the removal it offers", () => {
     expect(onRemove).not.toHaveBeenCalled();
   });
 
-  // A control shown on `:hover` exists for a mouse and for nothing else, and
-  // parity across mouse, keyboard and touch is the point of this affordance -
-  // so it is rendered rather than revealed, and a finger can reach it.
-  it("is on screen without a cursor ever having been near it", () => {
+  // THE TILE CARRIES NO DESTRUCTIVE CONTROL, AND THAT IS THE POINT OF THE MOVE.
+  //
+  // While it did, the control necessarily covered the tile's own centre: any
+  // 24px round target kept wholly inside a 40px tile sits at most
+  // sqrt(8^2 + 8^2) = 11.31px from the tile's centre against its own 12px
+  // radius, so containment plus the WCAG 2.2 SC 2.5.8 floor ENTAILED it, and
+  // the block could only be dragged from its lower half. Measured in Chrome
+  // after the move, a press at the tile's top-right corner - the region the
+  // control used to own - starts a real vertical drag and re-prices the block,
+  // and 1584 of the tile's 1600 pixels hit-test to the tile itself (the
+  // remaining 16 are its own `rounded-md` corners).
+  it("draws no removal control on the tile itself", () => {
     placed({ onRemove: vi.fn() });
 
-    const remove = screen.getByRole("button", { name: /^Remove Limit limit order/ });
-    expect(remove).not.toHaveClass("hidden");
-    // 24px, the WCAG 2.2 SC 2.5.8 minimum target size, and `p-0` is what makes
-    // that number real: the layered `button` default is `padding: 0.6em 1.2em`,
-    // which a border-box `width` cannot shrink below, so without it the control
-    // measured 40.375px wide in Chrome - wider than the 40px tile it sits on.
-    // jsdom applies no author stylesheet, so the class list is what a rendering
-    // test can pin; the measurement itself was taken in a browser.
-    expect(remove).toHaveClass("p-0", "w-6", "h-6");
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+    // The slider IS the tile, and it is the only control this block renders.
+    expect(screen.queryAllByRole("button")).toEqual([]);
   });
 
-  it("offers none on a palette entry, which holds no order to remove", () => {
+  it("offers no removal keys on a palette entry, which holds no order", () => {
     render(<Block id="limit" abrv="Lmt" label="Limit" />);
 
     expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
@@ -710,39 +623,18 @@ describe("Block, the removal it offers", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  // THE HALF OF CONTAINMENT THAT LIVES IN THE MARKUP RATHER THAN IN THE CLASSES.
-  //
-  // `blockTile.test.ts` checks that the control's offset and size tokens put its
-  // box inside the tile's, and its REACH paragraph names the assumption that
-  // derivation rests on: the offsets are resolved against this wrapper, not
-  // against the tile, so "inside the tile" holds only while the wrapper's box IS
-  // the tile's box. This pins the part of that assumption belonging to the
-  // wrapper itself - it carries nothing that would grow its box past its one
-  // in-flow child - plus the structure the offsets need: the control is the
-  // tile's SIBLING under this wrapper, and this wrapper is the positioning
-  // context they resolve against. Give the wrapper padding, a border, a margin
-  // or a size of its own and the control drifts back out over the neighbour with
-  // every class-list token in `blockTile.ts` unchanged.
-  //
-  // Structure is all jsdom can answer here: it applies no author stylesheet and
-  // computes no layout, so the resulting geometry stays a browser's to measure,
-  // and so does the OTHER half of the assumption - whether the wrapper's parent
-  // lets it shrink-wrap. That half is `getBlockPositionerProps`' business in the
-  // axis layout and `centeredContainer`'s in the other; `styles/grid.test.ts`
-  // holds the positioner's side of it.
-  it("keeps the remove control's wrapper the tile's own box", () => {
+  // The wrapper still has to shrink-wrap its tile. Nothing is positioned
+  // against it any more, but its box is what `centeredContainer`'s flex row and
+  // the axis positioner's `justify-center` lay out - give it padding, a border,
+  // a margin or a size of its own and the tile stops being drawn where the
+  // price says it is. `styles/grid.test.ts` holds the positioner's own half.
+  it("keeps the tile's wrapper the tile's own box", () => {
     placed({ onRemove: vi.fn() });
-    const tile = screen.getByRole("slider");
-    const control = screen.getByRole("button", { name: /^Remove / });
-    const wrapper = tile.parentElement!;
-
-    expect(control.parentElement).toBe(wrapper);
-    expect(wrapper.className.split(/\s+/)).toContain("relative");
-    expect(control.className.split(/\s+/)).toContain("absolute");
+    const wrapper = screen.getByRole("slider").parentElement!;
 
     expect(
       wrapper.className.split(/\s+/).filter(Boolean).filter(growsTheBox),
-      "Block's wrapper no longer shrink-wraps its tile, so the remove control's offsets are measured from a box that is not the tile's",
+      "Block's wrapper no longer shrink-wraps its tile, so the tile is drawn away from the price it is positioned at",
     ).toEqual([]);
   });
 });
