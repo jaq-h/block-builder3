@@ -569,6 +569,17 @@ Two areas within a square pixel of each other count as tied, because client rect
 fractional and a hundredth of a square pixel of rounding deciding the cell instead of the
 pointer is arbitrary rather than deterministic.
 
+**The candidates are one grid's cells, and the caller names the grid.** `resolveDrop` takes
+the element those cells are rendered inside, and `GridArea` hands it the columns viewport it
+already holds as the owner of which columns exist and which of them the panel is withholding,
+so one element answers all three. `data-col` and `data-row` say where a cell sits in *its*
+grid and nothing about which grid that is - `ReadOnlyGridCell` carries the same pair - so a
+document-wide query let any matching element on the page join this drag, and above `lg`, where
+both panels are on screen, a release over a read-only cell at (0, 1) put the order in the
+*assembly* cell of those coordinates. The root narrows the one candidate rule rather than
+sitting beside it as a second filter: a cell of another grid never reaches the paging rule
+below, and a cell of this one reaches exactly the rule that was already there.
+
 What the resolver deliberately does **not** decide is whether the cell will take the order.
 Geometry stops there; `isCellValidForPlacement` and the placement primitives answer the rules,
 and a drop onto a cell that refuses is still refused. Folding validity in would let a block
@@ -1089,7 +1100,7 @@ src/
 │   │   └── grid/                  # Shared grid components
 │   │       ├── GridCell.tsx       # Interactive grid cell (Strategy Builder)
 │   │       ├── GridCell.styles.ts # Grid cell CVA styling
-│   │       ├── ReadOnlyGridCell.tsx # Read-only grid cell (Active Orders)
+│   │       ├── ReadOnlyGridCell.tsx # Read-only grid cell - exported, rendered nowhere today
 │   │       ├── ProviderColumn.tsx # Order-type palette - a lane, a band below `sm`
 │   │       └── index.ts          # Barrel export
 │   │

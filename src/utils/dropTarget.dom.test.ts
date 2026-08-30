@@ -52,19 +52,28 @@ const stubRect = (element: HTMLElement, left: number, top: number) => {
     }) as DOMRect;
 };
 
-/** Two columns of one cell each, the second at the first's right edge. */
-const renderTwoColumns = () => {
+/**
+ * Two columns of one cell each, the second at the first's right edge, inside
+ * the viewport element that owns them.
+ *
+ * The viewport is `columnsWrapper` in the real tree, and it is what the caller
+ * hands the resolver: the cells belong to a grid rather than to the document,
+ * so the fixture has to have one for the tests to be asking the real question.
+ */
+const renderGrid = (offsetX = 0) => {
+  const viewport = document.createElement("div");
   const columns = [0, 1].map((col) => {
     const column = document.createElement("div");
     const cell = document.createElement("div");
     cell.setAttribute("data-col", String(col));
     cell.setAttribute("data-row", "0");
-    stubRect(cell, col * CELL_SIZE.width, 0);
+    stubRect(cell, offsetX + col * CELL_SIZE.width, 0);
     column.appendChild(cell);
-    document.body.appendChild(column);
+    viewport.appendChild(column);
     return column;
   });
-  return columns;
+  document.body.appendChild(viewport);
+  return { viewport, columns };
 };
 
 describe("cellBoxesFromDom", () => {
@@ -75,8 +84,8 @@ describe("cellBoxesFromDom", () => {
   });
 
   it("offers every cell while both columns are drawn", () => {
-    renderTwoColumns();
-    const { onPage, offPage } = cellBoxesFromDom();
+    const { viewport } = renderGrid();
+    const { onPage, offPage } = cellBoxesFromDom(viewport);
 
     expect(onPage.map((entry) => entry.cell)).toEqual([
       { col: 0, row: 0 },
@@ -86,14 +95,17 @@ describe("cellBoxesFromDom", () => {
   });
 
   it("withholds the cells of a column the pager is not showing", () => {
-    const [, exit] = renderTwoColumns();
+    const {
+      viewport,
+      columns: [, exit],
+    } = renderGrid();
     // What `offPageColumn` resolves to below `sm`. The class is on the COLUMN
     // and the rule is read on the CELL, which is the whole reason this is a
     // computed read rather than a look at the cell's own attributes. The column
     // is still DRAWN - 20% of it peeks past the viewport - so visibility is
     // exactly what this must not be keyed on.
     exit.style.pointerEvents = "none";
-    const { onPage, offPage } = cellBoxesFromDom();
+    const { onPage, offPage } = cellBoxesFromDom(viewport);
 
     expect(onPage.map((entry) => entry.cell)).toEqual([{ col: 0, row: 0 }]);
     // Withheld, not discarded. A caller that removes a block on "no cell" has
@@ -102,12 +114,15 @@ describe("cellBoxesFromDom", () => {
   });
 
   it("offers a cell again once its column is shown", () => {
-    const [, exit] = renderTwoColumns();
+    const {
+      viewport,
+      columns: [, exit],
+    } = renderGrid();
     exit.style.pointerEvents = "none";
     exit.style.pointerEvents = "auto";
 
-    expect(cellBoxesFromDom().onPage).toHaveLength(2);
-    expect(cellBoxesFromDom().offPage).toEqual([]);
+    expect(cellBoxesFromDom(viewport).onPage).toHaveLength(2);
+    expect(cellBoxesFromDom(viewport).offPage).toEqual([]);
   });
 });
 
@@ -133,43 +148,133 @@ describe("resolveDrop", () => {
   });
 
   it("places into a cell the panel is showing", () => {
-    renderTwoColumns();
+    const { viewport } = renderGrid();
     const { x, y } = centreOf(1);
 
-    expect(resolveDrop(x, y, BLOCK_HEIGHT)).toEqual({
+    expect(resolveDrop(x, y, BLOCK_HEIGHT, viewport)).toEqual({
       kind: "available",
       cell: { col: 1, row: 0 },
     });
   });
 
   it("names a withheld cell rather than reporting no cell at all", () => {
-    const [, exit] = renderTwoColumns();
+    const {
+      viewport,
+      columns: [, exit],
+    } = renderGrid();
     exit.style.pointerEvents = "none";
     const { x, y } = centreOf(1);
 
-    expect(resolveDrop(x, y, BLOCK_HEIGHT)).toEqual({
+    expect(resolveDrop(x, y, BLOCK_HEIGHT, viewport)).toEqual({
       kind: "withheld",
       cell: { col: 1, row: 0 },
     });
   });
 
   it("prefers a cell on the page to a withheld one the tile also overlaps", () => {
-    const [, exit] = renderTwoColumns();
+    const {
+      viewport,
+      columns: [, exit],
+    } = renderGrid();
     exit.style.pointerEvents = "none";
     // On the seam between the two cells, so the 40px tile overlaps both. The
     // on-page cell wins outright: a withheld cell is not a candidate, so it
     // never reaches the greatest-overlap rule.
     const seam = CELL_SIZE.width;
 
-    expect(resolveDrop(seam + 1, CELL_SIZE.height / 2, BLOCK_HEIGHT)).toEqual({
+    expect(
+      resolveDrop(seam + 1, CELL_SIZE.height / 2, BLOCK_HEIGHT, viewport),
+    ).toEqual({
       kind: "available",
       cell: { col: 0, row: 0 },
     });
   });
 
   it("still reports no cell for a release clear of the grid", () => {
-    renderTwoColumns();
+    const { viewport } = renderGrid();
 
-    expect(resolveDrop(5000, 5000, BLOCK_HEIGHT)).toEqual({ kind: "offGrid" });
+    expect(resolveDrop(5000, 5000, BLOCK_HEIGHT, viewport)).toEqual({
+      kind: "offGrid",
+    });
+  });
+});
+
+// =============================================================================
+// A CELL OF ANOTHER GRID IS NOT A CANDIDATE FOR THIS ONE'S DRAG
+// =============================================================================
+//
+// `data-col` and `data-row` say where a cell sits in ITS grid and nothing about
+// which grid that is, so a document-wide query answered "which cell was this
+// released over" with any matching element on the page. `ReadOnlyGridCell`
+// carries the same pair, and above `lg` both panels are on screen at once.
+//
+// Reproduced in Chrome at 1440x900 before the fix, with a read-only grid
+// restored to the Active Orders panel: a palette drag released dead centre of
+// the read-only cell at (0, 1) - x 756..1066, y 646..736, entirely clear of the
+// assembly grid at x 149..715 - put a Limit into the ASSEMBLY grid's Entry
+// primary cell and announced "Placed Limit order in Entry column, primary row."
+// The user dropped an order on one grid and it landed in another.
+//
+// The fix is that the caller names the grid the drag belongs to, so this is
+// pinned as a release over a foreign grid resolving to no cell at all rather
+// than to the coordinates it shares with this one. The foreign grid here is
+// laid out well clear of the owning one, exactly as the two panels are.
+//
+// **Not a second filter beside the `pointer-events` rule above.** A foreign
+// cell never reaches that rule, because it is not in the set the root gathers;
+// the last case below is what says so, by giving the foreign cell the
+// `pointer-events` an ON-PAGE cell has and still expecting no answer from it.
+
+describe("a second grid on the page", () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  /** Where the foreign grid is drawn: clear of the owning one, as a panel is. */
+  const FOREIGN_OFFSET_X = 600;
+
+  const foreignCentre = (col: number) => ({
+    x: FOREIGN_OFFSET_X + col * CELL_SIZE.width + CELL_SIZE.width / 2,
+    y: CELL_SIZE.height / 2,
+  });
+
+  it("does not collect the cells of a grid it was not given", () => {
+    const { viewport } = renderGrid();
+    renderGrid(FOREIGN_OFFSET_X);
+
+    const { onPage, offPage } = cellBoxesFromDom(viewport);
+
+    expect(onPage.map((entry) => entry.cell)).toEqual([
+      { col: 0, row: 0 },
+      { col: 1, row: 0 },
+    ]);
+    expect(offPage).toEqual([]);
+  });
+
+  it("reports no cell for a release over the other grid", () => {
+    const { viewport } = renderGrid();
+    renderGrid(FOREIGN_OFFSET_X);
+    const { x, y } = foreignCentre(0);
+
+    // The reproduction. Before the fix this answered `available` at
+    // { col: 0, row: 0 }, and the caller placed an order into THIS grid's cell
+    // of those coordinates.
+    expect(resolveDrop(x, y, BLOCK_HEIGHT, viewport)).toEqual({
+      kind: "offGrid",
+    });
+  });
+
+  it("is unmoved by the other grid being on page in its own panel", () => {
+    const { viewport } = renderGrid();
+    const foreign = renderGrid(FOREIGN_OFFSET_X);
+    // An ordinary, fully reachable cell of the other panel - which is what the
+    // Active Orders panel's cells are above `lg`. Ownership is what excludes
+    // it, so the `pointer-events` rule has nothing to say here either way.
+    for (const column of foreign.columns) column.style.pointerEvents = "auto";
+    const { x, y } = foreignCentre(1);
+
+    expect(resolveDrop(x, y, BLOCK_HEIGHT, viewport)).toEqual({
+      kind: "offGrid",
+    });
   });
 });

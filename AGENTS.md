@@ -260,6 +260,31 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   cell will take the order, and folding validity in would silently place a block in a
   neighbour it merely brushed. Do not reintroduce a point test, and do not give the highlight
   a rule of its own.
+
+  **The candidates are ONE grid's cells, and the caller names which grid.**
+  `resolveDrop` and `cellBoxesFromDom` take the element the cells are rendered inside;
+  `GridArea` passes `columnsViewportRef`, which it already holds as the owner of which
+  columns exist and which of them the panel is withholding, so one element answers all
+  three. The document-wide `querySelectorAll` this replaced had no owner at all: `data-col`
+  and `data-row` say where a cell sits in ITS grid and nothing about which grid that is, and
+  `ReadOnlyGridCell` carries the same pair - so above `lg`, where both panels are on screen,
+  a palette drag released over a read-only cell at (0, 1) resolved to (0, 1) and the order
+  was placed in the ASSEMBLY cell of those coordinates. Reproduced in Chrome at 1440x900
+  with that panel's pre-`84e183d` read-only grid restored: a release centred at (911, 691)
+  in the Active Orders panel put a Limit in the assembly grid at x 149..420, announcing
+  "Placed Limit order in Entry column, primary row." **The root is that rule NARROWED, not a
+  second filter beside it** - there is still one query and one loop, the root deciding which
+  cells are in the set and the `pointer-events` read deciding which half of the set each one
+  lands in, so a foreign cell never reaches the paging rule at all. `dropTarget.dom.test.ts`
+  pins it under "a second grid on the page", including a foreign cell given the
+  `pointer-events` an on-page cell has. `handleBlockVerticalDrag`'s axis-track lookup is
+  rooted at the same viewport for the same reason.
+
+  Note that `ReadOnlyGridCell` is currently rendered nowhere - the Active Orders panel has
+  drawn `OrderCard`s since `84e183d` - so the collision above is latent in the shipped build
+  rather than live. That is a fact about today's callers, not a reason to loosen the rule:
+  the component is still exported from `components/common/grid`, and the ownership is what
+  stops the next grid mounted on the page from silently joining this one's drag.
 - **A carry ends when the grid stops standing behind the cells it offered, and
   `useBlockCommand` is the one owner of that transition.** A carry is a promise
   about cells - these will take this order - held as `CarriedBlock.targets` at

@@ -156,11 +156,46 @@ export interface CellBoxes {
 }
 
 /**
- * Every rendered cell and where it is, read from the DOM.
+ * Every cell of ONE grid and where it is, read from the DOM.
  *
  * Coordinates rather than `elementFromPoint`: a dragged block holds pointer
  * capture, so the event target is the block itself for the whole drag, and the
  * ghost on the cursor would be under the point in any case.
+ *
+ * **`gridRoot` is the grid that owns the drag, and it is a parameter because
+ * this question has an owner rather than a document.** `data-col` and
+ * `data-row` are how a cell says where it sits in ITS grid, and nothing about
+ * them says which grid that is: `ReadOnlyGridCell` carries the same pair, so a
+ * document-wide query answered "which cell was this released over" with any
+ * matching element on the page. Above `lg` both panels are on screen at once,
+ * and a palette drag released over a read-only cell at (0, 1) therefore
+ * resolved to (0, 1) and `GridArea` placed the order in the ASSEMBLY cell of
+ * those coordinates - measured in Chrome at 1440x900, a release centred at
+ * (911, 691) in the Active Orders panel put a Limit in the assembly grid at
+ * x 149..420, announcing "Placed Limit order in Entry column, primary row."
+ * The user dropped an order on one grid and it landed in another.
+ *
+ * The caller passes the element its own cells are rendered inside -
+ * `columnsWrapper`, which `GridArea` already holds as `columnsViewportRef` and
+ * already reads for which columns exist and which of them the panel is
+ * withholding. One element owns all three answers, so a second grid mounted
+ * anywhere on the page is not a candidate for this one's drag, and cannot
+ * become one by matching a selector.
+ *
+ * **The parameter is an `Element` rather than a `ParentNode`, and that is the
+ * guard rather than a tidy-up.** `Document` satisfies `ParentNode`, so the
+ * document-wide reach this replaced would still have typechecked as
+ * `cellBoxesFromDom(document)` and brought the collision back with nothing to
+ * show for it. `Element` declares `querySelectorAll` and every caller already
+ * passes one, so the regression is a compile error and no call site pays for
+ * it.
+ *
+ * **This is the same question the split below asks, narrowed - not a second
+ * filter beside it.** There is still one query and one loop: the root decides
+ * which cells are in the set, and the `pointer-events` read decides which half
+ * of the set each one lands in. The two cannot disagree, because a cell that
+ * is not in this grid never reaches the read, and a cell that is reaches
+ * exactly the rule that was already there.
  *
  * **A cell the user cannot reach is not a candidate.** Below `sm` the two grid
  * columns are still side by side, with the panel showing one of them at a time
@@ -202,11 +237,11 @@ export interface CellBoxes {
  * 288 - 42px of drawn column in which a release destroyed the order, with no
  * undo. Keeping the two apart is what lets `resolveDrop` refuse instead.
  */
-export const cellBoxesFromDom = (): CellBoxes => {
+export const cellBoxesFromDom = (gridRoot: Element): CellBoxes => {
   const onPage: CellBox[] = [];
   const offPage: CellBox[] = [];
   for (const element of Array.from(
-    document.querySelectorAll("[data-col][data-row]"),
+    gridRoot.querySelectorAll("[data-col][data-row]"),
   )) {
     const col = Number.parseInt(element.getAttribute("data-col") ?? "", 10);
     const row = Number.parseInt(element.getAttribute("data-row") ?? "", 10);
@@ -242,7 +277,10 @@ export type DropResolution =
 
 /**
  * The whole question in one call: a released tile of `blockSize`, centred on
- * (`x`, `y`), reached this cell, a withheld one, or none.
+ * (`x`, `y`), reached this cell of `gridRoot`, a withheld one, or none.
+ *
+ * `gridRoot` is the grid the drag belongs to - see `cellBoxesFromDom` for why
+ * the caller names it rather than this module reaching for the document.
  *
  * The withheld half runs the same `resolveDropCell` over the withheld boxes, so
  * a refusal names the cell by the tie-breaking rules a placement would have
@@ -252,10 +290,11 @@ export const resolveDrop = (
   x: number,
   y: number,
   blockSize: number,
+  gridRoot: Element,
 ): DropResolution => {
   const point = { x, y };
   const block = blockBoxAt(point, blockSize);
-  const { onPage, offPage } = cellBoxesFromDom();
+  const { onPage, offPage } = cellBoxesFromDom(gridRoot);
 
   const available = resolveDropCell(block, point, onPage);
   if (available) return { kind: "available", cell: available };
