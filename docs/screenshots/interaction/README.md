@@ -47,11 +47,13 @@ the price axis still draws and drags at 390. `AGENTS.md` under "Layout and the C
 cascade" is the authority on the paged columns and on the price axis' height, and
 `README.md` under "Interaction model" on what the pager does to a carry.
 
-**They also predate the per-block Remove control.** Every placed block now carries a 24px
-remove button on its top-right corner, rendered at all times rather than revealed on hover,
-so the placed tiles in all five shots are missing an affordance the app draws today. The
-gestures and outcomes below are unaffected: removal is an operation beside them rather than
-a change to any of them. `README.md` under "Interaction model" is the authority on it.
+**They also predate the cell's clear control.** A cell that holds an order now carries a 24px
+clear button in the cell's own top-right rail, ahead of the row-label badge and rendered at
+all times rather than revealed on hover, so the filled cells in all five shots are missing an
+affordance the app draws today. The block **tiles** in them are not: no control sits on a
+tile, so what these shots show of a tile's own face is what the app draws. The gestures and
+outcomes below are unaffected either way: removal is an operation beside them rather than a
+change to any of them. `README.md` under "Interaction model" is the authority on it.
 
 | Shot | What it shows |
 |---|---|
