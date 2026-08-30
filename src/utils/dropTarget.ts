@@ -182,6 +182,14 @@ export interface CellBoxes {
  * anywhere on the page is not a candidate for this one's drag, and cannot
  * become one by matching a selector.
  *
+ * **The parameter is an `Element` rather than a `ParentNode`, and that is the
+ * guard rather than a tidy-up.** `Document` satisfies `ParentNode`, so the
+ * document-wide reach this replaced would still have typechecked as
+ * `cellBoxesFromDom(document)` and brought the collision back with nothing to
+ * show for it. `Element` declares `querySelectorAll` and every caller already
+ * passes one, so the regression is a compile error and no call site pays for
+ * it.
+ *
  * **This is the same question the split below asks, narrowed - not a second
  * filter beside it.** There is still one query and one loop: the root decides
  * which cells are in the set, and the `pointer-events` read decides which half
@@ -229,7 +237,7 @@ export interface CellBoxes {
  * 288 - 42px of drawn column in which a release destroyed the order, with no
  * undo. Keeping the two apart is what lets `resolveDrop` refuse instead.
  */
-export const cellBoxesFromDom = (gridRoot: ParentNode): CellBoxes => {
+export const cellBoxesFromDom = (gridRoot: Element): CellBoxes => {
   const onPage: CellBox[] = [];
   const offPage: CellBox[] = [];
   for (const element of Array.from(
@@ -282,7 +290,7 @@ export const resolveDrop = (
   x: number,
   y: number,
   blockSize: number,
-  gridRoot: ParentNode,
+  gridRoot: Element,
 ): DropResolution => {
   const point = { x, y };
   const block = blockBoxAt(point, blockSize);
