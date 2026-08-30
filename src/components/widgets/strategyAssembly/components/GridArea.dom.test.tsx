@@ -2394,6 +2394,62 @@ describe("GridArea, the column pager", () => {
     expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("does not treat a nudge inside one column as a choice of that column", () => {
+    // Occupied {(0,0),(0,1)}, so the only cells a Limit is offered are the
+    // Exit diagonals - a target that came from `initialTarget`'s fallback
+    // rather than from anything the user asked for.
+    const grid = clearGrid(2, 3);
+    grid[0][0].push(placedMarket("b1"));
+    grid[0][1].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
+
+    const limit = screen.getByRole("button", { name: "Add Limit order" });
+    tap(limit);
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    // Down one row, still in Exit. The carry moved, but no column was chosen,
+    // so the fallback the pick-up landed on must not become a preference.
+    fireEvent.keyDown(limit, { key: "ArrowDown" });
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.keyDown(limit, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    tap(screen.getByRole("button", { name: "Add Limit order" }));
+
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    expect(announcement()).toContain("Target: Entry column, primary row.");
+  });
+
+  it("keeps a chosen column through a nudge that does not leave the other one", () => {
+    // The mirror, which discards a real choice rather than inventing one.
+    // Occupied {(1,0),(1,1)} leaves a Limit only the Entry cells, so the
+    // pick-up falls back there against the user's paged choice of Exit.
+    const grid = clearGrid(2, 3);
+    grid[1][0].push(placedMarket("b1"));
+    grid[1][1].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
+
+    fireEvent.click(pagerButton("Exit"));
+
+    const limit = screen.getByRole("button", { name: "Add Limit order" });
+    tap(limit);
+    expect(cell(0, 0)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.keyDown(limit, { key: "ArrowDown" });
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.keyDown(limit, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    // The nudge stayed in Entry, so it chose nothing and the Exit press is
+    // still the last column the user chose.
+    tap(screen.getByRole("button", { name: "Add Limit order" }));
+
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+  });
+
   it("stays where it is when the carry has nothing that way, and says so", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));

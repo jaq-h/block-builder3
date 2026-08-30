@@ -444,7 +444,8 @@ const GridArea: FC<GridAreaProps> = ({
   // **WHICH events count is enforced by WHERE the write is, and by nothing
   // else.** There are exactly two writers and both are below: the pager press
   // with nothing in hand, and `moveTargetAndRemember`, the one wrapper every
-  // `moveTarget` call goes through. Nothing watches the target and works out
+  // `moveTarget` call goes through, which writes only when the move CROSSES
+  // into another column. Nothing watches the target and works out
   // afterwards what must have moved it. That inference was tried, as a ref
   // holding the previous carry column, and it was wrong for every path that
   // moves a target without being an arrow key: swapping the carried order type
@@ -515,22 +516,46 @@ const GridArea: FC<GridAreaProps> = ({
   }, [carryTargetColumn]);
 
   /**
-   * Step the carry's target, and remember the column it landed in.
+   * Step the carry's target, and remember the column when the move CROSSES
+   * into another one.
    *
    * The one way `moveTarget` is reached: every arrow-key path takes it as
    * `onCommandMove` and `onBlockCommandMove`, and the pager's carrying branch
    * calls it too, which is what keeps the press and the key one mechanism
-   * rather than two. A move is the user choosing a column, so this is where the
-   * preference is written - at the call, where what happened is known, rather
-   * than inferred later from a target that every other path can move as well.
+   * rather than two. A cross-column move is the user choosing a column, so this
+   * is where the preference is written - at the call, where what happened is
+   * known, rather than inferred later from a target that every other path can
+   * move as well.
    *
    * From the cell the move ACTUALLY landed on, which is why the hook hands it
    * back: a move the carry refuses returns `null` and writes nothing, so the
    * preference can never name a column the user was left off.
+   *
+   * **The gate is the case this wrapper exists for**: a carry that started on
+   * `initialTarget`'s fallback and is then nudged up or down would otherwise
+   * have that fallback recorded as a column the user chose, which is the same
+   * defect the pick-up bias was built to avoid.
+   *
+   * **It compares the COLUMNS rather than testing `dCol`, and must not be
+   * "simplified" to the latter.** They agree on every move today, so this is
+   * about which question is the right one to ask rather than a live bug:
+   * `stepTarget` prefers a cell straight ahead and otherwise takes the nearest
+   * legal one that way, so a vertical press CAN return the other column, and
+   * that would be a real choice `dCol !== 0` discards. No occupancy of today's
+   * 2x3 grid reaches it - swept over every one of them against every order
+   * type's `allowedRows`, in both patterns - because a vertical step's
+   * candidates are filtered to a greater or lesser row first, and what the
+   * diagonal rule leaves in the other column is never on the far side of the
+   * current cell that way. A third column, another row, or an order type with
+   * different rows changes that, and `dCol !== 0` also buys nothing on a
+   * horizontal press, which changes column whenever it moves at all.
    */
   const moveTargetAndRemember = (dCol: number, dRow: number) => {
+    // Before the dispatch: React has not re-rendered, so this is still the
+    // column the move is starting from.
+    const from = command.carrying?.target.col ?? null;
     const landed = command.moveTarget(dCol, dRow);
-    if (landed) setPreferredColumn(landed.col);
+    if (landed && landed.col !== from) setPreferredColumn(landed.col);
     return landed;
   };
 
@@ -578,7 +603,9 @@ const GridArea: FC<GridAreaProps> = ({
    * Either way the press is a column the user chose, so it is remembered as the
    * one a later pick-up starts in. Only the non-carrying branch records it
    * here; the carrying branch goes through `moveTargetAndRemember`, which
-   * records the cell the move landed on and nothing when it is refused.
+   * records the column a move crossed into and nothing when it is refused. A
+   * press for the column already targeted returns below without dispatching,
+   * so it never reaches either.
    *
    * The press naming the column the carry is ALREADY on is the one case
    * `moveTarget` cannot answer for, and it is silent by design. `moveTarget` is

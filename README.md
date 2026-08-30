@@ -672,10 +672,16 @@ much a choice - and it is what stops one pick-up's fallback deciding the next on
 afterwards.** The preference is written at the two places a choice is actually made: the
 pager press with nothing in hand, and the single wrapper every target move goes through,
 which takes the column from the cell the move landed on so a refused move records nothing.
-Three paths deliberately record nothing at all, and they do so because none of them is a
-move: picking an order up, swapping it for another while still holding one, and sweeping a
-mouse across a cell. Watching the target instead cannot tell those apart from a move, which
-is exactly how a fallback and a silent hover each came to be remembered as a choice.
+That wrapper records only a move that lands in a *different* column, since a nudge up or
+down inside one column chose no column at all - and it asks that by comparing the columns
+rather than by looking at which arrow was pressed, because a vertical press can land in the
+other column when the current one has nothing straight ahead, and that crossing would be a
+real choice.
+Three further paths deliberately record nothing at all, and they do so because none of them
+is a move: picking an order up, swapping it for another while still holding one, and
+sweeping a mouse across a cell. Watching the target instead cannot tell those apart from a
+move, which is exactly how a fallback and a silent hover each came to be remembered as a
+choice.
 
 One further case is written down, because it is the single press `moveTarget` cannot answer
 for: pressing the button for the column the carry is **already** on does nothing and says

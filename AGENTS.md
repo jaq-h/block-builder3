@@ -378,7 +378,18 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   takes the column from the cell the move ACTUALLY landed on, which is why
   `useBlockCommand.moveTarget` returns it: a refused move returns `null` and
   writes nothing, so the preference can never name a column the user was left
-  off. **Do not put the decision back into an effect that watches the target.**
+  off. **It writes only when that column DIFFERS from the one the move started
+  in.** A vertical press that stays in its column expressed no column choice,
+  and letting it write is how a carry that started on `initialTarget`'s
+  fallback had that fallback recorded as a choice. **The comparison may not be
+  swapped for a test on `dCol`**, even though the two agree on every move
+  today: `stepTarget` takes the nearest legal cell that way when nothing is
+  straight ahead, so a vertical press CAN return the other column, and that
+  would be a real choice `dCol !== 0` discards. No occupancy of today's 2x3
+  grid reaches it, swept over all of them against every order type's rows in
+  both patterns, so this is about asking the right question rather than a live
+  bug - a third column, another row, or a new row set changes it.
+  **Do not put the decision back into an effect that watches the target.**
   That was tried, as a ref holding the previous carry column, and it could not
   see what had moved one: swapping the carried order type dispatches `pickUp`
   while a carry is live, so the new carry's FALLBACK target read as a move, and
