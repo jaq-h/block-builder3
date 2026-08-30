@@ -1,4 +1,4 @@
-import type { FC, RefObject } from "react";
+import type { FC } from "react";
 import CheckIcon from "../../../../assets/icons/check.svg?react";
 import { COLUMN_HEADERS } from "../../../../data/orderTypes";
 import {
@@ -8,17 +8,15 @@ import {
 } from "../strategyAssembly.styles";
 
 interface ColumnPagerProps {
-  /**
-   * The row the two buttons sit in.
-   *
-   * `GridArea` needs to reach them: a press that takes the column holding DOM
-   * focus off screen has to leave focus somewhere the user can see, and with
-   * nothing in hand the button for the column now shown is that place. See
-   * `keepFocusUsable`.
-   */
-  rowRef: RefObject<HTMLDivElement | null>;
   /** Which column the paged viewport is showing. */
   visibleColumn: number;
+  /**
+   * Whether a block is in the user's hand right now.
+   *
+   * It decides whether these buttons are reachable by focus at all; the rule
+   * and the whole of why it is safe are below.
+   */
+  isCarrying: boolean;
   /** Show this column instead. */
   onShowColumn: (col: number) => void;
 }
@@ -46,18 +44,60 @@ interface ColumnPagerProps {
  * rather than a move of its own - so the sentence the user hears, and the rule
  * about which cells a carry may reach, are the ones that were already there.
  * The viewport follows the carry's target; see `GridArea`.
+ *
+ * ─── WHILE A BLOCK IS IN HAND, THESE BUTTONS TAKE NO FOCUS ───────────
+ *
+ * `tabIndex={-1}` takes them out of the tab order, and the `pointerdown`
+ * default is prevented so a press does not focus them either. Both only while
+ * carrying. **Nothing in this app moves DOM focus in answer to paging, and
+ * this is what makes that safe.**
+ *
+ * **The problem it removes.** The off-page column is `visibility: hidden`, and
+ * every key that drives a carry - the arrows, Enter, Escape - is handled ON
+ * the carried order's palette tile or ON a block; there is no document-level
+ * handler. So focus resting on one of these buttons during a carry is a user
+ * holding an order that no key can put down: Enter is the same press again,
+ * Escape does nothing, the arrows do nothing. Four rounds of answering that
+ * with a focus hand-off each found a further path the last one could not see,
+ * and a hand-off is expensive in its own right - it moves focus where the user
+ * did not ask, and a request that cannot land re-renders without settling.
+ * **Stranding is removed here instead of remedied there: you cannot be
+ * stranded on a control you cannot reach.**
+ *
+ * **This is NOT the "paging never moves focus" option that was rejected.**
+ * That one left focus standing ON the button and called it acceptable. This
+ * one takes away the reachability that put focus there.
+ *
+ * **A keyboard carrier never needs this control**, which is what makes taking
+ * it out of their reach a removal rather than a loss. `validTargetsFor` walks
+ * the whole grid with no column scoping, and `stepTarget` takes for a
+ * horizontal move every target with `(cell.col - current.col) * dCol > 0` -
+ * which from an Entry target is every legal Exit target. So the arrows cross
+ * to the other column exactly when a legal cell exists there, and when none
+ * exists there is nothing to cross to. Keyboard users cross with the arrows;
+ * pointer users tap here and then tap a cell; focus does not move for either.
+ *
+ * **Not focusable is not not operable, and the three limits on it are not
+ * optional.** The buttons stay fully clickable, keep their 24px WCAG 2.2 SC
+ * 2.5.8 target and stay in the accessibility tree - `disabled` would stop the
+ * paging pointer users depend on, and hiding them would remove the control.
+ * Carrying NOTHING they are an ordinary tab stop, because a user who is not
+ * carrying has no arrow keys to cross with and genuinely needs this. And what
+ * a press says is unchanged either way: the same-column press is a silent
+ * no-op and a refused move still announces the refusal.
+ *
+ * **The residual, stated rather than overstated.** Assistive technology can
+ * put focus on a `tabindex="-1"` element directly, so an AT user can still
+ * land here mid-carry. They are not stranded - Shift+Tab leaves, and the carry
+ * is still live when they get back - but the control is not literally
+ * unreachable, and this rule should not be read as claiming it is.
  */
 const ColumnPager: FC<ColumnPagerProps> = ({
-  rowRef,
   visibleColumn,
+  isCarrying,
   onShowColumn,
 }) => (
-  <div
-    ref={rowRef}
-    className={columnPagerRow}
-    role="group"
-    aria-label="Grid column shown"
-  >
+  <div className={columnPagerRow} role="group" aria-label="Grid column shown">
     {COLUMN_HEADERS.map((header, col) => {
       const isActive = col === visibleColumn;
       return (
@@ -65,7 +105,18 @@ const ColumnPager: FC<ColumnPagerProps> = ({
           key={header}
           type="button"
           aria-pressed={isActive}
+          tabIndex={isCarrying ? -1 : undefined}
           className={columnPagerButton({ isActive })}
+          // The press that pages without moving focus. Preventing the
+          // `pointerdown` default suppresses the implicit focus - the same
+          // thing `usePointerGesture` does before placing focus by hand - and
+          // leaves the `click` that follows it alone, so the button still
+          // pages for every pointer. It is the pointer half of the rule above;
+          // `tabIndex` is the keyboard half, and each is useless without the
+          // other.
+          onPointerDown={
+            isCarrying ? (event) => event.preventDefault() : undefined
+          }
           onClick={() => onShowColumn(col)}
         >
           {/* The cue that survives with no colour at all, in a slot both

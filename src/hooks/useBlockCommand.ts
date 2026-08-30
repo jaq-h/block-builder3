@@ -181,17 +181,6 @@ export interface UseBlockCommandReturn {
   /** The block id that should take focus, once React has rendered it. */
   focusRequest: string | null;
   clearFocusRequest: () => void;
-  /**
-   * Put DOM focus on the palette entry of the order currently in hand, and do
-   * nothing when nothing is carried.
-   *
-   * The palette tile is the one control that drives a carry from the keyboard
-   * whatever else is on screen - it steps the target, places and cancels - and
-   * it is drawn outside the grid columns, so it is still there when the paged
-   * viewport takes a column away. That is what it is for: see the focus
-   * hand-off in `GridArea`.
-   */
-  focusCarriedSource: () => void;
 }
 
 export const useBlockCommand = ({
@@ -615,8 +604,5 @@ export const useBlockCommand = ({
     releaseForDrag,
     focusRequest,
     clearFocusRequest: () => setFocusRequest(null),
-    focusCarriedSource: () => {
-      if (carrying) setFocusRequest(carrying.source.type);
-    },
   };
 };

@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { createRef } from "react";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 
 import ColumnPager from "./ColumnPager";
@@ -15,17 +14,16 @@ import ColumnPager from "./ColumnPager";
 // That is the cue this file cannot check and the other two are why it does not
 // need to.
 
-const renderPager = (visibleColumn = 0) => {
+const renderPager = (visibleColumn = 0, isCarrying = false) => {
   const onShowColumn = vi.fn();
-  const rowRef = createRef<HTMLDivElement>();
   render(
     <ColumnPager
-      rowRef={rowRef}
       visibleColumn={visibleColumn}
+      isCarrying={isCarrying}
       onShowColumn={onShowColumn}
     />,
   );
-  return { onShowColumn, rowRef };
+  return { onShowColumn };
 };
 
 const group = () => screen.getByRole("group", { name: "Grid column shown" });
@@ -92,17 +90,69 @@ describe("ColumnPager", () => {
     expect(onShowColumn).toHaveBeenCalledWith(1);
   });
 
-  // The panel reaches the buttons through this to put focus on one, when a
-  // press takes the column holding focus off screen and nothing is in hand.
-  // `GridArea` finds the button by the column it stands for, so the order the
-  // row holds them in is part of the contract rather than an accident.
-  it("holds its buttons in column order", () => {
-    const { rowRef } = renderPager(0);
+  // ───────────────────────────────────────────────────────────────────
+  // WHILE A BLOCK IS IN HAND, THESE BUTTONS TAKE NO FOCUS
+  // ───────────────────────────────────────────────────────────────────
+  //
+  // The whole reason is on the component. In one line: focus resting here
+  // during a carry is a block nobody can put down, because every carry key
+  // lives on a palette tile or a block - so the control is put out of reach
+  // rather than the focus being moved back afterwards.
 
-    expect(
-      Array.from(rowRef.current!.children).map(
-        (button) => button.textContent,
-      ),
-    ).toEqual(["Entry", "Exit"]);
+  it("is an ordinary tab stop while nothing is carried", () => {
+    renderPager(0, false);
+
+    for (const name of ["Entry", "Exit"]) {
+      expect(screen.getByRole("button", { name })).not.toHaveAttribute(
+        "tabindex",
+      );
+    }
+  });
+
+  it("leaves the tab order while a block is in hand", () => {
+    renderPager(0, true);
+
+    for (const name of ["Entry", "Exit"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute(
+        "tabindex",
+        "-1",
+      );
+    }
+  });
+
+  it("refuses the focus a press would otherwise take, while carrying", () => {
+    renderPager(0, true);
+
+    // Preventing the `pointerdown` default is what suppresses the implicit
+    // focus a press gives a button on Chrome and on every keyboard
+    // activation. `fireEvent` reports back whether the default survived.
+    const pressed = fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Exit" }),
+    );
+
+    expect(pressed).toBe(false);
+  });
+
+  it("takes the focus a press gives it while nothing is carried", () => {
+    renderPager(0, false);
+
+    const pressed = fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Exit" }),
+    );
+
+    expect(pressed).toBe(true);
+  });
+
+  it("still pages on a press that took no focus", () => {
+    const { onShowColumn } = renderPager(0, true);
+    const exit = screen.getByRole("button", { name: "Exit" });
+
+    // Not focusable is not not operable: the press still pages, which is the
+    // whole point of suppressing the focus rather than disabling the button.
+    fireEvent.pointerDown(exit);
+    fireEvent.pointerUp(exit);
+    fireEvent.click(exit);
+
+    expect(onShowColumn).toHaveBeenCalledWith(1);
   });
 });

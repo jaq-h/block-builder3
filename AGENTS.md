@@ -349,69 +349,50 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     for - a voice-control user saying the name of the column they are on, and a
     screen-reader user activating the button without first reading
     `aria-pressed`.
-  - **Focus never rests where the panel has just made it useless.** The
-    off-page column is `visibility: hidden`, so a focused element inside it is
-    dropped to `<body>` by the browser, and every key that drives a carry - the
-    arrows, Enter, Escape - is handled ON the carried order's palette tile or
-    ON a block rather than on the document. Both halves of that are reachable
-    with the app's own moves, and they are one rule rather than two.
+  - **While a block is in hand the pager takes no focus, and nothing anywhere
+    moves focus in answer to paging.** The off-page column is
+    `visibility: hidden` and every key that drives a carry - the arrows, Enter,
+    Escape - is handled ON the carried order's palette tile or ON a block,
+    with no document-level handler anywhere; so focus left on a pager button
+    mid-carry is a user holding an order that no key can put down, and focus
+    left in the column that has just gone off screen is dropped to `<body>` by
+    the browser.
 
-  **The rule is `keepFocusUsable`, and it is an INVARIANT re-read after every
-  render and every resize of the viewport - not a hand-off wired beside each
-  thing that pages.** Two clauses, both holding after any change to what is on
-  screen or to where the carry is aimed, whatever caused it:
+  **The answer is reachability, not a hand-off**: `tabIndex={-1}` plus a
+  prevented `pointerdown` default on `ColumnPager`'s buttons, both **only while
+  carrying**. You cannot be stranded on a control you cannot reach. That
+  component's docblock is the authority and carries the whole derivation; four
+  things belong here because they are what a reader of this file would
+  otherwise undo:
 
-  1. **The element holding focus must be on screen.** `usePointerGesture`
-     focuses the element it presses for every pointer type, so a tap on a
-     placed block puts focus inside a column as a matter of course.
-  2. **A live carry must stay drivable**, and this **outranks** clause 1. The
-     pager's buttons are the case that proves clause 1 is not enough: they are
-     perfectly visible, and a browser that focuses a button it activates -
-     Chrome, and every keyboard activation - leaves focus on one after the
-     press that moved the carry, from where Escape and the arrows do nothing at
-     all.
+  - **Four rounds of focus hand-offs were tried and all four are withdrawn.**
+    Each was right about the paths beside it and blind to the next - the
+    carrying move, the bare pager press, the press that leaves focus on the
+    button, a rotation across `sm` that hides a column with no press at all -
+    and the last of them, written as a derived invariant, moved focus on a
+    desktop hover and re-rendered without settling when its request could not
+    land. **Do not reintroduce one.** No `focusCarriedSource`, no
+    `keepFocusUsable`, no per-writer hook: the carry-target-to-`visibleColumn`
+    layout effect writes the viewport and nothing else.
+  - **A keyboard carrier never needs the pager**, which is what makes taking it
+    out of their reach cost nothing. `validTargetsFor` scopes to no column and
+    `stepTarget` takes for a horizontal move every target on the far side, so
+    the arrows cross exactly when a legal cell exists there.
+  - **Not focusable is not not operable.** The buttons stay clickable, keep the
+    24px target and stay in the accessibility tree; `disabled` would break the
+    paging pointer users depend on. Carrying nothing they are an ordinary tab
+    stop, because that user has no arrow keys to cross with.
+  - **The residual, stated rather than overstated:** assistive technology can
+    focus a `tabindex="-1"` element directly, so an AT user can still land
+    there mid-carry. They are not stranded - Shift+Tab leaves and the carry is
+    still live - but the control is not literally unreachable.
 
-  **Why an invariant.** This was written three times as a hook beside the code
-  that hid a column, and each version was right about the paths next to it and
-  blind to the next: the carrying move, then the bare pager press, then the
-  press that leaves focus on the button, then a rotation across `sm` that hides
-  a column with no press and no render at all. That is the shape this file
-  already refuses for announcements and for the carry lifecycle - **derived,
-  not signalled.** There is nothing for a new path to call, so a future control
-  that pages the columns is covered on the day it is written. `lastFocusedRef`
-  is part of that: the browser blurs a hidden element before the check can run,
-  so the panel records what the browser last focused rather than trying to read
-  it back afterwards - and `<body>` is the resting state of a page nobody has
-  touched, which must not be read as focus having been taken away.
-
-  **Whether something is on screen is asked of the DOM** -
-  `getComputedStyle(...).visibility`, the same fact `cellBoxesFromDom` filters
-  drop candidates by - and never of a breakpoint. That keeps "is this on
-  screen" to one owner, and it is a branch a test can take, which a media query
-  or a `scrollWidth > clientWidth` read is not.
-
-  **Where it does nothing, deliberately.** Above `sm` both columns are drawn, so
-  a carry whose target crosses columns - which `pointAt` does for every cell a
-  mouse sweeps over - hides nothing and leaves focus on a visible block inside
-  the grid, which is where the user put it and where the arrow keys price that
-  block. **Desktop unchanged is an acceptance criterion of this layout**, and a
-  focus move nobody asked for is its own regression.
-
-  **Where focus goes depends on what is in hand, and only that.** A carry goes
-  to the carried order's palette entry, through the same `focusRequest` channel
-  a place or a cancel uses (`focusCarriedSource` on the command model): that
-  tile IS the carry's keyboard interface and is drawn OUTSIDE the columns, as a
-  band above them below `sm` and as the lane beside them above it. A bare page
-  goes to the pager button for the column now on screen - visible, in the
-  accessibility tree, and where most browsers would have put focus anyway.
-  `GridArea.dom.test.tsx` pins the invariant rather than the paths, under
-  "hands focus out of the column a carry move takes off screen", "leaves that
-  carry cancellable from where focus lands", "hands focus out of the column a
-  bare page takes off screen", "takes focus off the pager button a press that
-  moved the carry left it on", "hands focus out of a column that a change of
-  shape hides mid-carry" and "leaves focus alone where both columns are drawn" -
-  the last of which installs no paging rule, because jsdom applying no author
-  stylesheet IS the desktop shape.
+  `ColumnPager.dom.test.tsx` pins the tab order and the suppressed press in
+  both states; `GridArea.dom.test.tsx` pins the behaviour under "pages a carry
+  across without taking the focus off what holds it", "is out of the tab order
+  while a block is in hand, and in it when not", "lets the arrow keys cross
+  columns and back, with the viewport following" and "leaves focus alone where
+  both columns are drawn".
 
   **A pick-up starts at the first legal cell its offer has, and no column is
   remembered between carries.** A preference for the column the user last

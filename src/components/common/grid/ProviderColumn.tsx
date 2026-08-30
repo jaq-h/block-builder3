@@ -1,4 +1,4 @@
-import type { FC, RefObject } from "react";
+import type { FC } from "react";
 import Block from "../../blocks/block";
 import type {
   GridData,
@@ -12,15 +12,6 @@ import { isProviderBlockHighlighted } from "../../../utils";
 
 // Props interface
 interface ProviderColumnProps {
-  /**
-   * The palette's own box.
-   *
-   * The panel needs to know where the palette is, because a carried order's
-   * tile is the whole of that carry's keyboard interface - it steps the
-   * target, places and cancels - and it is drawn outside the grid columns at
-   * every width. See `keepFocusUsable` in `GridArea`.
-   */
-  groupRef?: RefObject<HTMLDivElement | null>;
   providerBlocks: OrderTypeDefinition[];
   hoveredGridCell: CellPosition | null;
   isDragging: boolean;
@@ -44,7 +35,6 @@ interface ProviderColumnProps {
 }
 
 const ProviderColumn: FC<ProviderColumnProps> = ({
-  groupRef,
   providerBlocks,
   hoveredGridCell,
   isDragging,
@@ -66,7 +56,6 @@ const ProviderColumn: FC<ProviderColumnProps> = ({
 }) => {
   return (
     <div
-      ref={groupRef}
       role="group"
       aria-label="Order types"
       className="flex flex-col w-full sm:w-27.5 sm:min-w-22.5 border border-gray-200/20 rounded-lg bg-bg-column overflow-hidden"

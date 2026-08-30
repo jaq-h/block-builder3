@@ -668,23 +668,20 @@ agree. The case is reached by exactly the users the named pair was chosen for: a
 user saying the name of the column they are on, and a screen-reader user pressing the button
 without first reading `aria-pressed`.
 
-**Focus never rests where the panel has just made it useless.** The column going off screen
-is held by `visibility: hidden`, so a focused element inside it is dropped to `<body>` by the
-browser; and every key that drives a carry - the arrows, Enter and Escape - is handled on the
-carried order's palette tile or on a block rather than on the document, so a block in hand
-with focus anywhere else is an order no key can put down. Both are reachable: a tap focuses
-the block it presses, and a browser that focuses a button it activates leaves focus on the
-pager after the press that moved the carry.
+**Nothing moves keyboard focus when the panel pages, and the pager is what makes that
+safe.** The column going off screen is held by `visibility: hidden`, and every key that drives
+a carry - the arrows, Enter and Escape - is handled on the carried order's palette tile or on
+a block rather than on the document. So focus left on a pager button mid-carry would be an
+order no key could put down. While a block is in hand the pager's buttons therefore leave the
+tab order and refuse the focus a press would give them, which removes the stranding rather
+than remedying it after the fact: you cannot be stranded on a control you cannot reach. They
+stay clickable and keep their target size throughout, and carrying nothing they are an
+ordinary tab stop - a user who is not carrying has no arrow keys to cross with and needs them.
 
-It is one invariant with one owner, re-read after every render and every resize of the
-viewport rather than wired beside each thing that pages - so a future control that moves the
-columns is covered without calling anything. Whether something is on screen is asked of the
-DOM, through the same computed `visibility` that decides which cells are drop candidates,
-never of a breakpoint. Where focus goes is decided by what is in hand: a carry goes to the
-palette entry of the order held, which is that carry's whole keyboard interface and is drawn
-outside the columns at every width, and a page with nothing held goes to the pager button for
-the column now shown. Above `sm` both columns are drawn, so a mouse sweep that moves a carry's
-target across them hides nothing and focus does not move at all.
+A keyboard carrier never needs the pager, which is why this costs them nothing: the arrow keys
+already step the carry's target into the other column whenever a legal cell exists there.
+Assistive technology can still put focus on the buttons directly, and a user who does is not
+stranded - Shift+Tab leaves and the carry is still live.
 
 The column that is not on screen is held by `visibility: hidden` rather than removed. It
 keeps its box, which is what keeps the two columns beside each other, while staying out of

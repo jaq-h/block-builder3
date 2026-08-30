@@ -423,20 +423,6 @@ const GridArea: FC<GridAreaProps> = ({
   // position rather than as a rule about what to render.
   const [visibleColumn, setVisibleColumn] = useState(0);
   const columnsViewportRef = useRef<HTMLDivElement>(null);
-  const pagerRef = useRef<HTMLDivElement>(null);
-  const paletteRef = useRef<HTMLDivElement>(null);
-
-  // The last element inside this panel that the browser gave focus to.
-  //
-  // Filled by a `focusin` on the surface, so it is a record of what the browser
-  // did rather than a note a call site has to remember to leave. It exists
-  // because the browser is FASTER than the check below in one direction: when a
-  // subtree becomes `visibility: hidden` the focused element inside it is
-  // dropped to `<body>`, and `document.activeElement` alone can no longer say
-  // whether the page simply never had focus or has just lost it. `<body>` is
-  // also the resting state of a page nobody has touched, so treating it as
-  // "focus was taken away" would move focus on a mount.
-  const lastFocusedRef = useRef<HTMLElement | null>(null);
 
   const command = useBlockCommand({
     grid,
@@ -477,151 +463,45 @@ const GridArea: FC<GridAreaProps> = ({
   // cross-column move. The extra render is synchronous, and the scroll effect
   // below still runs after it on `visibleColumn`.
   //
-  // It writes the viewport and nothing else. What a column going off screen
-  // costs the user is answered by the invariant below, which is derived from
-  // the DOM rather than signalled from here - see it for why.
+  // **It writes the viewport and nothing else, and nothing here touches DOM
+  // focus.** Nothing anywhere in this component does: see `ColumnPager` for
+  // why paging cannot strand a carry without a single focus call.
   const carryTargetColumn = command.carrying?.target.col ?? null;
   useLayoutEffect(() => {
     if (carryTargetColumn === null) return;
     setVisibleColumn(carryTargetColumn);
   }, [carryTargetColumn]);
 
-  /** Is this element on screen? The one question, asked of the DOM. */
-  const isOnScreen = (element: Element) =>
-    element.isConnected && getComputedStyle(element).visibility === "visible";
-
-  /** The viewport, showing the column the state above names. */
-  const showVisibleColumn = () => {
-    const viewport = columnsViewportRef.current;
-    const target = viewport?.children[visibleColumn];
-    if (!viewport || !target) return;
-    const offset =
-      target.getBoundingClientRect().left -
-      viewport.getBoundingClientRect().left;
-    // `scrollLeft` and not `scrollIntoView`: this box is the only thing that
-    // may move. `scrollIntoView` walks up the ancestors too, so it would drag
-    // the panel's vertical scroller - and the page under it - to wherever the
-    // column happened to be, in answer to a press about columns.
-    if (offset !== 0) viewport.scrollLeft += offset;
-  };
-
-  /**
-   * ─── FOCUS HAS ONE OWNER, AND IT IS AN INVARIANT RATHER THAN A HOOK ──
-   *
-   * **The rule, in two clauses, and both hold after ANY change to what is on
-   * screen or to where the carry is aimed, whatever caused it:**
-   *
-   * 1. **The element holding focus must be on screen.** `hiddenColumn` is
-   *    `visibility: hidden`, and a focused element in a hidden subtree is
-   *    dropped to `<body>` by the browser - so a user who tapped a placed
-   *    block and then paged away is left with the next Tab restarting at the
-   *    top of the document.
-   * 2. **A live carry must stay drivable.** Every key that drives one - the
-   *    arrows, Enter, Escape - is handled ON the carried order's palette tile
-   *    or ON a block; there is no document-level handler. So focus resting
-   *    anywhere else while a block is in hand is a user holding an order that
-   *    no key can put down. The pager's own buttons are the case that proves
-   *    clause 1 is not enough: they are perfectly visible, and a browser that
-   *    focuses a button it activates - Chrome, and every keyboard - leaves
-   *    focus on one after the press that moved the carry. **Clause 2 outranks
-   *    clause 1**, so a carry is answered by where the carry can be driven and
-   *    not by whatever happens to be visible.
-   *
-   * **Why an invariant and not a hand-off at each writer.** Three rounds of
-   * this were written as a hook beside the code that hid a column, and each
-   * one was correct about the paths beside it and blind to the next: the
-   * carrying move, then the bare pager press, then the press that leaves focus
-   * on the button, then a rotation across `sm` that hides a column with no
-   * press at all. That is the shape this repository already refuses for
-   * announcements and for the carry lifecycle - **derived, not signalled**.
-   * Here there is nothing for a new path to call: this runs after every
-   * render and on every resize of the viewport, reads what is actually true,
-   * and acts only if the truth is wrong. A future control that pages the
-   * columns is covered on the day it is written.
-   *
-   * **What it asks the DOM.** `getComputedStyle(...).visibility`, the same
-   * fact `cellBoxesFromDom` filters drop candidates by, so "is this on screen"
-   * keeps one owner and one answer. Never a media query and never a
-   * `scrollWidth > clientWidth` read: those are a second derivation of it, and
-   * neither is a branch a test can take.
-   *
-   * **Where it does nothing, deliberately.** Above `sm` both columns are drawn,
-   * so a carry whose target crosses columns - which `pointAt` does for every
-   * cell a mouse sweeps over - hides nothing and leaves focus on a visible
-   * block inside the grid, which is where the user put it and where the arrow
-   * keys price that block. Desktop unchanged is an acceptance criterion of
-   * this layout, and a focus move nobody asked for is its own regression.
-   *
-   * **Where focus goes.** A carry goes to the palette entry of the order in
-   * hand, through the same `focusRequest` channel a place or a cancel uses:
-   * that tile IS the carry's keyboard interface and is drawn outside the
-   * columns at every width. A bare page goes to the pager button for the
-   * column now on screen - visible, in the accessibility tree, and where most
-   * browsers would have put focus on the press anyway.
-   */
-  const keepFocusUsable = () => {
-    const focused = document.activeElement;
-    const lastSeen = lastFocusedRef.current;
-
-    const takenAway =
-      lastSeen !== null &&
-      !isOnScreen(lastSeen) &&
-      (focused === lastSeen || focused === null || focused === document.body);
-
-    const canDriveTheCarry =
-      !command.carrying ||
-      (focused !== null &&
-        isOnScreen(focused) &&
-        (paletteRef.current?.contains(focused) === true ||
-          columnsViewportRef.current?.contains(focused) === true));
-
-    if (!takenAway && canDriveTheCarry) return;
-
-    if (command.carrying) {
-      command.focusCarriedSource();
-      return;
-    }
-
-    const button = pagerRef.current?.children[visibleColumn];
-    if (button instanceof HTMLElement && isOnScreen(button)) button.focus();
-  };
-
-  // The two above, run together and run late.
+  // The state above, applied to the one thing that draws it.
   //
-  // **After every render**, because that is what makes them derived: no writer
-  // announces itself, and a state neither of them likes cannot survive a
-  // render. Both are cheap - a rect pair and at most three computed reads,
-  // against the per-cell `getComputedStyle` the drag path already does on
-  // every pointer move.
-  //
-  // **Layout effects**, because both must commit before the browser paints.
-  // The viewport as an ordinary effect drew one frame of the OLD column while
-  // `aria-current` already sat inside the one `hiddenColumn` had just marked
-  // invisible; the focus check as an ordinary effect would hand focus over
-  // after the browser had already dropped it, which works but flickers a ring
-  // through `<body>`.
-  const settleRef = useRef<() => void>(() => {});
-  useLayoutEffect(() => {
-    settleRef.current = () => {
-      showVisibleColumn();
-      keepFocusUsable();
-    };
-    settleRef.current();
-  });
-
-  // And on every resize of the viewport, which is the one thing that changes
-  // both facts without a render: crossing `sm` in either direction turns the
-  // box from a scroll container into a plain row and back, so a `scrollLeft`
-  // set while it was one is silently dropped, and a column that was drawn
-  // becomes `visibility: hidden` under whatever element held focus. Rotating a
-  // phone mid-carry is the reachable form of it.
+  // A layout effect, because it must commit before the browser paints, and
+  // re-run whenever the viewport is resized: crossing `sm` in either direction
+  // changes the box from a scroll container to a plain row and back, and a
+  // `scrollLeft` set while it was one is silently dropped when it stops being
+  // one. Reading the columns' own boxes rather than multiplying a page width by
+  // an index keeps the gap between them out of the arithmetic.
   useLayoutEffect(() => {
     const viewport = columnsViewportRef.current;
     if (!viewport) return;
-    const observer = new ResizeObserver(() => settleRef.current());
+
+    const showColumn = () => {
+      const target = viewport.children[visibleColumn];
+      if (!target) return;
+      const offset =
+        target.getBoundingClientRect().left -
+        viewport.getBoundingClientRect().left;
+      // `scrollLeft` and not `scrollIntoView`: this box is the only thing that
+      // may move. `scrollIntoView` walks up the ancestors too, so it would drag
+      // the panel's vertical scroller - and the page under it - to wherever the
+      // column happened to be, in answer to a press about columns.
+      if (offset !== 0) viewport.scrollLeft += offset;
+    };
+
+    showColumn();
+    const observer = new ResizeObserver(showColumn);
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, []);
+  }, [visibleColumn]);
 
   /**
    * The pager was pressed.
@@ -650,11 +530,10 @@ const GridArea: FC<GridAreaProps> = ({
    * column they are already on, and a screen-reader user activating the button
    * without first reading `aria-pressed`.
    *
-   * **It says nothing about focus**, and must not be given anything to say:
-   * where focus may rest is an invariant over what is on screen, stated once
-   * at `keepFocusUsable` and enforced after every render. A press that takes
-   * the column holding focus away is covered there, whether it moved a carry
-   * or only the viewport.
+   * **It says nothing about focus, and must never be given anything to say.**
+   * Nothing in this panel moves DOM focus in answer to paging; `ColumnPager`
+   * carries the whole of why that is safe, and why a hand-off here is the
+   * wrong answer.
    */
   const handleShowColumn = (col: number) => {
     if (command.carrying) {
@@ -1207,9 +1086,6 @@ const GridArea: FC<GridAreaProps> = ({
         ref={placementSurfaceRef}
         className={contentWrapper}
         onPointerMove={handlePointerMove}
-        onFocus={(event) => {
-          lastFocusedRef.current = event.target as HTMLElement;
-        }}
       >
       {/* Named once and referenced by every block, so the instructions are
           available to a screen reader without being repeated nine times. */}
@@ -1223,7 +1099,6 @@ const GridArea: FC<GridAreaProps> = ({
       <div className={contentRow}>
         {/* Provider Column */}
         <ProviderColumn
-          groupRef={paletteRef}
           providerBlocks={providerBlocks}
           hoveredGridCell={hoveredGridCell}
           isDragging={isDragging}
@@ -1248,8 +1123,8 @@ const GridArea: FC<GridAreaProps> = ({
             to a panel too narrow to draw both. `sm:hidden`, so above `sm` it is
             not a flex item of the row at all. */}
         <ColumnPager
-          rowRef={pagerRef}
           visibleColumn={visibleColumn}
+          isCarrying={command.carrying !== null}
           onShowColumn={handleShowColumn}
         />
 
