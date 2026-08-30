@@ -441,12 +441,48 @@ const GridArea: FC<GridAreaProps> = ({
   // this state stops meaning anything, which is why it is expressed as a scroll
   // position rather than as a rule about what to render.
   const [visibleColumn, setVisibleColumn] = useState(0);
+  // Which columns the panel is WITHHOLDING, read off their own computed
+  // `pointer-events` rather than off a breakpoint of its own; the rule that
+  // writes it is `syncOffPageColumns` below, and its comment is the authority.
+  // It is declared up here because the command model is handed a value derived
+  // from it, and the derivation has to exist before that call.
+  const [offPageColumns, setOffPageColumns] = useState(0);
   const columnsViewportRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The one grid column the panel is showing, or `null` while it is showing
+   * them all.
+   *
+   * **What a pick-up starts from, and the reason a pick-up no longer chooses
+   * for itself.** It used to take the first legal cell of its offer in
+   * column-major order, so on a phone paged to Exit it landed in Entry and the
+   * viewport - which follows the carry's target - dragged the user back to the
+   * column they had deliberately left. It starts in the column on screen
+   * instead; see `initialTarget`.
+   *
+   * **This is a fact about the panel right now, not a preference remembered
+   * between carries, and the difference is the whole design.** A remembered
+   * column has to answer "did the user choose this one?", which means naming
+   * every state change that counts as a choice - a question with more entry
+   * points than can be enumerated, and one that was enumerated wrongly through
+   * eight review rounds before that design was withdrawn. Nothing here observes
+   * a change. The panel is showing one column or it is showing them all, and
+   * the pick-up reads which at the moment it happens.
+   *
+   * `null` above `sm`, where nothing is withheld: the question does not arise,
+   * so the offer decides on its own and desktop is exactly what it was. That is
+   * why "is the panel paging at all" is asked of `offPageColumns` - the same
+   * computed `pointer-events` the drop resolver and the tab-order rule read -
+   * rather than of a breakpoint written down a second time here. `visibleColumn`
+   * stays the one WRITER of which column that is; this only reads it.
+   */
+  const shownColumn = offPageColumns === 0 ? null : visibleColumn;
 
   const command = useBlockCommand({
     grid,
     strategyPattern,
     providerBlocks,
+    shownColumn,
     announcer,
     placeProvider: placeProviderInCell,
     removeFromGrid: removeBlockFromCell,
@@ -533,7 +569,9 @@ const GridArea: FC<GridAreaProps> = ({
   // both columns first costs one recalculation rather than one per column, and
   // the skip keeps a drag from re-writing every `tabindex` in the off-page
   // column on each of those renders. Neither changes what the rule computes.
-  const [offPageColumns, setOffPageColumns] = useState(0);
+  //
+  // The state itself is declared at the top of this section, beside
+  // `visibleColumn`, because `shownColumn` is derived from it there.
 
   const syncOffPageColumns = useCallback(() => {
     const viewport = columnsViewportRef.current;

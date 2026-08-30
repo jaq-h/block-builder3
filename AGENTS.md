@@ -327,10 +327,16 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   rather than a list to append to: a fifth item means the rule has changed and
   needs restating, not extending.**
 
-  - **A pick-up whose only legal cells are in the other column opens the pager
-    there.** The viewport follows the target a pick-up starts on exactly as it
-    follows one that moves, so the user arrives holding the order in the one
-    place it can go.
+  - **A pick-up starts in the column the panel is showing, and only opens the
+    pager elsewhere when that column has no legal cell for the order.** The
+    viewport follows the target a pick-up starts on exactly as it follows one
+    that moves, so both halves fall out of the same pairing: paged to Exit, the
+    user keeps the column they chose and builds their Exit leg there; and where
+    the offer excludes it - a conditional order whose only diagonals are in the
+    other column - they arrive holding the order in the one place it can go.
+    Which column that is comes from `shownColumn` in `GridArea` and is passed
+    into `initialTarget`; read that docblock before touching it, because the
+    thing it is careful NOT to be is the point.
   - **A press the carry refuses leaves the pager where it is**, and says "No
     cell available in that direction." - exactly what the arrow key does from
     there, because it IS what the arrow key does. The button never claims a
@@ -426,15 +432,29 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   behaviour under "pages a carry across and the arrived column places it",
   "is out of the tab order
   while a block is in hand, and in it when not", "lets the arrow keys cross
-  columns and back, with the viewport following" and "leaves focus alone where
-  both columns are drawn".
+  columns and back, with the viewport following", "leaves focus alone where
+  both columns are drawn", "starts a pick-up in the column it is showing" and
+  "leaves a pick-up on the offer's own first cell where both columns are drawn".
+  The last two are the pair, and neither is worth much without the other: the
+  first has to install `pageTheColumns()`, because jsdom applies no author
+  stylesheet and a class list alone computes to the DESKTOP shape, which is
+  exactly what the second one asserts.
 
-  **A pick-up starts at the first legal cell its offer has, and no column is
-  remembered between carries.** A preference for the column the user last
-  chose was tried and taken out again: its rule was a closed enumeration of
-  which events counted as a choice, and cases kept being found one at a time,
-  each as a defect. Do not reintroduce one without deciding the whole set
-  first.
+  **NO COLUMN IS REMEMBERED BETWEEN CARRIES, and a pick-up starting in the
+  column on screen is not that.** A preference for the column the user last
+  *chose* was tried and taken out again: its rule was a closed enumeration of
+  which events counted as a choice - a fresh pick-up, a swap pick-up by a
+  second path, a purely vertical move, a same-column pager press, a refused
+  pager press - and cases kept being found one at a time, each as a defect,
+  through eight review rounds. **Do not reintroduce one.** The rule that
+  replaced it asks a different question and has nothing to enumerate: the
+  panel is showing one column or it is showing them all, `shownColumn` reads
+  which at the moment of the pick-up, and no event anywhere is observed to
+  work that out. Above `sm` it is `null` - not "column 0" - so the question
+  does not arise and the offer decides on its own, which is why desktop is
+  unchanged to the cell. If a change here finds itself deciding which state
+  transitions count as a user's choice, it is the withdrawn design coming
+  back and should stop rather than add a case.
 
   **Do not give the pager a move of its own, and do not end a carry on it**:
   paging does not touch the grid, so nothing about the carry has gone stale.
