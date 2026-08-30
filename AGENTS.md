@@ -363,29 +363,53 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     one control in the surface that is not a gesture element, so pressing one
     moves focus nowhere.
 
-  **Focus goes to the carried order's palette entry**, through the same
-  `focusRequest` channel a place or a cancel uses - `focusCarriedSource` on the
-  command model. That tile carries the whole carry keyboard interface and is
-  drawn OUTSIDE the columns, as a band above them below `sm` and as the lane
-  beside them above it, so it is visible and in the accessibility tree at the
-  moment a column stops being either. The pager's own buttons are visible too
-  and are the other candidate, but they only page: focus there leaves the carry
-  undrivable a different way. **It belongs in the layout effect that moves the
-  viewport, and not in a wrapper around `moveTarget`**, because it is the
-  hiding that does the damage and that effect is what hides: four dispatches
-  move a target - a pager press, an arrow key, a mouse sweep's `pointAt` and a
-  pick-up - and a wrapper would answer two of them. Nothing there asks WHY the
-  target moved; the question is only whether the element holding focus is in a
-  column about to be taken away, so a fifth dispatch is covered on the day it
-  is written. It is one rule at every width, deliberately not gated on a layout
-  read: a `scrollWidth > clientWidth` guard is a branch jsdom can never take,
-  which ships the behaviour unpinned. Above `sm` nothing is hidden, so it is a
-  focus move rather than a rescue, onto the control that is driving the carry
-  either way - and it needs focus to be inside a grid column to happen at all,
-  which the keyboard path, standing on the palette tile, never is.
-  `GridArea.dom.test.tsx` pins both halves under "hands focus out of the column
-  a carry move takes off screen" and "leaves that carry cancellable from where
-  focus lands".
+  **The rule is `handOffFocusFromLeavingColumn`, and it is one gate with two
+  destinations: move focus exactly when the element holding it is about to
+  become invisible, and never otherwise.** Both halves were a defect on their
+  own and neither may be dropped for the other.
+
+  *Exactly when.* The gate covers a carry and a bare page alike, because a user
+  who is not carrying is no less stranded - the pager's buttons are the one
+  control in the surface that is not a gesture element, so on Safari and
+  Firefox, which do not focus a button they activate, a press leaves focus
+  standing on whatever placed block was last tapped. `usePointerGesture`
+  focuses the element it presses for every pointer type, so that is a block
+  INSIDE a column.
+
+  *Never otherwise.* `pointAt` moves a mouse carry's target for every cell the
+  cursor crosses, so above `sm` - where both columns are drawn - an ungated
+  hand-off yanked focus off the block the user had clicked on a mere hover,
+  scrolling it into view (`Block` focuses without `preventScroll`) and turning
+  the next ArrowUp from a price nudge into a target move. **Desktop unchanged
+  is an acceptance criterion of this layout.**
+
+  **Whether a column is hidden is asked of the DOM** -
+  `getComputedStyle(...).visibility`, the same fact `cellBoxesFromDom` filters
+  drop candidates by - and never of a breakpoint. That keeps "is this column on
+  screen" to one owner, and it is a branch a test can take, which a media query
+  or a `scrollWidth > clientWidth` read is not.
+
+  **Where focus goes depends on what is in hand, and only that.** A carry goes
+  to the carried order's palette entry, through the same `focusRequest` channel
+  a place or a cancel uses (`focusCarriedSource` on the command model): that
+  tile carries the whole carry keyboard interface and is drawn OUTSIDE the
+  columns, as a band above them below `sm` and as the lane beside them above
+  it, so the order stays placeable and cancellable. A bare page goes to the
+  pager button just pressed, which is visible, in the accessibility tree, and
+  where most browsers would have put focus anyway.
+
+  **The carry's half belongs in the layout effect that moves the viewport, and
+  not in a wrapper around `moveTarget`**: four dispatches move a target - a
+  pager press, an arrow key, a mouse sweep's `pointAt` and a pick-up - and a
+  wrapper would answer two of them. Nothing there asks WHY the target moved;
+  the question is only whether the element holding focus is in a column about
+  to be taken away, so a fifth dispatch is covered on the day it is written.
+  `GridArea.dom.test.tsx` pins every part of this under "hands focus out of the
+  column a carry move takes off screen", "leaves that carry cancellable from
+  where focus lands", "hands focus out of the column a bare page takes off
+  screen" and "leaves focus alone where both columns are drawn" - the last of
+  which installs no paging rule, because jsdom applying no author stylesheet IS
+  the desktop shape.
 
   **A pick-up starts at the first legal cell its offer has, and no column is
   remembered between carries.** A preference for the column the user last

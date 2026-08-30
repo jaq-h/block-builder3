@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
-import { userEvent } from "@testing-library/user-event";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 
 import ColumnPager from "./ColumnPager";
 
@@ -79,11 +78,16 @@ describe("ColumnPager", () => {
     }
   });
 
-  it("asks for the column whose button was pressed", async () => {
+  it("asks for the column whose button was pressed, and hands over that button", () => {
     const { onShowColumn } = renderPager(0);
+    const exit = screen.getByRole("button", { name: "Exit" });
 
-    await userEvent.click(screen.getByRole("button", { name: "Exit" }));
+    fireEvent.click(exit);
 
-    expect(onShowColumn).toHaveBeenCalledWith(1);
+    // The element travels because the panel may have to put focus on it: a
+    // press that takes the other column off screen has to leave focus
+    // somewhere visible, and this button is where a browser that focuses what
+    // it activates would have put it. See `GridArea`.
+    expect(onShowColumn).toHaveBeenCalledWith(1, exit);
   });
 });

@@ -668,17 +668,24 @@ agree. The case is reached by exactly the users the named pair was chosen for: a
 user saying the name of the column they are on, and a screen-reader user pressing the button
 without first reading `aria-pressed`.
 
-**Moving the viewport hands DOM focus out of the column it takes away.** The column going off
-screen is held by `visibility: hidden`, and a focused element inside a hidden subtree is
-dropped to `<body>` by the browser - while every key that drives a carry, the arrows, Enter
-and Escape, is handled on a palette tile or on a block rather than on the document. The user
-would be left holding an order, with a cell still highlighted as `aria-current`, and no way to
-place or cancel it short of Tabbing in from the top of the page. Focus goes to the palette
-entry of the order in hand: that tile carries the whole carry keyboard interface and is drawn
-outside the columns at every width, so it is visible and in the accessibility tree at exactly
-the moment a column stops being either. It is done where the viewport moves rather than at
-whichever call moved the target, because it is the hiding that does the damage - four
-different dispatches move a target, and only the effect that hides a column sees all four.
+**Moving the viewport hands DOM focus out of the column it takes away, and does nothing
+where no column is hidden.** The column going off screen is held by `visibility: hidden`, and
+a focused element inside a hidden subtree is dropped to `<body>` by the browser - while every
+key that drives a carry, the arrows, Enter and Escape, is handled on a palette tile or on a
+block rather than on the document. The user would be left holding an order, with a cell still
+highlighted as `aria-current`, and no way to place or cancel it short of Tabbing in from the
+top of the page. It needs no carry to reach: a tap focuses the block it presses, and the
+pager's buttons are the one control here that is not a gesture element, so on the browsers
+that do not focus a button they activate a press leaves focus in the column it is taking
+away.
+
+Where focus goes is decided by what is in hand. A carry goes to the palette entry of the
+order held - that tile carries the whole carry keyboard interface and is drawn outside the
+columns at every width - and a page with nothing held goes to the pager button just pressed.
+Whether a column is really being hidden is asked of the DOM, through the same computed
+`visibility` that decides which cells are drop candidates, rather than of a breakpoint: above
+`sm` both columns are drawn, a mouse sweep that moves a carry's target across them hides
+nothing, and focus must not move.
 
 The column that is not on screen is held by `visibility: hidden` rather than removed. It
 keeps its box, which is what keeps the two columns beside each other, while staying out of

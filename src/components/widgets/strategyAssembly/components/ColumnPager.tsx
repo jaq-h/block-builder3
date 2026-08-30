@@ -10,8 +10,17 @@ import {
 interface ColumnPagerProps {
   /** Which column the paged viewport is showing. */
   visibleColumn: number;
-  /** Show this column instead. */
-  onShowColumn: (col: number) => void;
+  /**
+   * Show this column instead, and the button that asked for it.
+   *
+   * The element travels because the panel may have to hand DOM focus out of
+   * the column it is about to take off screen, and this button is where that
+   * focus goes when nothing is in hand: it is visible, it is in the
+   * accessibility tree, and it is where most browsers would have put focus on
+   * the press anyway. Safari and Firefox do not focus a button they activate,
+   * which is what leaves focus standing in the leaving column. See `GridArea`.
+   */
+  onShowColumn: (col: number, pressed: HTMLButtonElement) => void;
 }
 
 /**
@@ -48,7 +57,7 @@ const ColumnPager: FC<ColumnPagerProps> = ({ visibleColumn, onShowColumn }) => (
           type="button"
           aria-pressed={isActive}
           className={columnPagerButton({ isActive })}
-          onClick={() => onShowColumn(col)}
+          onClick={(event) => onShowColumn(col, event.currentTarget)}
         >
           {/* The cue that survives with no colour at all, in a slot both
               buttons carry so the label does not shift sideways as the tick

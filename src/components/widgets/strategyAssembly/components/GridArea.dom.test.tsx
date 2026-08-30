@@ -2166,6 +2166,31 @@ describe("GridArea, the column pager", () => {
       (col) => !columnOf(col).className.split(/\s+/).includes("invisible"),
     );
 
+  let pagingRule: HTMLStyleElement | null = null;
+
+  /**
+   * Put the panel into its paged form, by supplying the one declaration
+   * `hiddenColumn` resolves to below `sm`.
+   *
+   * jsdom applies no author stylesheet, so a class list alone computes to
+   * nothing and every column is `visible` - which is exactly the DESKTOP
+   * shape, and is why the test below that asserts focus is left alone does not
+   * install this. The rule is read the way the app reads it, through
+   * `getComputedStyle().visibility`, the same fact `cellBoxesFromDom` filters
+   * drop candidates by; it is put on the class rather than on an element so it
+   * follows the pager, which is what the behaviour under test depends on.
+   */
+  const pageTheColumns = () => {
+    pagingRule = document.createElement("style");
+    pagingRule.textContent = ".invisible { visibility: hidden; }";
+    document.head.appendChild(pagingRule);
+  };
+
+  afterEach(() => {
+    pagingRule?.remove();
+    pagingRule = null;
+  });
+
   it("names both columns and says which one is on screen", () => {
     render(<Harness initialGrid={clearGrid(2, 3)} />);
 
@@ -2310,6 +2335,7 @@ describe("GridArea, the column pager", () => {
    * platform this layout is for.
    */
   const carryWithFocusInEntry = () => {
+    pageTheColumns();
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));
     grid[1][1].push(placedMarket("b2"));
@@ -2377,6 +2403,59 @@ describe("GridArea, the column pager", () => {
 
     expect(announcement()).toContain("Cancelled.");
     expect(cell(1, 0)).not.toHaveAttribute("aria-current");
+  });
+
+  it("hands focus out of the column a bare page takes off screen", () => {
+    // The same loss with nothing in hand, and it needs no carry to reach: a
+    // tap on a placed block focuses it - `usePointerGesture` focuses the
+    // element it presses, for every pointer type - and a tap on a pager button
+    // moves focus nowhere, because the browsers this layout is drawn on do not
+    // focus a button they activate.
+    pageTheColumns();
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    tap(within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    }));
+    expect(columnOf(0).contains(document.activeElement)).toBe(true);
+
+    tap(pagerButton("Exit"));
+
+    expect(shownColumn()).toEqual([1]);
+    expect(document.activeElement).not.toBe(document.body);
+    expect(columnOf(0).contains(document.activeElement)).toBe(false);
+    // The button the user pressed: visible, in the accessibility tree, and
+    // where most browsers would have put focus on the press anyway.
+    expect(document.activeElement).toBe(pagerButton("Exit"));
+  });
+
+  it("leaves focus alone where both columns are drawn", () => {
+    // The other half of the rule, and the half that keeps desktop unchanged.
+    // No `pageTheColumns()`: every column computes `visible`, which is the
+    // shape at 1440, and a target that crosses columns hides nothing - so
+    // there is nothing to hand focus out of and focus must not move.
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    grid[1][1].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} />);
+
+    clickBlock(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(0, 0)).toHaveAttribute("aria-current", "location");
+
+    const placed = within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    });
+    clickBlock(placed);
+    expect(document.activeElement).toBe(placed);
+
+    // A mouse carry tracks the cell under the cursor, so a sweep into the Exit
+    // column moves the target across without the user asking for anything.
+    fireEvent.mouseEnter(cell(1, 0));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    expect(document.activeElement).toBe(placed);
   });
 
   it("says nothing when pressed for the column the carry is already on", () => {
