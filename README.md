@@ -669,9 +669,12 @@ width rather than a phone-only concept - a cross-column arrow move on a desktop 
 much a choice - and it is what stops one pick-up's fallback deciding the next one's start.
 
 **Which events count is decided by where the choice is recorded, not by watching the target
-afterwards.** The preference is written at the two places a choice is actually made: the
-pager press with nothing in hand, and the single wrapper every target move goes through,
-which takes the column from the cell the move landed on so a refused move records nothing.
+afterwards.** The preference is written at the two places a choice is actually made: a pager
+press, carrying or not, and the single wrapper every target move goes through, which takes
+the column from the cell the move landed on so a refused move records nothing. The press for
+the column already being targeted records it too, even though it says nothing: what a press
+*says* and what it *records* are separate questions, and it stays quiet only because nothing
+moved and nothing was refused.
 That wrapper records only a move that lands in a *different* column, since a nudge up or
 down inside one column chose no column at all - and it asks that by comparing the columns
 rather than by looking at which arrow was pressed, because a vertical press can land in the
@@ -684,8 +687,9 @@ move, which is exactly how a fallback and a silent hover each came to be remembe
 choice.
 
 One further case is written down, because it is the single press `moveTarget` cannot answer
-for: pressing the button for the column the carry is **already** on does nothing and says
-nothing. No arrow key means "stay put", so a zero-step move leaves the target where it is and
+for: pressing the button for the column the carry is **already** on moves nothing and says
+nothing, though it is still recorded as the column the user chose. No arrow key means
+"stay put", so a zero-step move leaves the target where it is and
 `moveTarget` would announce "No cell available in that direction." - a refusal of a press that
 asked for nothing. Carrying nothing, that same press is already silent, and the two have to
 agree. The case is reached by exactly the users the named pair was chosen for: a voice-control

@@ -442,10 +442,12 @@ const GridArea: FC<GridAreaProps> = ({
   // a column the app ended up showing them.
   //
   // **WHICH events count is enforced by WHERE the write is, and by nothing
-  // else.** There are exactly two writers and both are below: the pager press
-  // with nothing in hand, and `moveTargetAndRemember`, the one wrapper every
-  // `moveTarget` call goes through, which writes only when the move CROSSES
-  // into another column. Nothing watches the target and works out
+  // else.** There are exactly two writers and both are below: a PAGER PRESS,
+  // whether or not something is carried and including the press for the column
+  // the carry is already on, which is silent but still a column the user named;
+  // and `moveTargetAndRemember`, the one wrapper every `moveTarget` call goes
+  // through, which writes only when the move CROSSES into another column.
+  // Nothing watches the target and works out
   // afterwards what must have moved it. That inference was tried, as a ref
   // holding the previous carry column, and it was wrong for every path that
   // moves a target without being an arrow key: swapping the carried order type
@@ -592,38 +594,51 @@ const GridArea: FC<GridAreaProps> = ({
   /**
    * The pager was pressed.
    *
-   * Carrying nothing, this is a view change and nothing else. Carrying a block
-   * it is `moveTarget`, the same action the Left and Right arrow keys dispatch:
-   * one mechanism for moving between columns, so the sentence the user hears
-   * and the cells a carry may reach are the ones that were already there. The
-   * viewport follows the target through the effect above, so a step the carry
-   * refuses ("no target that way") leaves the pager where it is and says why,
-   * exactly as the arrow key does.
+   * **Carrying nothing**, this is a view change and nothing else: the viewport
+   * moves to the column named, and nothing is announced, because
+   * `gridAnnouncements` speaks about a BLOCK and no block was touched.
    *
-   * Either way the press is a column the user chose, so it is remembered as the
-   * one a later pick-up starts in. Only the non-carrying branch records it
-   * here; the carrying branch goes through `moveTargetAndRemember`, which
-   * records the column a move crossed into and nothing when it is refused. A
-   * press for the column already targeted returns below without dispatching,
-   * so it never reaches either.
+   * **Carrying a block**, it is `moveTarget`, the same action the Left and
+   * Right arrow keys dispatch: one mechanism for moving between columns, so the
+   * sentence the user hears and the cells a carry may reach are the ones that
+   * were already there. The viewport follows the target through the effect
+   * above, so a step the carry refuses ("no target that way") leaves the pager
+   * where it is and says why, exactly as the arrow key does.
    *
-   * The press naming the column the carry is ALREADY on is the one case
-   * `moveTarget` cannot answer for, and it is silent by design. `moveTarget` is
-   * reused precisely so the pager and the arrow keys cannot drift, but a zero
-   * delta is the one press that has no arrow-key equivalent: there is no key
-   * meaning "stay put", so `stepTarget` returns the target unchanged, the
-   * reducer returns the identical state, and `moveTarget` reports
-   * `noTargetThatWay` - announcing a refusal for a press that asked for
-   * nothing. The two branches here have to say the same thing for the same
-   * press, and the non-carrying branch is already a silent no-op
-   * (`setVisibleColumn` with an unchanged value), so this one is too. It
-   * reaches exactly the users the named pair was chosen for: a voice-control
-   * user saying the name of the column they are already on, and a screen-reader
-   * user activating the button without first reading `aria-pressed`.
+   * **The press naming the column the carry is ALREADY on is silent**, and it
+   * is the one case `moveTarget` cannot answer for. `moveTarget` is reused
+   * precisely so the pager and the arrow keys cannot drift, but a zero delta is
+   * the one press that has no arrow-key equivalent: there is no key meaning
+   * "stay put", so `stepTarget` returns the target unchanged, the reducer
+   * returns the identical state, and `moveTarget` reports `noTargetThatWay` -
+   * announcing a refusal for a press that asked for nothing. The two branches
+   * have to say the same thing for the same press, and the non-carrying branch
+   * is already silent for it, so this one is too. It reaches exactly the users
+   * the named pair was chosen for: a voice-control user saying the name of the
+   * column they are already on, and a screen-reader user activating the button
+   * without first reading `aria-pressed`.
+   *
+   * **The preference is recorded in ALL THREE of those cases, because the press
+   * is an expressed choice in all three.** The silence above is about what the
+   * press SAYS, never about what it records, and the two questions are answered
+   * separately here on purpose: they were decided in different rounds, and
+   * letting one early return answer both is what once made a press that chose a
+   * column record nothing at all. A cross-column press records through
+   * `moveTargetAndRemember`, which takes the column from where the target
+   * actually landed, so a refused move still records nothing.
    */
   const handleShowColumn = (col: number) => {
     if (command.carrying) {
-      if (col === command.carrying.target.col) return;
+      if (col === command.carrying.target.col) {
+        // Safe by the guard just above, which is what stops this reopening the
+        // hole the preference gate exists for: `col` equals the carry's target
+        // column, and the carry-target sync keeps `visibleColumn` equal to that
+        // same target, so the column recorded is necessarily the one on screen
+        // and the one whose button was pressed. It can never name a column the
+        // user was left off.
+        setPreferredColumn(col);
+        return;
+      }
       moveTargetAndRemember(col - command.carrying.target.col, 0);
       return;
     }

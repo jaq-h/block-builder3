@@ -2469,6 +2469,33 @@ describe("GridArea, the column pager", () => {
     expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("remembers the column of a silent press for the one already targeted", () => {
+    // Silence is about what the press SAYS. It is still a column the user
+    // named, so it is still what a later pick-up starts in.
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
+
+    // The block's only diagonal a Take Profit may use is Exit upper, so the
+    // target is `initialTarget`'s fallback and nothing is recorded by it.
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+
+    // The column already on screen and already targeted. Nothing moves and
+    // nothing is said, but Exit is what the user asked for.
+    fireEvent.click(pagerButton("Exit"));
+
+    fireEvent.click(cell(1, 0));
+    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+
+    tap(screen.getByRole("button", { name: "Add Limit order" }));
+
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+    expect(announcement()).toContain("Target: Exit column, primary row.");
+  });
+
   it("says nothing when pressed for the column the carry is already on", () => {
     render(<Harness initialGrid={clearGrid(2, 3)} />);
 

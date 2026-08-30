@@ -334,9 +334,12 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     cell available in that direction." - exactly what the arrow key does from
     there, because it IS what the arrow key does. The button never claims a
     column the user is not on.
-  - **A press for the column the carry is ALREADY targeting is a deliberate
-    silent no-op**, an early return in `handleShowColumn` before the dispatch,
-    and it is the one press `moveTarget` cannot answer for. No arrow key means
+  - **A press for the column the carry is ALREADY targeting is deliberately
+    SILENT**, an early return in `handleShowColumn` before the dispatch, and it
+    is the one press `moveTarget` cannot answer for. It is silent rather than a
+    no-op: nothing moves and nothing is said, but the column is still recorded
+    as the one the user chose, because what a press says and what it records are
+    two questions and only the first has a reason to be quiet here. No arrow key means
     "stay put", so a zero delta returns the state unchanged and `moveTarget`
     would report `noTargetThatWay` - a refusal of a press that asked for
     nothing. The non-carrying branch is already silent for that press and the
@@ -370,11 +373,15 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   expressed, never a column the app ended up showing them.**
 
   **Which events count is settled by WHERE the write is, and by nothing that
-  looks at the target afterwards.** There are exactly two writers: the pager
-  press with nothing in hand, and `moveTargetAndRemember`, the one wrapper every
+  looks at the target afterwards.** There are exactly two writers: a PAGER
+  PRESS, carrying or not, the silent same-column press included - that press
+  says nothing because nothing moved, but the user still named a column, and
+  what a press SAYS and what it RECORDS are separate questions that must be
+  answered separately; and `moveTargetAndRemember`, the one wrapper every
   `moveTarget` call in `GridArea` goes through - the arrow keys as
-  `onCommandMove` and `onBlockCommandMove`, and the pager's carrying branch,
-  which is what keeps the press and the key one mechanism rather than two. It
+  `onCommandMove` and `onBlockCommandMove`, and the pager's cross-column
+  carrying branch, which is what keeps the press and the key one mechanism
+  rather than two. It
   takes the column from the cell the move ACTUALLY landed on, which is why
   `useBlockCommand.moveTarget` returns it: a refused move returns `null` and
   writes nothing, so the preference can never name a column the user was left
