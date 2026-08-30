@@ -6,8 +6,11 @@ import ProviderColumn from "../../common/grid/ProviderColumn";
 import { ORDER_TYPES } from "../../../data/orderTypes";
 import { createEmptyGrid } from "../../../utils";
 import {
+  columnPagerRow,
   columnsWrapper,
   contentRow,
+  hiddenColumn,
+  pagedColumn,
   utilityRow,
 } from "./strategyAssembly.styles";
 import { utilitiesInAnyCondition } from "../../../test/tailwindTokens";
@@ -27,6 +30,13 @@ import { utilitiesInAnyCondition } from "../../../test/tailwindTokens";
 // entirely outside the viewport and reachable only through a scroller with no
 // visible bar. A conditional strategy needs both an Entry and an Exit leg, so
 // the app's core task could not be completed on a phone at all.
+//
+// The two grid columns are no longer part of the wrap that answered it. They
+// stay side by side at every width and the panel shows one of them at a time,
+// through a viewport `ColumnPager` moves; only the palette is a band below
+// `sm`. What these tests hold is the pair of things that could each undo it:
+// the columns' row being re-directed into a stack again, and that viewport
+// being spelled as a scroller the user drives.
 //
 // WHAT THESE TESTS ARE: assertions about the utilities the components ask for.
 // jsdom applies no author stylesheet and does no layout, so none of them can
@@ -58,7 +68,7 @@ const expectNoScroller = (className: string) => {
 };
 
 describe("the assembly grid's lanes", () => {
-  it("stacks the three lanes when the panel is too narrow for them", () => {
+  it("puts the palette above the columns when the panel is too narrow", () => {
     const classes = contentRow.split(/\s+/);
 
     expect(classes).toContain("flex-col");
@@ -69,17 +79,69 @@ describe("the assembly grid's lanes", () => {
     expectNoScroller(contentRow);
   });
 
-  it("stacks the Entry and Exit columns with them", () => {
+  it("keeps the Entry and Exit columns side by side at every width", () => {
     const classes = columnsWrapper.split(/\s+/);
 
-    expect(classes).toContain("flex-col");
-    expect(classes).toContain("sm:flex-row");
-    // Stacked, the two columns take their height from their cells. A `flex-1`
-    // that applied in the column direction too would give them a `0%` basis in
-    // a height nothing above has fixed.
+    // Never re-directed. The pair is what the user is being shown one of, and
+    // a column of two is not a pair beside each other - it is the stack this
+    // replaced, which put the Exit column a phone screen below the palette.
+    expect(classes).toContain("flex-row");
+    expect(classes).not.toContain("flex-col");
+    expect(classes).not.toContain("sm:flex-col");
+    // Above `sm` both fit, and the row is a flex item sharing the pane.
     expect(classes).toContain("sm:flex-1");
     expect(classes).not.toContain("flex-1");
+  });
+
+  it("pages the columns with a viewport the user cannot scroll", () => {
+    const classes = columnsWrapper.split(/\s+/);
+
+    // `hidden` and not `auto`: a scroll container the user cannot drive draws
+    // no scrollbar on any platform, so it can neither grow by a classic bar's
+    // gutter nor be scrolled to a column the pager does not know about. That is
+    // what gives "which column is on screen" one owner. `expectNoScroller` is
+    // the other half and is asserted rather than assumed here.
+    expect(classes).toContain("overflow-x-hidden");
+    expect(classes).toContain("sm:overflow-visible");
     expectNoScroller(columnsWrapper);
+  });
+
+  it("gives each column the viewport's whole width while it is paged", () => {
+    const classes = pagedColumn.split(/\s+/);
+
+    // Refusing to shrink is what makes the pair overflow the viewport rather
+    // than squeezing into it - two 220px columns and a gap need 446px against a
+    // 288px panel at 320, and a squeezed column clips its own price chip. It
+    // gives that up from `sm`, where both fit and the row shares itself out.
+    expect(classes).toContain("shrink-0");
+    expect(classes).toContain("sm:shrink");
+  });
+
+  it("takes the off-page column out of reach without taking away its box", () => {
+    const classes = hiddenColumn.split(/\s+/);
+
+    // `invisible` rather than `hidden`: the columns have to stay beside each
+    // other, and a removed box is not beside anything. It still buys no tab
+    // stop, nothing in the accessibility tree and no hit testing, so the
+    // browser can never scroll the viewport to a focused block the pager did
+    // not put there. `cellBoxesFromDom` reads the same fact.
+    expect(classes).toContain("invisible");
+    expect(classes).toContain("sm:visible");
+  });
+
+  it("insets the pager so its focus rings are inside the pane that clips them", () => {
+    const classes = columnPagerRow.split(/\s+/);
+
+    // The grid pane carries no horizontal padding, so a lane is flush with the
+    // panel's content edge - and the panel clips there. A lane's own focusable
+    // children are inset within it; a `flex-1` button in a flush row is not.
+    // Measured at 390 with the Exit button focused, its box ended at x 374
+    // against a clip at 374 and the ring's whole right segment (2px outline at
+    // a 2px offset, so x 376..378) was drawn nowhere.
+    expect(classes).toContain("px-2");
+    // Not a flex item of `contentRow` at all above `sm`, which is what keeps
+    // the desktop row the two-lane row it has always been, to the pixel.
+    expect(classes).toContain("sm:hidden");
   });
 
   it("wraps the action bar rather than clipping Execute Trade", () => {
@@ -127,18 +189,18 @@ describe("the order palette", () => {
     return (layout as HTMLElement).className.split(/\s+/);
   };
 
-  it("lays the orders out across the panel when the lanes are stacked", () => {
+  it("lays the orders out across the panel when it is a band", () => {
     renderPalette();
     const classes = tileLayout();
 
-    // Stacked, the palette is a band the panel's width rather than the
+    // Below `sm` the palette is a band the panel's width rather than the
     // left-hand lane, so its tiles run across it. A column of nine would push
     // the Entry column most of a phone screen down before it started.
     expect(classes).toContain("grid");
     expect(
       classes.some((c) => c.startsWith("grid-cols-[repeat(auto-fill")),
     ).toBe(true);
-    // The scroll belongs to the lane form alone: stacked, the palette's height
+    // The scroll belongs to the lane form alone: as a band, the palette's height
     // is its content's, so a scrollport would have nothing to scroll and would
     // only clip the tiles' focus rings.
     expect(classes).not.toContain("overflow-auto");

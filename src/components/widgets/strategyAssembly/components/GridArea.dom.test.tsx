@@ -2132,6 +2132,137 @@ const stopLossPrice = (yPosition: number) =>
     maximumFractionDigits: BTC_USD.priceDecimals,
   })}`;
 
+// =============================================================================
+// THE COLUMN PAGER
+// =============================================================================
+//
+// Below `sm` the panel cannot draw both grid columns at once - two
+// `min-w-[220px]` columns and a 6px gap need 446px against a 288px panel at a
+// 320px viewport - so they stay side by side and the panel shows one of them
+// through a viewport `ColumnPager` moves. jsdom applies no author stylesheet
+// and resolves no media query, so the *pixels* are browser measurement (see
+// `AGENTS.md`); what is testable here is the wiring, and that is where the
+// interesting rules live.
+//
+// The rule these hold: the carry's target and the column on screen are ONE
+// fact, with the target as its owner. A target in a column the viewport is not
+// showing is an invitation the user cannot see - the mirror of the stale
+// highlight the `gridReplaced` transition exists to stop - so the pager moves
+// the target and lets the viewport follow, rather than moving the viewport
+// behind the carry's back.
+
+describe("GridArea, the column pager", () => {
+  const pagerButton = (name: string) =>
+    within(screen.getByRole("group", { name: "Grid column shown" })).getByRole(
+      "button",
+      { name },
+    );
+
+  /** The column element a cell belongs to: the box `hiddenColumn` is put on. */
+  const columnOf = (col: number) => cell(col, 0).parentElement!;
+
+  const shownColumn = () =>
+    [0, 1].filter(
+      (col) => !columnOf(col).className.split(/\s+/).includes("invisible"),
+    );
+
+  it("names both columns and says which one is on screen", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    // Stable names rather than one control whose label changes: a voice-control
+    // user targets a control BY name, and the pair states where the user is as
+    // well as where they can go. The state is `aria-pressed` as well as the
+    // accent border, because no control here says which of two things is chosen
+    // in colour alone.
+    expect(pagerButton("Entry")).toHaveAttribute("aria-pressed", "true");
+    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "false");
+    expect(shownColumn()).toEqual([0]);
+  });
+
+  it("shows the other column when it is pressed with nothing in hand", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    fireEvent.click(pagerButton("Exit"));
+
+    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
+    expect(shownColumn()).toEqual([1]);
+    // Nothing was carried, so nothing was announced: the button carries its own
+    // state and `gridAnnouncements` is for what happens to a BLOCK.
+    expect(announcement()).toBe("");
+  });
+
+  it("carries the block across, and the arrived column places it", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(pagerButton("Exit"));
+
+    // The same `moveTarget` the Right arrow key dispatches, so the sentence is
+    // the one that already existed and the offer is the one the carry made.
+    expect(announcement()).toBe("Exit column, primary row, ready to place.");
+    expect(shownColumn()).toEqual([1]);
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(cell(1, 1));
+
+    expect(announcement()).toBe(
+      "Placed Take Profit order in Exit column, primary row.",
+    );
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, primary row, Take Profit",
+    );
+  });
+
+  it("follows the carry when the arrow keys move it across", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    const palette = screen.getByRole("button", { name: "Add Take Profit order" });
+    tap(palette);
+    fireEvent.keyDown(palette, { key: "ArrowRight" });
+
+    // The target moved, so the viewport did: a highlighted cell the user cannot
+    // see is the thing this pairing exists to prevent.
+    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("opens on the column the carry's own offer starts in", () => {
+    // One block in the Entry primary cell, so the only cells a conditional
+    // order may take are that block's diagonals - both in the Exit column.
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([1]);
+  });
+
+  it("stays where it is when the carry has nothing that way, and says so", () => {
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(shownColumn()).toEqual([1]);
+
+    fireEvent.click(pagerButton("Entry"));
+
+    // Exactly what the Left arrow key does from here, because it IS what the
+    // Left arrow key does. Moving the viewport anyway would leave the carry's
+    // one target off screen, and the button would be claiming a column the user
+    // is not on.
+    expect(announcement()).toBe("No cell available in that direction.");
+    expect(shownColumn()).toEqual([1]);
+    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 describe("GridArea, a bulk cell holding two order families", () => {
   it("signs the announced value the way the price and the visible label do", () => {
     const { stopLoss } = renderMixedCell(25, 7);

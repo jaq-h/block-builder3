@@ -149,6 +149,21 @@ export const resolveDropCell = (
  * Coordinates rather than `elementFromPoint`: a dragged block holds pointer
  * capture, so the event target is the block itself for the whole drag, and the
  * ghost on the cursor would be under the point in any case.
+ *
+ * **A cell the user cannot see is not a candidate.** Below `sm` the two grid
+ * columns are still side by side, with the panel showing one of them at a time
+ * through a paged viewport (`columnsWrapper`), and the off-screen column keeps
+ * a box - that is what `visibility: hidden` buys over `display: none`, and it
+ * is what keeps the columns beside each other. Its cells therefore still report
+ * a rect, immediately to the right of the viewport's own edge, and a tile
+ * dragged against that edge overlaps them: measured at a 390px viewport a
+ * release at the far right put 30px of the tile over an Exit cell against 4px
+ * over the Entry cell it was drawn on, so the greatest-overlap rule placed the
+ * order into a column that was not on screen, with no highlight to warn of it -
+ * the highlight is computed from this same list, so it was off screen too.
+ *
+ * `visibility` is inherited, so one computed read per cell answers it for the
+ * whole column without this module knowing anything about how the panel pages.
  */
 export const cellBoxesFromDom = (): CellBox[] => {
   const cells: CellBox[] = [];
@@ -158,6 +173,7 @@ export const cellBoxesFromDom = (): CellBox[] => {
     const col = Number.parseInt(element.getAttribute("data-col") ?? "", 10);
     const row = Number.parseInt(element.getAttribute("data-row") ?? "", 10);
     if (Number.isNaN(col) || Number.isNaN(row)) continue;
+    if (getComputedStyle(element).visibility !== "visible") continue;
     const { left, top, right, bottom } = element.getBoundingClientRect();
     cells.push({ cell: { col, row }, box: { left, top, right, bottom } });
   }

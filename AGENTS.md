@@ -38,7 +38,10 @@ SVG imports work in tests for the same reason.
   (jsdom) for the split.
 - Globals are off. Import `describe`/`it`/`expect` from `vitest` explicitly.
 - `src/test/setup.ts` registers the jest-dom matchers, unmounts React trees after
-  each test, and replaces `fetch` for the whole suite: Kraken's `AssetPairs` request is
+  each test, supplies a no-op `ResizeObserver` (jsdom ships none, and a component
+  that constructs one throws on mount rather than degrading - a faithful
+  implementation would fire exactly as often in a document that is never laid
+  out, which is never), and replaces `fetch` for the whole suite: Kraken's `AssetPairs` request is
   answered from `marketFixtures.ts` and every other URL throws, so no test reaches the
   network. It is the mount that is the trap rather than any one file - anything rendering
   `MarketProvider` fetches - so a test needing its own response stubs `fetch` itself.
@@ -203,7 +206,7 @@ credentials.
 
 ## Interaction: pointer, keyboard and touch
 
-The README's **Interaction model** section is authoritative. Thirteen things bite in ordinary work:
+The README's **Interaction model** section is authoritative. Fourteen things bite in ordinary work:
 
 - **Never add a `window` *mouse* listener to drive a drag.** The gesture layer is
   `usePointerGesture`, on Pointer Events. Mouse events are also suppressed during a drag,
@@ -309,6 +312,25 @@ The README's **Interaction model** section is authoritative. Thirteen things bit
   design. Do not "fix" either into the other, and do not read one sentence as a
   regression of the other. `gridReplacement.dom.test.tsx` pins both halves per
   control, under "a pointer press on %s" and "a keyboard press on %s".
+- **The column pager moves the CARRY'S TARGET, and the viewport follows it - not
+  the other way round.** Below `sm` the panel shows one grid column at a time
+  (see **Layout and the CSS cascade**), and `ColumnPager` is how the user gets to
+  the other one. Carrying nothing, its two buttons just move the viewport.
+  Carrying a block, a press dispatches the very same `moveTarget` the Left and
+  Right arrow keys dispatch, and `GridArea`'s effect on `carrying.target.col`
+  moves the viewport to wherever the target ended up. **The target and the column
+  on screen are one fact with one owner**, because the alternative is a
+  highlighted cell read out as `aria-current` in a column the user cannot see -
+  the mirror of the stale offer the `gridReplaced` transition exists to withdraw.
+  Two consequences fall out of that rather than being written anywhere, and
+  neither is a bug: a pick-up whose only legal cells are in the other column
+  opens the pager there, and a press the carry refuses ("No cell available in
+  that direction.") leaves the pager where it is, exactly as the arrow key does,
+  so the button never claims a column the user is not on. **Do not give the pager
+  a move of its own, and do not end a carry on it**: paging does not touch the
+  grid, so nothing about the carry has gone stale. `GridArea.dom.test.tsx` pins
+  all of it under "the column pager".
+
 - **A click outside the placement surface puts down whatever is in hand**, by emptying that
   register. The surface is the element `GridArea` draws - the palette a block is picked up
   from and the cells it can be put down in - and it is chosen by that element rather than by a
@@ -547,39 +569,82 @@ axis column has to remain `sliderArea`'s DIRECT child, so an extra wrapper in
 `GridCell` or `ReadOnlyGridCell` re-collapses the axis with both class lists
 untouched.
 
-**The assembly grid's three lanes stack when the panel is too narrow to draw
-them, and the row they are in has a derived minimum width.** The lanes are the
-order palette, the Entry column and the Exit column, each of the latter two
-carrying `min-w-[220px]` because that is where a cell still fits its own price
-chip - the chip is laid out at `calc(50% + 25px)` from the axis centre and is
-about 66px wide at a BTC price, so a 202px cell put `$58,322.4` at x 247..305.5
-against a cell edge at 323, 17.5px of slack. **The row's min-content width is
-542px: the palette's 90px min-width plus those two 220px columns plus two 6px
-gaps.** That floor is owned by the palette's `sm:min-w-22.5`, the constant this
-change moved behind a breakpoint, and not by its `sm:w-27.5` - 110px is the
-palette's PREFERRED width, and it shrinks 20px below it when the row cannot fit.
-Below `lg` the panel is the viewport less the shell's 32px of padding, so the
-row stops fitting at a 574px viewport, and it used to be drawn at that width
-anyway: measured in Chrome at 320, 360 and 390 the lanes collapsed to that same
-min-content 542px in all three - the palette squeezed to its 90px floor - and
-the Exit column sat at x 347..549, entirely outside the viewport. **That is a
-functional defect rather than a responsive gap** - a conditional strategy needs
-both an Entry and an Exit leg, so the app's core task could not be completed on
-a phone at all. `contentRow` and `columnsWrapper` are `flex-col sm:flex-row` for
-it: below `sm` the palette lays its tiles across the panel in an `auto-fill`
-grid and the two columns are full-width bands under it, and the panel's existing
-vertical scroll carries the lot. `sm` is a floor with room rather than a fitted
-number - at a 640px viewport the panel is 608px against that 542px min-content
-row, and measured there the palette is at its preferred 110px and each column at
-243px, so nothing is at its floor. Above `lg` the panel is never narrower than
-660px, measured at 1024 where the shell's `minmax(0,700px)` track is squeezed
-hardest - so the desktop layout never reaches the stacked form and is unchanged
-to the pixel.
+**The assembly grid's lanes have a derived minimum width, and what does not fit
+is answered by moving the PALETTE and paging the COLUMNS - not by stacking
+them.** The lanes are the order palette, the Entry column and the Exit column,
+each of the latter two carrying `min-w-[220px]` because that is where a cell
+still fits its own price chip - the chip is laid out at `calc(50% + 25px)` from
+the axis centre and is about 66px wide at a BTC price, so a 202px cell put
+`$58,322.4` at x 247..305.5 against a cell edge at 323, 17.5px of slack. **The
+row's min-content width is 542px: the palette's 90px min-width plus those two
+220px columns plus two 6px gaps.** That floor is owned by the palette's
+`sm:min-w-22.5` and not by its `sm:w-27.5` - 110px is the palette's PREFERRED
+width, and it shrinks 20px below it when the row cannot fit. Below `lg` the
+panel is the viewport less the shell's 32px of padding, so the row stops fitting
+at a 574px viewport, and it was once drawn at that width anyway: measured in
+Chrome at 320, 360 and 390 the lanes collapsed to that same min-content 542px in
+all three - the palette squeezed to its 90px floor - and the Exit column sat at
+x 347..549, entirely outside the viewport. **That is a functional defect rather
+than a responsive gap** - a conditional strategy needs both an Entry and an Exit
+leg, so the app's core task could not be completed on a phone at all.
+
+**The two columns stay side by side at every width; the panel shows one of them
+at a time.** `contentRow` is `flex-col sm:flex-row`, and that direction change
+now moves the PALETTE alone - below `sm` it lays its tiles across the panel in
+an `auto-fill` grid as a band, with the columns under it. `columnsWrapper` is a
+`flex-row` always, and below `sm` it is a one-column viewport over that row:
+each column is `w-full shrink-0` (`pagedColumn`), the pair overflows to the
+right, and `ColumnPager` moves the viewport by setting `scrollLeft`. The
+palette is what moves because the arithmetic leaves no choice - with it still a
+lane the viewport would be the panel less 90px and a 6px gap, **192 / 232 / 262
+/ 286 at 320 / 360 / 390 / 414**, and 192 is under the 220px floor above; as a
+band the column gets **288 / 328 / 358 / 382**, clear by 68px at the worst of
+them. Three rules hold it together and none may be simplified away:
+
+- **`overflow-x-hidden`, never `-auto`.** This is a scroll container the user
+  cannot drive, so it draws no scrollbar on any platform - it cannot grow by a
+  classic bar's gutter, and it cannot be scrolled to a column the pager does not
+  know about, which is what gives "which column is on screen" one owner. The
+  wraps-never-scrolls rule above governs *chrome* and these are content lanes,
+  so it does not forbid a box here; taking neither of its measured harms anyway
+  is what makes that reading safe rather than a loophole. `sm:overflow-visible`
+  puts the scroll container away entirely where both columns fit.
+- **The off-page column is `invisible sm:visible` (`hiddenColumn`), not
+  hidden.** `visibility: hidden` keeps its box, which is what keeps the columns
+  BESIDE each other - a removed box is not beside anything - while buying
+  everything `display: none` would: no tab stop, nothing in the accessibility
+  tree, no hit testing. That last one is load-bearing twice over. It stops the
+  browser scrolling the viewport to a focused block the pager did not put there
+  and leaving the control claiming a column the user is not on; and
+  `cellBoxesFromDom` reads the same computed `visibility` so an off-screen cell
+  is not a drop candidate. Without that, measured at 390, a release at the far
+  right edge put **30px of the dragged tile over an Exit cell against 4px over
+  the Entry cell it was drawn on**, so greatest-overlap placed the order into a
+  column that was not on screen, with no highlight to warn of it - the highlight
+  comes from the same list, so it was off screen too. That is also the reason
+  there is **no peek**: a sliver of the next column is a real drop target.
+- **`columnPagerRow` carries `px-2`, and it is not decoration.** The grid pane
+  has no horizontal padding, so a lane is flush with the panel's content edge -
+  and the panel clips there. Every lane's own focusable children are inset
+  within it, so nothing had been focusable at that edge before; a `flex-1`
+  button in a flush row is. Measured at 390 with the Exit button focused, its
+  box ended at x 374 against a clip at 374 and the ring's whole right segment
+  (2px outline at a 2px offset, x 376..378) was drawn nowhere.
+
+`sm` is a floor with room rather than a fitted number - at a 640px viewport the
+panel is 608px against that 542px min-content row, and measured there the
+palette is at its preferred 110px and each column at 243px, so nothing is at its
+floor. Above `lg` the panel is never narrower than 660px, measured at 1024 where
+the shell's `minmax(0,700px)` track is squeezed hardest. **Desktop is unchanged
+to the pixel**: swept at 640, 768, 1024, 1280 and 1440 against the commit before
+the pager, every rect is identical and the app container's row template is still
+a single `900px` track at 1024 and up. The pager itself is `sm:hidden`, so above
+`sm` it is not a flex item of `contentRow` at all rather than a zero-width one.
 `utilityRow` wraps for the same reason: Clear All and Reverse come to 219px
 beside a 203px Execute Trade against 326px of bar at 390, and unwrapped that
 button was drawn at x 267.5..470.8 with the panel's `overflow-hidden` clipping
 its last 80.8px, so the strategy could not be submitted. The Active Orders panel
-draws a card list at every width and has no lane row to stack; its
+draws a card list at every width and has no lane row to page; its
 `ActiveOrders.styles.ts` still exports a `columnClass`, a `columnsWrapper` and a
 `contentWrapper` carrying the same rigid geometry, but nothing imports any of
 the three - they are dead, not a second copy of this rule.
@@ -602,38 +667,44 @@ which is 56px and inside the floor. Only at 320px does it exceed 64, and there n
 two panels share a screen. The assembly and Active Orders bars take
 `panelTitleBar` unchanged. A new panel takes `panelTitleBar`, not this.
 
-**Known gap: below `sm` a pointer DRAG reaches only the cells already on
-screen, because nothing scrolls during a gesture.** `dropTarget.ts` hit-tests
-the dragged block's tile against each cell's viewport rect, the block follows a
-pointer that cannot leave the viewport, and there is no autoscroll anywhere in
-the drag path - so a cell off screen when the gesture starts cannot be dropped
-into. Stacked, the grid is taller than a phone: measured at 390x844 with a Limit
-placed, the page is 2020px and, with the palette in view at y 196..403, only the
-Entry upper conditional (y 459..648) and Entry primary (y 664..852) cells are
-reachable - **2 of 6**, with every Exit cell at y 1122..1719. Side by side on
-6067cf5 all six were reachable at the same viewport, though the Exit column was
-only reachable through the 43px strip of it inside the screen (x 347..549
-against a 390px viewport) with the rest clipped, which is the defect #30 fixed.
-So this is narrower reach by drag traded for a column that can be seen and
-submitted at all, not a path that used to work cleanly. **The command model is
-unaffected and reaches every cell at every width**: tap or click to pick up,
-scroll, tap to place - verified at 390 placing a Take Profit into the Exit
-column, which announced "Placed Take Profit order in Exit column, upper
-conditional row." The carry survives the scroll because its target is the cell
-that was tapped rather than a viewport position. What is missing is that a drag
-towards an off-screen cell silently does nothing and nothing tells the user to
-tap instead. Closing it properly means autoscrolling the scrollport under the
-gesture, which is inside the layer this file guards most heavily: the scroller
-differs by breakpoint (the document below `lg`, `contentWrapper` above it), the
-rects `dropTarget.ts` reads move under a running scroll so the highlight and the
-drop must be recomputed per scroll frame rather than per pointer move, and all
-six of `usePointerGesture`'s exits have to keep holding while it runs. Shortening
-the stacked grid is a different lever on the same symptom and does not close it
-either - four of the six cells are disabled conditional rows drawing nothing at
-all while each still claims `CELL_MIN_HEIGHT`, about 750px of the 2020 at 390,
-and even without them the Exit primary is below the fold from the palette.
-Tracked outside this repository; what is recorded here is the measurement and
-the fact that the keyboard and tap paths are whole.
+**A pointer drag still reaches only what is on screen, and the pager is what
+makes that enough.** `dropTarget.ts` hit-tests the dragged block's tile against
+each cell's viewport rect, the block follows a pointer that cannot leave the
+viewport, and there is no autoscroll anywhere in the drag path - so a cell off
+screen when the gesture starts cannot be dropped into. That has not changed, and
+it is why the *reach* is a property of the layout rather than of the drag.
+
+Stacked, the grid was taller than a phone and the drag reached **2 of 6** cells:
+measured at 390x844 with a Limit placed, the page was 2020px and, with the
+palette in view at y 196..403, only the Entry upper conditional (y 459..648) and
+Entry primary (y 664..852) could be dropped into, with every Exit cell at
+y 1122..1719. Paged, the page is **1201px** at the same viewport and the palette
+sits at y 245..364 above a single column whose three cells are at y 501..690,
+706..894 and 910..1099 - so one vertical scroll puts the palette and all three
+in view together, and the other column's three are the same three after one
+press of the pager. **6 of 6**, and verified rather than derived: at 390, paging
+to Exit and dragging a Limit from the palette into it announced "Placed Limit
+order in Exit column, primary row." At 320 the figures are a taller palette band
+(y 237..510) over cells at y 608..797, 813..1001 and 1017..1206 in a 1308px
+page, and the same holds.
+
+**The command model was always whole and still is**: tap or click to pick up,
+page or scroll, tap to place. Its carry survives both, for the same reason -
+the carry's target is a cell rather than a viewport position, and paging does
+not touch the grid, so the `gridReplaced` transition never fires.
+
+What remains, and it is smaller than the gap it replaces: a drag towards a cell
+that is off screen *vertically* still does nothing silently, and nothing tells
+the user to scroll or tap instead. Closing that properly still means
+autoscrolling the scrollport under the gesture, which is inside the layer this
+file guards most heavily: the scroller differs by breakpoint (the document below
+`lg`, `contentWrapper` above it), the rects `dropTarget.ts` reads move under a
+running scroll so the highlight and the drop must be recomputed per scroll frame
+rather than per pointer move, and all six of `usePointerGesture`'s exits have to
+keep holding while it runs. Note that the horizontal half of it is NOT such a
+case and must not be answered that way: the off-page column is `invisible`, so
+its cells are not drop candidates at all and a drag towards them is refused
+rather than mis-resolved. Tracked outside this repository.
 
 **Known gap: the assembly panel's pattern buttons overflow their header rail
 at narrow widths.** `patternSelectorRow` is `cn(panelHeaderBar, "gap-2")`, and

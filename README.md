@@ -636,6 +636,34 @@ a reducer cannot supply: which outcome is reported to the announcer at each step
 focus lands afterwards. It chooses no wording of its own; see **Announcements have one
 owner** below.
 
+**One column at a time on a phone, and the carry comes with you.** Below the `sm` breakpoint
+the assembly panel cannot draw both grid columns at once - two `min-w-[220px]` columns and a
+gap need 446px against a 288px panel at a 320px viewport - so the columns stay side by side
+and the panel shows one of them through a viewport that `ColumnPager` moves. The control is
+two buttons naming the columns, `Entry` and `Exit`, each carrying `aria-pressed` and a tick
+in a slot both reserve, so which column is on screen is never said in colour alone. Stable
+names rather than one button whose label changes: a voice-control user targets a control by
+name, and the pair says where you are as well as where you can go.
+
+It is one mechanism rather than two. **Carrying a block, a press dispatches the same
+`moveTarget` the Left and Right arrow keys dispatch**, and the viewport follows the carry's
+target - so the cells a carry may reach, and the sentence it speaks on arriving, are the ones
+that already existed. A carry therefore survives the move and can be placed in the column it
+arrives at: paging changes no cell in the grid, so nothing about the carry has gone stale.
+Two things follow without being written anywhere. A pick-up whose only legal cells are in the
+other column opens the pager there. And a press the carry refuses - "No cell available in
+that direction." - leaves the pager where it is, exactly as the arrow key does, so the button
+never claims a column the user is not on.
+
+The column that is not on screen is held by `visibility: hidden` rather than removed. It
+keeps its box, which is what keeps the two columns beside each other, while staying out of
+the tab order, out of the accessibility tree and out of hit testing - and `dropTarget.ts`
+reads that same fact, so a cell the user cannot see is never a drop candidate. That is also
+why the panel shows a whole column and not a sliver of the next: a drop is resolved by
+greatest overlap of the dragged tile, so a peeking cell would steal releases aimed at the
+column in view. Above `sm` both columns are drawn, the viewport stops being a scroll
+container, and the pager is not rendered at all.
+
 **What moves between cells, and what does not.** A **placed block never changes cells** -
 every block, by every input method, with no per-type carve-out. That is captain decision D9,
 asked directly and answered "every block": a cell owns the scale its blocks are priced on,
@@ -970,7 +998,7 @@ src/
 │   │       ├── GridCell.tsx       # Interactive grid cell (Strategy Builder)
 │   │       ├── GridCell.styles.ts # Grid cell CVA styling
 │   │       ├── ReadOnlyGridCell.tsx # Read-only grid cell (Active Orders)
-│   │       ├── ProviderColumn.tsx # Order-type palette - a lane, a band when stacked
+│   │       ├── ProviderColumn.tsx # Order-type palette - a lane, a band below `sm`
 │   │       └── index.ts          # Barrel export
 │   │
 │   └── widgets/
@@ -990,6 +1018,7 @@ src/
 │       │   └── components/        # Extracted sub-components
 │       │       ├── GridArea.tsx        # Grid rendering & cell interaction
 │       │       ├── ExecuteTradePanel.tsx # Trade submission UI
+│       │       ├── ColumnPager.tsx     # Which grid column is on screen below `sm`
 │       │       ├── PatternSelector.tsx # Order pattern presets
 │       │       ├── UtilityButtons.tsx  # Clear / reset controls
 │       │       ├── DebugPanel.tsx      # Debug state inspector

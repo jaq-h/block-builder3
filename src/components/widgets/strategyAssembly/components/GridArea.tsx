@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FC,
@@ -44,7 +45,9 @@ import {
   stopDragOverlay,
 } from "../../../common/dragOverlayStore";
 import { releaseBlockInHand } from "../../../../hooks/blockInHand";
+import { cn } from "../../../../lib/utils";
 import ProviderColumn from "../../../common/grid/ProviderColumn";
+import ColumnPager from "./ColumnPager";
 import GridCell from "../../../common/grid/GridCell";
 import LiveAnnouncer from "../../../common/LiveAnnouncer";
 import { BLOCK_INSTRUCTIONS_ID } from "../../../blocks/block";
@@ -65,6 +68,8 @@ import {
   columnHeaderText,
   gridPane,
   cellLockedNote,
+  pagedColumn,
+  hiddenColumn,
 } from "../strategyAssembly.styles";
 
 interface GridAreaProps {
@@ -422,6 +427,84 @@ const GridArea: FC<GridAreaProps> = ({
   });
 
   const carryingProviderType = command.carrying?.source.type ?? null;
+
+  // ─── The paged column viewport ───────────────────────────────────────
+  //
+  // Below `sm` the panel cannot draw both grid columns at once - two
+  // `min-w-[220px]` columns and a 6px gap need 446px against a 288px panel at
+  // 320 - so `columnsWrapper` is a one-column viewport over the pair and this
+  // is which of them it shows. `ColumnPager` is the control; above `sm` the
+  // wrapper stops being a scroll container at all and this state stops meaning
+  // anything, which is why it is expressed as a scroll position rather than as
+  // a rule about what to render.
+  const [visibleColumn, setVisibleColumn] = useState(0);
+  const columnsViewportRef = useRef<HTMLDivElement>(null);
+
+  // **The carry's target and the column on screen are one fact.** A carry
+  // highlights a cell and reads it out as `aria-current`, so a target in the
+  // column the viewport is not showing is an invitation the user cannot see -
+  // the mirror of the stale highlight the `gridReplaced` transition exists to
+  // stop. The target is the owner and the viewport follows it: the arrow keys
+  // move the target between columns, and `ColumnPager` dispatches that very
+  // same `moveTarget` rather than moving the viewport behind the carry's back.
+  //
+  // Keyed on the target's column alone, so nudging a carried block's target up
+  // and down a column does not re-run it, and so a page the user asked for
+  // while carrying nothing is not undone by the next render.
+  const carryTargetColumn = command.carrying?.target.col ?? null;
+  useEffect(() => {
+    if (carryTargetColumn === null) return;
+    setVisibleColumn(carryTargetColumn);
+  }, [carryTargetColumn]);
+
+  // The state above, applied to the one thing that draws it.
+  //
+  // A layout effect, and re-run whenever the viewport is resized: crossing `sm`
+  // in either direction changes the box from a scroll container to a plain row
+  // and back, and a `scrollLeft` set while it was one is silently dropped when
+  // it stops being one. Reading the columns' own boxes rather than multiplying
+  // a page width by an index keeps the gap between them out of the arithmetic.
+  useLayoutEffect(() => {
+    const viewport = columnsViewportRef.current;
+    if (!viewport) return;
+
+    const showColumn = () => {
+      const target = viewport.children[visibleColumn];
+      if (!target) return;
+      const offset =
+        target.getBoundingClientRect().left -
+        viewport.getBoundingClientRect().left;
+      // `scrollLeft` and not `scrollIntoView`: this box is the only thing that
+      // may move. `scrollIntoView` walks up the ancestors too, so it would drag
+      // the panel's vertical scroller - and the page under it - to wherever the
+      // column happened to be, in answer to a press about columns.
+      if (offset !== 0) viewport.scrollLeft += offset;
+    };
+
+    showColumn();
+    const observer = new ResizeObserver(showColumn);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [visibleColumn]);
+
+  /**
+   * The pager was pressed.
+   *
+   * Carrying nothing, this is a view change and nothing else. Carrying a block
+   * it is `moveTarget`, the same action the Left and Right arrow keys dispatch:
+   * one mechanism for moving between columns, so the sentence the user hears
+   * and the cells a carry may reach are the ones that were already there. The
+   * viewport follows the target through the effect above, so a step the carry
+   * refuses ("no target that way") leaves the pager where it is and says why,
+   * exactly as the arrow key does.
+   */
+  const handleShowColumn = (col: number) => {
+    if (command.carrying) {
+      command.moveTarget(col - command.carrying.target.col, 0);
+      return;
+    }
+    setVisibleColumn(col);
+  };
 
   // ─── The cursor half of a mouse carry ────────────────────────────────
   //
@@ -998,8 +1081,16 @@ const GridArea: FC<GridAreaProps> = ({
           onFocusHandled={command.clearFocusRequest}
         />
 
+        {/* The control that moves the user to the other column, and the answer
+            to a panel too narrow to draw both. `sm:hidden`, so above `sm` it is
+            not a flex item of the row at all. */}
+        <ColumnPager
+          visibleColumn={visibleColumn}
+          onShowColumn={handleShowColumn}
+        />
+
         {/* Grid Columns */}
-        <div className={columnsWrapper}>
+        <div ref={columnsViewportRef} className={columnsWrapper}>
           {grid.map((gridColumn, colIndex) => {
             const headerTint =
               colIndex === 0
@@ -1013,7 +1104,14 @@ const GridArea: FC<GridAreaProps> = ({
             const colHeaderProps = getColumnHeaderProps(headerTint);
 
             return (
-              <div key={colIndex} className={column}>
+              <div
+                key={colIndex}
+                className={cn(
+                  column,
+                  pagedColumn,
+                  colIndex !== visibleColumn && hiddenColumn,
+                )}
+              >
                 <div
                   className={colHeaderProps.className}
                   style={colHeaderProps.style}

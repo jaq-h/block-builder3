@@ -38,14 +38,13 @@ export const gridPane = "flex-1 min-h-0 flex flex-col";
 export const cellLockedNote =
   "shrink-0 mt-1.5 px-3 py-2 rounded-lg border border-dashed border-accent-outline bg-accent-bg-subtle-light text-[11px] leading-snug text-accent-primary";
 
-// The grid pane's three lanes - the order palette, the Entry column and the
-// Exit column - side by side while the panel is wide enough to draw all three,
-// stacked into full-width bands when it is not.
+// The grid pane's lanes - the order palette, then the Entry and Exit columns -
+// side by side while the panel is wide enough to draw all three, with the
+// palette moving above the columns when it is not.
 //
 // At least fills the viewport above, and grows past it when the grid is taller
 // than the space available - which is what turns the clipping into a scroll.
-// That scroll is VERTICAL only, and deliberately so; the horizontal half of it
-// is what the wrap below exists to remove.
+// That scroll is VERTICAL only, and deliberately so.
 //
 // **The row has a min-content width, and it is derived rather than chosen.**
 // It is 542px: the palette's 90px min-width (`ProviderColumn`'s
@@ -53,32 +52,57 @@ export const cellLockedNote =
 // its price chip inside the cell, twice, plus two 6px gaps. That floor is owned
 // by `sm:min-w-22.5` and NOT by the palette's `sm:w-27.5`: 110px is what the
 // palette prefers, and it gives up 20px of it before the row stops shrinking.
-// 542px is therefore the width the lanes collapse to when the panel cannot fit
-// them. Below `lg` the panel is the viewport less the shell's 32px of padding,
-// so the row stops fitting at a 574px viewport, and it used to be drawn at that
-// width anyway. Measured in Chrome at 320, 360 and 390 the lanes stood at that
+// Below `lg` the panel is the viewport less the shell's 32px of padding, so the
+// row stops fitting at a 574px viewport, and it used to be drawn at that width
+// anyway. Measured in Chrome at 320, 360 and 390 the lanes stood at that
 // collapsed 542px - the palette squeezed to 90px - and the Exit column sat at
 // x 347..549 in every one of them, entirely outside the viewport, with the
 // panel's own `overflow-auto` the only way to reach it and no visible scrollbar
 // to say so. A conditional strategy needs both an Entry and an Exit leg, so the
 // app's core task could not be completed on a phone at all.
 //
-// It wraps rather than scrolls, which is this project's standing answer for
-// chrome that will not fit; see AGENTS.md, "Layout and the CSS cascade".
-// `sm` is where it switches, and it is a floor with room rather than a fitted
-// number: at a 640px viewport the panel measures 608px against that 542px
-// min-content row, and measured there the palette sits at its preferred 110px
-// with each column at 243px, so nothing is at its floor. 640 is also the first
-// standard breakpoint above the 574px the row actually fails at. Above `lg` the
-// panel is never narrower than 660px
-// (measured at 1024, where the shell's `minmax(0,700px)` track is squeezed
-// hardest), so the desktop layout never reaches the stacked form.
+// **Only the palette moves.** The two columns stay beside each other at every
+// width and `columnsWrapper` shows one of them at a time; this direction change
+// is what gives that viewport the panel's whole width to do it in. That matters
+// at the narrowest end and nowhere else: with the palette still a lane, the
+// viewport would be the panel less the palette's 90px floor and a 6px gap -
+// 192 / 232 / 262 / 286 at 320 / 360 / 390 / 414 - and 192px is under the 220px
+// a column needs to keep its own price chip. As a band above, the column gets
+// 288 / 328 / 358 / 382, clear of that floor by 68px at the worst of them.
+//
+// `sm` is where the palette returns to the lane, and it is a floor with room
+// rather than a fitted number: at a 640px viewport the panel measures 608px
+// against that 542px min-content row, and measured there the palette sits at
+// its preferred 110px with each column at 243px, so nothing is at its floor.
+// 640 is also the first standard breakpoint above the 574px the row actually
+// fails at. Above `lg` the panel is never narrower than 660px (measured at
+// 1024, where the shell's `minmax(0,700px)` track is squeezed hardest), so the
+// desktop layout never reaches the banded form.
 export const contentRow = "flex flex-col sm:flex-row min-h-full gap-1.5";
 
-// Stacked, the two columns are bands in the flow and take their height from
-// their cells, so no `flex-1` - a `0%` basis in a column direction would fight
-// the content for a height that nothing above has fixed.
-export const columnsWrapper = "flex flex-col sm:flex-row sm:flex-1 gap-1.5";
+// The Entry and Exit columns, side by side at EVERY width, and the box that
+// decides how many of them the panel shows at once.
+//
+// Above `sm` it is the row it has always been and both columns are drawn in it.
+// Below `sm` two of them will not fit - 446px of column against a 288px panel
+// at 320 - so this becomes a one-column viewport over the same row: the columns
+// are each the viewport's own width (`pagedColumn` below), the row overflows it
+// to the right, and `ColumnPager` pages between them by setting `scrollLeft`.
+//
+// **`overflow-x-hidden` rather than `overflow-x-auto`, and that is the whole
+// difference between this and the horizontal scroller AGENTS.md rejects.** A
+// hidden overflow is a scroll container the *user* cannot drive: it draws no
+// scrollbar, so it cannot grow by a classic scrollbar's gutter on Windows, and
+// it cannot be scrolled to a position the pager does not know about. The pager
+// is the one thing that moves it, so which column is on screen has exactly one
+// owner. It is also what keeps the off-screen column from making the panel
+// itself scroll sideways.
+//
+// It stays a plain row from `sm`, where both columns fit and there is nothing
+// to page: `sm:overflow-visible` puts the scroll container away entirely, so a
+// focus ring on a block at a column's edge is drawn rather than clipped.
+export const columnsWrapper =
+  "flex flex-row overflow-x-hidden sm:overflow-visible sm:flex-1 gap-1.5";
 
 // =============================================================================
 // HEADER
@@ -139,10 +163,28 @@ export const patternDescription = "text-[9px] opacity-70 mt-0.5";
 // about 66px wide at a BTC price, against 8px of cell padding and 8px of cell
 // margin either side: measured at 390, a 202px cell put `$58,322.4` at
 // x 247..305.5 with the cell edge at 323, so 17.5px of slack. Narrower and the
-// price the user is about to trade at is clipped, which is why the stacked form
+// price the user is about to trade at is clipped, which is why the paged form
 // above gives a column the panel's whole width rather than squeezing two in.
 export const column =
   "flex flex-col min-w-[220px] w-full bg-bg-column border border-border-dimmed rounded-lg overflow-hidden p-0";
+
+// What a column is inside the paged viewport above: exactly one viewport wide,
+// and refusing to shrink so the pair overflows rather than squeezing. From `sm`
+// it gives that up and shares the row with its sibling as it always did.
+export const pagedColumn = "shrink-0 sm:shrink";
+
+// The column the pager is not showing.
+//
+// `visibility: hidden` rather than `display: none`, because the two columns
+// have to stay side by side - that is the shape being restored here - and a
+// removed box is not beside anything. It buys everything a removed box would:
+// no tab stop, nothing in the accessibility tree, and no hit testing, so the
+// browser can never scroll the viewport to a focused block the pager did not
+// put there and leave the control lying about which column is on screen.
+// `cellBoxesFromDom` reads the same fact for the drop resolver.
+//
+// From `sm` both columns are drawn, so this resolves to nothing.
+export const hiddenColumn = "invisible sm:visible";
 
 export function getColumnHeaderProps(tint?: string) {
   const className = "p-2 text-center border-b border-border-dimmed";
@@ -206,3 +248,50 @@ export const columnTints = {
     header: "rgba(200, 100, 100, 0.15)",
   },
 } as const;
+
+// =============================================================================
+// COLUMN PAGER
+// =============================================================================
+
+// The control that moves the user to the other column, and the panel's answer
+// to the width that cannot hold both. `sm:hidden` rather than a wrapper, so
+// above `sm` it is not a flex item of `contentRow` at all and the row is the
+// two-lane row it has always been, to the pixel.
+//
+// **`px-2` is what keeps the buttons' focus rings inside the pane, and it is
+// the reason this bar is not flush with the lanes above and below it.** The
+// grid pane carries no horizontal padding, so a lane is flush with the panel's
+// content edge - and the panel clips there. A lane's own focusable children are
+// inset within it (a palette tile by the palette's padding, a block by its
+// cell's margin), so nothing had ever been focusable at that edge before; a
+// `flex-1` button in a flush row is. Measured at 390 with the Exit button
+// focused, its box ended at x 374 against a clip at 374 and the ring's whole
+// right segment - `outline: 2px` at `outline-offset: 2px`, so x 376..378 - was
+// drawn nowhere, leaving the ring an open bracket. Every other control in this
+// panel sits inside a padded bar for the same reason; 8px against the 4px a
+// ring needs is that, not an alignment.
+export const columnPagerRow =
+  "sm:hidden shrink-0 flex items-stretch gap-1.5 px-2";
+
+// One button per column, sharing the width. Its selected state is drawn the way
+// `PatternSelector` draws one - an accent border, a tick in a slot reserved on
+// both buttons, and `aria-pressed` - because a control may never say which of
+// two things is chosen in colour alone.
+export const columnPagerButton = cva(
+  "flex-1 flex items-center justify-center gap-1 min-h-9 px-3 py-1.5 rounded-lg border-2 text-xs font-semibold cursor-pointer transition-[background-color,border-color] duration-200",
+  {
+    variants: {
+      isActive: {
+        true: "border-accent-outline bg-accent-bg-subtle text-text-primary",
+        false:
+          "border-border-neutral bg-neutral-bg text-text-tertiary hover:bg-neutral-bg-hover hover:border-accent-primary",
+      },
+    },
+  },
+);
+
+// The tick's slot, present on both buttons so choosing a column does not nudge
+// its label sideways. Same 11px glyph and same reserved width as the pattern
+// buttons above.
+export const columnPagerMarker =
+  "inline-flex w-3 shrink-0 items-center justify-center [&>svg]:stroke-current";

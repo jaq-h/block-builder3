@@ -66,17 +66,18 @@ const ProviderColumn: FC<ProviderColumnProps> = ({
         </span>
       </div>
       {/* Two forms of the same palette, and the panel's width decides which.
-          Below `sm` the three lanes of the grid pane are stacked bands (see
-          `contentRow`), so the palette is the full width of the panel and lays
-          its orders out across it - an auto-filling grid rather than a column
-          nine tiles tall, which would push the Entry column most of a phone
-          screen down before it started. The track floor is the 40px block tile
-          plus room for its label to wrap; `auto-fill` takes the count from the
-          width it is given rather than from a breakpoint.
+          Below `sm` the palette is a band above the grid columns rather than a
+          lane beside them (see `contentRow` for why it is the palette that
+          moves), so it is the full width of the panel and lays its orders out
+          across it - an auto-filling grid rather than a column nine tiles tall,
+          which would push the Entry column most of a phone screen down before
+          it started. The track floor is the 40px block tile plus room for its
+          label to wrap; `auto-fill` takes the count from the width it is given
+          rather than from a breakpoint.
 
           From `sm` it is the left-hand lane again, a single column of tiles
           scrolling inside whatever height the panel has left. That
-          `overflow-auto` is deliberately the wide form's alone: stacked, the
+          `overflow-auto` is deliberately the wide form's alone: as a band, the
           palette's height is its content's, so there is nothing to scroll and a
           scrollport would only clip the tiles' focus rings. */}
       <div className="flex-1 grid grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))] gap-x-1 gap-y-2 p-2 sm:flex sm:flex-col sm:items-center sm:justify-evenly sm:gap-0 sm:overflow-auto">
