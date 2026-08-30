@@ -190,26 +190,56 @@ export const patternDescription = "text-[9px] opacity-70 mt-0.5";
 // x 247..305.5 with the cell edge at 323, so 17.5px of slack. Narrower and the
 // price the user is about to trade at is clipped, which is why the paged form
 // above gives a column the panel's whole width rather than squeezing two in.
+// Width is deliberately NOT here: `pagedColumn` owns it in both forms of the
+// layout, because below `sm` it is a proportion of the paged viewport and from
+// `sm` it is a share of the row. Two width utilities on one element resolve by
+// stylesheet order rather than by the order they are written in, so one owner
+// is the only way to say which wins.
 export const column =
-  "flex flex-col min-w-[220px] w-full bg-bg-column border border-border-dimmed rounded-lg overflow-hidden p-0";
+  "flex flex-col min-w-[220px] bg-bg-column border border-border-dimmed rounded-lg overflow-hidden p-0";
 
-// What a column is inside the paged viewport above: exactly one viewport wide,
-// and refusing to shrink so the pair overflows rather than squeezing. From `sm`
-// it gives that up and shares the row with its sibling as it always did.
-export const pagedColumn = "shrink-0 sm:shrink";
+// What a column is inside the paged viewport above.
+//
+// Not the viewport's whole width any more: the captain asked for the off-page
+// column to show through by 20%, as a cue that there is more to view. So a
+// column takes the width that leaves exactly that much of its sibling on
+// screen. With `W` the viewport, `C` the column and the row's 6px gap between
+// them, `C + 6 + 0.2C = W`, hence `C = (W - 6) / 1.2` - which is the calc
+// below rather than a percentage, because the gap is a length and the peek is
+// a proportion, and folding one into the other is how the two would drift.
+//
+// It still refuses to shrink, so the pair overflows rather than squeezing, and
+// from `sm` it gives all of this up and shares the row with its sibling as it
+// always did.
+export const pagedColumn =
+  "w-[calc((100%-0.375rem)/1.2)] shrink-0 sm:w-full sm:shrink";
 
 // The column the pager is not showing.
 //
-// `visibility: hidden` rather than `display: none`, because the two columns
-// have to stay side by side - that is the shape being restored here - and a
-// removed box is not beside anything. It buys everything a removed box would:
-// no tab stop, nothing in the accessibility tree, and no hit testing, so the
-// browser can never scroll the viewport to a focused block the pager did not
-// put there and leave the control lying about which column is on screen.
-// `cellBoxesFromDom` reads the same fact for the drop resolver.
+// It is DRAWN, and drawn deliberately: 20% of it shows past the viewport's
+// edge as wayfinding (see `pagedColumn`). **Visible does not mean droppable.**
+// A peeking cell steals drops - measured at a 390px viewport, a release at the
+// far right edge put 30px of the dragged tile over an off-page Exit cell
+// against 4px over the Entry cell it was drawn on, so greatest-overlap placed
+// the order into a column that was not on screen. That measurement is the
+// reason this class exists at all.
 //
-// From `sm` both columns are drawn, so this resolves to nothing.
-export const hiddenColumn = "invisible sm:visible";
+// `pointer-events: none` is what withholds it, and it is doing three jobs at
+// once. It takes the peeking column out of hit testing, so a tap on the sliver
+// does nothing. It is INHERITED, so one computed read per cell answers it for
+// the whole column - which is how `cellBoxesFromDom` excludes those cells
+// without knowing anything about how the panel pages. And it is written by a
+// breakpoint, so it says "off page" only where paging exists; from `sm` both
+// columns are drawn and it resolves to nothing.
+//
+// What it deliberately does NOT do is hide the column, and that is the whole
+// difference from the `visibility: hidden` this replaced. A hidden element
+// cannot hold focus, so the browser dropped focus to `<body>` whenever the
+// pager hid the column the focused element lived in - the defect four rounds
+// of focus hand-offs failed to close. Nothing here becomes unfocusable, so
+// that defect is gone rather than accepted. Tab is kept out of the off-page
+// column by `tabindex`, in `GridArea`, which does not blur what it applies to.
+export const offPageColumn = "pointer-events-none sm:pointer-events-auto";
 
 export function getColumnHeaderProps(tint?: string) {
   const className = "p-2 text-center border-b border-border-dimmed";

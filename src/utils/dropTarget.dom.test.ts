@@ -79,10 +79,12 @@ describe("cellBoxesFromDom", () => {
 
   it("drops the cells of a column the pager is not showing", () => {
     const [, exit] = renderTwoColumns();
-    // What `hiddenColumn` resolves to. The class is on the COLUMN and the rule
-    // is read on the CELL, which is the whole reason this is a computed read
-    // rather than a look at the cell's own attributes.
-    exit.style.visibility = "hidden";
+    // What `offPageColumn` resolves to below `sm`. The class is on the COLUMN
+    // and the rule is read on the CELL, which is the whole reason this is a
+    // computed read rather than a look at the cell's own attributes. The column
+    // is still DRAWN - 20% of it peeks past the viewport - so visibility is
+    // exactly what this must not be keyed on.
+    exit.style.pointerEvents = "none";
 
     expect(cellBoxesFromDom().map((entry) => entry.cell)).toEqual([
       { col: 0, row: 0 },
@@ -91,8 +93,8 @@ describe("cellBoxesFromDom", () => {
 
   it("reports a cell again once its column is shown", () => {
     const [, exit] = renderTwoColumns();
-    exit.style.visibility = "hidden";
-    exit.style.visibility = "visible";
+    exit.style.pointerEvents = "none";
+    exit.style.pointerEvents = "auto";
 
     expect(cellBoxesFromDom()).toHaveLength(2);
   });

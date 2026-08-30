@@ -69,7 +69,7 @@ import {
   gridPane,
   cellLockedNote,
   pagedColumn,
-  hiddenColumn,
+  offPageColumn,
 } from "../strategyAssembly.styles";
 
 interface GridAreaProps {
@@ -458,7 +458,7 @@ const GridArea: FC<GridAreaProps> = ({
   // A layout effect, because it must commit before the browser paints. As an
   // ordinary effect it ran after the paint of the render in which the target
   // had already moved, so for one frame the OLD column was on screen while
-  // `aria-current` sat on a cell inside the column `hiddenColumn` had just
+  // `aria-current` sat on a cell inside the column `offPageColumn` had just
   // marked invisible - the very state this pairing exists to prevent, on every
   // cross-column move. The extra render is synchronous, and the scroll effect
   // below still runs after it on `visibleColumn`.
@@ -502,6 +502,56 @@ const GridArea: FC<GridAreaProps> = ({
     observer.observe(viewport);
     return () => observer.disconnect();
   }, [visibleColumn]);
+
+  // Tab does not enter the column the pager is not showing.
+  //
+  // The peeking column is DRAWN (see `offPageColumn`), so unlike the
+  // `visibility: hidden` this replaced it is focusable, and a Tab into it would
+  // make the browser scroll the viewport to a column the pager did not choose -
+  // leaving the control claiming a column the user is not on, which is the
+  // stale offer the whole paging design exists to withhold.
+  //
+  // `tabindex` and not `inert`, and the difference is the point: `inert` blurs
+  // what it is applied to, so paging away from a focused block would drop focus
+  // to `<body>` - the exact defect that four rounds of focus hand-offs failed to
+  // close, reintroduced by the cure. Setting `tabindex` to -1 on an element that
+  // already holds focus does NOT blur it; the element keeps focus and merely
+  // leaves the sequential order. So nothing here ever moves focus, and this
+  // panel still contains no code that does.
+  //
+  // Which column is off page is read from the same inherited `pointer-events`
+  // that `cellBoxesFromDom` reads, rather than from `visibleColumn` plus a
+  // breakpoint of its own: one owner for "is this column reachable", so the tab
+  // order and the drop resolver cannot come to disagree about it.
+  useLayoutEffect(() => {
+    const viewport = columnsViewportRef.current;
+    if (!viewport) return;
+
+    for (const columnElement of Array.from(viewport.children)) {
+      const offPage = getComputedStyle(columnElement).pointerEvents === "none";
+      const focusable = columnElement.querySelectorAll<HTMLElement>(
+        "a[href], button, input, select, textarea, [tabindex]",
+      );
+      for (const element of Array.from(focusable)) {
+        if (offPage) {
+          // Remember what the element asked for before this rule touched it, so
+          // restoring cannot invent a tab stop the component never wanted.
+          if (!element.hasAttribute("data-paged-tabindex")) {
+            element.setAttribute(
+              "data-paged-tabindex",
+              element.getAttribute("tabindex") ?? "",
+            );
+          }
+          element.setAttribute("tabindex", "-1");
+        } else if (element.hasAttribute("data-paged-tabindex")) {
+          const previous = element.getAttribute("data-paged-tabindex");
+          if (previous) element.setAttribute("tabindex", previous);
+          else element.removeAttribute("tabindex");
+          element.removeAttribute("data-paged-tabindex");
+        }
+      }
+    }
+  });
 
   /**
    * The pager was pressed.
@@ -1148,7 +1198,7 @@ const GridArea: FC<GridAreaProps> = ({
                 className={cn(
                   column,
                   pagedColumn,
-                  colIndex !== visibleColumn && hiddenColumn,
+                  colIndex !== visibleColumn && offPageColumn,
                 )}
               >
                 <div

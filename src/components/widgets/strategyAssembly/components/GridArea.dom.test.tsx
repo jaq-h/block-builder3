@@ -2158,31 +2158,36 @@ describe("GridArea, the column pager", () => {
       { name },
     );
 
-  /** The column element a cell belongs to: the box `hiddenColumn` is put on. */
+  /** The column element a cell belongs to: the box `offPageColumn` is on. */
   const columnOf = (col: number) => cell(col, 0).parentElement!;
 
   const shownColumn = () =>
     [0, 1].filter(
-      (col) => !columnOf(col).className.split(/\s+/).includes("invisible"),
+      (col) =>
+        !columnOf(col)
+          .className.split(/\s+/)
+          .includes("pointer-events-none"),
     );
 
   let pagingRule: HTMLStyleElement | null = null;
 
   /**
    * Put the panel into its paged form, by supplying the one declaration
-   * `hiddenColumn` resolves to below `sm`.
+   * `offPageColumn` resolves to below `sm`.
    *
    * jsdom applies no author stylesheet, so a class list alone computes to
-   * nothing and every column is `visible` - which is exactly the DESKTOP
+   * nothing and every column is reachable - which is exactly the DESKTOP
    * shape, and is why the test below that asserts focus is left alone does not
    * install this. The rule is read the way the app reads it, through
-   * `getComputedStyle().visibility`, the same fact `cellBoxesFromDom` filters
-   * drop candidates by; it is put on the class rather than on an element so it
-   * follows the pager, which is what the behaviour under test depends on.
+   * `getComputedStyle().pointerEvents`, the same fact `cellBoxesFromDom`
+   * filters drop candidates by and the same one the tab-order rule reads; it is
+   * put on the class rather than on an element so it follows the pager, which
+   * is what the behaviour under test depends on.
    */
   const pageTheColumns = () => {
     pagingRule = document.createElement("style");
-    pagingRule.textContent = ".invisible { visibility: hidden; }";
+    pagingRule.textContent =
+      ".pointer-events-none { pointer-events: none; }";
     document.head.appendChild(pagingRule);
   };
 
@@ -2460,6 +2465,64 @@ describe("GridArea, the column pager", () => {
     expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
 
     expect(document.activeElement).toBe(placed);
+  });
+
+  it("keeps focus on a block whose column pages away", () => {
+    // The whole reason the off-page column is DRAWN rather than hidden. A
+    // hidden element cannot hold focus, so paging away from a focused block
+    // dropped focus to `<body>` and left the user unable to drive or cancel a
+    // live carry - the defect four rounds of focus hand-offs failed to close.
+    // Nothing here becomes unfocusable, so nothing has to be handed anywhere.
+    //
+    // WHAT THIS CAN AND CANNOT CATCH, because a test that cannot fail reads as
+    // coverage and is worse than none. It FAILS if a focus hand-off is
+    // reintroduced anywhere in this panel, which is the regression worth
+    // guarding. It does NOT fail if `offPageColumn` goes back to hiding the
+    // column: jsdom does not drop focus from an element it computes as hidden,
+    // so the outcome here would be the same. That half is pinned where it can
+    // fail - the class guard in `strategyAssembly.layout.dom.test.tsx` asserts
+    // `offPageColumn` carries neither `invisible` nor `hidden`.
+    pageTheColumns();
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    const placed = within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    });
+    placed.focus();
+    expect(document.activeElement).toBe(placed);
+
+    fireEvent.click(pagerButton("Exit"));
+
+    expect(shownColumn()).toEqual([1]);
+    expect(document.activeElement).toBe(placed);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("takes the off-page column out of the tab order, and gives it back", () => {
+    // Drawing the column is what costs this: it stays focusable, so a Tab into
+    // it would have the browser scroll the viewport to a column the pager did
+    // not choose. `tabindex` rather than `inert`, because `inert` blurs what it
+    // is applied to and would reintroduce the very defect above.
+    pageTheColumns();
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    render(<Harness initialGrid={grid} />);
+
+    const placed = within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    });
+    expect(placed).not.toHaveAttribute("tabindex", "-1");
+
+    fireEvent.click(pagerButton("Exit"));
+    expect(placed).toHaveAttribute("tabindex", "-1");
+
+    // Paging back restores what the component asked for rather than inventing
+    // a tab stop it never wanted, and leaves no bookkeeping behind.
+    fireEvent.click(pagerButton("Entry"));
+    expect(placed).not.toHaveAttribute("tabindex", "-1");
+    expect(placed).not.toHaveAttribute("data-paged-tabindex");
   });
 
   it("says nothing when pressed for the column the carry is already on", () => {

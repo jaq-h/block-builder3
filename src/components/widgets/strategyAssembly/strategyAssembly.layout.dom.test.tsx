@@ -9,7 +9,7 @@ import {
   columnPagerRow,
   columnsWrapper,
   contentRow,
-  hiddenColumn,
+  offPageColumn,
   pagedColumn,
   utilityRow,
 } from "./strategyAssembly.styles";
@@ -125,16 +125,25 @@ describe("the assembly grid's lanes", () => {
     expect(classes).toContain("sm:shrink");
   });
 
-  it("takes the off-page column out of reach without taking away its box", () => {
-    const classes = hiddenColumn.split(/\s+/);
+  it("takes the off-page column out of reach while still drawing it", () => {
+    const classes = offPageColumn.split(/\s+/);
 
-    // `invisible` rather than `hidden`: the columns have to stay beside each
-    // other, and a removed box is not beside anything. It still buys no tab
-    // stop, nothing in the accessibility tree and no hit testing, so the
-    // browser can never scroll the viewport to a focused block the pager did
-    // not put there. `cellBoxesFromDom` reads the same fact.
-    expect(classes).toContain("invisible");
-    expect(classes).toContain("sm:visible");
+    // The peeking column is DRAWN - 20% of it shows past the viewport's edge as
+    // a cue that there is more to view - so "can the user see it" and "may a
+    // drop land in it" are no longer one fact, and this is the one that answers
+    // the second. `pointer-events: none` takes it out of hit testing, is
+    // inherited so one computed read per cell covers the whole column, and is
+    // written by a breakpoint so it says nothing above `sm`, where both columns
+    // are drawn and reachable. `cellBoxesFromDom` reads exactly this.
+    expect(classes).toContain("pointer-events-none");
+    expect(classes).toContain("sm:pointer-events-auto");
+
+    // It must NOT hide the column. A hidden element cannot hold focus, so the
+    // pager would drop focus to `<body>` whenever it hid the column the focused
+    // element lived in - the defect the focus hand-offs failed to close, which
+    // drawing the column is what removes.
+    expect(classes).not.toContain("invisible");
+    expect(classes).not.toContain("hidden");
   });
 
   it("insets the pager so its focus rings are inside the pane that clips them", () => {
