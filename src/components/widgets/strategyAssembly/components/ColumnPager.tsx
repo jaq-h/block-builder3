@@ -76,6 +76,16 @@ interface ColumnPagerProps {
  * exists there is nothing to cross to. Keyboard users cross with the arrows;
  * pointer users tap here and then tap a cell.
  *
+ * **It is the CONTROL that is out of reach mid-carry, never the ABILITY, and
+ * the distinction is what settles this against the requirement that the pager
+ * be reachable by pointer, keyboard and screen reader.** Carrying nothing it
+ * is an ordinary tab stop and that clause holds literally. Carrying, a
+ * keyboard or screen-reader user still reaches the other column and still
+ * places the order there - the arrows move the carry's target and the viewport
+ * follows it - so what the requirement is about is fully available; only this
+ * particular button is not the way they do it. A reader checking the code
+ * against that sentence should read this paragraph, not file it again.
+ *
  * **Not focusable is not not operable, and the three limits on it are not
  * optional.** The buttons stay fully clickable, keep their 24px WCAG 2.2 SC
  * 2.5.8 target and stay in the accessibility tree - `disabled` would stop the
@@ -141,11 +151,21 @@ interface ColumnPagerProps {
  * harmed by lost focus are the ones who cannot hit it. **Do not answer this
  * with a focus hand-off.**
  *
- * **Assistive technology can put focus on a `tabindex="-1"` element
- * directly**, so an AT user can still land here mid-carry. They are not
- * stranded - Shift+Tab leaves, and the carry is still live when they get back -
- * but the control is not literally unreachable, and the rule above should not
- * be read as claiming it is.
+ * **Two ways focus can be on a button here mid-carry anyway**, so "a keyboard
+ * carrier cannot land on the pager" carries its qualifier rather than being
+ * overstated. Assistive technology can put focus on a `tabindex="-1"` element
+ * directly. And `tabIndex` going to -1 on an element that ALREADY HOLDS focus
+ * does not blur it - the element keeps focus and merely leaves the sequential
+ * order - so focus that was on a button when the carry began stays there. That
+ * second one needs MIXED input to reach: Tab to the pager while carrying
+ * nothing, when it is legitimately focusable, then start a carry by pointer
+ * from the palette. Keyboard-only cannot get there, because starting a carry
+ * means activating a palette tile, which moves focus to that tile.
+ *
+ * Both are accepted on the same terms as the pointer-press case above and the
+ * hidden-column case below: not stranding, and pointer-initiated. Shift+Tab or
+ * Tab leaves, the carry is still live when they get back, and tapping a cell
+ * places the order.
  */
 const ColumnPager: FC<ColumnPagerProps> = ({
   visibleColumn,

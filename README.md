@@ -685,11 +685,17 @@ leave the pager inert to touch for the whole of every carry. So a pointer press 
 button, and that is accepted for the same reason the limits below are.
 
 A keyboard carrier never needs the pager, which is why this costs them nothing: the arrow keys
-already step the carry's target into the other column whenever a legal cell exists there.
+already step the carry's target into the other column whenever a legal cell exists there, and
+the viewport follows. It is the control that is out of reach mid-carry, never the ability -
+reaching the other column while holding a block, and placing it there, stays fully available
+from the keyboard.
 
-Two limits are accepted rather than hidden. Assistive technology can still put focus on the
+Three limits are accepted rather than hidden. Assistive technology can still put focus on the
 buttons directly, and a user who does is not stranded - Shift+Tab leaves and the carry is
-still live. And focus that is already *inside* the column a press hides is still lost: tap a
+still live. Taking a button out of the tab order does not blur it if it already holds focus,
+so focus that was on the pager when a carry began stays there; reaching that needs mixed
+input, since starting a carry from the keyboard moves focus to the palette tile. And focus
+that is already *inside* the column a press hides is still lost: tap a
 placed block, then page away from it, and the browser drops focus to the document body. There
 is no remedy for that which does not move focus, and moving focus is what this design removed
 after it produced a desktop regression and a re-render loop; the carry itself survives, Tab

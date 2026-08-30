@@ -2368,11 +2368,13 @@ describe("GridArea, the column pager", () => {
     // and performs no focus fixup when a subtree is hidden, so every focus
     // outcome of this press - the one the code produces and the one a
     // regression would produce - is identical in this environment. An
-    // assertion that cannot fail reads as coverage while pinning nothing. The
-    // load-bearing evidence lives where it can actually fail:
-    // `ColumnPager.dom.test.tsx` pins the prevented `pointerdown` default and
-    // the tab order in both states, which is the whole of what suppresses the
-    // focus a press would otherwise take.
+    // assertion that cannot fail reads as coverage while pinning nothing.
+    //
+    // Nor is there a focus contract here to pin. Nothing suppresses the focus
+    // a press gives the button, and a press taking it is accepted rather than
+    // prevented; `ColumnPager`'s docblock carries why. What that control does
+    // guarantee is the tab-order gate, and `ColumnPager.dom.test.tsx` pins it
+    // in both states, where it can actually fail.
     const takeProfit = carryWithFocusInEntry();
 
     tap(pagerButton("Exit"));

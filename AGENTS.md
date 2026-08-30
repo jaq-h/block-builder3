@@ -377,7 +377,13 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   - **A keyboard carrier never needs the pager**, which is what makes taking it
     out of their reach cost nothing. `validTargetsFor` scopes to no column and
     `stepTarget` takes for a horizontal move every target on the far side, so
-    the arrows cross exactly when a legal cell exists there.
+    the arrows cross exactly when a legal cell exists there. **It is the
+    CONTROL that is out of reach mid-carry, never the ABILITY** - the arrows
+    move the carry across and the viewport follows, so a keyboard or
+    screen-reader user still reaches the other column and still places the
+    order there. Carrying nothing the buttons are an ordinary tab stop, so
+    "reachable by pointer, keyboard and screen reader" holds literally as
+    well. This is settled; do not re-file it as a gap.
   - **Not focusable is not not operable.** The buttons stay clickable, keep the
     24px target and stay in the accessibility tree; `disabled` would break the
     paging pointer users depend on. Carrying nothing they are an ordinary tab
@@ -396,13 +402,19 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     stranding (Tab leaves, the carry stays live, a pointer user taps a cell),
     and the tab-order gate still keeps a keyboard carrier away from it
     entirely.
-  - **Two residuals, both accepted deliberately rather than unnoticed.**
+  - **Three residuals, all accepted deliberately rather than unnoticed, and
+    all on the same terms: not stranding, and not reachable keyboard-only.**
     Assistive technology can focus a `tabindex="-1"` element directly, so an AT
     user can still land there mid-carry; they are not stranded - Shift+Tab
     leaves and the carry is still live - but the control is not literally
-    unreachable. And **focus already INSIDE the column a press hides is still
-    lost**: a pointer user taps a placed block (`usePointerGesture` focuses
-    it), then taps the other column, and the browser drops focus to `<body>`.
+    unreachable. **`tabIndex` going to -1 does not blur an element that already
+    holds focus**, so focus that was on a button when the carry began stays
+    there; reaching that needs mixed input - Tab to the pager while carrying
+    nothing, then start a carry by pointer - because starting one from the
+    keyboard means activating a palette tile, which takes focus to that tile.
+    And **focus already INSIDE the column a press hides is still lost**: a
+    pointer user taps a placed block (`usePointerGesture` focuses it), then
+    taps the other column, and the browser drops focus to `<body>`.
     The rule above keeps focus off the BUTTON and says nothing about where
     focus already was. **There is no remedy that does not move focus** - the
     thing holding it is exactly what is being hidden - and this is what the
