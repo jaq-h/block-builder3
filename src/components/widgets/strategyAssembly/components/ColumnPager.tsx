@@ -1,4 +1,4 @@
-import type { FC } from "react";
+import type { FC, RefObject } from "react";
 import CheckIcon from "../../../../assets/icons/check.svg?react";
 import { COLUMN_HEADERS } from "../../../../data/orderTypes";
 import {
@@ -8,19 +8,19 @@ import {
 } from "../strategyAssembly.styles";
 
 interface ColumnPagerProps {
+  /**
+   * The row the two buttons sit in.
+   *
+   * `GridArea` needs to reach them: a press that takes the column holding DOM
+   * focus off screen has to leave focus somewhere the user can see, and with
+   * nothing in hand the button for the column now shown is that place. See
+   * `keepFocusUsable`.
+   */
+  rowRef: RefObject<HTMLDivElement | null>;
   /** Which column the paged viewport is showing. */
   visibleColumn: number;
-  /**
-   * Show this column instead, and the button that asked for it.
-   *
-   * The element travels because the panel may have to hand DOM focus out of
-   * the column it is about to take off screen, and this button is where that
-   * focus goes when nothing is in hand: it is visible, it is in the
-   * accessibility tree, and it is where most browsers would have put focus on
-   * the press anyway. Safari and Firefox do not focus a button they activate,
-   * which is what leaves focus standing in the leaving column. See `GridArea`.
-   */
-  onShowColumn: (col: number, pressed: HTMLButtonElement) => void;
+  /** Show this column instead. */
+  onShowColumn: (col: number) => void;
 }
 
 /**
@@ -47,8 +47,17 @@ interface ColumnPagerProps {
  * about which cells a carry may reach, are the ones that were already there.
  * The viewport follows the carry's target; see `GridArea`.
  */
-const ColumnPager: FC<ColumnPagerProps> = ({ visibleColumn, onShowColumn }) => (
-  <div className={columnPagerRow} role="group" aria-label="Grid column shown">
+const ColumnPager: FC<ColumnPagerProps> = ({
+  rowRef,
+  visibleColumn,
+  onShowColumn,
+}) => (
+  <div
+    ref={rowRef}
+    className={columnPagerRow}
+    role="group"
+    aria-label="Grid column shown"
+  >
     {COLUMN_HEADERS.map((header, col) => {
       const isActive = col === visibleColumn;
       return (
@@ -57,7 +66,7 @@ const ColumnPager: FC<ColumnPagerProps> = ({ visibleColumn, onShowColumn }) => (
           type="button"
           aria-pressed={isActive}
           className={columnPagerButton({ isActive })}
-          onClick={(event) => onShowColumn(col, event.currentTarget)}
+          onClick={() => onShowColumn(col)}
         >
           {/* The cue that survives with no colour at all, in a slot both
               buttons carry so the label does not shift sideways as the tick

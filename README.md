@@ -668,24 +668,23 @@ agree. The case is reached by exactly the users the named pair was chosen for: a
 user saying the name of the column they are on, and a screen-reader user pressing the button
 without first reading `aria-pressed`.
 
-**Moving the viewport hands DOM focus out of the column it takes away, and does nothing
-where no column is hidden.** The column going off screen is held by `visibility: hidden`, and
-a focused element inside a hidden subtree is dropped to `<body>` by the browser - while every
-key that drives a carry, the arrows, Enter and Escape, is handled on a palette tile or on a
-block rather than on the document. The user would be left holding an order, with a cell still
-highlighted as `aria-current`, and no way to place or cancel it short of Tabbing in from the
-top of the page. It needs no carry to reach: a tap focuses the block it presses, and the
-pager's buttons are the one control here that is not a gesture element, so on the browsers
-that do not focus a button they activate a press leaves focus in the column it is taking
-away.
+**Focus never rests where the panel has just made it useless.** The column going off screen
+is held by `visibility: hidden`, so a focused element inside it is dropped to `<body>` by the
+browser; and every key that drives a carry - the arrows, Enter and Escape - is handled on the
+carried order's palette tile or on a block rather than on the document, so a block in hand
+with focus anywhere else is an order no key can put down. Both are reachable: a tap focuses
+the block it presses, and a browser that focuses a button it activates leaves focus on the
+pager after the press that moved the carry.
 
-Where focus goes is decided by what is in hand. A carry goes to the palette entry of the
-order held - that tile carries the whole carry keyboard interface and is drawn outside the
-columns at every width - and a page with nothing held goes to the pager button just pressed.
-Whether a column is really being hidden is asked of the DOM, through the same computed
-`visibility` that decides which cells are drop candidates, rather than of a breakpoint: above
-`sm` both columns are drawn, a mouse sweep that moves a carry's target across them hides
-nothing, and focus must not move.
+It is one invariant with one owner, re-read after every render and every resize of the
+viewport rather than wired beside each thing that pages - so a future control that moves the
+columns is covered without calling anything. Whether something is on screen is asked of the
+DOM, through the same computed `visibility` that decides which cells are drop candidates,
+never of a breakpoint. Where focus goes is decided by what is in hand: a carry goes to the
+palette entry of the order held, which is that carry's whole keyboard interface and is drawn
+outside the columns at every width, and a page with nothing held goes to the pager button for
+the column now shown. Above `sm` both columns are drawn, so a mouse sweep that moves a carry's
+target across them hides nothing and focus does not move at all.
 
 The column that is not on screen is held by `visibility: hidden` rather than removed. It
 keeps its box, which is what keeps the two columns beside each other, while staying out of

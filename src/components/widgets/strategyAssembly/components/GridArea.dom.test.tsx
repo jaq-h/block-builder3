@@ -7,7 +7,7 @@ import {
   type FC,
   type SVGProps,
 } from "react";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, act } from "@testing-library/react";
 
 import GridArea from "./GridArea";
 import { GridDataContext } from "../contexts/GridDataContext";
@@ -2186,9 +2186,33 @@ describe("GridArea, the column pager", () => {
     document.head.appendChild(pagingRule);
   };
 
+  /**
+   * Drive the viewport's `ResizeObserver` by hand.
+   *
+   * jsdom lays nothing out and its `ResizeObserver` stand-in is a no-op for
+   * that reason (see `src/test/setup.ts`), which says in as many words that
+   * what the callback DOES is asserted by calling it. This is the crossing of
+   * `sm` in a real browser: the panel changes shape without a render, so the
+   * class list is untouched and only what it RESOLVES to changes.
+   */
+  let resizeTheViewport: (() => void) | null = null;
+  const captureViewportResizes = () => {
+    class CapturingResizeObserver implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeTheViewport = () => callback([], this);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    vi.stubGlobal("ResizeObserver", CapturingResizeObserver);
+  };
+
   afterEach(() => {
     pagingRule?.remove();
     pagingRule = null;
+    resizeTheViewport = null;
+    vi.unstubAllGlobals();
   });
 
   it("names both columns and says which one is on screen", () => {
@@ -2330,9 +2354,10 @@ describe("GridArea, the column pager", () => {
    * focus lands in the column. The tap on the placed block leaves the carry
    * alone: its cell is occupied, so it is not one of the carry's targets and
    * the cell refuses it rather than placing. And the pager's buttons are the
-   * one control here that is NOT a gesture element, so pressing one moves
-   * focus nowhere - the browser does not focus a button it activates on the
-   * platform this layout is for.
+   * one control here that is NOT a gesture element, so a press moves focus
+   * nowhere on Safari and Firefox, which do not focus a button they activate.
+   * The other shape - Chrome, and every keyboard activation, which leave focus
+   * ON the button - is its own test below.
    */
   const carryWithFocusInEntry = () => {
     pageTheColumns();
@@ -2429,6 +2454,70 @@ describe("GridArea, the column pager", () => {
     // The button the user pressed: visible, in the accessibility tree, and
     // where most browsers would have put focus on the press anyway.
     expect(document.activeElement).toBe(pagerButton("Exit"));
+  });
+
+  it("takes focus off the pager button a press that moved the carry left it on", () => {
+    // The shape the two above cannot see: on Chrome, and on every keyboard
+    // activation, focus is ON the button when the handler runs. The button is
+    // perfectly visible, so "is the focused element on screen" never fires -
+    // and yet from there Enter is the same press again, Escape does nothing
+    // and the arrows do nothing, because `ColumnPager` wires only `onClick`
+    // and no carry key is handled on the document. A block in hand with no key
+    // that can put it down is the whole of what this rule exists to prevent.
+    const takeProfit = carryWithFocusInEntry();
+
+    pagerButton("Exit").focus();
+    fireEvent.click(pagerButton("Exit"));
+
+    expect(shownColumn()).toEqual([1]);
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+    expect(document.activeElement).not.toBe(pagerButton("Exit"));
+    expect(document.activeElement).toBe(takeProfit);
+
+    // Drivable and cancellable from where it landed, which is the claim.
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(announcement()).toContain("Cancelled.");
+  });
+
+  it("hands focus out of a column that a change of shape hides mid-carry", () => {
+    // Rotating a phone into portrait while holding an order. Nothing is
+    // pressed and nothing renders: the columns' class lists are already what
+    // they will be, and only what `hiddenColumn` RESOLVES to changes. A rule
+    // written as a hand-off beside each press cannot see this at all, which is
+    // why the rule is an invariant re-read after the fact instead.
+    captureViewportResizes();
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    grid[1][1].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} />);
+
+    const takeProfit = screen.getByRole("button", {
+      name: "Add Take Profit order",
+    });
+    tap(takeProfit);
+    fireEvent.keyDown(takeProfit, { key: "ArrowRight" });
+    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
+
+    // Landscape: both columns are drawn, so a tap on a block in the column the
+    // viewport is not tracking is an ordinary thing to do, and the carry
+    // survives it.
+    const placed = within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    });
+    tap(placed);
+    expect(document.activeElement).toBe(placed);
+
+    pageTheColumns();
+    act(() => resizeTheViewport!());
+
+    expect(document.activeElement).not.toBe(document.body);
+    expect(columnOf(0).contains(document.activeElement)).toBe(false);
+    expect(document.activeElement).toBe(takeProfit);
+
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    expect(announcement()).toBe(
+      "Placed Take Profit order in Exit column, upper conditional row.",
+    );
   });
 
   it("leaves focus alone where both columns are drawn", () => {

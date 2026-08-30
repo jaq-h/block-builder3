@@ -349,67 +349,69 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     for - a voice-control user saying the name of the column they are on, and a
     screen-reader user activating the button without first reading
     `aria-pressed`.
-  - **A move that takes a column off screen hands DOM focus out of it first.**
-    `hiddenColumn` is `visibility: hidden`, so a focused element inside the
-    leaving column is dropped to `<body>` by the browser - and every key that
-    drives a carry (the arrows, Enter, Escape) is handled ON a palette tile or
-    ON a block rather than on the document, so the user would be left holding
-    an order, with a cell still highlighted as `aria-current`, and no way to
-    place or cancel it short of Tabbing in from the top of the page. It is
-    reachable with the app's own focus moves: `usePointerGesture` focuses the
-    element it starts on, so a tap on a placed block puts focus inside a
-    column, a tap on a block in a cell the carry was never offered is refused
-    BY THE CELL and leaves the carry in hand, and the pager's buttons are the
-    one control in the surface that is not a gesture element, so pressing one
-    moves focus nowhere.
+  - **Focus never rests where the panel has just made it useless.** The
+    off-page column is `visibility: hidden`, so a focused element inside it is
+    dropped to `<body>` by the browser, and every key that drives a carry - the
+    arrows, Enter, Escape - is handled ON the carried order's palette tile or
+    ON a block rather than on the document. Both halves of that are reachable
+    with the app's own moves, and they are one rule rather than two.
 
-  **The rule is `handOffFocusFromLeavingColumn`, and it is one gate with two
-  destinations: move focus exactly when the element holding it is about to
-  become invisible, and never otherwise.** Both halves were a defect on their
-  own and neither may be dropped for the other.
+  **The rule is `keepFocusUsable`, and it is an INVARIANT re-read after every
+  render and every resize of the viewport - not a hand-off wired beside each
+  thing that pages.** Two clauses, both holding after any change to what is on
+  screen or to where the carry is aimed, whatever caused it:
 
-  *Exactly when.* The gate covers a carry and a bare page alike, because a user
-  who is not carrying is no less stranded - the pager's buttons are the one
-  control in the surface that is not a gesture element, so on Safari and
-  Firefox, which do not focus a button they activate, a press leaves focus
-  standing on whatever placed block was last tapped. `usePointerGesture`
-  focuses the element it presses for every pointer type, so that is a block
-  INSIDE a column.
+  1. **The element holding focus must be on screen.** `usePointerGesture`
+     focuses the element it presses for every pointer type, so a tap on a
+     placed block puts focus inside a column as a matter of course.
+  2. **A live carry must stay drivable**, and this **outranks** clause 1. The
+     pager's buttons are the case that proves clause 1 is not enough: they are
+     perfectly visible, and a browser that focuses a button it activates -
+     Chrome, and every keyboard activation - leaves focus on one after the
+     press that moved the carry, from where Escape and the arrows do nothing at
+     all.
 
-  *Never otherwise.* `pointAt` moves a mouse carry's target for every cell the
-  cursor crosses, so above `sm` - where both columns are drawn - an ungated
-  hand-off yanked focus off the block the user had clicked on a mere hover,
-  scrolling it into view (`Block` focuses without `preventScroll`) and turning
-  the next ArrowUp from a price nudge into a target move. **Desktop unchanged
-  is an acceptance criterion of this layout.**
+  **Why an invariant.** This was written three times as a hook beside the code
+  that hid a column, and each version was right about the paths next to it and
+  blind to the next: the carrying move, then the bare pager press, then the
+  press that leaves focus on the button, then a rotation across `sm` that hides
+  a column with no press and no render at all. That is the shape this file
+  already refuses for announcements and for the carry lifecycle - **derived,
+  not signalled.** There is nothing for a new path to call, so a future control
+  that pages the columns is covered on the day it is written. `lastFocusedRef`
+  is part of that: the browser blurs a hidden element before the check can run,
+  so the panel records what the browser last focused rather than trying to read
+  it back afterwards - and `<body>` is the resting state of a page nobody has
+  touched, which must not be read as focus having been taken away.
 
-  **Whether a column is hidden is asked of the DOM** -
+  **Whether something is on screen is asked of the DOM** -
   `getComputedStyle(...).visibility`, the same fact `cellBoxesFromDom` filters
-  drop candidates by - and never of a breakpoint. That keeps "is this column on
+  drop candidates by - and never of a breakpoint. That keeps "is this on
   screen" to one owner, and it is a branch a test can take, which a media query
   or a `scrollWidth > clientWidth` read is not.
+
+  **Where it does nothing, deliberately.** Above `sm` both columns are drawn, so
+  a carry whose target crosses columns - which `pointAt` does for every cell a
+  mouse sweeps over - hides nothing and leaves focus on a visible block inside
+  the grid, which is where the user put it and where the arrow keys price that
+  block. **Desktop unchanged is an acceptance criterion of this layout**, and a
+  focus move nobody asked for is its own regression.
 
   **Where focus goes depends on what is in hand, and only that.** A carry goes
   to the carried order's palette entry, through the same `focusRequest` channel
   a place or a cancel uses (`focusCarriedSource` on the command model): that
-  tile carries the whole carry keyboard interface and is drawn OUTSIDE the
-  columns, as a band above them below `sm` and as the lane beside them above
-  it, so the order stays placeable and cancellable. A bare page goes to the
-  pager button just pressed, which is visible, in the accessibility tree, and
-  where most browsers would have put focus anyway.
-
-  **The carry's half belongs in the layout effect that moves the viewport, and
-  not in a wrapper around `moveTarget`**: four dispatches move a target - a
-  pager press, an arrow key, a mouse sweep's `pointAt` and a pick-up - and a
-  wrapper would answer two of them. Nothing there asks WHY the target moved;
-  the question is only whether the element holding focus is in a column about
-  to be taken away, so a fifth dispatch is covered on the day it is written.
-  `GridArea.dom.test.tsx` pins every part of this under "hands focus out of the
-  column a carry move takes off screen", "leaves that carry cancellable from
-  where focus lands", "hands focus out of the column a bare page takes off
-  screen" and "leaves focus alone where both columns are drawn" - the last of
-  which installs no paging rule, because jsdom applying no author stylesheet IS
-  the desktop shape.
+  tile IS the carry's keyboard interface and is drawn OUTSIDE the columns, as a
+  band above them below `sm` and as the lane beside them above it. A bare page
+  goes to the pager button for the column now on screen - visible, in the
+  accessibility tree, and where most browsers would have put focus anyway.
+  `GridArea.dom.test.tsx` pins the invariant rather than the paths, under
+  "hands focus out of the column a carry move takes off screen", "leaves that
+  carry cancellable from where focus lands", "hands focus out of the column a
+  bare page takes off screen", "takes focus off the pager button a press that
+  moved the carry left it on", "hands focus out of a column that a change of
+  shape hides mid-carry" and "leaves focus alone where both columns are drawn" -
+  the last of which installs no paging rule, because jsdom applying no author
+  stylesheet IS the desktop shape.
 
   **A pick-up starts at the first legal cell its offer has, and no column is
   remembered between carries.** A preference for the column the user last
@@ -648,10 +650,13 @@ against that box and nothing else: the track and the percentage scale are
 `calc((100% - TRACK_INSETpx) * percent)` within it. One collapsed height is
 therefore not one defect, it is the whole axis at once. It carried `h-full`, and
 a percentage height needs a definite height to resolve against - which the chain
-above it only has while the grid columns are flex items of a ROW. Stacked below
-`sm` by the trap below, they are items of a column with no definite height,
-because below `lg` the shell is deliberately content-sized (see the desktop
-shell trap). `height: 100%` resolved to 0, and since every child of the box is
+above it only has while the grid columns are flex items of a ROW. `columnsWrapper`
+STACKED them below `sm` at the time, so they were items of a column with no
+definite height, because below `lg` the shell is deliberately content-sized (see
+the desktop shell trap). **That stacking is gone** - the trap below puts the two
+columns side by side at every width and pages between them - so the collapse is
+recorded here rather than reproducible; what survives it is the rule.
+`height: 100%` resolved to 0, and since every child of the box is
 absolutely positioned there was nothing to fall back on. Measured in Chrome with
 a Limit in the Entry primary cell, axis column / track / block y: **150 / 80 /
 99.5 at 640 and above, and 0 / 0 / 24.5 at 320, 360, 390 and 414** - no track to
@@ -660,8 +665,8 @@ range, which draws the block above the market line and runs it backwards, while
 `positionFromPointer`'s `trackHeight <= 0` guard returned 0 for every drag. An
 order could not be priced at all on a phone. `align-items: stretch` sizes it
 now - the default for a flex item, and `sliderArea` is a `flex-row` whose cross
-axis IS this height, so it needs no definite parent height and holds in both
-forms of the layout; it was doing the work above `sm` all along, which is why
+axis IS this height, so it needs no definite parent height and cannot be taken
+away by anything above it; it was doing the work above `sm` all along, which is why
 removing `h-full` left 768, 1024 and 1440 measuring exactly what they measured
 before, the assembly grid pane pixel-identical at 1440. **Do not restore
 `h-full`, and do not answer a future collapse with a pixel height or a `min-h-*`

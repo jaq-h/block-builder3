@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
+import { createRef } from "react";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 
 import ColumnPager from "./ColumnPager";
@@ -16,10 +17,15 @@ import ColumnPager from "./ColumnPager";
 
 const renderPager = (visibleColumn = 0) => {
   const onShowColumn = vi.fn();
+  const rowRef = createRef<HTMLDivElement>();
   render(
-    <ColumnPager visibleColumn={visibleColumn} onShowColumn={onShowColumn} />,
+    <ColumnPager
+      rowRef={rowRef}
+      visibleColumn={visibleColumn}
+      onShowColumn={onShowColumn}
+    />,
   );
-  return { onShowColumn };
+  return { onShowColumn, rowRef };
 };
 
 const group = () => screen.getByRole("group", { name: "Grid column shown" });
@@ -78,16 +84,25 @@ describe("ColumnPager", () => {
     }
   });
 
-  it("asks for the column whose button was pressed, and hands over that button", () => {
+  it("asks for the column whose button was pressed", () => {
     const { onShowColumn } = renderPager(0);
-    const exit = screen.getByRole("button", { name: "Exit" });
 
-    fireEvent.click(exit);
+    fireEvent.click(screen.getByRole("button", { name: "Exit" }));
 
-    // The element travels because the panel may have to put focus on it: a
-    // press that takes the other column off screen has to leave focus
-    // somewhere visible, and this button is where a browser that focuses what
-    // it activates would have put it. See `GridArea`.
-    expect(onShowColumn).toHaveBeenCalledWith(1, exit);
+    expect(onShowColumn).toHaveBeenCalledWith(1);
+  });
+
+  // The panel reaches the buttons through this to put focus on one, when a
+  // press takes the column holding focus off screen and nothing is in hand.
+  // `GridArea` finds the button by the column it stands for, so the order the
+  // row holds them in is part of the contract rather than an accident.
+  it("holds its buttons in column order", () => {
+    const { rowRef } = renderPager(0);
+
+    expect(
+      Array.from(rowRef.current!.children).map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(["Entry", "Exit"]);
   });
 });

@@ -307,19 +307,23 @@ export const sliderArea = "flex-1 relative flex flex-row overflow-visible";
  *
  * It carried `h-full` and did exactly that. A percentage height needs a
  * definite height to resolve against, and the chain above it is only definite
- * while the grid columns are flex items of a ROW: stacked below `sm`
- * (`columnsWrapper`, added for the phone layout) they are items of a column
- * with no definite height, because below `lg` the shell is deliberately
- * content-sized. `height: 100%` then resolved to 0, and since every child here
- * is absolutely positioned there was no content to fall back on. Measured in
+ * while the grid columns are flex items of a ROW. `columnsWrapper` STACKED them
+ * below `sm` at the time, making them items of a column with no definite
+ * height, because below `lg` the shell is deliberately content-sized. That
+ * stacking has since gone - the columns are side by side at every width now and
+ * the panel pages between them - so what follows is the record of the collapse
+ * rather than something reproducible today. `height: 100%` resolved to 0, and
+ * since every child here is absolutely positioned there was no content to fall
+ * back on. Measured in
  * Chrome with a Limit in Entry: this box and the track stood at 150px/80px at
  * 640 and above and at 0px/0px at 320, 360, 390 and 414, with the block drawn
  * at y 24.5 instead of y 99.5.
  *
  * `align-items: stretch` is what sizes it now - the default for a flex item,
  * and the parent (`sliderArea`) is a `flex-row` whose cross axis IS this
- * height. Stretch needs no definite parent height, so it holds in both forms
- * of the layout. It was doing the work above `sm` all along: `h-full` was
+ * height. Stretch needs no definite parent height, so nothing above this box
+ * can take its height away again. It was doing the work above `sm` all along:
+ * `h-full` was
  * redundant there, which is why removing it leaves 768, 1024 and 1440
  * measuring exactly what they measured before.
  *
