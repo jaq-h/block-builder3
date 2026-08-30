@@ -114,6 +114,22 @@ export const columnsWrapper =
 // export const headerTextClass = "m-0 text-lg text-text-primary";
 
 // =============================================================================
+// THE SELECTED-STATE TICK
+// =============================================================================
+
+// The slot a control draws its selected-state tick in: `w-3` is the 11px glyph
+// plus its stroke, held whether or not the tick is there so choosing one of a
+// pair does not nudge either label sideways.
+//
+// One constant rather than one per control, because the reserved width and the
+// glyph are ONE fact and two controls draw it - the pattern buttons and the
+// column pager. `BLOCK_TILE_SHAPE` in `src/components/blocks/blockTile.ts`
+// records what the alternative costs: a hand-copied class list is how two
+// drawings of one fact come to disagree without either file saying so.
+export const selectedTickSlot =
+  "inline-flex w-3 shrink-0 items-center justify-center [&>svg]:stroke-current";
+
+// =============================================================================
 // PATTERN SELECTOR
 // =============================================================================
 
@@ -144,11 +160,10 @@ export const patternButton = cva(
 // label stays on the same centre line as the description beneath it.
 export const patternLabelRow = "flex items-center gap-1";
 
-// A fixed slot rather than a conditionally rendered icon: `w-3` is the tick's
-// 11px plus its stroke, and reserving it keeps both labels on the same rail.
-// The row uses it twice, once holding the tick and once empty.
-export const patternMarker =
-  "inline-flex w-3 shrink-0 items-center justify-center [&>svg]:stroke-current";
+// A fixed slot rather than a conditionally rendered icon, so both labels stay
+// on the same rail. The row uses it twice, once holding the tick and once
+// empty.
+export const patternMarker = selectedTickSlot;
 
 export const patternLabel = "text-xs font-semibold";
 
@@ -291,7 +306,6 @@ export const columnPagerButton = cva(
 );
 
 // The tick's slot, present on both buttons so choosing a column does not nudge
-// its label sideways. Same 11px glyph and same reserved width as the pattern
-// buttons above.
-export const columnPagerMarker =
-  "inline-flex w-3 shrink-0 items-center justify-center [&>svg]:stroke-current";
+// its label sideways. The same slot the pattern buttons above draw their tick
+// in, from its one owner.
+export const columnPagerMarker = selectedTickSlot;

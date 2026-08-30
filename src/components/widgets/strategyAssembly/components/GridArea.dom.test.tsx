@@ -2261,6 +2261,26 @@ describe("GridArea, the column pager", () => {
     expect(shownColumn()).toEqual([1]);
     expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("says nothing when pressed for the column the carry is already on", () => {
+    render(<Harness initialGrid={clearGrid(2, 3)} />);
+
+    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([0]);
+    const pickUp = announcement();
+
+    fireEvent.click(pagerButton("Entry"));
+
+    // Nothing was asked for and nothing was refused, so nothing is said. The
+    // refusal above is a different press: there the carry really had no cell
+    // that way, and here it was already on the one named. The non-carrying
+    // branch is silent for this press too, and the two have to agree.
+    expect(announcement()).toBe(pickUp);
+    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([0]);
+    expect(pagerButton("Entry")).toHaveAttribute("aria-pressed", "true");
+  });
 });
 
 describe("GridArea, a bulk cell holding two order families", () => {

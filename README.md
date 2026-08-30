@@ -655,6 +655,15 @@ other column opens the pager there. And a press the carry refuses - "No cell ava
 that direction." - leaves the pager where it is, exactly as the arrow key does, so the button
 never claims a column the user is not on.
 
+One case is written down instead, because it is the single press `moveTarget` cannot answer
+for: pressing the button for the column the carry is **already** on does nothing and says
+nothing. No arrow key means "stay put", so a zero-step move leaves the target where it is and
+`moveTarget` would announce "No cell available in that direction." - a refusal of a press that
+asked for nothing. Carrying nothing, that same press is already silent, and the two have to
+agree. The case is reached by exactly the users the named pair was chosen for: a voice-control
+user saying the name of the column they are on, and a screen-reader user pressing the button
+without first reading `aria-pressed`.
+
 The column that is not on screen is held by `visibility: hidden` rather than removed. It
 keeps its box, which is what keeps the two columns beside each other, while staying out of
 the tab order, out of the accessibility tree and out of hit testing - and `dropTarget.ts`

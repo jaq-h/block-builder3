@@ -326,10 +326,23 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   neither is a bug: a pick-up whose only legal cells are in the other column
   opens the pager there, and a press the carry refuses ("No cell available in
   that direction.") leaves the pager where it is, exactly as the arrow key does,
-  so the button never claims a column the user is not on. **Do not give the pager
+  so the button never claims a column the user is not on. **A third case is
+  written down, because it is the one press `moveTarget` cannot answer for:
+  pressing the button for the column the carry is ALREADY on is a deliberate
+  silent no-op**, an early return in `handleShowColumn` before the dispatch.
+  There is no arrow key meaning "stay put", so a zero delta returns the state
+  unchanged and `moveTarget` would report `noTargetThatWay` - a refusal of a
+  press that asked for nothing. The non-carrying branch is already silent for
+  that press and the two must agree, so the fix REMOVES an untrue sentence
+  rather than adding a true one: no outcome for it exists in
+  `gridAnnouncements.ts` and none should be added. It reaches the users the
+  named pair was chosen for - a voice-control user saying the name of the column
+  they are on, and a screen-reader user activating the button without first
+  reading `aria-pressed`. **Do not give the pager
   a move of its own, and do not end a carry on it**: paging does not touch the
   grid, so nothing about the carry has gone stale. `GridArea.dom.test.tsx` pins
-  all of it under "the column pager".
+  all of it under "the column pager", the refusal and the silent no-op as
+  separate tests because they are separate cases.
 
 - **A click outside the placement surface puts down whatever is in hand**, by emptying that
   register. The surface is the element `GridArea` draws - the palette a block is picked up

@@ -497,9 +497,24 @@ const GridArea: FC<GridAreaProps> = ({
    * viewport follows the target through the effect above, so a step the carry
    * refuses ("no target that way") leaves the pager where it is and says why,
    * exactly as the arrow key does.
+   *
+   * The press naming the column the carry is ALREADY on is the one case
+   * `moveTarget` cannot answer for, and it is silent by design. `moveTarget` is
+   * reused precisely so the pager and the arrow keys cannot drift, but a zero
+   * delta is the one press that has no arrow-key equivalent: there is no key
+   * meaning "stay put", so `stepTarget` returns the target unchanged, the
+   * reducer returns the identical state, and `moveTarget` reports
+   * `noTargetThatWay` - announcing a refusal for a press that asked for
+   * nothing. The two branches here have to say the same thing for the same
+   * press, and the non-carrying branch is already a silent no-op
+   * (`setVisibleColumn` with an unchanged value), so this one is too. It
+   * reaches exactly the users the named pair was chosen for: a voice-control
+   * user saying the name of the column they are already on, and a screen-reader
+   * user activating the button without first reading `aria-pressed`.
    */
   const handleShowColumn = (col: number) => {
     if (command.carrying) {
+      if (col === command.carrying.target.col) return;
       command.moveTarget(col - command.carrying.target.col, 0);
       return;
     }
