@@ -826,9 +826,19 @@ of slack. Three rules hold it together and none may be simplified away:
   readable-but-not-activatable mode either. Three reasons, and the second
   decides it:
 
-  - **It self-corrects rather than stranding anyone.** Activating a cell there
-    moves the carry's target, and the viewport follows the target, so the user
-    arrives at the column they acted on.
+  - **It strands nobody, though nothing self-corrects either.** Activating a
+    cell there PLACES the order in it: `pointer-events: none` withholds hit
+    TESTING and not a dispatched click, so the activation reaches `GridCell`'s
+    `onClick` and `activateCell` commits the carry exactly as it would on
+    screen. The viewport does NOT follow - the carry has ended, so the layout
+    effect keyed on `carrying.target.col` early-returns and the panel is still
+    showing the other column. What holds instead is that the user is told:
+    the placement sentence names where it went ("Placed Limit order in Exit
+    column, primary row."), focus goes to the block just placed, which can
+    hold it because the column is DRAWN, and the pager reaches that column.
+    Carrying nothing the activation is silent, on this column and the one on
+    screen alike, and a cell outside the carry's offer is refused with
+    "... cannot take this order. Still carrying ...".
   - **Nothing that was ever promised is being given up.** "Nothing in the
     accessibility tree" was a PROPERTY OF THE HIDING MECHANISM the captain
     replaced, not an independent guarantee this design made. A side effect
