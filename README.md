@@ -704,7 +704,12 @@ cue that there is more to view. It keeps its box, which is what keeps the two co
 each other, and it stays focusable, which is what lets focus survive a page. What it does not
 keep is hit testing - `offPageColumn` withholds that with `pointer-events: none` - and
 `dropTarget.ts` reads exactly that fact, so a cell the panel is not showing is never a drop
-candidate however much of it the user can see. **Visible does not mean droppable**, and the
+candidate however much of it the user can see. It is **withheld rather than discarded**,
+though, and that distinction is a block the user does not get back: a free drag released
+clear of every cell removes the block, so reading a release over the drawn peek as "clear of
+every cell" destroyed the order the user had just dropped onto a cell they could see. A
+release there is refused instead, in the same words a release over any other cell it may not
+move to gets. **Visible does not mean droppable**, and the
 peek is why that has to be said: a drop is resolved by greatest overlap of the dragged tile,
 and measured at 390 a release at the far right edge put 30px of the tile over an off-page
 Exit cell against 4px over the Entry cell it was drawn on. Tab is kept out of that column by
@@ -713,8 +718,9 @@ focus straight back. Above `sm` both columns are drawn and the viewport stops be
 container, while the pager is hidden in CSS: it is rendered at every width and
 `columnPagerRow`'s `sm:hidden` gives it `display: none`, so above `sm` it is not a flex item
 of `contentRow` at all rather than a zero-width one, and the desktop row is left exactly as
-it was. Hiding it by not rendering it would look the same above `sm` and remount the control
-on every crossing of the breakpoint, losing which column it was showing.
+it was. CSS is what decides it because nothing in this panel reads the breakpoint from
+JavaScript - which column is on screen is state in `GridArea`, and the width the pager is
+wanted at is a media query.
 
 **What moves between cells, and what does not.** A **placed block never changes cells** -
 every block, by every input method, with no per-type carve-out. That is captain decision D9,

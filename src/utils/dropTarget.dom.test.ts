@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { cellBoxesFromDom } from "./dropTarget";
+import { BLOCK_HEIGHT } from "@styles/grid";
+
+import { cellBoxesFromDom, resolveDrop } from "./dropTarget";
 
 // =============================================================================
 // WHICH CELLS ARE CANDIDATES AT ALL
@@ -72,16 +74,18 @@ describe("cellBoxesFromDom", () => {
     document.body.replaceChildren();
   });
 
-  it("reports every cell while both columns are drawn", () => {
+  it("offers every cell while both columns are drawn", () => {
     renderTwoColumns();
+    const { onPage, offPage } = cellBoxesFromDom();
 
-    expect(cellBoxesFromDom().map((entry) => entry.cell)).toEqual([
+    expect(onPage.map((entry) => entry.cell)).toEqual([
       { col: 0, row: 0 },
       { col: 1, row: 0 },
     ]);
+    expect(offPage).toEqual([]);
   });
 
-  it("drops the cells of a column the pager is not showing", () => {
+  it("withholds the cells of a column the pager is not showing", () => {
     const [, exit] = renderTwoColumns();
     // What `offPageColumn` resolves to below `sm`. The class is on the COLUMN
     // and the rule is read on the CELL, which is the whole reason this is a
@@ -89,17 +93,83 @@ describe("cellBoxesFromDom", () => {
     // is still DRAWN - 20% of it peeks past the viewport - so visibility is
     // exactly what this must not be keyed on.
     exit.style.pointerEvents = "none";
+    const { onPage, offPage } = cellBoxesFromDom();
 
-    expect(cellBoxesFromDom().map((entry) => entry.cell)).toEqual([
-      { col: 0, row: 0 },
-    ]);
+    expect(onPage.map((entry) => entry.cell)).toEqual([{ col: 0, row: 0 }]);
+    // Withheld, not discarded. A caller that removes a block on "no cell" has
+    // to be able to tell this apart from a release over nothing at all.
+    expect(offPage.map((entry) => entry.cell)).toEqual([{ col: 1, row: 0 }]);
   });
 
-  it("reports a cell again once its column is shown", () => {
+  it("offers a cell again once its column is shown", () => {
     const [, exit] = renderTwoColumns();
     exit.style.pointerEvents = "none";
     exit.style.pointerEvents = "auto";
 
-    expect(cellBoxesFromDom()).toHaveLength(2);
+    expect(cellBoxesFromDom().onPage).toHaveLength(2);
+    expect(cellBoxesFromDom().offPage).toEqual([]);
+  });
+});
+
+// =============================================================================
+// A RELEASE OVER A DRAWN BUT WITHHELD CELL IS NOT A RELEASE OVER NOTHING
+// =============================================================================
+//
+// The distinction the free drag of a placed block turns on: a release clear of
+// every cell REMOVES the block, and reading a release over the peeking column
+// as that is how a drawn band inside the panel came to destroy an order with no
+// undo. The exclusion itself is unchanged - a withheld cell is still never
+// placed into.
+
+describe("resolveDrop", () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  /** Dead centre of the cell at `col`, in the stubbed geometry above. */
+  const centreOf = (col: number) => ({
+    x: col * CELL_SIZE.width + CELL_SIZE.width / 2,
+    y: CELL_SIZE.height / 2,
+  });
+
+  it("places into a cell the panel is showing", () => {
+    renderTwoColumns();
+    const { x, y } = centreOf(1);
+
+    expect(resolveDrop(x, y, BLOCK_HEIGHT)).toEqual({
+      kind: "available",
+      cell: { col: 1, row: 0 },
+    });
+  });
+
+  it("names a withheld cell rather than reporting no cell at all", () => {
+    const [, exit] = renderTwoColumns();
+    exit.style.pointerEvents = "none";
+    const { x, y } = centreOf(1);
+
+    expect(resolveDrop(x, y, BLOCK_HEIGHT)).toEqual({
+      kind: "withheld",
+      cell: { col: 1, row: 0 },
+    });
+  });
+
+  it("prefers a cell on the page to a withheld one the tile also overlaps", () => {
+    const [, exit] = renderTwoColumns();
+    exit.style.pointerEvents = "none";
+    // On the seam between the two cells, so the 40px tile overlaps both. The
+    // on-page cell wins outright: a withheld cell is not a candidate, so it
+    // never reaches the greatest-overlap rule.
+    const seam = CELL_SIZE.width;
+
+    expect(resolveDrop(seam + 1, CELL_SIZE.height / 2, BLOCK_HEIGHT)).toEqual({
+      kind: "available",
+      cell: { col: 0, row: 0 },
+    });
+  });
+
+  it("still reports no cell for a release clear of the grid", () => {
+    renderTwoColumns();
+
+    expect(resolveDrop(5000, 5000, BLOCK_HEIGHT)).toEqual({ kind: "offGrid" });
   });
 });

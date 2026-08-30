@@ -21,7 +21,7 @@ import {
   MIN_OFFSET_PERCENT,
   hasConditionalWithoutPrimary,
   createBlocksFromOrderType,
-  findDropCell,
+  resolveDrop,
   removeBlockFromGrid,
 } from "../../../../utils";
 import {
@@ -834,8 +834,13 @@ const GridArea: FC<GridAreaProps> = ({
    * pixel - see `utils/dropTarget.ts` for the rule and for the dead band around
    * every cell that testing the pointer alone left behind.
    */
-  const dropCellAt = (x: number, y: number) =>
-    findDropCell(x, y, BLOCK_HEIGHT);
+  const dropAt = (x: number, y: number) => resolveDrop(x, y, BLOCK_HEIGHT);
+
+  /** The cell a release may actually place into, and no other. */
+  const placeableCellAt = (x: number, y: number) => {
+    const drop = dropAt(x, y);
+    return drop.kind === "available" ? drop.cell : null;
+  };
 
   const handleProviderDragStart = (type: string) => {
     carryReleasedByDragRef.current = false;
@@ -867,7 +872,7 @@ const GridArea: FC<GridAreaProps> = ({
     // and which leg it is comes from `axesForBlockAxis`. Reading those off the
     // drop coordinates was two separate defects - a 0-100 reading written into
     // a 0-50 axis, and an `axis` rewritten without its matching `axes`.
-    const cell = dropCellAt(x, y);
+    const cell = placeableCellAt(x, y);
     const source = providerSource(type);
 
     const releasedCarry = carryReleasedByDragRef.current;
@@ -1034,7 +1039,7 @@ const GridArea: FC<GridAreaProps> = ({
 
   const handleDragEnd = (id: string, x: number, y: number) => {
     const blockInfo = findBlockInGrid(grid, id);
-    const cell = dropCellAt(x, y);
+    const drop = dropAt(x, y);
 
     // The block is not on the grid, so there is no fact to report about it.
     if (!blockInfo) {
@@ -1051,8 +1056,16 @@ const GridArea: FC<GridAreaProps> = ({
     // the block's own cell reads as "stayed", not as a refusal by the cell the
     // block is sitting in - and a release over a *different* cell reads as the
     // rule that refused it rather than as a cell that happens to be full.
-    if (cell) {
-      const result = keepBlockInItsCell(id, cell);
+    // **A release over a WITHHELD cell is a release over a cell.** The peeking
+    // column is drawn, so a release in the 20% of it that shows is a release
+    // the user aimed at a cell they can see; reading it as "clear of every
+    // cell" was the false step, and it cost the block - the branch below
+    // REMOVES, so a Market order dragged into the sliver was destroyed with no
+    // undo. Nothing about the drop exclusion changes: `resolveDrop` still
+    // refuses to place there, and this refuses with the very same primitive and
+    // the very same sentence a release over any other cell gets.
+    if (drop.kind !== "offGrid") {
+      const result = keepBlockInItsCell(id, drop.cell);
       // Only a free drag reaches here, and `block.tsx` wires one for a cell
       // that draws no axis, so this refusal is always the removable case.
       if (result.status === "refused") {
@@ -1066,18 +1079,18 @@ const GridArea: FC<GridAreaProps> = ({
       announcer.report({
         kind: "placement",
         source,
-        cell,
+        cell: drop.cell,
         result,
         via: "drag",
         releasedCarry,
       });
     } else {
-      // Dropped outside - remove only this block, through the command model's
-      // one removal rather than a branch of its own. It is no longer the ONLY
-      // way an order leaves a cell: Delete, Backspace and each block's own
-      // remove control reach the same operation, which is what finally makes
-      // decision D9's correction path - remove it, then place a new one -
-      // available to a block drawn on a price axis.
+      // Dropped clear of every cell - remove only this block, through the
+      // command model's one removal rather than a branch of its own. It is no
+      // longer the ONLY way an order leaves a cell: Delete, Backspace and each
+      // block's own remove control reach the same operation, which is what
+      // finally makes decision D9's correction path - remove it, then place a
+      // new one - available to a block drawn on a price axis.
       command.removeBlock(id, { releasedCarry });
     }
 
@@ -1110,13 +1123,15 @@ const GridArea: FC<GridAreaProps> = ({
   // are the answer for a drag whose capture was refused too, where the target
   // is instead whatever happens to be under the cursor.
   //
-  // Through `dropCellAt`, the same resolver the release uses. The highlight is
-  // the only warning a user gets before letting go, so it has to name the cell
-  // the drop will actually resolve to; a highlight computed one way and a drop
-  // the other is the shape of defect this repository keeps paying for.
+  // Through `placeableCellAt`, the same resolver the release uses. The
+  // highlight is the only warning a user gets before letting go, so it has to
+  // name the cell the drop will actually place into; a highlight computed one
+  // way and a drop the other is the shape of defect this repository keeps
+  // paying for. A withheld cell highlights nothing, because nothing may be
+  // placed there.
   const handlePointerMove = (e: PointerEvent) => {
     if (draggingId !== null || draggingFromProvider !== null) {
-      setHoverCell(dropCellAt(e.clientX, e.clientY));
+      setHoverCell(placeableCellAt(e.clientX, e.clientY));
     }
   };
 

@@ -118,8 +118,10 @@ export {
   blockBoxAt,
   resolveDropCell,
   cellBoxesFromDom,
-  findDropCell,
+  resolveDrop,
   type Box,
   type CellBox,
+  type CellBoxes,
   type DropPoint,
+  type DropResolution,
 } from "./dropTarget";

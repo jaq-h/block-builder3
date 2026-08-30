@@ -1451,6 +1451,62 @@ describe("GridArea, a drop whose block overlaps a cell it is not over", () => {
     );
   });
 
+  // ── The peek is drawn, so a release over it is a release over a CELL ──
+  //
+  // Below `sm` the panel shows one column through a viewport and 20% of the
+  // other one peeks past its edge. Those cells are correctly withheld from drop
+  // resolution - visible does not mean droppable - but reading that as "clear
+  // of every cell" made the branch above DESTROY the order: at a 320px viewport
+  // every release from x 246 to the panel edge at 288 landed in drawn column
+  // and removed the block, with no undo.
+
+  let pagingRule: HTMLStyleElement | null = null;
+
+  /** The one declaration `offPageColumn` resolves to below `sm`. */
+  const pageTheColumns = () => {
+    pagingRule = document.createElement("style");
+    pagingRule.textContent = ".pointer-events-none { pointer-events: none; }";
+    document.head.appendChild(pagingRule);
+  };
+
+  afterEach(() => {
+    pagingRule?.remove();
+    pagingRule = null;
+  });
+
+  it("refuses a placed block released over the withheld peek, and keeps it", () => {
+    pageTheColumns();
+    const grid = clearGrid(2, 3);
+    grid[0][1].push(placedMarket("b1"));
+    renderTwoColumns(grid);
+
+    // Wholly inside the Exit column and clear of the Entry cell's right edge at
+    // 420, so the tile overlaps the withheld cell and nothing else.
+    const landing = RIGHT_COLUMN + 16;
+    fireEvent(
+      screen.getByRole("button", { name: /^Market order,/ }),
+      pointerAt("pointerdown", LEFT_COLUMN + 30, ROW_MID),
+    );
+    fireEvent(document.body, pointerAt("pointermove", landing, ROW_MID));
+    fireEvent(document.body, pointerAt("pointerup", landing, ROW_MID));
+
+    // Still on the grid, in the cell it started in, and nothing placed in the
+    // column the panel is not showing.
+    expect(cell(0, 1)).toHaveAttribute(
+      "aria-label",
+      "Entry column, row 2, Market",
+    );
+    expect(cell(1, 1)).toHaveAttribute(
+      "aria-label",
+      "Exit column, row 2, empty",
+    );
+    // The same sentence a release over any other cell gets, rather than a
+    // second vocabulary for one outcome - and emphatically not a removal.
+    expect(announcement()).toBe(
+      "Market block stays in the cell it was placed in, so it was not moved to Exit column, row 2. To put this order somewhere else, remove it and place a new one. Market block stayed in Entry column, row 2.",
+    );
+  });
+
   it("still removes a placed block released clear of every cell", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));

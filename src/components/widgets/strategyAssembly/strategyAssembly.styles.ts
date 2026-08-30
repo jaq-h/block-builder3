@@ -226,7 +226,10 @@ export const pagedColumn =
 //
 // `pointer-events: none` is what withholds it, and it is doing three jobs at
 // once. It takes the peeking column out of hit testing, so a press on the
-// sliver does nothing. It is INHERITED, so one computed read per cell answers
+// sliver does nothing and no release lands in it - though `dropTarget.ts` keeps
+// a withheld cell as withheld rather than as absent, so a release over one is
+// REFUSED rather than read as a release clear of the grid, which the free drag
+// removes a block on. It is INHERITED, so one computed read per cell answers
 // it for the whole column - which is how `cellBoxesFromDom` excludes those
 // cells without knowing anything about how the panel pages, and how
 // `GridArea`'s tab-order rule finds the column that is off page. And it is

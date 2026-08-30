@@ -757,10 +757,22 @@ them. Three rules hold it together and none may be simplified away:
   against 4px over the Entry cell it was drawn on**, so greatest-overlap placed
   the order into a column that was not on screen, with no highlight to warn of
   it - the highlight comes from the same list, so it was off screen too.
-  `cellBoxesFromDom` therefore drops every cell whose computed `pointer-events`
-  is `none`. It is keyed on that rather than on visibility because drawing the
-  peek separated "can the user see it" from "may a drop land in it", and hit
-  testing is the same question a drop asks, so the two cannot drift.
+  `cellBoxesFromDom` therefore hands back every cell whose computed
+  `pointer-events` is `none` as WITHHELD rather than as a candidate. It is keyed
+  on that rather than on visibility because drawing the peek separated "can the
+  user see it" from "may a drop land in it", and hit testing is the same
+  question a drop asks, so the two cannot drift.
+  **Withheld is not discarded, and the difference is a block the user does not
+  get back.** A free drag released clear of every cell REMOVES the block, so
+  collapsing "over a column the panel is not showing" into "over nothing at all"
+  put a destructive band inside the panel: at 320 every release from x 246 to
+  the panel edge at 288 landed in drawn column and destroyed the order, with no
+  undo. `resolveDrop` answers `available`, `withheld` or `offGrid`, and
+  `handleDragEnd` refuses on the middle one - through `keepBlockInItsCell` and
+  the same `staysInCell` sentence a release over any other cell gets, because
+  one outcome does not get two vocabularies. **The exclusion itself is
+  unchanged**: nothing is ever placed into a withheld cell, and the highlight
+  still names only a cell a release may land in.
   **Inheritance answers a cell but not a block, which is why the class carries
   a second rule.** A cell declares no `pointer-events` of its own and so
   inherits the refusal; `getBlockPositionerProps` declares one, opting the tile
@@ -885,8 +897,9 @@ running scroll so the highlight and the drop must be recomputed per scroll frame
 rather than per pointer move, and all six of `usePointerGesture`'s exits have to
 keep holding while it runs. Note that the horizontal half of it is NOT such a
 case and must not be answered that way: the off-page column is withheld from
-hit testing, so its cells are not drop candidates at all and a drag towards
-them is refused rather than mis-resolved. Tracked outside this repository.
+hit testing, so its cells are not drop candidates at all and a release over
+them is refused rather than mis-resolved - refused, and never read as a release
+clear of the grid, which the free drag removes a block on. Tracked outside this repository.
 
 **Known gap: the assembly panel's pattern buttons overflow their header rail
 at narrow widths.** `patternSelectorRow` is `cn(panelHeaderBar, "gap-2")`, and
