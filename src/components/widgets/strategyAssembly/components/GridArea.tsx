@@ -24,6 +24,7 @@ import {
   resolveDrop,
   removeBlockFromGrid,
   clearCellInGrid,
+  type DropResolution,
 } from "../../../../utils";
 import {
   samePosition,
@@ -962,8 +963,28 @@ const GridArea: FC<GridAreaProps> = ({
    * The block's own 40px tile is what is hit-tested, not the pointer's single
    * pixel - see `utils/dropTarget.ts` for the rule and for the dead band around
    * every cell that testing the pointer alone left behind.
+   *
+   * **The candidates are THIS grid's cells, and the viewport is what says so.**
+   * `columnsViewportRef` is already the owner of which columns exist and which
+   * of them the panel is withholding; handing it to the resolver makes it the
+   * owner of which cells a release may land in as well, rather than leaving
+   * that to a document-wide query any `[data-col][data-row]` element could
+   * join. `ReadOnlyGridCell` carries both attributes, so above `lg` - where
+   * both panels are on screen - a release over the Active Orders panel used to
+   * resolve to a cell and place the order into the assembly cell of the same
+   * coordinates.
+   *
+   * **No viewport, no candidates.** Until the first render has committed the
+   * ref is empty and no cell is drawn, so there is nothing a release could have
+   * been over; `offGrid` is what the resolver answers for a grid holding no
+   * cells anyway, and saying it here keeps the fallback from being a second,
+   * document-wide answer.
    */
-  const dropAt = (x: number, y: number) => resolveDrop(x, y, BLOCK_HEIGHT);
+  const dropAt = (x: number, y: number): DropResolution => {
+    const gridRoot = columnsViewportRef.current;
+    if (!gridRoot) return { kind: "offGrid" };
+    return resolveDrop(x, y, BLOCK_HEIGHT, gridRoot);
+  };
 
   /**
    * What the grid did about a release over a cell it is not showing: nothing.
@@ -1110,6 +1131,13 @@ const GridArea: FC<GridAreaProps> = ({
 
     const { col, row, block: blockData } = blockInfo;
 
+    // Rooted at the grid's own viewport for the same reason `dropAt` is: these
+    // attributes say where a cell sits in ITS grid and not which grid that is,
+    // so a document-wide lookup is one mounted second grid away from measuring
+    // a track this component never drew.
+    const gridRoot = columnsViewportRef.current;
+    if (!gridRoot) return;
+
     const cellSelector = `[data-col="${col}"][data-row="${row}"]`;
     // Keyed by the block's LEG, which is the same key the cell drew the column
     // under. It used to be keyed by `blockData.axis`, and that was one answer
@@ -1119,9 +1147,9 @@ const GridArea: FC<GridAreaProps> = ({
     // draws a single column.
     const leg = legInCell(grid[col][row], blockData);
     const trackElement =
-      document.querySelector(
+      gridRoot.querySelector(
         `${cellSelector} [data-axis-track="${col}-${row}-${leg}"]`,
-      ) ?? document.querySelector(`${cellSelector} [data-axis-track]`);
+      ) ?? gridRoot.querySelector(`${cellSelector} [data-axis-track]`);
     if (!trackElement) return;
 
     const position = positionFromPointer(
