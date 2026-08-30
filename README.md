@@ -654,37 +654,31 @@ One thing follows without being written anywhere: a press the carry refuses - "N
 available in that direction." - leaves the pager where it is, exactly as the arrow key does,
 so the button never claims a column the user is not on.
 
-**A pick-up starts in the column the user was last working in** whenever its offer reaches
-one, and falls back to the first legal cell there is - so an offer confined to the other
-column still opens the pager there, and an offer spanning both leaves the user where they
-were instead of dragging them back to Entry. That preference reaches the point where the
-target is chosen rather than correcting it afterwards, so the sentence the pick-up speaks
-names the cell the user is left on.
+**A pick-up starts at the first legal cell its offer has**, so an offer confined to the
+other column opens the pager there. No column is remembered between carries: a preference
+for the one the user last chose was tried and taken out again, because the rule it needed -
+a closed set of which events count as a choice - kept turning up a case nobody had listed.
 
-A column the user *chose* is what counts, and that is a different fact from the column the
-app happens to be showing them - the column a pick-up merely *lands* in can be the fallback
-rather than anything asked for, and treating it as a choice is what let one pick-up's
-fallback decide the next one's start. It is one rule at every width rather than a phone-only
-concept: a cross-column arrow move on a desktop is just as much a choice.
-
-**Which events count is decided by where the choice is recorded, not by watching the target
-afterwards.** The preference is written at the two places a choice is actually made: the
-pager's press handler, and the single wrapper every target move goes through. Which actions
-those two cover is a **closed set of nine cases, four that record and five that do not**, and
-it is written out in exactly one place - the comment on `preferredColumn` in
-`GridArea.tsx`. It is stated once on purpose: four partial paraphrases of it is how five of
-those nine came to be found one at a time, each as a defect, so a tenth case is a change to
-that rule rather than something to settle wherever it turns up.
-
-One further case is written down, because it is the single press `moveTarget` cannot answer
-for: pressing the button for the column the carry is **already** on moves nothing and says
-nothing, though it is still recorded as the column the user chose. No arrow key means
-"stay put", so a zero-step move leaves the target where it is and
+One press is written down, because it is the single press `moveTarget` cannot answer for:
+pressing the button for the column the carry is **already** on moves nothing and says
+nothing. No arrow key means "stay put", so a zero-step move leaves the target where it is and
 `moveTarget` would announce "No cell available in that direction." - a refusal of a press that
 asked for nothing. Carrying nothing, that same press is already silent, and the two have to
 agree. The case is reached by exactly the users the named pair was chosen for: a voice-control
 user saying the name of the column they are on, and a screen-reader user pressing the button
 without first reading `aria-pressed`.
+
+**Moving the viewport hands DOM focus out of the column it takes away.** The column going off
+screen is held by `visibility: hidden`, and a focused element inside a hidden subtree is
+dropped to `<body>` by the browser - while every key that drives a carry, the arrows, Enter
+and Escape, is handled on a palette tile or on a block rather than on the document. The user
+would be left holding an order, with a cell still highlighted as `aria-current`, and no way to
+place or cancel it short of Tabbing in from the top of the page. Focus goes to the palette
+entry of the order in hand: that tile carries the whole carry keyboard interface and is drawn
+outside the columns at every width, so it is visible and in the accessibility tree at exactly
+the moment a column stops being either. It is done where the viewport moves rather than at
+whichever call moved the target, because it is the hiding that does the damage - four
+different dispatches move a target, and only the effect that hides a column sees all four.
 
 The column that is not on screen is held by `visibility: hidden` rather than removed. It
 keeps its box, which is what keeps the two columns beside each other, while staying out of

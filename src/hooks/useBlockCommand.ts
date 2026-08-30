@@ -76,26 +76,6 @@ export interface UseBlockCommandOptions {
   providerBlocks: OrderTypeDefinition[];
   /** The one voice of the grid; see `useGridAnnouncer`. */
   announcer: GridAnnouncer;
-  /**
-   * The grid column the user was last working in, which a pick-up starts in
-   * whenever it has a legal cell there, and `null` until they have chosen one.
-   *
-   * Below `sm` the panel shows one column at a time and the carry's target owns
-   * which one, so without this a pick-up would drag the user back to Entry the
-   * moment they reached for an order from Exit. It is not gated on the width,
-   * because a cross-column arrow move is an expressed choice at any size: one
-   * rule everywhere rather than a phone-only concept.
-   *
-   * Which events count as a choice is `GridArea`'s to decide, and it decides it
-   * by WHERE the write is rather than by anything worked out afterwards. **That
-   * set is closed and is enumerated in exactly one place, at `preferredColumn`'s
-   * declaration in `GridArea`; do not restate a part of it here or anywhere
-   * else.** What matters on this side is only what the set implies for this
-   * hook: a pick-up's own starting target never becomes a preference, because
-   * it can be `initialTarget`'s fallback, and `pickUp` and `pointAt` cannot
-   * reach either writer at all. See `initialTarget` for the fallback.
-   */
-  preferredColumn: number | null;
   /** Commit a new block from the palette, and report what the grid did. */
   placeProvider: (type: string, cell: CellPosition) => PlacementResult;
   /**
@@ -174,20 +154,7 @@ export interface UseBlockCommandReturn {
    * gesture's side effect.
    */
   removeBlock: (id: string, options?: RemoveOptions) => void;
-  /**
-   * Step the carry's target one cell in a direction.
-   *
-   * **Returns the cell it landed on, and `null` when nothing moved** - no
-   * carry, or nothing legal that way, which is the case that reports
-   * `noTargetThatWay`. It is for the caller that has to act on WHERE a move
-   * ended up rather than on what it asked for: `GridArea` records the column
-   * the user chose from it, and a refused move must record nothing. The value
-   * is one this function already computes to decide what to announce, so
-   * handing it back is cheaper and truer than the alternatives - reading the
-   * DOM, or waiting for the next render and working it out from the target,
-   * which cannot tell a move from a pick-up that landed in the same place.
-   */
-  moveTarget: (dCol: number, dRow: number) => CellPosition | null;
+  moveTarget: (dCol: number, dRow: number) => void;
   /**
    * The cursor is over this cell, so it is the cell a click would place into.
    *
@@ -214,6 +181,17 @@ export interface UseBlockCommandReturn {
   /** The block id that should take focus, once React has rendered it. */
   focusRequest: string | null;
   clearFocusRequest: () => void;
+  /**
+   * Put DOM focus on the palette entry of the order currently in hand, and do
+   * nothing when nothing is carried.
+   *
+   * The palette tile is the one control that drives a carry from the keyboard
+   * whatever else is on screen - it steps the target, places and cancels - and
+   * it is drawn outside the grid columns, so it is still there when the paged
+   * viewport takes a column away. That is what it is for: see the focus
+   * hand-off in `GridArea`.
+   */
+  focusCarriedSource: () => void;
 }
 
 export const useBlockCommand = ({
@@ -221,7 +199,6 @@ export const useBlockCommand = ({
   strategyPattern,
   providerBlocks,
   announcer,
-  preferredColumn,
   placeProvider,
   removeFromGrid,
   refuseMove,
@@ -254,11 +231,10 @@ export const useBlockCommand = ({
       });
       return false;
     }
-    dispatch({ type: "pickUp", source, targets, origin, preferredCol: preferredColumn });
-    // The same choice the reducer makes, from the same function and the same
-    // preferred column, so the announcement can never name a cell other than
-    // the one that is actually the target.
-    const target = initialTarget(targets, preferredColumn) ?? targets[0];
+    dispatch({ type: "pickUp", source, targets, origin });
+    // The same choice the reducer makes, so the announcement can never name a
+    // cell other than the one that is actually the target.
+    const target = initialTarget(targets) ?? targets[0];
     report({ kind: "pickedUp", source, target, origin });
     return true;
   };
@@ -547,17 +523,15 @@ export const useBlockCommand = ({
     dispatch({ type: "pointAt", target: cell });
   };
 
-  const moveTarget = (dCol: number, dRow: number): CellPosition | null => {
-    if (!carrying) return null;
+  const moveTarget = (dCol: number, dRow: number) => {
+    if (!carrying) return;
     const next = commandReducer(state, { type: "moveTarget", dCol, dRow });
     if (next === state) {
       report({ kind: "noTargetThatWay" });
-      return null;
+      return;
     }
     dispatch({ type: "moveTarget", dCol, dRow });
-    const target = next.carrying!.target;
-    report({ kind: "targetChanged", target });
-    return target;
+    report({ kind: "targetChanged", target: next.carrying!.target });
   };
 
   // ─── The offer this carry makes, against the grid that is there ─────
@@ -641,5 +615,8 @@ export const useBlockCommand = ({
     releaseForDrag,
     focusRequest,
     clearFocusRequest: () => setFocusRequest(null),
+    focusCarriedSource: () => {
+      if (carrying) setFocusRequest(carrying.source.type);
+    },
   };
 };

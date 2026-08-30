@@ -109,11 +109,6 @@ export type CommandAction =
       source: ProviderSource;
       targets: CellPosition[];
       origin: ActivationOrigin;
-      /**
-       * The column the user was last working in, or `null` if they have not
-       * chosen one; see `initialTarget`.
-       */
-      preferredCol: number | null;
     }
   | { type: "moveTarget"; dCol: number; dRow: number }
   /**
@@ -184,8 +179,7 @@ export const sameTargets = (
   a.length === b.length && a.every((cell, index) => samePosition(cell, b[index]));
 
 /**
- * Where a pick-up starts: the first legal cell in the column the user is
- * looking at, and otherwise the first legal cell there is.
+ * Where a pick-up starts: the first legal cell.
  *
  * A carried block is always a palette order now, so there is no cell it "came
  * from" to prefer. `withOriginCell` used to insert a placed block's own cell
@@ -193,35 +187,13 @@ export const sameTargets = (
  * (decision D9), because a carry whose only legal destination is where the
  * block already sits is not a move, it is a no-op with extra steps.
  *
- * `preferredCol` is what replaced it, and it is a different kind of preference:
- * not where the block came from, but **the column the user was last working
- * in**. Below `sm` the panel shows one grid column at a time, so a pick-up
- * landing in the first legal cell outright would throw a user who had paged to
- * Exit back to Entry the moment they reached for an order - every time, since
- * an empty grid makes some Entry cell legal and the target list is walked
- * column-major. It is one rule at every width rather than a phone-only concept:
- * a cross-column arrow move is an expressed choice on a desktop too, and a
- * pick-up starting where the user was last working is right there as well.
- *
- * It is a choice the user EXPRESSED, never a column the app merely ended up
- * showing them, which is why it is `null` until one is made rather than
- * defaulting to 0. **Which events count is a closed set, enumerated in exactly
- * one place: `preferredColumn`'s declaration in `GridArea`. Do not restate part
- * of it here.** All that matters on this side is that the target a pick-up
- * starts on is not one of them - it can be this function's own fallback, and
- * taking it as a preference would make one pick-up's fallback silently decide
- * the next one's start.
- *
- * **The fallback is exactly the first legal cell**, taken whenever there is no
- * preference or the preferred column offers no legal cell. That is what keeps a
- * pick-up whose only legal cells are in the OTHER column opening the pager
- * there.
+ * The offer is walked column-major, so an offer confined to the other grid
+ * column starts there - which is what makes a pick-up open the paged viewport
+ * on the one column its order may go in. See `GridArea`.
  */
 export const initialTarget = (
   targets: CellPosition[],
-  preferredCol: number | null,
-): CellPosition | null =>
-  targets.find((cell) => cell.col === preferredCol) ?? targets[0] ?? null;
+): CellPosition | null => targets[0] ?? null;
 
 /**
  * Step the target one cell in a direction, considering only legal cells - so
@@ -282,7 +254,7 @@ export const commandReducer = (
 ): CommandState => {
   switch (action.type) {
     case "pickUp": {
-      const target = initialTarget(action.targets, action.preferredCol);
+      const target = initialTarget(action.targets);
       // A block with nowhere legal to go is not picked up at all, so the user
       // can never get stuck carrying something that cannot be put down.
       if (!target) return state;

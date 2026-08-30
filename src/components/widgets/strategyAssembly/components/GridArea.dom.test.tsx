@@ -2276,213 +2276,6 @@ describe("GridArea, the column pager", () => {
     expect(shownColumn()).toEqual([1]);
   });
 
-  it("picks up into the column the user paged to, rather than pulling them back", () => {
-    render(<Harness initialGrid={clearGrid(2, 3)} />);
-
-    fireEvent.click(pagerButton("Exit"));
-    expect(shownColumn()).toEqual([1]);
-
-    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
-
-    // Both columns are on offer on an empty grid, and the offer is walked
-    // column-major, so the first legal cell is in Entry. Starting there would
-    // throw a user who had deliberately paged to Exit back to Entry every time
-    // they reached for an order, which is the main path for building an Exit
-    // leg on a phone.
-    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
-    expect(shownColumn()).toEqual([1]);
-    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
-    // The preference reaches the point the target is chosen, so the sentence
-    // names the cell the user is actually left on.
-    expect(announcement()).toContain("Target: Exit column, primary row.");
-    expect(announcement()).not.toContain("Entry column");
-  });
-
-  it("does not treat the column a pick-up merely landed in as a choice", () => {
-    // The desktop leak. Nothing here pages at all - the pager is `display: none`
-    // above `sm` - so every write to "which column is on screen" comes from a
-    // carry the user never asked to be in a column at all.
-    const grid = clearGrid(2, 3);
-    grid[0][1].push(placedMarket("b1"));
-    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
-
-    // The offer is only the placed block's diagonals, both in Exit, so the
-    // target is `initialTarget`'s FALLBACK and the viewport follows it there.
-    // That much is the approved behaviour and the test above pins it.
-    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
-    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
-    expect(shownColumn()).toEqual([1]);
-
-    fireEvent.click(cell(1, 0));
-    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-
-    // On a cleared grid both columns are on offer again, and this pick-up has
-    // to start where it has always started. Reading the viewport back as a
-    // preference started it in Exit instead, from a column the user never chose
-    // and cannot see, set or clear.
-    tap(screen.getByRole("button", { name: "Add Limit order" }));
-
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-    expect(announcement()).toContain("Target: Entry column, primary row.");
-  });
-
-  it("remembers the column an arrow key moved the carry to, not the one it was paged to", () => {
-    render(<Harness initialGrid={clearGrid(2, 3)} gridReplacement={clearGrid(2, 3)} />);
-
-    fireEvent.click(pagerButton("Exit"));
-    const palette = screen.getByRole("button", { name: "Add Take Profit order" });
-    tap(palette);
-    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
-
-    // The mirror of the case above: paging is a choice, and so is moving a live
-    // carry out of the column it was paged to. Taking the preference from the
-    // pager press alone would throw this user back to Exit.
-    fireEvent.keyDown(palette, { key: "ArrowLeft" });
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-
-    fireEvent.click(cell(0, 1));
-    // Cleared, so the next offer spans both columns again. Left as it is, the
-    // Entry block's diagonals are the only legal cells and the assertion would
-    // be about the fallback rather than about the preference.
-    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-
-    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
-
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-    expect(shownColumn()).toEqual([0]);
-    expect(pagerButton("Entry")).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("does not treat the column a SWAP pick-up landed in as a choice", () => {
-    // Occupied {(0,1),(0,2),(1,1)}. The conditional rule offers the diagonals
-    // of those cells that are not themselves occupied, and each order type
-    // takes the part of that set its own rows allow - which for these three is
-    // Entry upper for a Take Profit and Exit bottom for a Stop Loss, one in
-    // each column.
-    const grid = clearGrid(2, 3);
-    grid[0][1].push(placedMarket("b1"));
-    grid[0][2].push(placedMarket("b2"));
-    grid[1][1].push(placedMarket("b3"));
-    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
-
-    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
-    expect(cell(0, 0)).toHaveAttribute("aria-current", "location");
-
-    // Still carrying: reaching for another order type SWAPS what is held, which
-    // is a `pickUp` rather than a move. A Stop Loss may sit in rows 1 and 2, so
-    // its one legal cell is in Exit - the app answering, not the user choosing.
-    tap(screen.getByRole("button", { name: "Add Stop Loss order" }));
-    expect(cell(1, 2)).toHaveAttribute("aria-current", "location");
-
-    fireEvent.keyDown(
-      screen.getByRole("button", { name: "Add Stop Loss order" }),
-      { key: "Escape" },
-    );
-    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-
-    tap(screen.getByRole("button", { name: "Add Limit order" }));
-
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-    expect(announcement()).toContain("Target: Entry column, primary row.");
-  });
-
-  it("does not treat a cell a mouse merely swept across as a choice", () => {
-    render(<Harness initialGrid={clearGrid(2, 3)} />);
-
-    // A mouse carry tracks the cell under the cursor, and `pointToTarget` is
-    // silent by design - so a sweep that ends in an Escape changed the target
-    // without the user choosing anything or being told anything.
-    const limit = screen.getByRole("button", { name: "Add Limit order" });
-    clickBlock(limit);
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-
-    fireEvent.mouseEnter(cell(1, 1));
-    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
-
-    fireEvent.keyDown(limit, { key: "Escape" });
-    tap(screen.getByRole("button", { name: "Add Limit order" }));
-
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-    expect(announcement()).toContain("Target: Entry column, primary row.");
-  });
-
-  it("remembers the column an arrow key carried the block into", () => {
-    render(<Harness initialGrid={clearGrid(2, 3)} gridReplacement={clearGrid(2, 3)} />);
-
-    const palette = screen.getByRole("button", { name: "Add Take Profit order" });
-    tap(palette);
-    fireEvent.keyDown(palette, { key: "ArrowRight" });
-    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
-
-    fireEvent.click(cell(1, 1));
-    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-
-    // The deliberate half of the rule, and it holds at every width: an arrow
-    // move across is a choice on a desktop as much as on a phone, so the next
-    // pick-up starts where the user was last working rather than back in Entry.
-    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
-
-    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
-    expect(shownColumn()).toEqual([1]);
-    expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("does not treat a nudge inside one column as a choice of that column", () => {
-    // Occupied {(0,0),(0,1)}, so the only cells a Limit is offered are the
-    // Exit diagonals - a target that came from `initialTarget`'s fallback
-    // rather than from anything the user asked for.
-    const grid = clearGrid(2, 3);
-    grid[0][0].push(placedMarket("b1"));
-    grid[0][1].push(placedMarket("b2"));
-    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
-
-    const limit = screen.getByRole("button", { name: "Add Limit order" });
-    tap(limit);
-    expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
-
-    // Down one row, still in Exit. The carry moved, but no column was chosen,
-    // so the fallback the pick-up landed on must not become a preference.
-    fireEvent.keyDown(limit, { key: "ArrowDown" });
-    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
-
-    fireEvent.keyDown(limit, { key: "Escape" });
-    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-
-    tap(screen.getByRole("button", { name: "Add Limit order" }));
-
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-    expect(announcement()).toContain("Target: Entry column, primary row.");
-  });
-
-  it("keeps a chosen column through a nudge that does not leave the other one", () => {
-    // The mirror, which discards a real choice rather than inventing one.
-    // Occupied {(1,0),(1,1)} leaves a Limit only the Entry cells, so the
-    // pick-up falls back there against the user's paged choice of Exit.
-    const grid = clearGrid(2, 3);
-    grid[1][0].push(placedMarket("b1"));
-    grid[1][1].push(placedMarket("b2"));
-    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
-
-    fireEvent.click(pagerButton("Exit"));
-
-    const limit = screen.getByRole("button", { name: "Add Limit order" });
-    tap(limit);
-    expect(cell(0, 0)).toHaveAttribute("aria-current", "location");
-
-    fireEvent.keyDown(limit, { key: "ArrowDown" });
-    expect(cell(0, 1)).toHaveAttribute("aria-current", "location");
-
-    fireEvent.keyDown(limit, { key: "Escape" });
-    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
-
-    // The nudge stayed in Entry, so it chose nothing and the Exit press is
-    // still the last column the user chose.
-    tap(screen.getByRole("button", { name: "Add Limit order" }));
-
-    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
-    expect(shownColumn()).toEqual([1]);
-  });
-
   it("stays where it is when the carry has nothing that way, and says so", () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));
@@ -2502,31 +2295,88 @@ describe("GridArea, the column pager", () => {
     expect(pagerButton("Exit")).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("remembers the column of a silent press for the one already targeted", () => {
-    // Silence is about what the press SAYS. It is still a column the user
-    // named, so it is still what a later pick-up starts in.
+  /**
+   * A live carry with DOM focus standing on a placed block in the Entry
+   * column, which is the state a cross-column move strands.
+   *
+   * Every step is one the app really wires. A tap on a palette tile or a block
+   * focuses it - `usePointerGesture` calls `preventDefault` on `pointerdown`,
+   * which suppresses the implicit focus, and moves focus by hand instead - so
+   * focus lands in the column. The tap on the placed block leaves the carry
+   * alone: its cell is occupied, so it is not one of the carry's targets and
+   * the cell refuses it rather than placing. And the pager's buttons are the
+   * one control here that is NOT a gesture element, so pressing one moves
+   * focus nowhere - the browser does not focus a button it activates on the
+   * platform this layout is for.
+   */
+  const carryWithFocusInEntry = () => {
     const grid = clearGrid(2, 3);
     grid[0][1].push(placedMarket("b1"));
-    render(<Harness initialGrid={grid} gridReplacement={clearGrid(2, 3)} />);
+    grid[1][1].push(placedMarket("b2"));
+    render(<Harness initialGrid={grid} />);
 
-    // The block's only diagonal a Take Profit may use is Exit upper, so the
-    // target is `initialTarget`'s fallback and nothing is recorded by it.
-    tap(screen.getByRole("button", { name: "Add Take Profit order" }));
+    const takeProfit = screen.getByRole("button", {
+      name: "Add Take Profit order",
+    });
+    tap(takeProfit);
+    expect(cell(0, 0)).toHaveAttribute("aria-current", "location");
+    expect(shownColumn()).toEqual([0]);
+
+    tap(within(cell(0, 1) as HTMLElement).getByRole("button", {
+      name: "Market order, Entry column, primary row",
+    }));
+    expect(columnOf(0).contains(document.activeElement)).toBe(true);
+    expect(cell(0, 0)).toHaveAttribute("aria-current", "location");
+
+    return takeProfit;
+  };
+
+  it("hands focus out of the column a carry move takes off screen", () => {
+    // The regression: taking a column off screen is what makes an element
+    // inside it unfocusable, so the browser dropped focus to `<body>` and left
+    // the user holding an order with nowhere to press. Every key that drives a
+    // carry - the arrows, Enter, Escape - is handled ON a palette tile or ON a
+    // block rather than on the document, so the order could not be placed or
+    // cancelled at all.
+    const takeProfit = carryWithFocusInEntry();
+
+    tap(pagerButton("Exit"));
+
+    expect(shownColumn()).toEqual([1]);
     expect(cell(1, 0)).toHaveAttribute("aria-current", "location");
-    expect(shownColumn()).toEqual([1]);
+    // Somewhere the user can see and reach: the palette entry of the order in
+    // hand, which is drawn outside the columns at every width.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(columnOf(0).contains(document.activeElement)).toBe(false);
+    expect(document.activeElement).toBe(takeProfit);
 
-    // The column already on screen and already targeted. Nothing moves and
-    // nothing is said, but Exit is what the user asked for.
-    fireEvent.click(pagerButton("Exit"));
+    // And still driving the carry, which is the whole point of moving it: the
+    // order can be placed in the column it arrived at without touching the
+    // screen again.
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
 
-    fireEvent.click(cell(1, 0));
-    fireEvent.click(screen.getByRole("button", { name: "replace the grid" }));
+    expect(announcement()).toBe(
+      "Placed Take Profit order in Exit column, upper conditional row.",
+    );
+    expect(cell(1, 0)).toHaveAttribute(
+      "aria-label",
+      "Exit column, upper conditional row, Take Profit",
+    );
+  });
 
-    tap(screen.getByRole("button", { name: "Add Limit order" }));
+  it("leaves that carry cancellable from where focus lands", () => {
+    // The other half of drivable, and the one that matters most: a carry
+    // nobody can put down is worse than the drag reach the paged viewport
+    // exists to fix.
+    const takeProfit = carryWithFocusInEntry();
 
-    expect(cell(1, 1)).toHaveAttribute("aria-current", "location");
-    expect(shownColumn()).toEqual([1]);
-    expect(announcement()).toContain("Target: Exit column, primary row.");
+    tap(pagerButton("Exit"));
+    expect(document.activeElement).toBe(takeProfit);
+
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+
+    expect(announcement()).toContain("Cancelled.");
+    expect(cell(1, 0)).not.toHaveAttribute("aria-current");
   });
 
   it("says nothing when pressed for the column the carry is already on", () => {

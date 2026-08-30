@@ -336,13 +336,10 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     column the user is not on.
   - **A press for the column the carry is ALREADY targeting is deliberately
     SILENT**, an early return in `handleShowColumn` before the dispatch, and it
-    is the one press `moveTarget` cannot answer for. It is silent rather than a
-    no-op: nothing moves and nothing is said, but the column is still recorded
-    as the one the user chose, because what a press says and what it records are
-    two questions and only the first has a reason to be quiet here. No arrow key means
-    "stay put", so a zero delta returns the state unchanged and `moveTarget`
-    would report `noTargetThatWay` - a refusal of a press that asked for
-    nothing. The non-carrying branch is already silent for that press and the
+    is the one press `moveTarget` cannot answer for. Nothing moves and nothing
+    is said. No arrow key means "stay put", so a zero delta returns the state
+    unchanged and `moveTarget` would report `noTargetThatWay` - a refusal of a
+    press that asked for nothing. The non-carrying branch is already silent for that press and the
     two must agree, so the fix REMOVES an untrue sentence rather than adding a
     true one: no outcome for it exists in `gridAnnouncements.ts` and none should
     be added. **That the case exists at all is the stated cost of the named
@@ -352,71 +349,50 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
     for - a voice-control user saying the name of the column they are on, and a
     screen-reader user activating the button without first reading
     `aria-pressed`.
-  - **A pick-up starts in the column the user was last working in**, whenever
-    its offer reaches one, with the first legal cell as the fallback. Without it
-    the target owning the viewport was a one-way street - an empty grid makes
-    some Entry cell legal and the offer is walked column-major, so reaching for
-    an order while paged to Exit landed the target in Entry and threw the user
-    back there, on the main path for building an Exit leg on a phone.
+  - **A move that takes a column off screen hands DOM focus out of it first.**
+    `hiddenColumn` is `visibility: hidden`, so a focused element inside the
+    leaving column is dropped to `<body>` by the browser - and every key that
+    drives a carry (the arrows, Enter, Escape) is handled ON a palette tile or
+    ON a block rather than on the document, so the user would be left holding
+    an order, with a cell still highlighted as `aria-current`, and no way to
+    place or cancel it short of Tabbing in from the top of the page. It is
+    reachable with the app's own focus moves: `usePointerGesture` focuses the
+    element it starts on, so a tap on a placed block puts focus inside a
+    column, a tap on a block in a cell the carry was never offered is refused
+    BY THE CELL and leaves the carry in hand, and the pager's buttons are the
+    one control in the surface that is not a gesture element, so pressing one
+    moves focus nowhere.
 
-  **That last one rests on TWO states in `GridArea`, and they are two facts
-  rather than two copies of one.** `visibleColumn` is WHICH COLUMN IS ON SCREEN:
-  derived, following the carry's target always, the target a pick-up starts on
-  included, which is what the first consequence above depends on.
-  `preferredColumn` is WHICH COLUMN THE USER LAST CHOSE: `null` until a choice
-  is made, and read only by the pick-up bias. Collapsing them is the defect that
-  made the distinction worth writing down: reading the viewport back as a
-  preference meant a pick-up whose offer was only the Exit diagonals of a placed
-  block - which opens the viewport on Exit by the first consequence, at every
-  width - left the NEXT pick-up on a cleared grid starting in Exit at 1440,
-  where it had always started in Entry. **A preference is a choice the user
-  expressed, never a column the app ended up showing them.**
+  **Focus goes to the carried order's palette entry**, through the same
+  `focusRequest` channel a place or a cancel uses - `focusCarriedSource` on the
+  command model. That tile carries the whole carry keyboard interface and is
+  drawn OUTSIDE the columns, as a band above them below `sm` and as the lane
+  beside them above it, so it is visible and in the accessibility tree at the
+  moment a column stops being either. The pager's own buttons are visible too
+  and are the other candidate, but they only page: focus there leaves the carry
+  undrivable a different way. **It belongs in the layout effect that moves the
+  viewport, and not in a wrapper around `moveTarget`**, because it is the
+  hiding that does the damage and that effect is what hides: four dispatches
+  move a target - a pager press, an arrow key, a mouse sweep's `pointAt` and a
+  pick-up - and a wrapper would answer two of them. Nothing there asks WHY the
+  target moved; the question is only whether the element holding focus is in a
+  column about to be taken away, so a fifth dispatch is covered on the day it
+  is written. It is one rule at every width, deliberately not gated on a layout
+  read: a `scrollWidth > clientWidth` guard is a branch jsdom can never take,
+  which ships the behaviour unpinned. Above `sm` nothing is hidden, so it is a
+  focus move rather than a rescue, onto the control that is driving the carry
+  either way - and it needs focus to be inside a grid column to happen at all,
+  which the keyboard path, standing on the palette tile, never is.
+  `GridArea.dom.test.tsx` pins both halves under "hands focus out of the column
+  a carry move takes off screen" and "leaves that carry cancellable from where
+  focus lands".
 
-  **Which events count is settled by WHERE the write is, and by nothing that
-  looks at the target afterwards.** There are exactly two writers -
-  `handleShowColumn` and `moveTargetAndRemember`, the one wrapper every
-  `moveTarget` call in `GridArea` goes through - and **the closed set of what
-  does and does not write is enumerated in exactly ONE place: the comment on
-  `preferredColumn`'s declaration in `GridArea.tsx`, nine cases, four that write
-  and five that do not.** Read it there before touching any of this. It is
-  stated once rather than summarised here because four partial paraphrases of it
-  is precisely how five of those nine cases came to be found one at a time, each
-  as a defect; **a tenth case is a change to that rule and is decided there.**
-  Do not restate a part of it in this file, and do not read the consequence list
-  above as that set - the list above is what the pager DOES, and the enumeration
-  there is what the preference REMEMBERS.
-
-  Two properties of the enforcement belong here, because they are what a reader
-  of this file would otherwise undo. The wrapper takes the column from the cell
-  the move ACTUALLY landed on, which is why `useBlockCommand.moveTarget` returns
-  it: a refused move returns `null` and writes nothing, so the preference can
-  never name a column the user was left off. And it writes only when that column
-  DIFFERS from the one the move started in - **a comparison that may not be
-  swapped for a test on `dCol`**, even though the two agree on every move today:
-  `stepTarget` takes the nearest legal cell that way when nothing is straight
-  ahead, so a vertical press CAN return the other column, and that would be a
-  real choice `dCol !== 0` discards. No occupancy of today's 2x3 grid reaches
-  it, swept over all of them against every order type's rows in both patterns,
-  so this is about asking the right question rather than a live bug - a third
-  column, another row, or a new row set changes it.
-  **Do not put the decision back into an effect that watches the target.**
-  That was tried, as a ref holding the previous carry column, and it could not
-  see what had moved one: swapping the carried order type dispatches `pickUp`
-  while a carry is live, so the new carry's FALLBACK target read as a move, and
-  a mouse hover dispatches `pointAt`, so a cursor swept across the other column
-  and an Escape left a preference for a column the user neither chose nor was
-  told about. Those are cases 6 and 9 of the enumeration, and they hold **by
-  construction rather than by a list of exceptions**: neither dispatch can reach
-  either writer.
-
-  **It is one rule at every width, and deliberately not gated on a layout read
-  or a breakpoint.** A cross-column arrow move is an expressed choice on a
-  desktop too, so a pick-up starting where the user was last working is right
-  there as well; and a `scrollWidth > clientWidth` guard would be a branch jsdom
-  can never take, shipping the behaviour unpinned. The preference travels into
-  the reducer's own `pickUp` rather than correcting the target after the fact,
-  because `pointToTarget` is silent by design and a correction there would
-  announce one cell while `aria-current` sat on another.
+  **A pick-up starts at the first legal cell its offer has, and no column is
+  remembered between carries.** A preference for the column the user last
+  chose was tried and taken out again: its rule was a closed enumeration of
+  which events counted as a choice, and cases kept being found one at a time,
+  each as a defect. Do not reintroduce one without deciding the whole set
+  first.
 
   **Do not give the pager a move of its own, and do not end a carry on it**:
   paging does not touch the grid, so nothing about the carry has gone stale.

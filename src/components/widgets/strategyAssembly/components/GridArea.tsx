@@ -411,11 +411,6 @@ const GridArea: FC<GridAreaProps> = ({
 
   // ─── The paged column viewport ───────────────────────────────────────
   //
-  // **Two states, two different facts.** They agree most of the time, which is
-  // exactly why they are written down as distinct: collapsing them back into
-  // one is how the pick-up bias came to be driven by a column the user had
-  // never chosen.
-  //
   // WHICH COLUMN IS ON SCREEN. Below `sm` the panel cannot draw both grid
   // columns at once - two `min-w-[220px]` columns and a 6px gap need 446px
   // against a 288px panel at 320 - so `columnsWrapper` is a one-column viewport
@@ -429,76 +424,11 @@ const GridArea: FC<GridAreaProps> = ({
   const [visibleColumn, setVisibleColumn] = useState(0);
   const columnsViewportRef = useRef<HTMLDivElement>(null);
 
-  // WHICH COLUMN THE USER LAST CHOSE, and `null` until they choose one. Read
-  // only by the pick-up bias below.
-  //
-  // It is not the state above, and the difference is the whole of the rule. The
-  // viewport also follows the target a pick-up STARTS on, and that target can
-  // be `initialTarget`'s fallback rather than anything the user asked for: at
-  // 1440 a Take Profit whose only legal cells are the Exit diagonals of a
-  // placed block opens the viewport on Exit, and reading that back as a
-  // preference left the NEXT pick-up on a cleared grid starting in Exit, where
-  // it has always started in Entry.
-  //
-  // ─── THE RULE, IN FULL. THIS IS THE ONE STATEMENT OF IT. ─────────────
-  //
-  // The preference is the column a later pick-up starts in, and it is written
-  // by, and ONLY by, an action in which the USER NAMED A COLUMN. Every other
-  // description of it in this repository - `handleShowColumn` below,
-  // `useBlockCommand`, `initialTarget`, AGENTS.md, README - states the set as
-  // closed and points back here rather than restating a part of it. Four
-  // partial paraphrases is how five of these nine cases came to be found one at
-  // a time, each as a defect; **a tenth case is a change to this rule and gets
-  // decided here, not answered ad hoc at whichever call site meets it.**
-  //
-  // IT IS WRITTEN BY FOUR THINGS:
-  // 1. A pager press with nothing in hand, recording the pressed column.
-  // 2. A pager press while carrying that moves the target across columns,
-  //    recording the column it LANDED in.
-  // 3. A pager press while carrying for the column already targeted, recording
-  //    that column silently - the silence is about what the press SAYS, and
-  //    what it records is a separate question.
-  // 4. An arrow-key move of a live carry that lands in a different column,
-  //    recording the landed column. That includes a VERTICAL press that lands
-  //    in the other column, since `stepTarget` takes the nearest legal cell
-  //    when nothing is straight ahead.
-  //
-  // IT IS NOT WRITTEN BY FIVE THINGS:
-  // 5. A fresh pick-up: that target came from `initialTarget`, the app
-  //    answering rather than the user.
-  // 6. A swap pick-up, for the same reason - it is a `pickUp` dispatch and
-  //    never a move.
-  // 7. A move that lands in the same column, such as a vertical nudge, which
-  //    chose no column.
-  // 8. A move the carry refuses, where nothing landed.
-  // 9. A mouse hover crossing into the other column: `pointAt` is silent by
-  //    design and fires for every cell a sweep crosses, so counting it would
-  //    mean the user chose every column the cursor passed over.
-  //
-  // **HOW IT IS ENFORCED, which is what makes 5 to 9 true by construction
-  // rather than by a test remembering to check them:** the write happens at
-  // exactly two call sites - `handleShowColumn` and `moveTargetAndRemember`,
-  // the single `moveTarget` wrapper - and is never inferred from a state
-  // transition, so `pickUp` and `pointAt` cannot reach either. Nothing watches
-  // the target and works out afterwards what must have moved it. That
-  // inference was tried, as a ref holding the previous carry column, and it
-  // could not see the swap or the hover; do not reintroduce it.
-  const [preferredColumn, setPreferredColumn] = useState<number | null>(null);
-
   const command = useBlockCommand({
     grid,
     strategyPattern,
     providerBlocks,
     announcer,
-    // Where a pick-up starts, when the offer reaches the column the user was
-    // last working in. The carry's target owns the viewport, so without this
-    // reaching for an order while paged to Exit would land the target in Entry
-    // and throw the user back there - the main path for building an Exit leg on
-    // a phone. The preference travels into the reducer rather than being
-    // corrected after the fact, so the sentence the pick-up speaks names the
-    // cell the user is left on; a `pointToTarget` afterwards is silent by
-    // design and would have said one cell while `aria-current` sat on another.
-    preferredColumn,
     placeProvider: placeProviderInCell,
     removeFromGrid: removeBlockFromCell,
     // A placed block is never carried, because it never changes cells
@@ -533,61 +463,67 @@ const GridArea: FC<GridAreaProps> = ({
   // cross-column move. The extra render is synchronous, and the scroll effect
   // below still runs after it on `visibleColumn`.
   //
-  // It writes the viewport and NOTHING else. What moved the target is not a
-  // question this effect can answer - every path that moves one arrives here
-  // looking the same - so the preference is written where the choice is made
-  // instead. See its declaration above.
+  // ─── AND IT HANDS DOM FOCUS OUT OF THE COLUMN IT IS ABOUT TO HIDE ────
+  //
+  // The two belong together: taking a column off screen is exactly what makes
+  // an element inside it unfocusable, so whatever hides it owes the user
+  // somewhere to stand. `hiddenColumn` is `visibility: hidden`, and a focused
+  // element in a hidden subtree is dropped to `<body>` by the browser - while
+  // every key that drives a carry (the arrows, Enter, Escape) is handled ON a
+  // palette tile or ON a block rather than on the document. The user would be
+  // left holding an order, with a cell still highlighted as `aria-current`,
+  // and no way to place or cancel it short of Tabbing in from the top of the
+  // page: worse than the drag reach the paged viewport exists to fix.
+  //
+  // **It is reachable with the app's own focus moves**, which is why it is
+  // guarded here rather than treated as a curiosity. `usePointerGesture`
+  // focuses the element it starts on, so a tap on a placed block puts focus
+  // INSIDE a column - and a tap on a block whose cell the carry was never
+  // offered is refused BY THE CELL, which leaves the carry in hand. The pager's
+  // buttons are the one control in the surface that is not a gesture element,
+  // so pressing one moves focus nowhere and the move that follows starts with
+  // focus still standing in the column being left.
+  //
+  // **Focus goes to the carried order's palette entry**, through the same
+  // `focusRequest` channel a place or a cancel uses. That tile carries the
+  // whole carry keyboard interface and is drawn OUTSIDE the columns - a band
+  // above them below `sm`, the lane beside them above it - so it is visible
+  // and in the accessibility tree at the moment a column stops being either.
+  // The pager's own buttons are visible too and are the other candidate, but
+  // they only page: focus there leaves the carry undrivable a different way.
+  //
+  // **Here rather than at the call that moved the target, because it is the
+  // hiding that does the damage and this is what hides.** Four dispatches move
+  // a target - a pager press, an arrow key, a mouse sweep's `pointAt` and a
+  // pick-up - and a wrapper around `moveTarget` would answer two of them,
+  // leaving the other two to be found later by whoever meets them. Nothing
+  // here asks WHY the target moved, and nothing needs to: the question is only
+  // whether the element holding focus is in a column this effect is about to
+  // take away.
+  //
+  // **One rule at every width**, deliberately not gated on a layout read: a
+  // `scrollWidth > clientWidth` guard is a branch jsdom can never take, which
+  // ships the behaviour unpinned. Above `sm` nothing is hidden, so this is a
+  // focus move rather than a rescue - onto the control that is driving the
+  // carry either way - and it needs focus to be inside a grid column to
+  // happen at all, which the keyboard path, standing on the palette tile,
+  // never is.
   const carryTargetColumn = command.carrying?.target.col ?? null;
   useLayoutEffect(() => {
     if (carryTargetColumn === null) return;
+    const columns = columnsViewportRef.current?.children;
+    const focused = document.activeElement;
+    if (columns && focused) {
+      for (let col = 0; col < columns.length; col += 1) {
+        if (col !== carryTargetColumn && columns[col].contains(focused)) {
+          command.focusCarriedSource();
+          break;
+        }
+      }
+    }
     setVisibleColumn(carryTargetColumn);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carryTargetColumn]);
-
-  /**
-   * Step the carry's target, and remember the column when the move CROSSES
-   * into another one.
-   *
-   * The one way `moveTarget` is reached: every arrow-key path takes it as
-   * `onCommandMove` and `onBlockCommandMove`, and the pager's carrying branch
-   * calls it too, which is what keeps the press and the key one mechanism
-   * rather than two. A cross-column move is the user choosing a column, so this
-   * is where the preference is written - at the call, where what happened is
-   * known, rather than inferred later from a target that every other path can
-   * move as well. This wrapper and `handleShowColumn` are the ONLY two writers;
-   * the closed set of what does and does not write is stated in full at
-   * `preferredColumn`'s declaration, and this covers cases 2, 4, 7 and 8 of it.
-   *
-   * From the cell the move ACTUALLY landed on, which is why the hook hands it
-   * back: a move the carry refuses returns `null` and writes nothing, so the
-   * preference can never name a column the user was left off.
-   *
-   * **The gate is the case this wrapper exists for**: a carry that started on
-   * `initialTarget`'s fallback and is then nudged up or down would otherwise
-   * have that fallback recorded as a column the user chose, which is the same
-   * defect the pick-up bias was built to avoid.
-   *
-   * **It compares the COLUMNS rather than testing `dCol`, and must not be
-   * "simplified" to the latter.** They agree on every move today, so this is
-   * about which question is the right one to ask rather than a live bug:
-   * `stepTarget` prefers a cell straight ahead and otherwise takes the nearest
-   * legal one that way, so a vertical press CAN return the other column, and
-   * that would be a real choice `dCol !== 0` discards. No occupancy of today's
-   * 2x3 grid reaches it - swept over every one of them against every order
-   * type's `allowedRows`, in both patterns - because a vertical step's
-   * candidates are filtered to a greater or lesser row first, and what the
-   * diagonal rule leaves in the other column is never on the far side of the
-   * current cell that way. A third column, another row, or an order type with
-   * different rows changes that, and `dCol !== 0` also buys nothing on a
-   * horizontal press, which changes column whenever it moves at all.
-   */
-  const moveTargetAndRemember = (dCol: number, dRow: number) => {
-    // Before the dispatch: React has not re-rendered, so this is still the
-    // column the move is starting from.
-    const from = command.carrying?.target.col ?? null;
-    const landed = command.moveTarget(dCol, dRow);
-    if (landed && landed.col !== from) setPreferredColumn(landed.col);
-    return landed;
-  };
 
   // The state above, applied to the one thing that draws it.
   //
@@ -646,34 +582,16 @@ const GridArea: FC<GridAreaProps> = ({
    * column they are already on, and a screen-reader user activating the button
    * without first reading `aria-pressed`.
    *
-   * **The preference is recorded in ALL THREE of those cases, because the press
-   * is an expressed choice in all three** - cases 1, 2 and 3 of the rule stated
-   * in full at `preferredColumn`'s declaration, which is the closed set and the
-   * only place it is enumerated. The silence above is about what the press
-   * SAYS, never about what it records, and the two questions are answered
-   * separately here on purpose: they were decided in different rounds, and
-   * letting one early return answer both is what once made a press that chose a
-   * column record nothing at all. A cross-column press records through
-   * `moveTargetAndRemember`, which takes the column from where the target
-   * actually landed, so a refused move still records nothing.
+   * The press is not remembered anywhere: a pick-up starts at the first legal
+   * cell its offer has, whatever the user last paged to.
    */
   const handleShowColumn = (col: number) => {
     if (command.carrying) {
-      if (col === command.carrying.target.col) {
-        // Safe by the guard just above, which is what stops this reopening the
-        // hole the preference gate exists for: `col` equals the carry's target
-        // column, and the carry-target sync keeps `visibleColumn` equal to that
-        // same target, so the column recorded is necessarily the one on screen
-        // and the one whose button was pressed. It can never name a column the
-        // user was left off.
-        setPreferredColumn(col);
-        return;
-      }
-      moveTargetAndRemember(col - command.carrying.target.col, 0);
+      if (col === command.carrying.target.col) return;
+      command.moveTarget(col - command.carrying.target.col, 0);
       return;
     }
     setVisibleColumn(col);
-    setPreferredColumn(col);
   };
 
   // ─── The cursor half of a mouse carry ────────────────────────────────
@@ -1244,7 +1162,7 @@ const GridArea: FC<GridAreaProps> = ({
           onProviderMouseEnter={handleProviderMouseEnter}
           onProviderMouseLeave={handleProviderMouseLeave}
           onProviderActivate={command.activateProvider}
-          onCommandMove={moveTargetAndRemember}
+          onCommandMove={command.moveTarget}
           onCommandCancel={command.cancel}
           carryingType={carryingProviderType}
           focusType={command.focusRequest}
@@ -1331,7 +1249,7 @@ const GridArea: FC<GridAreaProps> = ({
                     onBlockDragRecognised={handleDragRecognised}
                     onBlockVerticalDrag={handleBlockVerticalDrag}
                     onBlockActivate={command.activateBlock}
-                    onBlockCommandMove={moveTargetAndRemember}
+                    onBlockCommandMove={command.moveTarget}
                     onBlockCommandCancel={command.cancel}
                     onBlockAdjustPrice={handleBlockAdjustPrice}
                     onBlockRemove={command.removeBlock}

@@ -59,9 +59,6 @@ const renderCommand = (
       strategyPattern,
       providerBlocks: ORDER_TYPES,
       announcer,
-      // No column chosen: nothing in these tests pages or moves a carry across,
-      // and `GridArea` owns that state.
-      preferredColumn: null,
       placeProvider,
       removeFromGrid,
       // Wired the way `GridArea` wires it: the refusal is reported to the one
@@ -95,7 +92,6 @@ const renderCommandWithReplaceableGrid = (initialGrid: GridData) =>
         strategyPattern: "conditional",
         providerBlocks: ORDER_TYPES,
         announcer,
-        preferredColumn: null,
         placeProvider: () => ({ status: "refused" }),
         removeFromGrid: (id) => removeBlockFromGrid(grid, id),
         refuseMove: () => {},
