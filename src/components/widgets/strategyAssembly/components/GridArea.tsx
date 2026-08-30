@@ -429,10 +429,8 @@ const GridArea: FC<GridAreaProps> = ({
   const [visibleColumn, setVisibleColumn] = useState(0);
   const columnsViewportRef = useRef<HTMLDivElement>(null);
 
-  // WHICH COLUMN THE USER LAST CHOSE, and `null` until they choose one. Written
-  // only by an expressed choice - a pager press with nothing in hand, and a
-  // cross-column move of a live carry, which is the arrow keys and the pager
-  // press while carrying alike - and read only by the pick-up bias below.
+  // WHICH COLUMN THE USER LAST CHOSE, and `null` until they choose one. Read
+  // only by the pick-up bias below.
   //
   // It is not the state above, and the difference is the whole of the rule. The
   // viewport also follows the target a pick-up STARTS on, and that target can
@@ -443,10 +441,19 @@ const GridArea: FC<GridAreaProps> = ({
   // it has always started in Entry. A choice is what the user expressed, never
   // a column the app ended up showing them.
   //
-  // It is taken from where a move's target ACTUALLY ended up rather than from
-  // what the press asked for, because a move the carry refuses leaves the
-  // viewport where it is - and a preference naming a column the user is not on
-  // would be the same defect somewhere new.
+  // **WHICH events count is enforced by WHERE the write is, and by nothing
+  // else.** There are exactly two writers and both are below: the pager press
+  // with nothing in hand, and `moveTargetAndRemember`, the one wrapper every
+  // `moveTarget` call goes through. Nothing watches the target and works out
+  // afterwards what must have moved it. That inference was tried, as a ref
+  // holding the previous carry column, and it was wrong for every path that
+  // moves a target without being an arrow key: swapping the carried order type
+  // dispatches `pickUp` while a carry is live, so the new carry's FALLBACK
+  // target read as a move, and a mouse hover dispatches `pointAt`, so sweeping
+  // the cursor across the other column and pressing Escape left a preference
+  // for a column the user never chose and was never told about. Three paths
+  // therefore write nothing, by construction rather than by exclusion: a fresh
+  // pick-up, a swap pick-up, and a hover. None of them is a `moveTarget`.
   const [preferredColumn, setPreferredColumn] = useState<number | null>(null);
 
   const command = useBlockCommand({
@@ -497,23 +504,35 @@ const GridArea: FC<GridAreaProps> = ({
   // cross-column move. The extra render is synchronous, and the scroll effect
   // below still runs after it on `visibleColumn`.
   //
-  // It writes the PREFERENCE as well, but only for the second of the two things
-  // that can put a carry's target in a new column, and the ref is what tells
-  // them apart. No previous column means a carry just STARTED: that target came
-  // from `initialTarget`, which is the app answering rather than the user, so
-  // the viewport follows it and nothing is remembered. A previous column and a
-  // different one now means a live carry MOVED, by an arrow key or by the pager
-  // press that dispatches the same `moveTarget` - the user chose a column, and
-  // the column they actually landed in is what is remembered.
+  // It writes the viewport and NOTHING else. What moved the target is not a
+  // question this effect can answer - every path that moves one arrives here
+  // looking the same - so the preference is written where the choice is made
+  // instead. See its declaration above.
   const carryTargetColumn = command.carrying?.target.col ?? null;
-  const previousCarryColumn = useRef<number | null>(null);
   useLayoutEffect(() => {
-    const previous = previousCarryColumn.current;
-    previousCarryColumn.current = carryTargetColumn;
     if (carryTargetColumn === null) return;
     setVisibleColumn(carryTargetColumn);
-    if (previous !== null) setPreferredColumn(carryTargetColumn);
   }, [carryTargetColumn]);
+
+  /**
+   * Step the carry's target, and remember the column it landed in.
+   *
+   * The one way `moveTarget` is reached: every arrow-key path takes it as
+   * `onCommandMove` and `onBlockCommandMove`, and the pager's carrying branch
+   * calls it too, which is what keeps the press and the key one mechanism
+   * rather than two. A move is the user choosing a column, so this is where the
+   * preference is written - at the call, where what happened is known, rather
+   * than inferred later from a target that every other path can move as well.
+   *
+   * From the cell the move ACTUALLY landed on, which is why the hook hands it
+   * back: a move the carry refuses returns `null` and writes nothing, so the
+   * preference can never name a column the user was left off.
+   */
+  const moveTargetAndRemember = (dCol: number, dRow: number) => {
+    const landed = command.moveTarget(dCol, dRow);
+    if (landed) setPreferredColumn(landed.col);
+    return landed;
+  };
 
   // The state above, applied to the one thing that draws it.
   //
@@ -558,8 +577,8 @@ const GridArea: FC<GridAreaProps> = ({
    *
    * Either way the press is a column the user chose, so it is remembered as the
    * one a later pick-up starts in. Only the non-carrying branch records it
-   * here; carrying, the move may be refused, so the preference is taken from
-   * where the target actually ended up, in the effect above.
+   * here; the carrying branch goes through `moveTargetAndRemember`, which
+   * records the cell the move landed on and nothing when it is refused.
    *
    * The press naming the column the carry is ALREADY on is the one case
    * `moveTarget` cannot answer for, and it is silent by design. `moveTarget` is
@@ -578,7 +597,7 @@ const GridArea: FC<GridAreaProps> = ({
   const handleShowColumn = (col: number) => {
     if (command.carrying) {
       if (col === command.carrying.target.col) return;
-      command.moveTarget(col - command.carrying.target.col, 0);
+      moveTargetAndRemember(col - command.carrying.target.col, 0);
       return;
     }
     setVisibleColumn(col);
@@ -1153,7 +1172,7 @@ const GridArea: FC<GridAreaProps> = ({
           onProviderMouseEnter={handleProviderMouseEnter}
           onProviderMouseLeave={handleProviderMouseLeave}
           onProviderActivate={command.activateProvider}
-          onCommandMove={command.moveTarget}
+          onCommandMove={moveTargetAndRemember}
           onCommandCancel={command.cancel}
           carryingType={carryingProviderType}
           focusType={command.focusRequest}
@@ -1240,7 +1259,7 @@ const GridArea: FC<GridAreaProps> = ({
                     onBlockDragRecognised={handleDragRecognised}
                     onBlockVerticalDrag={handleBlockVerticalDrag}
                     onBlockActivate={command.activateBlock}
-                    onBlockCommandMove={command.moveTarget}
+                    onBlockCommandMove={moveTargetAndRemember}
                     onBlockCommandCancel={command.cancel}
                     onBlockAdjustPrice={handleBlockAdjustPrice}
                     onBlockRemove={command.removeBlock}

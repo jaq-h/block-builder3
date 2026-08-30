@@ -84,10 +84,17 @@ export interface UseBlockCommandOptions {
    * which one, so without this a pick-up would drag the user back to Entry the
    * moment they reached for an order from Exit. It is not gated on the width,
    * because a cross-column arrow move is an expressed choice at any size: one
-   * rule everywhere rather than a phone-only concept. Which events count as a
-   * choice is `GridArea`'s to decide; what matters here is that a pick-up's own
-   * starting target is not one of them, or a fallback would decide the next
-   * pick-up. See `initialTarget` for that fallback.
+   * rule everywhere rather than a phone-only concept.
+   *
+   * Which events count as a choice is `GridArea`'s to decide, and it decides it
+   * by WHERE the write is rather than by anything worked out afterwards: a
+   * pager press with nothing in hand, and its one `moveTarget` wrapper. What
+   * matters on this side is that a pick-up's own starting target is not one of
+   * them - it can be `initialTarget`'s fallback, and a fallback deciding the
+   * next pick-up is the bug this shape exists to make unreachable. Three paths
+   * therefore leave it alone: a fresh pick-up, a pick-up that swaps what is
+   * carried, and a mouse hover through `pointToTarget`. See `initialTarget` for
+   * the fallback.
    */
   preferredColumn: number | null;
   /** Commit a new block from the palette, and report what the grid did. */
@@ -168,7 +175,20 @@ export interface UseBlockCommandReturn {
    * gesture's side effect.
    */
   removeBlock: (id: string, options?: RemoveOptions) => void;
-  moveTarget: (dCol: number, dRow: number) => void;
+  /**
+   * Step the carry's target one cell in a direction.
+   *
+   * **Returns the cell it landed on, and `null` when nothing moved** - no
+   * carry, or nothing legal that way, which is the case that reports
+   * `noTargetThatWay`. It is for the caller that has to act on WHERE a move
+   * ended up rather than on what it asked for: `GridArea` records the column
+   * the user chose from it, and a refused move must record nothing. The value
+   * is one this function already computes to decide what to announce, so
+   * handing it back is cheaper and truer than the alternatives - reading the
+   * DOM, or waiting for the next render and working it out from the target,
+   * which cannot tell a move from a pick-up that landed in the same place.
+   */
+  moveTarget: (dCol: number, dRow: number) => CellPosition | null;
   /**
    * The cursor is over this cell, so it is the cell a click would place into.
    *
@@ -528,15 +548,17 @@ export const useBlockCommand = ({
     dispatch({ type: "pointAt", target: cell });
   };
 
-  const moveTarget = (dCol: number, dRow: number) => {
-    if (!carrying) return;
+  const moveTarget = (dCol: number, dRow: number): CellPosition | null => {
+    if (!carrying) return null;
     const next = commandReducer(state, { type: "moveTarget", dCol, dRow });
     if (next === state) {
       report({ kind: "noTargetThatWay" });
-      return;
+      return null;
     }
     dispatch({ type: "moveTarget", dCol, dRow });
-    report({ kind: "targetChanged", target: next.carrying!.target });
+    const target = next.carrying!.target;
+    report({ kind: "targetChanged", target });
+    return target;
   };
 
   // ─── The offer this carry makes, against the grid that is there ─────

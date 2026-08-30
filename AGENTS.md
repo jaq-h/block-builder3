@@ -361,21 +361,32 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   derived, following the carry's target always, the target a pick-up starts on
   included, which is what the first consequence above depends on.
   `preferredColumn` is WHICH COLUMN THE USER LAST CHOSE: `null` until a choice
-  is made, written only by a pager press with nothing in hand and by a
-  cross-column move of a live carry (the arrow keys, and the pager press that
-  dispatches the same `moveTarget`), and read only by the pick-up bias.
-  Collapsing them is the defect that made the distinction worth writing down:
-  reading the viewport back as a preference meant a pick-up whose offer was only
-  the Exit diagonals of a placed block - which opens the viewport on Exit by the
-  first consequence, at every width - left the NEXT pick-up on a cleared grid
-  starting in Exit at 1440, where it had always started in Entry. **A preference
-  is a choice the user expressed, never a column the app ended up showing
-  them**, so the two are told apart by a ref holding the previous carry column:
-  no previous column means a carry started, viewport only; a different previous
-  column means a live carry moved, and both. It is taken from where the target
-  ACTUALLY ended up rather than from what the press asked for, since a refused
-  move leaves the viewport put and a preference naming a column the user is not
-  on would be this same defect somewhere new.
+  is made, and read only by the pick-up bias. Collapsing them is the defect that
+  made the distinction worth writing down: reading the viewport back as a
+  preference meant a pick-up whose offer was only the Exit diagonals of a placed
+  block - which opens the viewport on Exit by the first consequence, at every
+  width - left the NEXT pick-up on a cleared grid starting in Exit at 1440,
+  where it had always started in Entry. **A preference is a choice the user
+  expressed, never a column the app ended up showing them.**
+
+  **Which events count is settled by WHERE the write is, and by nothing that
+  looks at the target afterwards.** There are exactly two writers: the pager
+  press with nothing in hand, and `moveTargetAndRemember`, the one wrapper every
+  `moveTarget` call in `GridArea` goes through - the arrow keys as
+  `onCommandMove` and `onBlockCommandMove`, and the pager's carrying branch,
+  which is what keeps the press and the key one mechanism rather than two. It
+  takes the column from the cell the move ACTUALLY landed on, which is why
+  `useBlockCommand.moveTarget` returns it: a refused move returns `null` and
+  writes nothing, so the preference can never name a column the user was left
+  off. **Do not put the decision back into an effect that watches the target.**
+  That was tried, as a ref holding the previous carry column, and it could not
+  see what had moved one: swapping the carried order type dispatches `pickUp`
+  while a carry is live, so the new carry's FALLBACK target read as a move, and
+  a mouse hover dispatches `pointAt`, so a cursor swept across the other column
+  and an Escape left a preference for a column the user neither chose nor was
+  told about. **Three paths write nothing, by construction rather than by a list
+  of exceptions**: a fresh pick-up, a swap pick-up, and a hover, none of which
+  is a `moveTarget`.
 
   **It is one rule at every width, and deliberately not gated on a layout read
   or a breakpoint.** A cross-column arrow move is an expressed choice on a
@@ -664,14 +675,22 @@ lane the viewport would be the panel less 90px and a 6px gap, **192 / 232 / 262
 band the column gets **288 / 328 / 358 / 382**, clear by 68px at the worst of
 them. Three rules hold it together and none may be simplified away:
 
-- **`overflow-x-hidden`, never `-auto`.** This is a scroll container the user
-  cannot drive, so it draws no scrollbar on any platform - it cannot grow by a
-  classic bar's gutter, and it cannot be scrolled to a column the pager does not
-  know about, which is what gives "which column is on screen" one owner. The
-  wraps-never-scrolls rule above governs *chrome* and these are content lanes,
-  so it does not forbid a box here; taking neither of its measured harms anyway
-  is what makes that reading safe rather than a loophole. `sm:overflow-visible`
-  puts the scroll container away entirely where both columns fit.
+- **`overflow-hidden`, never `-auto`, and on BOTH axes.** This is a scroll
+  container the user cannot drive, so it draws no scrollbar on any platform - it
+  cannot grow by a classic bar's gutter, and it cannot be scrolled to a column
+  the pager does not know about, which is what gives "which column is on screen"
+  one owner. The wraps-never-scrolls rule above governs *chrome* and these are
+  content lanes, so it does not forbid a box here; taking neither of its
+  measured harms anyway is what makes that reading safe rather than a loophole.
+  **`overflow-x-hidden` alone does not take neither, which is why it is not what
+  this says**: setting one axis to anything other than `visible` makes the
+  other's `visible` compute to `auto`, so naming only the axis that pages left
+  this a real user-drivable VERTICAL scrollport. Nothing overflows it that way
+  today - below `sm` it is an auto-height flex item - but the day anything
+  bounds its height there, that bar's gutter eats width from a column already
+  sized against the 220px floor above, and a guard reading the class list stays
+  green through it. `sm:overflow-visible` puts the scroll container away
+  entirely where both columns fit.
 - **The off-page column is `invisible sm:visible` (`hiddenColumn`), not
   hidden.** `visibility: hidden` keeps its box, which is what keeps the columns
   BESIDE each other - a removed box is not beside anything - while buying
