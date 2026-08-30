@@ -492,7 +492,10 @@ const GridArea: FC<GridAreaProps> = ({
   // Which column is off page is read from the same inherited `pointer-events`
   // that `cellBoxesFromDom` reads, rather than from `visibleColumn` plus a
   // breakpoint of its own: one owner for "is this column reachable", so the tab
-  // order and the drop resolver cannot come to disagree about it.
+  // order, the drop resolver and the target highlight cannot come to disagree
+  // about it. `visibleColumn` is what WRITES the class; it is not the answer,
+  // because above `sm` the class resolves to nothing and both columns are
+  // reachable whatever it says.
   //
   // **It is a function rather than an effect body because it has TWO triggers,
   // and a rule read off the viewport cannot be derived from renders alone.**
@@ -503,26 +506,53 @@ const GridArea: FC<GridAreaProps> = ({
   // from the SAME `ResizeObserver` it already installs for the second. One
   // observer on one box, because two watching it for the same reason is how
   // they come to disagree.
-  const applyPagedTabOrder = useCallback(() => {
+  //
+  // **Every read happens before any write, and a write already in place is
+  // skipped.** `getComputedStyle` after a DOM mutation forces a fresh style
+  // recalculation, and this runs after every render - including every
+  // `pointermove` of a drag, since the hover cell is re-derived there. Reading
+  // both columns first costs one recalculation rather than one per column, and
+  // the skip keeps a drag from re-writing every `tabindex` in the off-page
+  // column on each of those renders. Neither changes what the rule computes.
+  const [offPageColumns, setOffPageColumns] = useState(0);
+
+  const syncOffPageColumns = useCallback(() => {
     const viewport = columnsViewportRef.current;
     if (!viewport) return;
 
-    for (const columnElement of Array.from(viewport.children)) {
-      const offPage = getComputedStyle(columnElement).pointerEvents === "none";
+    const columns = Array.from(viewport.children);
+    const withheld = columns.map(
+      (columnElement) =>
+        getComputedStyle(columnElement).pointerEvents === "none",
+    );
+
+    // Published as a bitmask so an unchanged answer is an unchanged value and
+    // React bails out of the re-render this would otherwise cause on every
+    // pass. An array would be a fresh reference each time and never settle.
+    setOffPageColumns(
+      withheld.reduce((mask, offPage, col) => mask | (Number(offPage) << col), 0),
+    );
+
+    columns.forEach((columnElement, col) => {
       const focusable = columnElement.querySelectorAll<HTMLElement>(
         "a[href], button, input, select, textarea, [tabindex]",
       );
       for (const element of Array.from(focusable)) {
-        if (offPage) {
+        if (withheld[col]) {
           // Remember what the element asked for before this rule touched it, so
-          // restoring cannot invent a tab stop the component never wanted.
+          // restoring cannot invent a tab stop the component never wanted. It
+          // has to happen before the write below, and the guard is the record
+          // rather than the value: an element the rule has already touched
+          // reads `-1` for a reason that is not its own.
           if (!element.hasAttribute("data-paged-tabindex")) {
             element.setAttribute(
               "data-paged-tabindex",
               element.getAttribute("tabindex") ?? "",
             );
           }
-          element.setAttribute("tabindex", "-1");
+          if (element.getAttribute("tabindex") !== "-1") {
+            element.setAttribute("tabindex", "-1");
+          }
         } else if (element.hasAttribute("data-paged-tabindex")) {
           const previous = element.getAttribute("data-paged-tabindex");
           if (previous) element.setAttribute("tabindex", previous);
@@ -530,10 +560,13 @@ const GridArea: FC<GridAreaProps> = ({
           element.removeAttribute("data-paged-tabindex");
         }
       }
-    }
+    });
   }, []);
 
-  useLayoutEffect(applyPagedTabOrder);
+  useLayoutEffect(syncOffPageColumns);
+
+  /** Whether the panel is withholding this column, from the read above. */
+  const isColumnOffPage = (col: number) => (offPageColumns & (1 << col)) !== 0;
 
   // The state above, applied to the one thing that draws it.
   //
@@ -569,14 +602,14 @@ const GridArea: FC<GridAreaProps> = ({
 
     const syncToViewport = () => {
       showColumn();
-      applyPagedTabOrder();
+      syncOffPageColumns();
     };
 
     syncToViewport();
     const observer = new ResizeObserver(syncToViewport);
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [visibleColumn, applyPagedTabOrder]);
+  }, [visibleColumn, syncOffPageColumns]);
 
   /**
    * The pager was pressed.
@@ -1165,7 +1198,18 @@ const GridArea: FC<GridAreaProps> = ({
   const showValidTargets =
     draggingFromProvider !== null || hoveredProviderId !== null;
 
+  // **A cell the panel is not showing never draws itself as a target.** The
+  // valid-target treatment is the strongest affordance this app has - an accent
+  // border, a ring, the pattern and the breathing animation - and drawing the
+  // peek made it visible in a column every release is refused in: at 320 that
+  // is 38px of each Exit cell breathing "drop here" at a cell `resolveDrop`
+  // classifies as `withheld`. A highlight computed one way and a drop the other
+  // is the defect `dropTarget.ts` exists to prevent, so both take the same
+  // answer: the computed `pointer-events` read above, not a second notion of
+  // which column is on screen. Above `sm` nothing is withheld, so this costs
+  // the desktop layout nothing.
   const isValidTarget = (colIndex: number, rowIndex: number): boolean => {
+    if (isColumnOffPage(colIndex)) return false;
     if (command.carrying) {
       return command.carrying.targets.some((cell) =>
         samePosition(cell, { col: colIndex, row: rowIndex }),

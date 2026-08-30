@@ -9,6 +9,7 @@
 //
 // Everything here is pure. The DOM-facing half lives in `useBlockCommand`.
 
+import { COLUMN_HEADERS } from "../data/orderTypes";
 import type { CellPosition, GridData, StrategyPattern } from "../types/grid";
 import { isCellValidForPlacement } from "./grid";
 
@@ -305,17 +306,22 @@ export const commandReducer = (
 // NAMING - shared by accessible labels and by `utils/gridAnnouncements.ts`
 // =============================================================================
 
-const COLUMN_NAMES = ["Entry", "Exit"];
 const ROW_NAMES = ["upper conditional", "primary", "lower conditional"];
 
 /**
- * Human-readable name for a grid column, from the same table `describeCell`
- * reads. A sentence that has to name a column on its own - the pager refusal
- * in `gridAnnouncements.ts` - takes it from here rather than slicing a cell's
- * description or keeping a second list.
+ * Human-readable name for a grid column, and the one owner of that name for
+ * every sentence and every label the grid produces.
+ *
+ * It reads `COLUMN_HEADERS` - the list the column headings and the pager's own
+ * buttons are drawn from - rather than restating it. A second list here was
+ * inert while it only described cells, and stopped being inert the moment the
+ * `columnNotShown` refusal in `gridAnnouncements.ts` began telling the user
+ * which BUTTON to press: two lists that merely agreed would leave that sentence
+ * naming a control that is not on screen under that name, to precisely the
+ * screen-reader and voice-control users the sentence exists for.
  */
 export const describeColumn = (col: number): string =>
-  COLUMN_NAMES[col] ?? `column ${col + 1}`;
+  COLUMN_HEADERS[col] ?? `column ${col + 1}`;
 
 /** Human-readable name for a cell, used in labels and announcements alike. */
 export const describeCell = (

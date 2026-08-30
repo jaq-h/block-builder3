@@ -785,8 +785,15 @@ of slack. Three rules hold it together and none may be simplified away:
   collapsing `withheld` into "no cell"**: that collapse is what told a palette
   user their release was outside the grid while they watched it land on a drawn
   column, and one geometry may not get two accounts. **The exclusion itself is
-  unchanged**: nothing is ever placed into a withheld cell, and the highlight
-  still names only a cell a release may land in.
+  unchanged**: nothing is ever placed into a withheld cell, and NEITHER
+  highlight names one. The hover highlight takes `available` alone, and so does
+  `isValidTarget`, which draws the accent border, the ring, the pattern and the
+  breathing animation: drawing the peek made that treatment visible in a column
+  every release is refused in - 38px of each cell at 320 - and a highlight
+  computed one way with a drop the other is the defect this resolver exists to
+  prevent. Both read the same computed `pointer-events`, never `visibleColumn`,
+  which WRITES the class rather than answering the question and says nothing
+  above `sm`.
   **Inheritance answers a cell but not a block, which is why the class carries
   a second rule.** A cell declares no `pointer-events` of its own and so
   inherits the refusal; `getBlockPositionerProps` declares one, opting the tile

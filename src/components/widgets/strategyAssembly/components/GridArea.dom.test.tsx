@@ -1527,6 +1527,54 @@ describe("GridArea, a drop whose block overlaps a cell it is not over", () => {
     );
   });
 
+  it("draws no valid-target treatment in the column it is not showing", () => {
+    // The valid-target tint is the strongest affordance this app has, and
+    // drawing the peek made it visible in a column every release is refused in
+    // - an unmistakable "drop here" at cells `resolveDrop` classifies as
+    // withheld. The highlight and the drop take the same answer, so it is
+    // withdrawn there, and the cells the panel IS showing keep it.
+    pageTheColumns();
+    renderTwoColumns();
+
+    // Held clear of every stubbed cell, so nothing is the hover target: the
+    // hover treatment would otherwise mask the validity one on the cell under
+    // the pointer, and it is the validity one this is about.
+    const palette = screen.getByRole("button", { name: "Add Market order" });
+    fireEvent(palette, pointerAt("pointerdown", 30, 20));
+    fireEvent(palette, pointerAt("pointermove", 30, 60));
+
+    const lit = (col: number, row: number) =>
+      (cell(col, row) as HTMLElement).className.includes(
+        "border-accent-primary",
+      );
+
+    expect(lit(0, 1)).toBe(true);
+    expect(lit(1, 1)).toBe(false);
+
+    fireEvent(palette, pointerAt("pointerup", 30, 60));
+  });
+
+  it("draws it in both columns where neither is withheld", () => {
+    // No `pageTheColumns()`: every column computes reachable, which is the
+    // desktop shape. Nothing is withdrawn there, and the test above would pass
+    // for the wrong reason without this one beside it.
+    renderTwoColumns();
+
+    const palette = screen.getByRole("button", { name: "Add Market order" });
+    fireEvent(palette, pointerAt("pointerdown", 30, 20));
+    fireEvent(palette, pointerAt("pointermove", 30, 60));
+
+    for (const col of [0, 1]) {
+      expect(
+        (cell(col, 1) as HTMLElement).className.includes(
+          "border-accent-primary",
+        ),
+      ).toBe(true);
+    }
+
+    fireEvent(palette, pointerAt("pointerup", 30, 60));
+  });
+
   it("still says a palette order released clear of the grid was outside it", () => {
     pageTheColumns();
     renderTwoColumns();
