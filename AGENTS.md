@@ -780,7 +780,31 @@ them. Three rules hold it together and none may be simplified away:
   the focused element lived in; drawing it is what deletes that defect. Tab is
   kept out by the `tabindex` rule in `GridArea`, and `inert` is refused for the
   same reason - it blurs what it is applied to, which would bring the defect
-  straight back.
+  straight back. That rule reads the breakpoint off the viewport's own box, so
+  it rides the SAME `ResizeObserver` the scroll rule installs rather than a
+  second one: on renders alone it went stale across a rotation, leaving a whole
+  column at `tabindex="-1"` where both are drawn, or the peeking one tabbable.
+  **The peeking column is REACHABLE BY ASSISTIVE TECHNOLOGY, and that is
+  accepted deliberately. Firstmate's call, not the captain's** - the captain
+  asked for the peek, and this is its consequence. The column is in the
+  accessibility tree, so a screen-reader user can read it and activate a cell in
+  it, where under the withdrawn `visibility: hidden` they could not. **Do not
+  "restore" the old property**: no `aria-hidden`, no `inert`, and no
+  readable-but-not-activatable mode either. Three reasons, and the second
+  decides it:
+
+  - **It self-corrects rather than stranding anyone.** Activating a cell there
+    moves the carry's target, and the viewport follows the target, so the user
+    arrives at the column they acted on.
+  - **Nothing that was ever promised is being given up.** "Nothing in the
+    accessibility tree" was a PROPERTY OF THE HIDING MECHANISM the captain
+    replaced, not an independent guarantee this design made. A side effect
+    disappeared along with the thing that caused it; no rule was broken.
+  - **The obvious fix inverts the instruction it claims to implement.** Hiding
+    the peek from assistive technology would give those users LESS than sighted
+    users get. The captain asked for a cue that there is more to view, and
+    suppressing that cue for precisely the users who cannot see the sliver is
+    not implementing it carefully.
 - **`columnPagerRow` carries `px-2`, and it is not decoration.** The grid pane
   has no horizontal padding, so a lane is flush with the panel's content edge -
   and the panel clips there. Every lane's own focusable children are inset

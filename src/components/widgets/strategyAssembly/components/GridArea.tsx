@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -459,7 +460,7 @@ const GridArea: FC<GridAreaProps> = ({
   // ordinary effect it ran after the paint of the render in which the target
   // had already moved, so for one frame the OLD column was on screen while
   // `aria-current` sat on a cell inside the column `offPageColumn` had just
-  // marked invisible - the very state this pairing exists to prevent, on every
+  // withheld - the very state this pairing exists to prevent, on every
   // cross-column move. The extra render is synchronous, and the scroll effect
   // below still runs after it on `visibleColumn`.
   //
@@ -471,37 +472,6 @@ const GridArea: FC<GridAreaProps> = ({
     if (carryTargetColumn === null) return;
     setVisibleColumn(carryTargetColumn);
   }, [carryTargetColumn]);
-
-  // The state above, applied to the one thing that draws it.
-  //
-  // A layout effect, because it must commit before the browser paints, and
-  // re-run whenever the viewport is resized: crossing `sm` in either direction
-  // changes the box from a scroll container to a plain row and back, and a
-  // `scrollLeft` set while it was one is silently dropped when it stops being
-  // one. Reading the columns' own boxes rather than multiplying a page width by
-  // an index keeps the gap between them out of the arithmetic.
-  useLayoutEffect(() => {
-    const viewport = columnsViewportRef.current;
-    if (!viewport) return;
-
-    const showColumn = () => {
-      const target = viewport.children[visibleColumn];
-      if (!target) return;
-      const offset =
-        target.getBoundingClientRect().left -
-        viewport.getBoundingClientRect().left;
-      // `scrollLeft` and not `scrollIntoView`: this box is the only thing that
-      // may move. `scrollIntoView` walks up the ancestors too, so it would drag
-      // the panel's vertical scroller - and the page under it - to wherever the
-      // column happened to be, in answer to a press about columns.
-      if (offset !== 0) viewport.scrollLeft += offset;
-    };
-
-    showColumn();
-    const observer = new ResizeObserver(showColumn);
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, [visibleColumn]);
 
   // Tab does not enter the column the pager is not showing.
   //
@@ -523,7 +493,17 @@ const GridArea: FC<GridAreaProps> = ({
   // that `cellBoxesFromDom` reads, rather than from `visibleColumn` plus a
   // breakpoint of its own: one owner for "is this column reachable", so the tab
   // order and the drop resolver cannot come to disagree about it.
-  useLayoutEffect(() => {
+  //
+  // **It is a function rather than an effect body because it has TWO triggers,
+  // and a rule read off the viewport cannot be derived from renders alone.**
+  // A render is what brings new focusables into a column; the viewport's own
+  // size is what decides whether that column is off page at all, and crossing
+  // `sm` changes that with no React render behind it. Both are below: the
+  // effect covers the first, and the viewport effect that follows calls this
+  // from the SAME `ResizeObserver` it already installs for the second. One
+  // observer on one box, because two watching it for the same reason is how
+  // they come to disagree.
+  const applyPagedTabOrder = useCallback(() => {
     const viewport = columnsViewportRef.current;
     if (!viewport) return;
 
@@ -551,7 +531,52 @@ const GridArea: FC<GridAreaProps> = ({
         }
       }
     }
-  });
+  }, []);
+
+  useLayoutEffect(applyPagedTabOrder);
+
+  // The state above, applied to the one thing that draws it.
+  //
+  // A layout effect, because it must commit before the browser paints, and
+  // re-run whenever the viewport is resized: crossing `sm` in either direction
+  // changes the box from a scroll container to a plain row and back, and a
+  // `scrollLeft` set while it was one is silently dropped when it stops being
+  // one. Reading the columns' own boxes rather than multiplying a page width by
+  // an index keeps the gap between them out of the arithmetic.
+  //
+  // The tab-order rule above rides the same observer, because it reads the same
+  // breakpoint off the same box. Left on renders alone it went stale on a
+  // rotation: paged to Exit and then turned landscape, every focusable in Entry
+  // kept `tabindex="-1"` at a width drawing both columns, and the reverse
+  // crossing left the peeking column tabbable - which is the state this rule
+  // exists to prevent.
+  useLayoutEffect(() => {
+    const viewport = columnsViewportRef.current;
+    if (!viewport) return;
+
+    const showColumn = () => {
+      const target = viewport.children[visibleColumn];
+      if (!target) return;
+      const offset =
+        target.getBoundingClientRect().left -
+        viewport.getBoundingClientRect().left;
+      // `scrollLeft` and not `scrollIntoView`: this box is the only thing that
+      // may move. `scrollIntoView` walks up the ancestors too, so it would drag
+      // the panel's vertical scroller - and the page under it - to wherever the
+      // column happened to be, in answer to a press about columns.
+      if (offset !== 0) viewport.scrollLeft += offset;
+    };
+
+    const syncToViewport = () => {
+      showColumn();
+      applyPagedTabOrder();
+    };
+
+    syncToViewport();
+    const observer = new ResizeObserver(syncToViewport);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [visibleColumn, applyPagedTabOrder]);
 
   /**
    * The pager was pressed.

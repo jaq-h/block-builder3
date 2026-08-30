@@ -2524,6 +2524,75 @@ describe("GridArea, the column pager", () => {
     expect(placed).not.toHaveAttribute("data-paged-tabindex");
   });
 
+  /**
+   * Stand in for the `ResizeObserver` the panel installs, keeping every
+   * callback so a test can run one.
+   *
+   * The suite's global stand-in is a no-op, which is the honest answer in a
+   * document that lays nothing out - no box ever changes size, so a faithful
+   * implementation would fire exactly as often. What a test needs here is not a
+   * resize jsdom could notice but the callback the component registered for
+   * one, called by hand.
+   */
+  const captureResizeObservers = () => {
+    const callbacks: ResizeObserverCallback[] = [];
+    const original = globalThis.ResizeObserver;
+
+    class Capturing implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        callbacks.push(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+
+    globalThis.ResizeObserver = Capturing;
+    return {
+      resize: () => {
+        for (const callback of callbacks) callback([], {} as ResizeObserver);
+      },
+      restore: () => {
+        globalThis.ResizeObserver = original;
+      },
+    };
+  };
+
+  it("re-derives the tab order when the viewport crosses the breakpoint", () => {
+    // The rule reads the breakpoint off the viewport's own box, and crossing
+    // `sm` changes that fact with no React render behind it - a rotation into
+    // landscape, or a window dragged past 640px. Derived from renders alone the
+    // attributes went stale: every focusable in the column that had been off
+    // page kept `tabindex="-1"` at a width drawing both columns, until some
+    // unrelated render happened to heal it.
+    const observers = captureResizeObservers();
+    try {
+      pageTheColumns();
+      const grid = clearGrid(2, 3);
+      grid[1][1].push(placedMarket("b2"));
+      render(<Harness initialGrid={grid} />);
+
+      const placed = within(cell(1, 1) as HTMLElement).getByRole("button", {
+        name: "Market order, Exit column, primary row",
+      });
+      expect(placed).toHaveAttribute("tabindex", "-1");
+
+      // The crossing itself, and the point of the test: the class list is
+      // unchanged and nothing re-renders, exactly as a real resize leaves them.
+      // Only what `offPageColumn` resolves to has moved.
+      pagingRule?.remove();
+      pagingRule = null;
+      expect(placed).toHaveAttribute("tabindex", "-1");
+
+      observers.resize();
+
+      expect(placed).not.toHaveAttribute("tabindex");
+      expect(placed).not.toHaveAttribute("data-paged-tabindex");
+    } finally {
+      observers.restore();
+    }
+  });
+
   it("says nothing when pressed for the column the carry is already on", () => {
     render(<Harness initialGrid={clearGrid(2, 3)} />);
 
