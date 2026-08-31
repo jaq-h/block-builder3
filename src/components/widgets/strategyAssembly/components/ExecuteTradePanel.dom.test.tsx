@@ -93,3 +93,50 @@ describe("the post-submission Active Orders control", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("the simulation mode toggle", () => {
+  it("does not submit a form it is nested in", async () => {
+    const onSubmit = vi.fn((event: { preventDefault: () => void }) =>
+      event.preventDefault(),
+    );
+    const onToggleSimulationMode = vi.fn();
+    const user = userEvent.setup();
+
+    // A `<button>` with no `type` is a submit button, so the day this panel is
+    // rendered inside a form the toggle stops toggling and posts the form
+    // instead. `type="button"` is what says the control acts and nothing else.
+    render(
+      <form onSubmit={onSubmit}>
+        <ExecuteTradePanel
+          showSuccess
+          feedbackRef={createRef<HTMLDivElement>()}
+          error={null}
+          simulationMessage="Simulation mode"
+          isEffectivelySimulation
+          canToggle
+          isSimulationMode
+          onToggleSimulationMode={onToggleSimulationMode}
+          onViewActiveOrders={vi.fn()}
+        />
+      </form>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Switch to API Mode" }));
+
+    expect(onToggleSimulationMode).toHaveBeenCalledTimes(1);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("says what it does without an em dash", () => {
+    renderPanel({ canToggle: true });
+
+    // The repository's standing writing rule: a plain dash, in user-facing copy
+    // as much as anywhere else. This tooltip is the copy a pointer user reads.
+    expect(
+      screen.getByRole("button", { name: "Switch to API Mode" }),
+    ).toHaveAttribute(
+      "title",
+      "Switch to API mode - orders will be sent to Kraken",
+    );
+  });
+});

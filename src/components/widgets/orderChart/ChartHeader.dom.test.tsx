@@ -12,6 +12,8 @@ import {
   chartToggleButton,
 } from "./OrderChart.styles";
 import { DEFAULT_PRICE_SCALE } from "./priceScale";
+import { panelHeadingTitle } from "../../../styles/shared";
+import { unconditionalUtilities } from "@/test/tailwindTokens";
 
 vi.mock("../../../store/useMarket", () => ({
   useMarket: () => ({
@@ -177,6 +179,45 @@ describe("ChartHeader", () => {
     within(group).getByRole("button", { name: "1m" }).click();
 
     expect(wired.onSelectTimeframe).toHaveBeenCalledWith("1m");
+  });
+
+  // ===========================================================================
+  // THE PANEL'S TITLE IS A HEADING
+  // ===========================================================================
+
+  it("writes the pair as the panel's level-2 heading, on the bar's centre line", () => {
+    render(<ChartHeader priceLabel="$50,000.0" controls={controls()} />);
+
+    // A heading rather than a span, at the same level the Active Orders panel's
+    // title carries: three unmarked bars is a page with no heading order to
+    // navigate, and this is one of the three.
+    const heading = screen.getByRole("heading", {
+      name: "BTC / USD",
+      level: 2,
+    });
+
+    // `m-0` is the only thing the heading adds over the span it replaced, and
+    // it is defensive: preflight already zeroes a heading's margin and this
+    // app's own `@layer base` adds none back, so the UA stylesheet's
+    // `margin: 0.83em 0` never reaches this `<h2>`. It is pinned because the
+    // bar is `items-center`, so a heading that ever regained a margin would
+    // grow the bar and take its title off the centre line the other panels'
+    // titles sit on. jsdom applies no author stylesheet, so the class list is
+    // the strongest check available here - the geometry is a browser
+    // measurement.
+    expect(unconditionalUtilities(heading.className)).toContain("m-0");
+    expect(heading.className).toBe(panelHeadingTitle);
+  });
+
+  it("draws the same heading while the chart chunk is still in flight", () => {
+    // The placeholder is this component with its controls omitted, so the two
+    // are the same markup by construction. A heading that appeared only once
+    // the chunk landed would make the swap a change of document outline.
+    render(<ChartHeader priceLabel="Loading…" />);
+
+    expect(
+      screen.getByRole("heading", { name: "BTC / USD", level: 2 }),
+    ).toBeInTheDocument();
   });
 
   // ===========================================================================

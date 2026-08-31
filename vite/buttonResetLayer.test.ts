@@ -27,9 +27,9 @@
 // It asks by meaning rather than by spelling: it parses the stylesheet into
 // rules, records whether each one is inside a layer, and hands their selectors
 // to the browser's own selector engine against a fixture that mirrors the shell
-// `src/App.tsx` renders - `#root`, the container inside it, the visually hidden
-// `h1`, the tab `nav` and `main`, with a button and a link under each of the
-// last two, where the app's own sit.
+// `src/App.tsx` renders - `#root`, the container inside it, and the tab `nav`
+// and `main`, with a button and a link under each of those two, where the app's
+// own sit, and the visually hidden `h1` inside `main`.
 //
 // THE REACH. Stated here once and in full, every condition and every hole;
 // everything below refers back to this paragraph rather than restating it.
@@ -281,22 +281,25 @@ let fixture: Element[];
 beforeEach(() => {
   // The shell `src/App.tsx` renders, with the elements a rule could plausibly
   // be scoped by: the app mounts into `#root` (see `src/main.tsx`), which holds
-  // one container, and that holds the visually hidden `h1`, the tab `nav` and
-  // `main`. The buttons and the links sit where the app's own do - the tab
-  // bar's buttons in the nav (see `src/App.tsx`), `ExecuteTradePanel`'s inside
-  // `main` - so a rule written under any of those ancestors reaches these too.
-  // The nav carries no `<a>` today; it stays in the fixture because a bare
-  // `a {}` rule written under it would still reach one.
+  // one container, and that holds the tab `nav` and `main`. The visually hidden
+  // `h1` is `main`'s first child because that is where the app renders it, so
+  // a rule scoped `main h1 {}` reaches this one exactly as it reaches the
+  // app's; do not move it back out. The buttons and the links sit where the
+  // app's own do - the tab bar's buttons in the nav (see `src/App.tsx`),
+  // `ExecuteTradePanel`'s inside `main` - so a rule written under any of those
+  // ancestors reaches these too. The nav carries no `<a>` today; it stays in
+  // the fixture because a bare `a {}` rule written under it would still reach
+  // one.
   document.body.innerHTML = `
     <div id="root">
       <div>
-        <h1>Block Builder</h1>
         <nav>
           <button type="button">a tab</button>
           <a href="/active">a tab link</a>
           <span>not a button</span>
         </nav>
         <main>
+          <h1>Block Builder</h1>
           <div>
             <button type="button">plain</button>
             <a href="/active">plain link</a>

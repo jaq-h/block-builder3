@@ -1031,11 +1031,13 @@ content-driven so the tabbed layout still scrolls with the page.
 **The shell's row template changes with the breakpoint, because what is in the
 grid changes with it.** Below `lg` `appContainer` holds two in-flow items, the tab
 nav and `main`, so it is `grid-rows-[auto_1fr]`. Above `lg` the nav is
-`display: none` and the visually-hidden `h1` is absolutely positioned, so neither
-is a grid item and `main` is alone - which put it in the `auto` row and left the
-`1fr` row standing empty beneath it, measured as tracks of `835.5px 64.5px` at
-1440x900. `lg:grid-rows-[1fr]` is what keeps that band of viewport from being
-thrown away. Adding a child to `appContainer` means checking the template again.
+`display: none`, so it is not a grid item and `main` is alone - which put it in
+the `auto` row and left the `1fr` row standing empty beneath it, measured as
+tracks of `835.5px 64.5px` at 1440x900. `lg:grid-rows-[1fr]` is what keeps that
+band of viewport from being thrown away. Adding a child to `appContainer` means
+checking the template again; the page's visually-hidden `h1` is not one of
+them, because it lives inside `main` - see the `<h1>` rule below for why it may
+not be moved back out.
 
 **The bare element rules in `src/index.css` live in `@layer base`, and there is
 no escape hatch from them.** They are element *defaults*, and a default is
@@ -1107,6 +1109,44 @@ its title bar, so its header block is taller than the other two and `chartHeader
 draws the border and the background around both rows. It is the title bars that
 line up, not the header blocks. A new panel takes `panelTitleBar` rather than its
 own copy, and not the exception - that one is spoken for.
+
+**A panel's visible title is a heading, and the panel is a `region` landmark
+named by it.** The three panels are otherwise one undivided `main`, with nothing
+for a landmark or heading user to navigate by, and the page's own `<h1>` is
+`sr-only` - so without this the only heading on screen was Active Orders'.
+`panelHeadingTitle` in `src/styles/shared.ts` is `panelHeaderTitle` plus an
+`m-0` that is **defensive rather than load-bearing**: Tailwind's preflight
+already zeroes every element's margin and this app's own `@layer base` adds none
+back for a heading, so an `<h2>` here never carries the UA stylesheet's
+`margin: 0.83em 0`. It is declared anyway because the rail is `items-center`, so
+a heading that ever regained a margin would grow the bar and take the title off
+the centre line the paragraph above exists to hold - and this repository's
+`@layer base` is exactly where such a bare `h2` rule would be added (see
+`vite/buttonResetLayer.test.ts`, which guards that block for `a`, `body`,
+`button` and `h1`). Take the constant; do not write `cn("m-0",
+panelHeaderTitle)` again.
+**The assembly panel's heading is `sr-only`**, because its header bar is
+`PatternSelector` - two buttons and no title - and that bar's `h-16` already
+overflows at narrow widths (**Known gap** above). **The chart panel's region is
+named `Price chart` from `App.tsx` and NOT by its own `<h2>`**, which is the
+selected pair: a landmark whose name changes as the user switches markets is one
+they cannot navigate back to, the same reason the cell clear control's name is
+the cell rather than its contents. The other two use `aria-labelledby` on their
+own heading, so name and heading are one fact. Pinned per owner, in
+`ChartHeader.dom.test.tsx`, `ActiveOrders.dom.test.tsx` and
+`strategyAssembly.feedback.dom.test.tsx`.
+
+**The page's `<h1>` lives inside `<main>`, and a `<header>` banner may not
+replace it.** Outside every landmark - where it sat, as a sibling of `main` - it
+is content no landmark contains, which axe reports as `region` and a landmark
+user cannot reach. The obvious fix is a `<header>` around it and the tab nav,
+and that one is closed by the row template above: `lg:grid-rows-[1fr]` is only
+correct while `main` is `appContainer`'s ONLY in-flow child above `lg`, which
+the nav's `display: none` is what leaves it - the heading is no candidate at
+all from inside `main`, and `sr-only` is `position: absolute`, so it claims no
+layout there either. A `<header>` would be a grid item and `main` would drop
+into an implicit row. `src/App.test.tsx` pins the placement and that the heading
+still claims no layout.
 
 **A scrolling panel scrolls with `overflow-auto`, and is bounded by its row
 rather than by a number.** `overflow-scroll` reserves and draws a bar on both

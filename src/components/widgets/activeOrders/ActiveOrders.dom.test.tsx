@@ -73,6 +73,26 @@ const refusal = () => screen.queryByText(/^Not loaded:/);
 // TESTS
 // =============================================================================
 
+describe("the panel as a place on the page", () => {
+  it("is a region named by its own heading", () => {
+    panel();
+
+    // A landmark per panel is what makes the page three places a screen-reader
+    // user can jump between rather than one undivided `main`. The name comes
+    // from the heading through `aria-labelledby` rather than a second
+    // `aria-label`, so the two cannot drift apart.
+    const region = screen.getByRole("region", { name: "Active Orders" });
+    const heading = screen.getByRole("heading", {
+      name: "Active Orders",
+      level: 2,
+    });
+
+    expect(region).toContainElement(heading);
+    expect(region.getAttribute("aria-labelledby")).toBe(heading.id);
+    expect(heading.id).not.toBe("");
+  });
+});
+
 describe("a strategy whose market is no longer on offer", () => {
   it("says nothing while nothing has been refused", () => {
     panel(null);

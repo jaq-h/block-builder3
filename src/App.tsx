@@ -229,8 +229,15 @@ function AppInner() {
       )}
     >
       {/* Chart - fixed 400px row. Boundaried separately so a bad candle payload
-          or a chart-library throw cannot take the builder down with it. */}
-      <div className="overflow-hidden">
+          or a chart-library throw cannot take the builder down with it.
+
+          A `region` landmark, like the other two panels, so a landmark user can
+          reach each panel rather than one undivided `main`. It is named here
+          and NOT by its own `<h2>`: that heading is the selected pair, which
+          changes under the user as they switch markets, and a landmark whose
+          name moves is one they cannot navigate back to. Same reasoning as the
+          cell clear control's stable name - see `AGENTS.md`. */}
+      <section aria-label="Price chart" className="overflow-hidden">
         <ErrorBoundary
           title="The chart could not be displayed"
           message="Your strategy is unaffected - you can keep building and submitting orders."
@@ -238,7 +245,7 @@ function AppInner() {
         >
           <OrderChart orders={orderConfig} />
         </ErrorBoundary>
-      </div>
+      </section>
       {/* Active orders - fills remaining height.
           `overflow-auto`, not `overflow-scroll`: this container never has
           anything to scroll, because `ActiveOrders` is `h-full` inside it and
@@ -269,11 +276,6 @@ function AppInner() {
 
   return (
     <div className={appContainer}>
-      {/* The page needs a level-1 heading, and the visible layout has no room
-          for one: the two panels start at `h2`. Visually hidden keeps the
-          heading order honest without claiming layout the phone lane owns. */}
-      <h1 className="sr-only">Block Builder</h1>
-
       {/* Tab nav - only visible on small screens */}
       <nav className={`${navBar} lg:hidden`} aria-label="Panels">
         <button
@@ -305,6 +307,29 @@ function AppInner() {
       </nav>
 
       <main className={mainContent}>
+        {/* The page needs a level-1 heading, and the visible layout has no room
+            for one: every panel starts at `h2`. Visually hidden keeps the
+            heading order honest without claiming layout the phone lane owns.
+
+            It is INSIDE `main`, and that is a placement constraint rather than
+            a preference. Two things decide it. Outside every landmark - which
+            is where it sat, as a sibling of `main` - the heading is content no
+            landmark contains, which axe reports as `region` and a landmark
+            user cannot reach. And the obvious alternative, a `<header>` banner
+            around it and the tab nav, cannot go here: `appContainer`'s row
+            template is `grid-rows-[auto_1fr]` below `lg` and `lg:grid-rows-[1fr]`
+            above it, and that second value is only correct while `main` is the
+            container's ONLY in-flow child up there, which the nav's
+            `display: none` is what leaves it - and from inside `main` this
+            heading is no candidate for that row at all. A `<header>` would be
+            one, and `main` would drop into an implicit row. See `AGENTS.md`,
+            "Layout and the CSS cascade".
+
+            `sr-only` is `position: absolute`, and `main` is not positioned, so
+            the heading takes its containing block from further up and this adds
+            no layout of any kind - the same as where it stood before. */}
+        <h1 className="sr-only">Block Builder</h1>
+
         {/* One tree for both layouts: a stacked, tabbed column below `lg`, and
             the two-column grid above it.
 

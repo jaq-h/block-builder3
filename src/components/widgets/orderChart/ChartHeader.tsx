@@ -1,7 +1,7 @@
 import type { FC } from "react";
 
 import { useMarket } from "../../../store/useMarket";
-import { panelHeaderTitle } from "../../../styles/shared";
+import { panelHeadingTitle } from "../../../styles/shared";
 import { OVERLAY_INDICATORS } from "./indicators";
 import { DEFAULT_PRICE_SCALE, PRICE_SCALE_OPTIONS } from "./priceScale";
 import type { PriceScaleKind } from "./priceScale";
@@ -99,9 +99,14 @@ const ChartHeader: FC<ChartHeaderProps> = ({
             wrapping instead - which the row above allows - and the warning stays
             on screen at every width. `ChartHeader.dom.test.tsx` pins that. */}
         <div className="flex items-center gap-3">
-          <span className={panelHeaderTitle}>
+          {/* The panel's title, and so a heading - the same level the Active
+              Orders panel's title carries, which is what gives the page a
+              heading order rather than three unmarked bars.
+              `panelHeadingTitle` in `src/styles/shared.ts` is the one owner of
+              a panel heading's class list, and carries why. */}
+          <h2 className={panelHeadingTitle}>
             {market.base} / {market.quote}
-          </span>
+          </h2>
           <span className="text-[11px] text-text-muted">{priceLabel}</span>
           {isFeedOffline && (
             <span
