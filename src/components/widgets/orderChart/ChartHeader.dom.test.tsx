@@ -196,12 +196,15 @@ describe("ChartHeader", () => {
       level: 2,
     });
 
-    // `m-0` is the load-bearing half and the only thing the heading adds over
-    // the span it replaced. The bar is `items-center`, and a heading arrives
-    // carrying the UA stylesheet's `margin: 0.83em 0`, which grows the bar and
-    // takes its title off the centre line the other panels' titles sit on.
-    // jsdom applies no author stylesheet, so the class list is the strongest
-    // check available here - the geometry is a browser measurement.
+    // `m-0` is the only thing the heading adds over the span it replaced, and
+    // it is defensive: preflight already zeroes a heading's margin and this
+    // app's own `@layer base` adds none back, so the UA stylesheet's
+    // `margin: 0.83em 0` never reaches this `<h2>`. It is pinned because the
+    // bar is `items-center`, so a heading that ever regained a margin would
+    // grow the bar and take its title off the centre line the other panels'
+    // titles sit on. jsdom applies no author stylesheet, so the class list is
+    // the strongest check available here - the geometry is a browser
+    // measurement.
     expect(unconditionalUtilities(heading.className)).toContain("m-0");
     expect(heading.className).toBe(panelHeadingTitle);
   });

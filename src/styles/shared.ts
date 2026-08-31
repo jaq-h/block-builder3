@@ -120,10 +120,16 @@ export const panelHeaderTitle = "text-sm font-semibold text-text-primary";
  * with a visible title does, so the page has a heading order a screen-reader
  * user can navigate rather than three unmarked bars.
  *
- * The `m-0` is the whole difference and it is load-bearing rather than tidy:
- * `panelTitleBarRail` is `items-center`, and a heading arrives carrying the UA
- * stylesheet's `margin: 0.83em 0`, which grows the bar and pushes the title off
- * the centre line the other bars sit on. It is one constant rather than a
+ * The `m-0` is the whole difference and it is DEFENSIVE rather than the thing
+ * holding the title on the centre line: Tailwind's preflight already zeroes
+ * every element's margin, and this app's own `@layer base` adds none back for a
+ * heading, so an `<h2>` here never carries the UA stylesheet's `margin: 0.83em
+ * 0` in the first place. It is declared anyway because the rail is
+ * `items-center`, so a heading that ever regained a margin would grow the bar
+ * and take its title off the centre line the three panel titles share - and
+ * this repository's `@layer base` is exactly where such a bare `h2` rule would
+ * be added (see `vite/buttonResetLayer.test.ts`, which guards that block for
+ * `a`, `body`, `button` and `h1`). It is one constant rather than a
  * `cn("m-0", panelHeaderTitle)` at each panel, for the reason the rail itself
  * is one: two bars that merely agreed is how they came to disagree.
  */

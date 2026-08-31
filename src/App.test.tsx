@@ -262,18 +262,4 @@ describe("the shell's landmarks", () => {
 
     expect(region).toContainElement(screen.getByTestId("chart"));
   });
-
-  it("keeps every landmark it owns at every width", () => {
-    renderApp();
-
-    // The tab nav is `lg:hidden`, correctly - above `lg` both panels are on
-    // screen and there is nothing to switch between. Nothing else may be:
-    // `main` and the chart's region are in the tree either way, and jsdom
-    // resolves no media query, so what this holds is that neither of them is
-    // rendered conditionally in JSX.
-    expect(screen.getByRole("main")).toBeInTheDocument();
-    expect(
-      screen.getByRole("region", { name: "Price chart" }),
-    ).toBeInTheDocument();
-  });
 });

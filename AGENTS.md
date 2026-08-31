@@ -1112,11 +1112,17 @@ own copy, and not the exception - that one is spoken for.
 named by it.** The three panels are otherwise one undivided `main`, with nothing
 for a landmark or heading user to navigate by, and the page's own `<h1>` is
 `sr-only` - so without this the only heading on screen was Active Orders'.
-`panelHeadingTitle` in `src/styles/shared.ts` is `panelHeaderTitle` plus the
-`m-0` a heading needs and a span does not: the rail is `items-center` and a
-heading arrives carrying the UA stylesheet's `margin: 0.83em 0`, which grows the
-bar and takes the title off the centre line the paragraph above exists to hold.
-Take the constant; do not write `cn("m-0", panelHeaderTitle)` again.
+`panelHeadingTitle` in `src/styles/shared.ts` is `panelHeaderTitle` plus an
+`m-0` that is **defensive rather than load-bearing**: Tailwind's preflight
+already zeroes every element's margin and this app's own `@layer base` adds none
+back for a heading, so an `<h2>` here never carries the UA stylesheet's
+`margin: 0.83em 0`. It is declared anyway because the rail is `items-center`, so
+a heading that ever regained a margin would grow the bar and take the title off
+the centre line the paragraph above exists to hold - and this repository's
+`@layer base` is exactly where such a bare `h2` rule would be added (see
+`vite/buttonResetLayer.test.ts`, which guards that block for `a`, `body`,
+`button` and `h1`). Take the constant; do not write `cn("m-0",
+panelHeaderTitle)` again.
 **The assembly panel's heading is `sr-only`**, because its header bar is
 `PatternSelector` - two buttons and no title - and that bar's `h-16` already
 overflows at narrow widths (**Known gap** below). **The chart panel's region is
