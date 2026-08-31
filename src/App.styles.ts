@@ -89,8 +89,7 @@ export const simulationBadgeVariants = cva(
 // The row template has to change with the breakpoint, because what is in the
 // grid changes with it. Below `lg` there are two rows and two in-flow items -
 // the tab nav, then `main`. Above `lg` the nav is `display: none` and so is not
-// a grid item at all, and the visually-hidden `h1` is absolutely positioned and
-// so is not one either, which left `main` alone in the `auto` row and a `1fr`
+// a grid item at all, which left `main` alone in the `auto` row and a `1fr`
 // row standing empty underneath it: measured at a 1440x900 viewport the tracks
 // came out `835.5px 64.5px`, so the desktop shell threw away 64.5px of viewport
 // and the assembly grid was that much shorter than the window could give it.

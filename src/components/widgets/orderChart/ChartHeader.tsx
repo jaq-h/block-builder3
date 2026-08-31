@@ -101,9 +101,9 @@ const ChartHeader: FC<ChartHeaderProps> = ({
         <div className="flex items-center gap-3">
           {/* The panel's title, and so a heading - the same level the Active
               Orders panel's title carries, which is what gives the page a
-              heading order rather than three unmarked bars. `panelHeadingTitle`
-              is `panelHeaderTitle` plus the `m-0` a heading needs to stay on
-              this bar's centre line; see `src/styles/shared.ts`. */}
+              heading order rather than three unmarked bars.
+              `panelHeadingTitle` in `src/styles/shared.ts` is the one owner of
+              a panel heading's class list, and carries why. */}
           <h2 className={panelHeadingTitle}>
             {market.base} / {market.quote}
           </h2>

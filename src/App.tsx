@@ -319,10 +319,11 @@ function AppInner() {
             around it and the tab nav, cannot go here: `appContainer`'s row
             template is `grid-rows-[auto_1fr]` below `lg` and `lg:grid-rows-[1fr]`
             above it, and that second value is only correct while `main` is the
-            container's ONLY in-flow child up there (the nav is `display: none`
-            and this heading is `sr-only`, so absolutely positioned - neither is
-            a grid item). A `<header>` would be one, and `main` would drop into
-            an implicit row. See `AGENTS.md`, "Layout and the CSS cascade".
+            container's ONLY in-flow child up there, which the nav's
+            `display: none` is what leaves it - and from inside `main` this
+            heading is no candidate for that row at all. A `<header>` would be
+            one, and `main` would drop into an implicit row. See `AGENTS.md`,
+            "Layout and the CSS cascade".
 
             `sr-only` is `position: absolute`, and `main` is not positioned, so
             the heading takes its containing block from further up and this adds

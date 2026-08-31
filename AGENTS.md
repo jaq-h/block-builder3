@@ -1031,11 +1031,13 @@ content-driven so the tabbed layout still scrolls with the page.
 **The shell's row template changes with the breakpoint, because what is in the
 grid changes with it.** Below `lg` `appContainer` holds two in-flow items, the tab
 nav and `main`, so it is `grid-rows-[auto_1fr]`. Above `lg` the nav is
-`display: none` and the visually-hidden `h1` is absolutely positioned, so neither
-is a grid item and `main` is alone - which put it in the `auto` row and left the
-`1fr` row standing empty beneath it, measured as tracks of `835.5px 64.5px` at
-1440x900. `lg:grid-rows-[1fr]` is what keeps that band of viewport from being
-thrown away. Adding a child to `appContainer` means checking the template again.
+`display: none`, so it is not a grid item and `main` is alone - which put it in
+the `auto` row and left the `1fr` row standing empty beneath it, measured as
+tracks of `835.5px 64.5px` at 1440x900. `lg:grid-rows-[1fr]` is what keeps that
+band of viewport from being thrown away. Adding a child to `appContainer` means
+checking the template again; the page's visually-hidden `h1` is not one of
+them, because it lives inside `main` - see the `<h1>` rule below for why it may
+not be moved back out.
 
 **The bare element rules in `src/index.css` live in `@layer base`, and there is
 no escape hatch from them.** They are element *defaults*, and a default is
@@ -1125,7 +1127,7 @@ the centre line the paragraph above exists to hold - and this repository's
 panelHeaderTitle)` again.
 **The assembly panel's heading is `sr-only`**, because its header bar is
 `PatternSelector` - two buttons and no title - and that bar's `h-16` already
-overflows at narrow widths (**Known gap** below). **The chart panel's region is
+overflows at narrow widths (**Known gap** above). **The chart panel's region is
 named `Price chart` from `App.tsx` and NOT by its own `<h2>`**, which is the
 selected pair: a landmark whose name changes as the user switches markets is one
 they cannot navigate back to, the same reason the cell clear control's name is
@@ -1139,10 +1141,11 @@ replace it.** Outside every landmark - where it sat, as a sibling of `main` - it
 is content no landmark contains, which axe reports as `region` and a landmark
 user cannot reach. The obvious fix is a `<header>` around it and the tab nav,
 and that one is closed by the row template above: `lg:grid-rows-[1fr]` is only
-correct while `main` is `appContainer`'s ONLY in-flow child above `lg`, and the
-nav (`display: none`) and this heading (`sr-only`, so absolutely positioned) are
-the reason it is. A `<header>` would be a grid item and `main` would drop into
-an implicit row. `src/App.test.tsx` pins the placement and that the heading
+correct while `main` is `appContainer`'s ONLY in-flow child above `lg`, which
+the nav's `display: none` is what leaves it - the heading is no candidate at
+all from inside `main`, and `sr-only` is `position: absolute`, so it claims no
+layout there either. A `<header>` would be a grid item and `main` would drop
+into an implicit row. `src/App.test.tsx` pins the placement and that the heading
 still claims no layout.
 
 **A scrolling panel scrolls with `overflow-auto`, and is bounded by its row
