@@ -991,15 +991,17 @@ Announcements go through `LiveAnnouncer`, which alternates between two live regi
 screen reader only reads a region whose content **changed**, so two identical messages in a
 row would otherwise be silent the second time.
 
-**The bulk pattern's family of defects, and how it was closed.** A bulk cell holding any
-axis-less block draws *every* block in it without an axis: `cellDrawsPriceAxis` returns false
-as soon as one block has no axes, and that decides the whole cell. Five things used to follow
-from that, and every one of them was the same shape - one fact derived in more than one place.
-They are recorded because the shape recurs, not because any of them is still live.
+**The bulk pattern's family of defects, and how it was closed.** A bulk cell used to draw
+*every* block in it without an axis as soon as one of them had none: `cellDrawsPriceAxis` was
+`every`, and one Market order decided the whole cell. Six things followed from that, and every
+one of them was the same shape - one fact derived in more than one place. They are recorded
+because the shape recurs, not because any of them is still live. The rule itself is the sixth:
+it is `some` now, so the cell keeps the ruler for the orders that are placed against it and
+draws the ones that are not - only a Market order - in an at-market strip beneath the axis.
 
 - *A paired dual-axis leg could be split across cells by a mouse free drag*, because the cell
   drew that leg without an axis while `Block` worked out for itself, from `axis` and `axes`,
-  that it was on one. `legInCell` is now the single answer and the cell hands it down; and
+  that it was on one. `legOfBlock` is now the single answer and the cell hands it down; and
   under decision D9 no placed block changes cells by any input method anyway.
 - *That drop path wrote `yPosition` through `calculateYPosition`*, which returned 0-100
   against a scale whose maximum is 50 - so a block could render pinned at the 50% end while
@@ -1009,15 +1011,26 @@ They are recorded because the shape recurs, not because any of them is still liv
   at all still reaches `validateOrder` to be refused rather than being quietly answered with
   the market price. `AGENTS.md` under "Prices and order types" is the authority on that split.
 - *Keyboard and tap pick-up of a paired leg was refused there without offering the arrow
-  keys*, because that render wires none. Still true, and now decided by the same
-  `cellDrawsPriceAxis` the renderer uses, so the two cannot disagree about it.
+  keys*, because that render wired none. The refusal is decided per BLOCK now, by the same
+  `legOfBlock` the renderer uses, so the two cannot disagree about it: a Limit sharing a cell
+  with a Market order is offered the arrow keys it really has, and the Market order beside it
+  is not.
 - *A same-cell nudge still mutated the grid*: every bulk cell is a legal target, so a release
   inside a block's own cell fell through to the full move, rewrote `axis` and `yPosition` from
   the drop coordinates, and reordered the cell array - which changed the cell header, since it
-  renders `blocks[0].label`. Nothing is rewritten or reordered now.
+  rendered `blocks[0].label`. Nothing is rewritten or reordered now, and the header names every
+  order the cell holds rather than whichever one happens to be first.
 - *The vertical drag resolved its track by the block's own `axis` field*, which could disagree
   with the axis column the renderer drew it in. Nothing rewrites `axis` after a block is
   built, so the two cannot disagree; the fallback that made a miss survivable is kept.
+
+- *A price the cell refused to draw was still submitted.* A Limit sharing a bulk cell with a
+  Market order was flattened on screen, while `orderConfigFromGrid`, the chart's price line and
+  `mapBlockToOrderParams` all went on reading the block's own `axes` - so the payload carried a
+  `limit_price` 25% below the market that nothing had ever drawn, and the block, wired to a free
+  drag for want of a leg, could not be corrected either. Closed by the rule change above and by
+  the order path asking `legOfBlock` rather than reading `axes` for itself: what a cell draws and
+  what the payload carries are one question with one owner.
 
 The conditional pattern could never reach any of it, because an occupied cell is never a valid
 target. The fix was the one named at the time: give the block-to-price mapping a single owner

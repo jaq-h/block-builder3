@@ -9,7 +9,7 @@ import {
   directionForNewCell,
   getCellDisplayMode,
   isDescending,
-  legInCell,
+  splitCellByPrice,
   legOfBlock,
   normaliseCellDirections,
   orderConfigFromGrid,
@@ -90,10 +90,16 @@ describe("cellDrawsPriceAxis", () => {
     ).toBe(true);
   });
 
-  // The rule the renderer has always followed: one axis-less block flattens the
-  // whole cell, because there is no ruler for the others to be drawn against.
-  it("draws none when any block in the cell has none", () => {
-    expect(cellDrawsPriceAxis([block(), marketOrder()])).toBe(false);
+  // It used to be `every`, so one axis-less block flattened the whole cell -
+  // and a Limit sharing a bulk cell with a Market order was then sent at a
+  // price the cell had refused to draw. The ruler is the market price and the
+  // percentage scale; a block with no use for it does not take it away.
+  it("draws one when only some of the blocks have an axis", () => {
+    expect(cellDrawsPriceAxis([block(), marketOrder()])).toBe(true);
+  });
+
+  it("draws none when no block in the cell has one", () => {
+    expect(cellDrawsPriceAxis([marketOrder(), marketOrder()])).toBe(false);
   });
 
   it("draws none for an empty cell", () => {
@@ -101,19 +107,22 @@ describe("cellDrawsPriceAxis", () => {
   });
 });
 
-describe("legInCell", () => {
-  // Split 3: `Block` used to answer this again from its own props, so a limit
-  // leg sharing a cell with a Market order was drawn flat by the cell and
-  // treated as a slider by the block - which is what let a mouse split a paired
-  // order and flip one leg's side.
-  it("gives a block no leg in a cell that draws no axis, whatever it carries", () => {
+describe("splitCellByPrice", () => {
+  it("splits a mixed cell into the blocks with a price and the ones without", () => {
     const limit = block();
-    expect(legInCell([limit, marketOrder()], limit)).toBeNull();
+    const market = marketOrder();
+    expect(splitCellByPrice([limit, market])).toEqual({
+      priced: [limit],
+      atMarket: [market],
+    });
   });
 
-  it("gives it its own leg in a cell that does draw one", () => {
-    const limit = block();
-    expect(legInCell([limit], limit)).toBe("limit");
+  it("gives a cell of market orders no priced blocks at all", () => {
+    const market = marketOrder();
+    expect(splitCellByPrice([market])).toEqual({
+      priced: [],
+      atMarket: [market],
+    });
   });
 });
 
@@ -126,8 +135,14 @@ describe("getCellDisplayMode", () => {
     expect(getCellDisplayMode([marketOrder()])).toBe("no-axis");
   });
 
-  it("lets a single axis-less block win over its axis-bearing neighbours", () => {
-    expect(getCellDisplayMode([block(), marketOrder()])).toBe("no-axis");
+  // The mode is read over the blocks that carry a leg, so a Market order
+  // sharing the cell neither adds an axis column nor removes one - it is drawn
+  // in the at-market strip beneath them instead.
+  it("ignores an axis-less block when its neighbours carry an axis", () => {
+    expect(getCellDisplayMode([block(), marketOrder()])).toBe("limit-only");
+    expect(
+      getCellDisplayMode([block({ axes: ["trigger"] }), marketOrder()]),
+    ).toBe("dual-axis");
   });
 
   it("reports a limit-only cell", () => {

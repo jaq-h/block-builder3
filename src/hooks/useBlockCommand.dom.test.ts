@@ -521,13 +521,19 @@ describe("useBlockCommand", () => {
       );
     });
 
-    it("promises no arrow keys in a cell that draws no axis", () => {
-      // A bulk cell holding any axis-less block draws every block in it without
-      // an axis, so nothing wires the arrow keys there. Refusing the move and
-      // then naming an affordance that is not present would leave a
-      // screen-reader user reaching for a control this render never built.
-      // `cellDrawsPriceAxis` is the one owner of that question, shared with the
-      // renderer, so the two cannot disagree about it.
+    // FORMERLY "promises no arrow keys in a cell that draws no axis", which
+    // asserted "staysInCell" for the Stop Loss Limit below. It was correct
+    // about the render of the day: `cellDrawsPriceAxis` was `every`, so the
+    // Market order flattened the whole cell and the trigger leg really had no
+    // slider. That rule hid a price the payload still carried, and it is
+    // `some` now - the axis is drawn for whatever needs one and the Market
+    // order goes in the at-market strip, so the affordance offered here splits
+    // per BLOCK rather than per cell.
+    it("promises the arrow keys per block in a cell holding both", () => {
+      // Refusing the move and then naming an affordance that is not present
+      // would leave a screen-reader user reaching for a control this render
+      // never built. `legOfBlock` is the one owner of that question, shared
+      // with the renderer, so the two cannot disagree about it.
       const grid = clearGrid(2, 3);
       grid[0][1].push(...blocksFor("stop-loss-limit", 0));
       grid[0][1].push(...blocksFor("market", 10));
@@ -539,10 +545,22 @@ describe("useBlockCommand", () => {
       expect(refuseMove).toHaveBeenCalledWith(
         expect.objectContaining({ label: "Stop Loss Limit" }),
         { col: 0, row: 1 },
+        "onPriceAxis",
+      );
+      expect(result.current.announcement.text).toBe(
+        "Stop Loss Limit is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price, or Delete to remove it and place a new one.",
+      );
+
+      const market = grid[0][1].find((block) => block.orderType === "market")!;
+      act(() => result.current.activateBlock(market.id, "keyboard"));
+
+      expect(refuseMove).toHaveBeenLastCalledWith(
+        expect.objectContaining({ label: "Market" }),
+        { col: 0, row: 1 },
         "staysInCell",
       );
       expect(result.current.announcement.text).toBe(
-        "Stop Loss Limit stays in the cell it was placed in. To put this order somewhere else, press Delete to remove it and place a new one.",
+        "Market stays in the cell it was placed in. To put this order somewhere else, press Delete to remove it and place a new one.",
       );
     });
 

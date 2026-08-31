@@ -100,6 +100,25 @@ export const getTrackHeightPx = (elementHeight: number) =>
  */
 export const CELL_MIN_HEIGHT = CELL_CHROME + TRACK_INSET + MIN_TRACK_HEIGHT;
 
+/**
+ * The height the at-market strip adds to a cell that draws one: a block tile,
+ * the `pt-2` above it, the 1px rule it hangs under and the `mt-2` above that.
+ */
+export const AT_MARKET_STRIP_HEIGHT = BLOCK_HEIGHT + 8 + 1 + 8;
+
+/**
+ * The floor for a cell, asked with what that cell actually draws.
+ *
+ * A cell holding a Market order beside a priced one draws the axis AND the
+ * at-market strip, and the strip is a sibling of the axis in a `flex-col` - so
+ * on a short viewport it takes its height out of the axis, which is the one
+ * thing `CELL_MIN_HEIGHT` exists to stop. The floor grows with the strip
+ * instead. It stays one derivation rather than a magic number beside the
+ * class list: change the tile size and both halves move together.
+ */
+export const cellMinHeight = (drawsAtMarketStrip: boolean): number =>
+  CELL_MIN_HEIGHT + (drawsAtMarketStrip ? AT_MARKET_STRIP_HEIGHT : 0);
+
 export const getTrackStart = (isDescending: boolean) =>
   isDescending ? MARKET_PADDING + MARKET_GAP : 0;
 
@@ -180,8 +199,10 @@ export function getInteractiveCellContainerProps(opts: {
   isValidTarget: boolean;
   isDisabled: boolean;
   tint?: string;
+  /** Whether this cell draws an at-market strip under its axis. */
+  hasAtMarketStrip?: boolean;
 }) {
-  const { isOver, isValidTarget, isDisabled, tint } = opts;
+  const { isOver, isValidTarget, isDisabled, tint, hasAtMarketStrip } = opts;
 
   const className = cn(
     "flex-1 relative rounded-lg m-2 flex flex-col p-2 overflow-visible",
@@ -206,7 +227,7 @@ export function getInteractiveCellContainerProps(opts: {
     (isOver || isValidTarget) && !isDisabled ? "animate-breathing" : "",
   );
 
-  const style: CSSProperties = { minHeight: CELL_MIN_HEIGHT };
+  const style: CSSProperties = { minHeight: cellMinHeight(!!hasAtMarketStrip) };
   if (!isDisabled && tint) {
     style.backgroundColor = tint;
   }
@@ -225,10 +246,13 @@ export function getInteractiveCellContainerProps(opts: {
 // CELL CONTAINER - Read-only version for display widgets
 // =============================================================================
 
-export function getReadOnlyCellContainerProps(tint?: string) {
+export function getReadOnlyCellContainerProps(
+  tint?: string,
+  hasAtMarketStrip?: boolean,
+) {
   const className =
     "flex-1 relative border border-border-dimmed rounded-lg m-2 flex flex-col p-2 overflow-visible";
-  const style: CSSProperties = { minHeight: CELL_MIN_HEIGHT };
+  const style: CSSProperties = { minHeight: cellMinHeight(!!hasAtMarketStrip) };
   if (tint) {
     style.backgroundColor = tint;
   } else {
@@ -337,8 +361,17 @@ export const rowLabelBadge = cva(
 
 export const cellHeader = "flex flex-col gap-0.5 mb-1";
 
+/**
+ * The cell's header line: the orders it holds, named once each.
+ *
+ * `truncate` rather than wrapping, because `CELL_CHROME` counts this as one
+ * 16.5px line and a second line would come out of the axis below it - the one
+ * thing `CELL_MIN_HEIGHT` exists to stop. Nothing is lost to a screen reader:
+ * the cell's own group label lists what it holds, and every tile in it carries
+ * its own name.
+ */
 export const orderTypeLabel =
-  "text-[11px] font-semibold text-text-secondary capitalize";
+  "text-[11px] font-semibold text-text-secondary capitalize truncate";
 
 // =============================================================================
 // AXIS COMPONENTS
@@ -582,6 +615,30 @@ export const emptyPlaceholder =
   "flex-1 flex items-center justify-center text-text-placeholder text-xs";
 
 export const centeredContainer = "flex-1 flex items-center justify-center";
+
+// =============================================================================
+// THE AT-MARKET STRIP
+// =============================================================================
+//
+// Where a cell draws the orders that carry no price - a Market order - when it
+// is drawing a price axis for the ones that do. It is off the ruler on purpose:
+// the strip has no track, no percentage scale and no position to read, because
+// a market order has no offset from the market to draw. It says which orders
+// those are and that they execute at the market, and the axis above it keeps
+// the ruler for the orders that are placed against it.
+//
+// `shrink-0` because it is a sibling of `sliderArea`, which is `flex-1`: the
+// axis gives up the height, and `cellMinHeight` is what stops it giving up
+// more than it has. It is drawn UNDER the axis at every direction, so its
+// position does not move with the cell's scale.
+
+export const atMarketStrip =
+  "shrink-0 mt-2 pt-2 border-t border-border-dimmed flex items-center gap-2";
+
+export const atMarketLabel =
+  "text-[9px] text-text-muted uppercase tracking-wide whitespace-nowrap";
+
+export const atMarketBlocks = "flex flex-row items-center gap-1";
 
 // =============================================================================
 // WARNING ALERT

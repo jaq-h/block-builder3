@@ -26,7 +26,7 @@ import {
   type ProviderSource,
 } from "../utils/blockCommand";
 import { findBlockInGrid } from "../utils/grid";
-import { cellDrawsPriceAxis, legInCell } from "../utils/blockMapping";
+import { legOfBlock } from "../utils/blockMapping";
 import type { PickUpRefusal } from "../utils/gridAnnouncements";
 import { holdBlockInHand } from "./blockInHand";
 import type { GridAnnouncer } from "./useGridAnnouncer";
@@ -430,12 +430,12 @@ export const useBlockCommand = ({
       origin: { col: found.col, row: found.row },
     };
 
-    // Which leg of its order type this was, if its cell drew it on a price
-    // axis at all. A dual-axis order type puts two blocks in one cell under one
-    // label, so the sentence needs it to name the one that went - and this is
-    // the block's own cell, asked of `legInCell`, the one owner of that
-    // question and the same one that named the control the user just pressed.
-    const leg = legInCell(grid[found.col][found.row], found.block);
+    // Which leg of its order type this was, or none for an order carrying no
+    // price. A dual-axis order type puts two blocks in one cell under one
+    // label, so the sentence needs it to name the one that went - asked of
+    // `legOfBlock`, the one owner of that question and the same one that named
+    // the control the user just pressed.
+    const leg = legOfBlock(found.block);
 
     // One press, one message. A removal can take cells away from a carry in the
     // user's other hand - conditional validity is diagonal adjacency to an
@@ -601,17 +601,18 @@ export const useBlockCommand = ({
     // user so, because a press that silently does nothing is indistinguishable
     // from a broken control.
     //
-    // Which refusal depends on whether this cell draws a price axis, and that
-    // question has exactly one owner - `cellDrawsPriceAxis` - shared with the
+    // Which refusal depends on whether THIS BLOCK is drawn on a price axis,
+    // and that question has exactly one owner - `legOfBlock` - shared with the
     // renderer, so the arrow keys offered here are the arrow keys `Block`
-    // actually wires. A cell with an axis has something else to offer; one
-    // without has only "remove it and place a new one".
+    // actually wires. It is the block's question rather than the cell's: a
+    // cell can draw an axis for its priced orders and an at-market strip for a
+    // Market order beside them, and offering that Market order arrow keys it
+    // has no axis to use would be the note promising a control this render
+    // never wired.
     refuseMove(
       found.block,
       cell,
-      cellDrawsPriceAxis(grid[cell.col][cell.row])
-        ? "onPriceAxis"
-        : "staysInCell",
+      legOfBlock(found.block) ? "onPriceAxis" : "staysInCell",
     );
   };
 

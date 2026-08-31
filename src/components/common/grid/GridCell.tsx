@@ -7,9 +7,9 @@ import {
   formatPrice,
   getCellDisplayMode,
   isDescending as isDescendingDirection,
-  legInCell,
   legOfBlock,
   priceForOffset,
+  splitCellByPrice,
   type PriceAxisLeg,
 } from "../../../utils";
 import { describeCell } from "../../../utils/blockCommand";
@@ -38,6 +38,9 @@ import {
   getCalculatedPriceLabelProps,
   emptyPlaceholder,
   centeredContainer,
+  atMarketStrip,
+  atMarketLabel,
+  atMarketBlocks,
   warningAlert,
   warningIcon,
   warningText,
@@ -146,7 +149,17 @@ const GridCell: FC<GridCellProps> = ({
   // put `-25.00% $37,500` on screen beside a payload that said 62,500.
   const direction = cellDirection(blocks);
   const isDescending = isDescendingDirection(direction);
-  const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
+  // Every order the cell holds, named once each and in the order they landed.
+  // It used to be `blocks[0].label` alone, which named one order out of a bulk
+  // cell that can hold several - and once a cell could draw a Limit on its
+  // axis while a Market order sat in the strip below, that header was naming
+  // whichever of the two happened to be first. A dual-axis order type puts two
+  // blocks in the cell under one label, so the labels are deduped: it is one
+  // order and it is named once.
+  const orderTypeLabelText =
+    blocks.length > 0
+      ? [...new Set(blocks.map((block) => block.label))].join(", ")
+      : null;
   const isBuy = colIndex === 0;
 
   // Which column a block is drawn in, which label that column carries and which
@@ -162,6 +175,13 @@ const GridCell: FC<GridCellProps> = ({
   const limitBlocks = blocks.filter((block) => legOfBlock(block) === "limit");
   const hasTriggerBlocks = triggerBlocks.length > 0;
   const hasLimitBlocks = limitBlocks.length > 0;
+
+  // The orders in this cell that carry no price at all, from the one owner of
+  // that split. In a cell that draws an axis they are drawn in the at-market
+  // strip beneath it rather than flattening the cell, which is what used to
+  // hide a priced order's chip while the payload still carried its price.
+  const { atMarket } = splitCellByPrice(blocks);
+  const drawsAtMarketStrip = displayMode !== "no-axis" && atMarket.length > 0;
 
   const rowLabelType: "primary" | "conditional" =
     rowLabel.toLowerCase() === "primary" ? "primary" : "conditional";
@@ -300,7 +320,7 @@ const GridCell: FC<GridCellProps> = ({
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
                   label={block.label}
-                  leg={legInCell(blocks, block)}
+                  leg={legOfBlock(block)}
                   yPosition={offset}
                   direction={direction}
                   priceText={formatPrice(calculatedPrice, priceFormat)}
@@ -315,6 +335,27 @@ const GridCell: FC<GridCellProps> = ({
       </div>
     );
   };
+
+  const renderAtMarketStrip = () => (
+    <div className={atMarketStrip}>
+      <span className={atMarketLabel}>At market</span>
+      <div className={atMarketBlocks}>
+        {atMarket.map((block) => (
+          <Block
+            key={block.id}
+            id={block.id}
+            icon={block.icon}
+            abrv={block.abrv}
+            label={block.label}
+            // No leg, so no slider, no arrow keys and no price in the name:
+            // this order has no offset from the market to move along.
+            leg={legOfBlock(block)}
+            {...commandProps(block.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
 
   const renderContent = () => {
     if (showPrimaryWarning && blocks.length === 0) {
@@ -354,7 +395,7 @@ const GridCell: FC<GridCellProps> = ({
                 icon={block.icon}
                 abrv={block.abrv}
                 label={block.label}
-                leg={legInCell(blocks, block)}
+                leg={legOfBlock(block)}
                 {...commandProps(block.id)}
               />
             ))}
@@ -373,8 +414,11 @@ const GridCell: FC<GridCellProps> = ({
           </div>
           <div className={sliderArea}>
             {renderMarketPrice()}
-            {renderAxisContent(blocks, "limit", true, "Limit", true)}
+            {/* The blocks with a limit leg, never every block in the cell: an
+                axis-less one has no position to lay out on this track. */}
+            {renderAxisContent(limitBlocks, "limit", true, "Limit", true)}
           </div>
+          {drawsAtMarketStrip && renderAtMarketStrip()}
         </>
       );
     }
@@ -405,6 +449,7 @@ const GridCell: FC<GridCellProps> = ({
               !hasTriggerBlocks,
             )}
         </div>
+        {drawsAtMarketStrip && renderAtMarketStrip()}
       </>
     );
   };
@@ -414,6 +459,7 @@ const GridCell: FC<GridCellProps> = ({
     isValidTarget,
     isDisabled,
     tint,
+    hasAtMarketStrip: drawsAtMarketStrip,
   });
 
   const occupants =

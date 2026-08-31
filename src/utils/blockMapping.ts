@@ -68,38 +68,45 @@ export const legOfBlock = (block: {
 };
 
 /**
- * Whether a cell draws a price axis at all.
+ * Whether a cell draws a price axis at all: **some** block in it carries a leg.
  *
- * A cell holding any axis-less block - a Market order in a bulk cell, say -
- * draws *every* block in it without one, because there is no ruler for the
- * others to be placed against. This is the whole of that question: `Block` used
- * to answer it again from its own props, so a limit leg in an axis-less cell
- * was drawn flat by the cell and treated as freely draggable by the block,
- * which is how a mouse could split a paired order and flip one leg's side.
+ * It answers the CELL's layout question and nothing else. It does not decide
+ * what any block in the cell is worth, and it may never be given that job
+ * again - `legOfBlock` owns a block's leg, and a block's leg is a fact about
+ * the block rather than about its neighbours.
+ *
+ * It used to be `every`, so one axis-less block - a Market order in a bulk
+ * cell - flattened the whole cell, on the reasoning that there was no ruler
+ * for the others to be placed against. The ruler was never the axis-less
+ * block's to take away: it is the market price and the percentage scale, and
+ * it stands whether or not something in the cell has no use for it. What that
+ * rule really did was suppress a price the order still carried, on screen
+ * only: the chart went on drawing the line, `orderConfigFromGrid` went on
+ * recording the offset, and `mapBlockToOrderParams` went on emitting
+ * `limit_price` - so a Limit sharing a bulk cell with a Market order was sent
+ * at 25% below the market having never been drawn, and, wired to `useFreeDrag`
+ * rather than `useVerticalDrag` for want of a leg, could not be corrected
+ * either. Reproduced in Chrome at $77,760.7 on 2026-08-30: the cell's whole
+ * visible text was "Market", against an `Entry Lmt 58,320.5` line on the chart
+ * beside it.
+ *
+ * A cell that draws an axis draws its axis-less blocks in the at-market strip
+ * beneath it (`atMarketStrip` in `styles/grid.ts`), which is what answers the
+ * question the old rule was avoiding: an order with no price is not placed
+ * against the ruler, it is drawn off it and said to execute at the market.
  */
 export const cellDrawsPriceAxis = (
   cellBlocks: readonly { axes: readonly AxisType[] }[],
-): boolean =>
-  cellBlocks.length > 0 && cellBlocks.every((block) => block.axes.length > 0);
-
-/**
- * The leg a block is drawn on **in the cell it is actually in** - the one
- * answer the renderer, the keyboard and the command model all take.
- *
- * `null` means "not on an axis here", which is a fact about the pairing of
- * block and cell rather than about either alone.
- */
-export const legInCell = (
-  cellBlocks: readonly { axes: readonly AxisType[] }[],
-  block: { axes: readonly AxisType[] },
-): PriceAxisLeg | null =>
-  cellDrawsPriceAxis(cellBlocks) ? legOfBlock(block) : null;
+): boolean => cellBlocks.some((block) => block.axes.length > 0);
 
 /**
  * How the cell lays its axes out, which is the same question as
  * `cellDrawsPriceAxis` plus how many columns the answer needs. It lives beside
  * it rather than in `utils/grid.ts` so the layout and the membership can never
  * be answered from two different tests of the same `axes` array.
+ *
+ * It is read over the blocks that actually carry a leg, so an axis-less block
+ * sharing the cell neither adds a column nor removes one.
  */
 export const getCellDisplayMode = (
   blocks: readonly { axes: readonly AxisType[] }[],
@@ -115,6 +122,22 @@ export const getCellDisplayMode = (
 
   return "dual-axis";
 };
+
+/**
+ * The blocks in a cell that carry a price, and the ones that do not, split by
+ * the one owner of that question.
+ *
+ * Every surface that draws a cell needs both halves - the axis lanes are the
+ * first, the at-market strip is the second - and a surface splitting them with
+ * its own test of `axes` is how the renderer and the order path came to
+ * disagree in the first place.
+ */
+export const splitCellByPrice = <T extends { axes: readonly AxisType[] }>(
+  cellBlocks: readonly T[],
+): { priced: T[]; atMarket: T[] } => ({
+  priced: cellBlocks.filter((block) => legOfBlock(block) !== null),
+  atMarket: cellBlocks.filter((block) => legOfBlock(block) === null),
+});
 
 // =============================================================================
 // 2. POSITION
@@ -427,7 +450,10 @@ export const orderConfigFromGrid = (grid: GridData): OrderConfig => {
       const direction = cellDirection(cell);
       cell.forEach((block) => {
         config[block.id] =
-          block.axes.length === 0
+          // `legOfBlock`, not a second reading of `axes`: which price an order
+          // carries has one owner, and the saved config, the chart line, the
+          // cell chip and the Kraken payload all take their answer from it.
+          legOfBlock(block) === null
             ? { col, row, type: block.orderType }
             : {
                 col,

@@ -147,8 +147,8 @@ export type GridOutcome =
       kind: "removed";
       source: GridSource;
       /**
-       * Which price axis the cell drew this block on, from `legInCell` - the
-       * one owner of that question - or absent for a cell that draws no axis.
+       * Which price axis this block is drawn on, from `legOfBlock` - the one
+       * owner of that question - or absent for a block carrying no price.
        *
        * A dual-axis order type places two blocks in one cell under one label,
        * so the cell alone tells them apart no better than the label does. This

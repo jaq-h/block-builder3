@@ -517,9 +517,11 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   input method (decision D9, and see "Prices and order types"), so the carry has one kind of
   source and `CarriedBlock.source: ProviderSource` is the type saying so. Pressing Enter,
   tapping or clicking a placed block reaches `refuseMove` instead, and whether that refusal
-  offers the arrow keys is decided by `cellDrawsPriceAxis` - the same owner the renderer uses
-  to decide whether to draw an axis at all, so the affordance named is one this render really
-  wired.
+  offers the arrow keys is decided by `legOfBlock` - the same owner the renderer uses to
+  decide whether to draw THAT BLOCK on an axis, so the affordance named is one this render
+  really wired. It is the block's question and not the cell's: a cell draws its axis for the
+  orders that carry a price and an at-market strip for the ones that do not, so a Limit and a
+  Market order in one bulk cell are refused differently and correctly.
 - **The mouse is a first-class user of the command model: click to pick up, click to place**,
   and hold-to-drag is unchanged beside it. `TAP_SLOP_PX` (4px) is the one threshold that
   separates a click from a drag, for every device - a per-device number would be a second
@@ -1394,6 +1396,26 @@ The invariants the order path depends on, each of which was previously violated 
   `blockMapping.dom.test.tsx` is the acceptance check - it puts a Limit and a Stop Loss in
   one bulk cell at $50,000 and asserts the chip, the chart line and the payload all say
   `$37,500`, including on a grid whose blocks were never stamped.
+- **What a cell DRAWS and what the payload CARRIES are one question, and `legOfBlock` is its
+  owner.** A block's leg is a fact about the block, never about its neighbours: the cell asks
+  `legOfBlock` before it draws an axis column, and `mapBlockToOrderParams`, `buildTrigger`,
+  `buildConditional` and `orderConfigFromGrid` ask the same function before they emit a
+  `limit_price` or a trigger. **Nothing on the order path may read `block.axes` for itself.**
+  That is the join the mapper was missing: `cellDrawsPriceAxis` was `every`, so one Market
+  order in a bulk cell flattened the whole cell, and the mapper - which never consulted it -
+  went on emitting `limit_price` from `axes.includes("limit")`. Reproduced in Chrome at
+  BTC/USD $77,760.7: a Market and a Limit in Entry row 1, the cell's entire visible text
+  reading "Market", and a payload carrying `limit_price: 58257.5` - a resting buy limit 25%
+  below the market that the user never saw and, wired to `useFreeDrag` for want of a leg,
+  could not correct. **The rule is `some` now**: a cell draws its ruler for the orders that
+  are placed against it, and the orders that carry no price - only a Market order has
+  `axes: []` - are drawn in the at-market strip beneath the axis (`atMarketStrip` in
+  `styles/grid.ts`, and `cellMinHeight` is what stops the strip taking its height out of the
+  track). So a cell can no longer hide a price it will send, and the two readings agree by
+  construction rather than by coincidence. Do not answer a future case here by making the
+  payload drop a price the display refused: the grid holds the price, so the display is what
+  was wrong. `blockMapping.dom.test.tsx` pins it under "a bulk cell holding a Market order
+  beside a Limit".
 - **A block's order type is `BlockData.orderType`.** Never parse it back out of the block id.
   Ids look like `sa-stop-loss-limit-limit-2`, and substring matching on them turned every
   `-limit` variant into a plain limit order with no trigger. Because `mapOrderType` refuses
@@ -1591,9 +1613,9 @@ puts them in the same cell, so the label plus the cell names neither of them: "R
 Loss Limit block from Entry column, primary row" was said identically for either leg, leaving
 a screen-reader user unable to tell which leg they had destroyed and holding half an order.
 The sentence is "Removed Stop Loss Limit trigger block from Entry column, primary row." The
-leg appears **only where the cell really draws the block on a price axis** - a Market order in
-a bulk cell keeps its plain name - and it comes from `legInCell` in `blockMapping.ts`, the one
-owner of axis membership, asked by `removeBlock` for the `removed` outcome. It must not be
+leg appears **only where the block really carries a price** - a Market order keeps its plain
+name wherever it sits - and it comes from `legOfBlock` in `blockMapping.ts`, the one owner of
+axis membership, asked by `removeBlock` for the `removed` outcome. It must not be
 re-derived from `axis` or `axes`. The cell-clearing sentence needs no leg at all, because it
 is about the cell: "Cleared Entry column, primary row. Removed Stop Loss Limit order." - the
 label named ONCE, because both legs are one order and naming it twice would say two orders
@@ -1650,7 +1672,8 @@ not layout-aware - so a coordinate test there would pass for the wrong reason an
 written. What CI holds instead is the token check on the control's 24px size and the
 structural check that `Block`'s wrapper shrink-wraps its tile (`block.dom.test.tsx`, "keeps
 the tile's wrapper the tile's own box") with its parent letting it -
-`centeredContainer`'s flex row in an axis-less cell, and in an axis cell the
+`centeredContainer`'s flex row in a cell that draws no axis at all (and `atMarketBlocks`'
+flex row in the at-market strip of one that does), and in an axis cell the
 `flex justify-center` positioner from `getBlockPositionerProps` (`styles/grid.test.ts`, "the
 positioner centres a shrink-wrapped child"). Those are what keep a tile drawn at the price it
 says it is.
@@ -1671,7 +1694,7 @@ offering them as alternatives: Delete takes the one order the note is about, and
 clear control empties the cell, which in a bulk cell is orders the note is not about. A user
 sent to the wrong one loses work the note never mentioned.
 
-**Two closed gaps, recorded because the shape recurs.** Both were one fact derived twice.
+**Three closed gaps, recorded because the shape recurs.** Each was one fact derived twice.
 
 - *The price shown versus the price sent.* A bulk cell drew every chip on `blocks[0]`'s
   direction while the mapper read each block's own, so at a $50,000 market a Stop Loss
@@ -1683,6 +1706,11 @@ sent to the wrong one loses work the note never mentioned.
   by deleting the drop-time reader: a drop resolves a cell and nothing else, and
   `axesForBlockAxis` is the one derivation of the pair. Pinned by the round-trip test in
   `StrategyAssemblyContext.reload.test.tsx`.
+- *The price drawn versus the price sent, again, one cell wider.* The renderer asked whether
+  the CELL drew an axis and the order path asked whether the BLOCK had one, so a Limit beside
+  a Market order was drawn flat and submitted priced. Closed by the bullet above: one owner,
+  `legOfBlock`, and a strip for the orders that have no price rather than a rule that takes
+  everyone else's away.
 
 **`orderConfig` is derived, not maintained.** `orderConfigFromGrid(grid)` is a projection,
 memoised in `StrategyAssemblyProvider`; there is no `setOrderConfig`. It used to be a second

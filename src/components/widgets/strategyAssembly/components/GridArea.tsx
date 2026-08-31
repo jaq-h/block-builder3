@@ -15,7 +15,7 @@ import {
   addBlocksToCell,
   cellDirection,
   isDescending,
-  legInCell,
+  legOfBlock,
   offsetForOrder,
   MAX_OFFSET_PERCENT,
   MIN_OFFSET_PERCENT,
@@ -1145,7 +1145,7 @@ const GridArea: FC<GridAreaProps> = ({
     // saved `axis` disagreed with its `axes` measured a track it was not drawn
     // in, and every drag on it jumped. The fallback stays for the cell that
     // draws a single column.
-    const leg = legInCell(grid[col][row], blockData);
+    const leg = legOfBlock(blockData);
     const trackElement =
       gridRoot.querySelector(
         `${cellSelector} [data-axis-track="${col}-${row}-${leg}"]`,

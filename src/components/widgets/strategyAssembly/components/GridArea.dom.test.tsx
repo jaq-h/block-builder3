@@ -2179,7 +2179,8 @@ describe("GridArea, a carry that a drag takes over", () => {
 // titled "still reorders and re-prices the cell, while saying the block stayed",
 // and asserted that a ten-pixel nudge inside a block's own cell took the block
 // out of the cell array and pushed it back - so the Limit beside it became
-// `blocks[0]`, the cell header changed from "Market" to "Limit", and every
+// `blocks[0]`, the cell header changed from "Market, Limit" to "Limit, Market",
+// and every
 // price in the cell was redrawn on the other block's scale. It was written as a
 // fence around a mutation another lane owned. That lane is this one, and the
 // ruling is decision D8: the direction belongs to the cell, stamped when the
@@ -2199,8 +2200,9 @@ describe("GridArea, a same-cell nudge in the bulk pattern", () => {
       "aria-label",
       "Entry column, row 2, Market, Limit",
     );
-    // The cell header, which renders `blocks[0].label`.
-    expect(within(home).getByText("Market")).toBeInTheDocument();
+    // The cell header, which names every order the cell holds, in the order
+    // they landed - so a reorder would read "Limit, Market".
+    expect(within(home).getByText("Market, Limit")).toBeInTheDocument();
 
     // Ten pixels and a release inside the block's own cell: the most ordinary
     // accidental gesture there is.
@@ -2217,7 +2219,7 @@ describe("GridArea, a same-cell nudge in the bulk pattern", () => {
       "Entry column, row 2, Market, Limit",
     );
     expect(
-      within(cell(0, 1) as HTMLElement).getByText("Market"),
+      within(cell(0, 1) as HTMLElement).getByText("Market, Limit"),
     ).toBeInTheDocument();
 
     // And the sentence is decided from the fact that the block did not change

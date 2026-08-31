@@ -229,7 +229,7 @@ export const shouldShowPercentage = (block: BlockData): boolean =>
   block.axes.length > 0 && block.yPosition >= 0;
 
 // Whether a block sits on a price axis, and the saved form of a whole grid,
-// both belong to `utils/blockMapping.ts` - `legInCell` and `orderConfigFromGrid`
-// respectively. They used to live here as `isBlockVerticallyDraggable` and
-// `buildOrderConfigEntry`, each answering from a block alone, and a block alone
-// cannot see the cell whose scale it is drawn on.
+// both belong to `utils/blockMapping.ts` - `legOfBlock` and
+// `orderConfigFromGrid` respectively. They used to live here as
+// `isBlockVerticallyDraggable` and `buildOrderConfigEntry`, and the grid's
+// saved form cannot be built from a block alone: it carries the cell's scale.

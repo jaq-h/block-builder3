@@ -18,6 +18,7 @@ import type {
 } from "./types";
 import {
   cellDirection,
+  legOfBlock,
   offsetForOrder,
   priceForOrderOffset,
 } from "../utils/blockMapping";
@@ -219,7 +220,10 @@ const buildTrigger = (
   market: MarketPrecision,
   triggerRef: TriggerReference = "last",
 ): OrderTrigger | undefined => {
-  if (!block.axes.includes("trigger")) {
+  // `legOfBlock`, the same owner the cell asks before it draws a trigger
+  // column. A payload leg the grid never drew is a price the user was never
+  // shown, which is the whole of the defect this join exists to prevent.
+  if (legOfBlock(block) !== "trigger") {
     return undefined;
   }
 
@@ -273,14 +277,16 @@ const buildConditional = (
     market,
   );
 
+  const leg = legOfBlock(linkedBlock);
+
   // Add limit price if the order type uses it
-  if (linkedBlock.axes.includes("limit")) {
+  if (leg === "limit") {
     conditional.limit_price = price;
     conditional.limit_price_type = "static";
   }
 
   // Add trigger price if the order type uses it
-  if (linkedBlock.axes.includes("trigger")) {
+  if (leg === "trigger") {
     conditional.trigger_price = price;
     conditional.trigger_price_type = "static";
   }
@@ -289,7 +295,18 @@ const buildConditional = (
 };
 
 /**
- * Convert a UI block to Kraken OrderParams
+ * Convert a UI block to Kraken OrderParams.
+ *
+ * **Which price legs the payload carries is the same question the cell answers
+ * before it draws one, and `legOfBlock` is the one owner of it.** Reading
+ * `axes` here instead is what let a Limit sharing a bulk cell with a Market
+ * order be sent at `limit_price: 58257.5` while the cell drew no price at all -
+ * the display rule of the day flattened the whole cell and this module never
+ * asked it. The rule has changed since (a cell draws its axis for whatever
+ * needs one and its axis-less orders in an at-market strip), so the two agree
+ * by construction rather than by coincidence; they agree because they ask the
+ * same function, and a second reading of `axes` anywhere on this path is how
+ * they would stop.
  */
 export const mapBlockToOrderParams = (
   block: UIBlockData,
@@ -314,7 +331,7 @@ export const mapBlockToOrderParams = (
   };
 
   // Add limit price for limit-based orders
-  if (block.axes.includes("limit")) {
+  if (legOfBlock(block) === "limit") {
     params.limit_price = formatPriceForAPI(
       calculateBlockPrice(block, context.currentPrice),
       context.market,
@@ -322,9 +339,13 @@ export const mapBlockToOrderParams = (
     params.limit_price_type = "static";
   }
 
-  // Add trigger for trigger-based orders
-  if (block.axes.includes("trigger")) {
-    params.triggers = buildTrigger(block, context.currentPrice, context.market);
+  // Add trigger for trigger-based orders. `buildTrigger` asks the same owner
+  // and answers `undefined` for a block that carries no trigger, so the key is
+  // absent rather than present-and-undefined - which is a second spelling of
+  // "no trigger" for every serialiser downstream to disagree about.
+  const triggers = buildTrigger(block, context.currentPrice, context.market);
+  if (triggers) {
+    params.triggers = triggers;
   }
 
   // Add conditional order if there's a linked block
