@@ -767,9 +767,9 @@ gets is decided by what their input method can name:
   remove one dual-axis order, leaving the user holding half an order in between.
 
 Every input method has all the removal it needs, which is the point: removal used to be the
-`else` branch of `handleDragEnd` and nothing else, and `Block` routes a block whose cell
-draws a price axis to the vertical price drag instead of the free drag - so a placed Limit,
-Stop Loss or Take Profit could not be removed by *any* input method, mouse included, and
+`else` branch of `handleDragEnd` and nothing else, and `Block` routes a block that carries a
+leg to the vertical price drag instead of the free drag - so a placed Limit, Stop Loss or
+Take Profit could not be removed by *any* input method, mouse included, and
 **Clear All**, which destroys the whole strategy, was the only way out.
 
 Since a drop is decided by the block's edges, "clear of every cell" means the released tile
@@ -854,7 +854,10 @@ pointer drags the block up and down its axis, and on the keyboard it behaves as 
 vertical slider - `role="slider"` with arrow keys (Shift for a larger step, Page Up/Down
 larger still, Home/End for the ends of the axis). Its `aria-valuenow` is the **signed** offset
 from the market price, positive above and negative below, so the value always moves the same
-way the block does on screen whichever direction the cell's scale runs.
+way the block does on screen whichever direction the cell's scale runs. An order that carries
+no price at all - a Market order - has no axis to be drawn against and no offset to move
+along, so its cell draws it in an **at-market strip** beneath the axis, off the ruler and said
+to execute at the market, while the orders placed against the ruler keep it.
 
 **A drag supersedes a carry.** Starting a real pointer drag - the move that crosses the tap
 slop, not the pointer-down that might still be a tap - cancels whatever the command model is
@@ -1115,6 +1118,8 @@ src/
 │   │   └── grid/                  # Shared grid components
 │   │       ├── GridCell.tsx       # Interactive grid cell (Strategy Builder)
 │   │       ├── GridCell.styles.ts # Grid cell CVA styling
+│   │       ├── CellHeader.tsx     # The cell's title - every order it holds, named once each
+│   │       ├── AtMarketStrip.tsx  # The orders a cell carries no price for, drawn off the ruler
 │   │       ├── ReadOnlyGridCell.tsx # Read-only grid cell - exported, rendered nowhere today
 │   │       ├── ProviderColumn.tsx # Order-type palette - a lane, a band below `sm`
 │   │       └── index.ts          # Barrel export

@@ -1193,7 +1193,10 @@ replaced was 30px more than the panel could give three of them at 1440x900, whic
 put a scrollbar on an empty grid and clipped the last two orders out of the
 palette. Below roughly 866px of viewport the floor is reached and the panel
 scrolls, which is correct: the fix for an overflowing grid is never to hide the
-bar.
+bar. What a cell's container props apply is `cellMinHeight(drawsAtMarketStrip)`
+rather than the constant itself: the at-market strip is the axis' sibling in a
+`flex-col`, so a cell drawing one needs the floor plus `AT_MARKET_STRIP_HEIGHT`
+or the strip takes its height out of the very track the floor exists to keep.
 
 **Render each panel once.** `src/App.tsx` renders `assemblyPanel` and
 `ordersPanel` in a single tree and hides the inactive one below `lg` with
@@ -1569,7 +1572,7 @@ read the two as contradictory, and do not weaken either.
 
 Removal was once a branch of the free drag's release handler, and that is what made it
 unreachable for most of the grid: `block.tsx` wires `useVerticalDrag` instead of
-`useFreeDrag` for every block whose cell draws a price axis, so a placed Limit, Stop Loss or
+`useFreeDrag` for every block that carries a leg, so a placed Limit, Stop Loss or
 Take Profit could not be dragged off at all and Clear All - which destroys the whole strategy
 - was the only way to be rid of one. A removal that is one gesture's side effect is a removal
 only that gesture has; do not put it back.
