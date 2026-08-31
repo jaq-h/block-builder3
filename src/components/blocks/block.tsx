@@ -107,15 +107,14 @@ interface BlockProps {
   /** Order type name, e.g. "Stop Loss Limit". Carries the accessible name. */
   label?: string;
   /**
-   * Which price axis this block is drawn on in the cell rendering it, or
-   * `undefined`/`null` when that cell draws no axis at all.
+   * Which price axis this block is drawn on, or `undefined`/`null` for a
+   * block that carries no price at all - a Market order.
    *
    * Handed down rather than worked out here, and that is the point: this
    * component used to answer the same question again from `axis` and `axes`,
-   * so in a cell that drew every block flat - a bulk cell holding a Market
-   * order - a limit leg still believed it was on an axis. `legInCell` in
-   * `utils/blockMapping.ts` is the one answer, and it needs the cell to give
-   * it, which this component does not have.
+   * and `axis` has no notion of a single-axis order type. `legOfBlock` in
+   * `utils/blockMapping.ts` is the one answer, and the cell drawing this block
+   * has already asked it.
    */
   leg?: PriceAxisLeg | null;
   yPosition?: number;
@@ -386,10 +385,11 @@ const Block: FC<BlockProps> = ({
   // this block and the cell's own control for the pointer, and neither renders
   // a name here.
   //
-  // `leg` is null wherever the cell draws no price axis at all - a Market order
-  // in a bulk cell - and that block keeps its plain name. Its one owner is
-  // `legInCell` in `utils/blockMapping.ts`, which the cell has already asked;
-  // this component must not work it out again from `axis` or `axes`.
+  // `leg` is null for a block that carries no price - a Market order, drawn in
+  // its cell's at-market strip - and that block keeps its plain name. Its one
+  // owner is `legOfBlock` in `utils/blockMapping.ts`, which the cell has
+  // already asked; this component must not work it out again from `axis` or
+  // `axes`.
   const legName = leg ? `${name} ${leg}` : name;
   // Signed offset from the market price: positive above it, negative below.
   // That makes the value move the same way as the block does on screen, in

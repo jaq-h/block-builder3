@@ -517,9 +517,11 @@ The README's **Interaction model** section is authoritative. Fourteen things bit
   input method (decision D9, and see "Prices and order types"), so the carry has one kind of
   source and `CarriedBlock.source: ProviderSource` is the type saying so. Pressing Enter,
   tapping or clicking a placed block reaches `refuseMove` instead, and whether that refusal
-  offers the arrow keys is decided by `cellDrawsPriceAxis` - the same owner the renderer uses
-  to decide whether to draw an axis at all, so the affordance named is one this render really
-  wired.
+  offers the arrow keys is decided by `legOfBlock` - the same owner the renderer uses to
+  decide whether to draw THAT BLOCK on an axis, so the affordance named is one this render
+  really wired. It is the block's question and not the cell's: a cell draws its axis for the
+  orders that carry a price and an at-market strip for the ones that do not, so a Limit and a
+  Market order in one bulk cell are refused differently and correctly.
 - **The mouse is a first-class user of the command model: click to pick up, click to place**,
   and hold-to-drag is unchanged beside it. `TAP_SLOP_PX` (4px) is the one threshold that
   separates a click from a drag, for every device - a per-device number would be a second
@@ -674,8 +676,8 @@ out the abbreviation renames "SMA 20" to something a voice-control user cannot s
 
 ## Layout and the CSS cascade
 
-Nineteen traps live in the layout, and each is easy to reintroduce. The one
-paragraph below led **Known gap** is not among that nineteen: it records a
+Nineteen traps live in the layout, and each is easy to reintroduce. The two
+paragraphs below led **Known gap** are not among that nineteen: each records a
 defect that is already there rather than one you could bring back.
 
 **The app's chrome wraps; it never scrolls.** A row of controls - a toolbar, a
@@ -1020,6 +1022,27 @@ what this defect means for that rule is tracked outside this repository; what is
 recorded here is the measurement, so the next reader to meet it at 320 can tell
 it is known and deferred.
 
+**Known gap: enough orders carrying no price overflow their cell horizontally.**
+`atMarketStrip` and `atMarketBlocks` in `src/styles/grid.ts` are a single
+non-wrapping row, in a cell that is `overflow-visible`, and in the bulk pattern
+every cell takes every order - so a user can put several Market orders in one.
+Measured in Chrome on this branch at 390x844, with a Limit and three Market
+orders in the Entry row 1 bulk cell: the strip's tiles are 40px wide on a 4px
+gap and start at x 96, against the cell's inner right edge at 291, so four fit
+and the **fifth** Market order in one cell is the first to paint outside the
+cell; at 320 the column is narrower and the fourth is. It is not cosmetic:
+below `sm` the panel clips, so a tile past that edge is an order drawn nowhere
+while the payload still carries it - the same shown-versus-sent class as the
+defect this branch fixes, which is why it is written down here rather than left
+to be rediscovered. **A cell holding ONLY Market orders overflows identically
+today, through `centeredContainer`**, so it is one gap over both rather than a
+defect of the strip. It is deferred rather than unnoticed, and tracked outside
+this repository: `flex-wrap` would trade `AT_MARKET_STRIP_HEIGHT`'s exact
+one-row floor for an approximate one that cannot be derived at render, since
+the number of rows depends on the width - so whoever takes the lane reworks
+`cellMinHeight` with it, and adding the wrap alone would silently understate a
+cell's floor by a tile row on a short viewport.
+
 **The desktop shell only has a height above `lg`.** `body`/`#root` are
 content-sized, so `h-full` resolves to `auto` unless something above it commits to
 a height. `appContainer` (`src/App.styles.ts`) supplies that with `lg:h-dvh`; the
@@ -1170,7 +1193,10 @@ replaced was 30px more than the panel could give three of them at 1440x900, whic
 put a scrollbar on an empty grid and clipped the last two orders out of the
 palette. Below roughly 866px of viewport the floor is reached and the panel
 scrolls, which is correct: the fix for an overflowing grid is never to hide the
-bar.
+bar. What a cell's container props apply is `cellMinHeight(drawsAtMarketStrip)`
+rather than the constant itself: the at-market strip is the axis' sibling in a
+`flex-col`, so a cell drawing one needs the floor plus `AT_MARKET_STRIP_HEIGHT`
+or the strip takes its height out of the very track the floor exists to keep.
 
 **Render each panel once.** `src/App.tsx` renders `assemblyPanel` and
 `ordersPanel` in a single tree and hides the inactive one below `lg` with
@@ -1394,6 +1420,26 @@ The invariants the order path depends on, each of which was previously violated 
   `blockMapping.dom.test.tsx` is the acceptance check - it puts a Limit and a Stop Loss in
   one bulk cell at $50,000 and asserts the chip, the chart line and the payload all say
   `$37,500`, including on a grid whose blocks were never stamped.
+- **What a cell DRAWS and what the payload CARRIES are one question, and `legOfBlock` is its
+  owner.** A block's leg is a fact about the block, never about its neighbours: the cell asks
+  `legOfBlock` before it draws an axis column, and `mapBlockToOrderParams`, `buildTrigger`,
+  `buildConditional` and `orderConfigFromGrid` ask the same function before they emit a
+  `limit_price` or a trigger. **Nothing on the order path may read `block.axes` for itself.**
+  That is the join the mapper was missing: `cellDrawsPriceAxis` was `every`, so one Market
+  order in a bulk cell flattened the whole cell, and the mapper - which never consulted it -
+  went on emitting `limit_price` from `axes.includes("limit")`. Reproduced in Chrome at
+  BTC/USD $77,760.7: a Market and a Limit in Entry row 1, the cell's entire visible text
+  reading "Market", and a payload carrying `limit_price: 58257.5` - a resting buy limit 25%
+  below the market that the user never saw and, wired to `useFreeDrag` for want of a leg,
+  could not correct. **The rule is `some` now**: a cell draws its ruler for the orders that
+  are placed against it, and the orders that carry no price - only a Market order has
+  `axes: []` - are drawn in the at-market strip beneath the axis (`atMarketStrip` in
+  `styles/grid.ts`, and `cellMinHeight` is what stops the strip taking its height out of the
+  track). So a cell can no longer hide a price it will send, and the two readings agree by
+  construction rather than by coincidence. Do not answer a future case here by making the
+  payload drop a price the display refused: the grid holds the price, so the display is what
+  was wrong. `blockMapping.dom.test.tsx` pins it under "a bulk cell holding a Market order
+  beside a Limit".
 - **A block's order type is `BlockData.orderType`.** Never parse it back out of the block id.
   Ids look like `sa-stop-loss-limit-limit-2`, and substring matching on them turned every
   `-limit` variant into a plain limit order with no trigger. Because `mapOrderType` refuses
@@ -1526,7 +1572,7 @@ read the two as contradictory, and do not weaken either.
 
 Removal was once a branch of the free drag's release handler, and that is what made it
 unreachable for most of the grid: `block.tsx` wires `useVerticalDrag` instead of
-`useFreeDrag` for every block whose cell draws a price axis, so a placed Limit, Stop Loss or
+`useFreeDrag` for every block that carries a leg, so a placed Limit, Stop Loss or
 Take Profit could not be dragged off at all and Clear All - which destroys the whole strategy
 - was the only way to be rid of one. A removal that is one gesture's side effect is a removal
 only that gesture has; do not put it back.
@@ -1591,9 +1637,9 @@ puts them in the same cell, so the label plus the cell names neither of them: "R
 Loss Limit block from Entry column, primary row" was said identically for either leg, leaving
 a screen-reader user unable to tell which leg they had destroyed and holding half an order.
 The sentence is "Removed Stop Loss Limit trigger block from Entry column, primary row." The
-leg appears **only where the cell really draws the block on a price axis** - a Market order in
-a bulk cell keeps its plain name - and it comes from `legInCell` in `blockMapping.ts`, the one
-owner of axis membership, asked by `removeBlock` for the `removed` outcome. It must not be
+leg appears **only where the block really carries a price** - a Market order keeps its plain
+name wherever it sits - and it comes from `legOfBlock` in `blockMapping.ts`, the one owner of
+axis membership, asked by `removeBlock` for the `removed` outcome. It must not be
 re-derived from `axis` or `axes`. The cell-clearing sentence needs no leg at all, because it
 is about the cell: "Cleared Entry column, primary row. Removed Stop Loss Limit order." - the
 label named ONCE, because both legs are one order and naming it twice would say two orders
@@ -1650,7 +1696,8 @@ not layout-aware - so a coordinate test there would pass for the wrong reason an
 written. What CI holds instead is the token check on the control's 24px size and the
 structural check that `Block`'s wrapper shrink-wraps its tile (`block.dom.test.tsx`, "keeps
 the tile's wrapper the tile's own box") with its parent letting it -
-`centeredContainer`'s flex row in an axis-less cell, and in an axis cell the
+`centeredContainer`'s flex row in a cell that draws no axis at all (and `atMarketBlocks`'
+flex row in the at-market strip of one that does), and in an axis cell the
 `flex justify-center` positioner from `getBlockPositionerProps` (`styles/grid.test.ts`, "the
 positioner centres a shrink-wrapped child"). Those are what keep a tile drawn at the price it
 says it is.
@@ -1671,7 +1718,7 @@ offering them as alternatives: Delete takes the one order the note is about, and
 clear control empties the cell, which in a bulk cell is orders the note is not about. A user
 sent to the wrong one loses work the note never mentioned.
 
-**Two closed gaps, recorded because the shape recurs.** Both were one fact derived twice.
+**Three closed gaps, recorded because the shape recurs.** Each was one fact derived twice.
 
 - *The price shown versus the price sent.* A bulk cell drew every chip on `blocks[0]`'s
   direction while the mapper read each block's own, so at a $50,000 market a Stop Loss
@@ -1683,6 +1730,11 @@ sent to the wrong one loses work the note never mentioned.
   by deleting the drop-time reader: a drop resolves a cell and nothing else, and
   `axesForBlockAxis` is the one derivation of the pair. Pinned by the round-trip test in
   `StrategyAssemblyContext.reload.test.tsx`.
+- *The price drawn versus the price sent, again, one cell wider.* The renderer asked whether
+  the CELL drew an axis and the order path asked whether the BLOCK had one, so a Limit beside
+  a Market order was drawn flat and submitted priced. Closed by the bullet above: one owner,
+  `legOfBlock`, and a strip for the orders that have no price rather than a rule that takes
+  everyone else's away.
 
 **`orderConfig` is derived, not maintained.** `orderConfigFromGrid(grid)` is a projection,
 memoised in `StrategyAssemblyProvider`; there is no `setOrderConfig`. It used to be a second

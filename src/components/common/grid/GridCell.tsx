@@ -3,15 +3,17 @@ import Block from "../../blocks/block";
 import type { BlockData, StrategyPattern } from "../../../types/grid";
 import {
   cellDirection,
+  cellDrawsAtMarketStrip,
   clampOffset,
   formatPrice,
   getCellDisplayMode,
   isDescending as isDescendingDirection,
-  legInCell,
   legOfBlock,
   priceForOffset,
   type PriceAxisLeg,
 } from "../../../utils";
+import AtMarketStrip from "./AtMarketStrip";
+import CellHeader from "./CellHeader";
 import { describeCell } from "../../../utils/blockCommand";
 import { useMarket } from "../../../store/useMarket";
 import type { CancelOptions } from "../../../hooks/useBlockCommand";
@@ -23,8 +25,6 @@ import {
   cellActionRail,
   cellClearButton,
   rowLabelBadge,
-  cellHeader,
-  orderTypeLabel,
   getAxisLabelItemProps,
   sliderArea,
   getAxisColumnProps,
@@ -146,7 +146,6 @@ const GridCell: FC<GridCellProps> = ({
   // put `-25.00% $37,500` on screen beside a payload that said 62,500.
   const direction = cellDirection(blocks);
   const isDescending = isDescendingDirection(direction);
-  const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
   // Which column a block is drawn in, which label that column carries and which
@@ -162,6 +161,11 @@ const GridCell: FC<GridCellProps> = ({
   const limitBlocks = blocks.filter((block) => legOfBlock(block) === "limit");
   const hasTriggerBlocks = triggerBlocks.length > 0;
   const hasLimitBlocks = limitBlocks.length > 0;
+
+  // Whether this cell draws the at-market strip, from the one owner of both the
+  // gate and the strip. It decides two things that must never disagree: what is
+  // drawn, and the height the container reserves for it.
+  const drawsAtMarketStrip = cellDrawsAtMarketStrip(blocks);
 
   const rowLabelType: "primary" | "conditional" =
     rowLabel.toLowerCase() === "primary" ? "primary" : "conditional";
@@ -300,7 +304,7 @@ const GridCell: FC<GridCellProps> = ({
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
                   label={block.label}
-                  leg={legInCell(blocks, block)}
+                  leg={legOfBlock(block)}
                   yPosition={offset}
                   direction={direction}
                   priceText={formatPrice(calculatedPrice, priceFormat)}
@@ -341,11 +345,7 @@ const GridCell: FC<GridCellProps> = ({
     if (displayMode === "no-axis") {
       return (
         <>
-          <div className={cellHeader}>
-            {orderTypeLabelText && (
-              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
-            )}
-          </div>
+          <CellHeader blocks={blocks} />
           <div className={centeredContainer}>
             {blocks.map((block) => (
               <Block
@@ -354,7 +354,7 @@ const GridCell: FC<GridCellProps> = ({
                 icon={block.icon}
                 abrv={block.abrv}
                 label={block.label}
-                leg={legInCell(blocks, block)}
+                leg={legOfBlock(block)}
                 {...commandProps(block.id)}
               />
             ))}
@@ -366,26 +366,23 @@ const GridCell: FC<GridCellProps> = ({
     if (displayMode === "limit-only") {
       return (
         <>
-          <div className={cellHeader}>
-            {orderTypeLabelText && (
-              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
-            )}
-          </div>
+          <CellHeader blocks={blocks} />
           <div className={sliderArea}>
             {renderMarketPrice()}
-            {renderAxisContent(blocks, "limit", true, "Limit", true)}
+            {/* The blocks with a limit leg, never every block in the cell: an
+                axis-less one has no position to lay out on this track. */}
+            {renderAxisContent(limitBlocks, "limit", true, "Limit", true)}
           </div>
+          {drawsAtMarketStrip && (
+            <AtMarketStrip blocks={blocks} wiring={commandProps} />
+          )}
         </>
       );
     }
 
     return (
       <>
-        <div className={cellHeader}>
-          {orderTypeLabelText && (
-            <div className={orderTypeLabel}>{orderTypeLabelText}</div>
-          )}
-        </div>
+        <CellHeader blocks={blocks} />
         <div className={sliderArea}>
           {renderMarketPrice()}
           {hasTriggerBlocks &&
@@ -405,6 +402,9 @@ const GridCell: FC<GridCellProps> = ({
               !hasTriggerBlocks,
             )}
         </div>
+        {drawsAtMarketStrip && (
+          <AtMarketStrip blocks={blocks} wiring={commandProps} />
+        )}
       </>
     );
   };
@@ -414,6 +414,7 @@ const GridCell: FC<GridCellProps> = ({
     isValidTarget,
     isDisabled,
     tint,
+    hasAtMarketStrip: drawsAtMarketStrip,
   });
 
   const occupants =

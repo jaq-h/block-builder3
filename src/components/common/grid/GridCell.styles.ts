@@ -60,6 +60,11 @@ export {
   emptyPlaceholder,
   centeredContainer,
 
+  // At-market strip
+  atMarketStrip,
+  atMarketLabel,
+  atMarketBlocks,
+
   // Warning alert
   warningAlert,
   warningIcon,

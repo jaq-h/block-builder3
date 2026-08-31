@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  AT_MARKET_STRIP_HEIGHT,
   BLOCK_HEIGHT,
+  CELL_MIN_HEIGHT,
+  atMarketStrip,
   cellActionRail,
+  cellMinHeight,
   SCALE_CONFIG,
   getAxisColumnProps,
   getBlockPositionerProps,
@@ -344,5 +348,42 @@ describe("the cell action rail", () => {
   // leftwards moves nothing that follows the item added to it.
   it("anchors to the cell's top-right corner", () => {
     expect(tokens).toEqual(expect.arrayContaining(["absolute", "top-1", "right-1"]));
+  });
+});
+
+// =============================================================================
+// THE AT-MARKET STRIP DOES NOT TAKE THE AXIS' HEIGHT
+// =============================================================================
+//
+// A cell holding a Market order beside a priced one draws both: the axis for
+// the orders that carry a price, and the strip for the ones that do not. The
+// strip is a sibling of `sliderArea`, which is `flex-1`, so the floor the cell
+// is drawn at has to grow by exactly what the strip takes - otherwise a short
+// viewport gives the track less than the two block heights it needs to mean
+// anything, which is the one thing `CELL_MIN_HEIGHT` exists to stop.
+//
+// jsdom lays nothing out, so the derivation and the tokens are what CI can
+// hold; the pixels are a browser's to measure.
+
+describe("the at-market strip", () => {
+  it("adds its own height to the cell's floor rather than taking the axis'", () => {
+    expect(cellMinHeight(true) - cellMinHeight(false)).toBe(
+      AT_MARKET_STRIP_HEIGHT,
+    );
+    expect(AT_MARKET_STRIP_HEIGHT).toBeGreaterThanOrEqual(BLOCK_HEIGHT);
+  });
+
+  it("keeps a cell that draws no strip at the floor it always had", () => {
+    expect(cellMinHeight(false)).toBe(CELL_MIN_HEIGHT);
+  });
+
+  it("refuses to be squeezed by the axis beside it", () => {
+    // Without `shrink-0` the strip is the flexible one in a `flex-col` whose
+    // other child is `flex-1`, so a cell shorter than both would shrink the
+    // tile it holds rather than the track above it.
+    expect(
+      unconditionalUtilities(atMarketStrip),
+      "the at-market strip can now be shrunk, so the tile in it is drawn smaller than a block",
+    ).toContain("shrink-0");
   });
 });

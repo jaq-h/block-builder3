@@ -3,20 +3,20 @@ import Block from "../../blocks/block";
 import type { BlockData } from "../../../types/grid";
 import {
   cellDirection,
+  cellDrawsAtMarketStrip,
   clampOffset,
   formatPrice,
   getCellDisplayMode,
   isDescending as isDescendingDirection,
-  legInCell,
   legOfBlock,
   priceForOffset,
   type PriceAxisLeg,
 } from "../../../utils";
+import AtMarketStrip from "./AtMarketStrip";
+import CellHeader from "./CellHeader";
 import { useMarket } from "../../../store/useMarket";
 import {
   getReadOnlyCellContainerProps,
-  cellHeader,
-  orderTypeLabel,
   getAxisLabelItemProps,
   sliderArea,
   getAxisColumnProps,
@@ -65,7 +65,6 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   // market it sits on.
   const direction = cellDirection(blocks);
   const isDescending = isDescendingDirection(direction);
-  const orderTypeLabelText = blocks.length > 0 ? blocks[0].label : null;
   const isBuy = colIndex === 0;
 
   // The same owner the builder cell splits on: `legOfBlock`, never `axis`. An
@@ -77,6 +76,16 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   const limitBlocks = blocks.filter((block) => legOfBlock(block) === "limit");
   const hasTriggerBlocks = triggerBlocks.length > 0;
   const hasLimitBlocks = limitBlocks.length > 0;
+
+  // The same gate and the same strip the builder cell draws, from their one
+  // owner: an order with no price is drawn off the ruler rather than taking it
+  // away from the ones beside it. A card and the cell it was built in must show
+  // the same prices, and must reserve the same height to show them in.
+  const drawsAtMarketStrip = cellDrawsAtMarketStrip(blocks);
+
+  // The card's whole wiring for a tile: it is read-only, and every handler the
+  // builder passes is absent because there is nothing here to drive.
+  const readOnlyWiring = () => ({ isReadOnly: true });
 
   const renderPercentageScale = (isDesc: boolean) => {
     const labels = getScaleLabels(isDesc);
@@ -178,7 +187,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                   icon={sliderIcon || block.icon}
                   abrv={block.abrv}
                   label={block.label}
-                  leg={legInCell(blocks, block)}
+                  leg={legOfBlock(block)}
                   yPosition={offset}
                   direction={direction}
                   priceText={formatPrice(calculatedPriceValue, priceFormat)}
@@ -200,11 +209,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
     if (displayMode === "no-axis") {
       return (
         <>
-          <div className={cellHeader}>
-            {orderTypeLabelText && (
-              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
-            )}
-          </div>
+          <CellHeader blocks={blocks} />
           <div className={centeredContainer}>
             {blocks.map((block) => (
               <Block
@@ -213,7 +218,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
                 icon={block.icon}
                 abrv={block.abrv}
                 label={block.label}
-                leg={legInCell(blocks, block)}
+                leg={legOfBlock(block)}
                 isReadOnly={true}
               />
             ))}
@@ -225,26 +230,22 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
     if (displayMode === "limit-only") {
       return (
         <>
-          <div className={cellHeader}>
-            {orderTypeLabelText && (
-              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
-            )}
-          </div>
+          <CellHeader blocks={blocks} />
           <div className={sliderArea}>
             {renderMarketPrice()}
-            {renderAxisContent(blocks, "limit", true, "Limit", true)}
+            {/* The blocks with a limit leg, never every block in the cell. */}
+            {renderAxisContent(limitBlocks, "limit", true, "Limit", true)}
           </div>
+          {drawsAtMarketStrip && (
+            <AtMarketStrip blocks={blocks} wiring={readOnlyWiring} />
+          )}
         </>
       );
     }
 
     return (
       <>
-        <div className={cellHeader}>
-          {orderTypeLabelText && (
-            <div className={orderTypeLabel}>{orderTypeLabelText}</div>
-          )}
-        </div>
+        <CellHeader blocks={blocks} />
         <div className={sliderArea}>
           {renderMarketPrice()}
           {hasTriggerBlocks &&
@@ -264,11 +265,14 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
               !hasTriggerBlocks,
             )}
         </div>
+        {drawsAtMarketStrip && (
+          <AtMarketStrip blocks={blocks} wiring={readOnlyWiring} />
+        )}
       </>
     );
   };
 
-  const containerProps = getReadOnlyCellContainerProps(tint);
+  const containerProps = getReadOnlyCellContainerProps(tint, drawsAtMarketStrip);
 
   return (
     <div

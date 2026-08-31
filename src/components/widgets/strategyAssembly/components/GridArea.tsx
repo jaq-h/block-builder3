@@ -15,7 +15,7 @@ import {
   addBlocksToCell,
   cellDirection,
   isDescending,
-  legInCell,
+  legOfBlock,
   offsetForOrder,
   MAX_OFFSET_PERCENT,
   MIN_OFFSET_PERCENT,
@@ -1145,7 +1145,7 @@ const GridArea: FC<GridAreaProps> = ({
     // saved `axis` disagreed with its `axes` measured a track it was not drawn
     // in, and every drag on it jumped. The fallback stays for the cell that
     // draws a single column.
-    const leg = legInCell(grid[col][row], blockData);
+    const leg = legOfBlock(blockData);
     const trackElement =
       gridRoot.querySelector(
         `${cellSelector} [data-axis-track="${col}-${row}-${leg}"]`,
@@ -1244,8 +1244,12 @@ const GridArea: FC<GridAreaProps> = ({
     // the very same sentence a release over any other cell gets.
     if (drop.kind !== "offGrid") {
       const result = keepBlockInItsCell(id, drop.cell);
-      // Only a free drag reaches here, and `block.tsx` wires one for a cell
-      // that draws no axis, so this refusal is always the removable case.
+      // Only a free drag reaches here, and `block.tsx` wires one for a block
+      // with no LEG - which includes a Market order sitting inside a cell that
+      // DOES draw an axis, since a leg is a fact about the block rather than
+      // about its neighbours. So this refusal is always the removable case,
+      // and the hardcoded reason is right per BLOCK: do not put a test of what
+      // the cell draws back beside it.
       if (result.status === "refused") {
         setRefusedMove({
           id: blockInfo.block.id,

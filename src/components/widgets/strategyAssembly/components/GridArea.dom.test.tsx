@@ -2185,6 +2185,11 @@ describe("GridArea, a carry that a drag takes over", () => {
 // ruling is decision D8: the direction belongs to the cell, stamped when the
 // first block lands.
 //
+// Those are the values that test recorded, and they stand as recorded: the
+// header rendered `blocks[0].label` at the time. It names every order the cell
+// holds now, so the assertions below read "Market, Limit" where that one read
+// "Market".
+//
 // So the assertions are inverted rather than deleted. The gesture is the same
 // ordinary accidental nudge; what it must now do is nothing at all.
 
@@ -2199,8 +2204,9 @@ describe("GridArea, a same-cell nudge in the bulk pattern", () => {
       "aria-label",
       "Entry column, row 2, Market, Limit",
     );
-    // The cell header, which renders `blocks[0].label`.
-    expect(within(home).getByText("Market")).toBeInTheDocument();
+    // The cell header, which names every order the cell holds, in the order
+    // they landed - so a reorder would read "Limit, Market".
+    expect(within(home).getByText("Market, Limit")).toBeInTheDocument();
 
     // Ten pixels and a release inside the block's own cell: the most ordinary
     // accidental gesture there is.
@@ -2217,7 +2223,7 @@ describe("GridArea, a same-cell nudge in the bulk pattern", () => {
       "Entry column, row 2, Market, Limit",
     );
     expect(
-      within(cell(0, 1) as HTMLElement).getByText("Market"),
+      within(cell(0, 1) as HTMLElement).getByText("Market, Limit"),
     ).toBeInTheDocument();
 
     // And the sentence is decided from the fact that the block did not change

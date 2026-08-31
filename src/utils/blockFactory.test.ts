@@ -271,9 +271,10 @@ describe("shouldShowPercentage", () => {
 });
 
 // `isBlockVerticallyDraggable` and `buildOrderConfigEntry` were tested here and
-// have moved to the block-to-price mapping owner, as `legInCell` and
-// `orderConfigFromGrid` - see `blockMapping.test.ts`. Both took a block alone,
-// and a block alone cannot see the cell whose scale it is drawn on: the first
-// disagreed with the renderer about whether a limit leg beside a Market order
-// sits on an axis, and the second recorded whatever direction the block
-// happened to carry rather than the one its cell draws.
+// have moved to the block-to-price mapping owner, as `legOfBlock` and
+// `orderConfigFromGrid` - see `blockMapping.test.ts`. Both answered from a
+// block in isolation and both were wrong for it: the first disagreed with the
+// renderer about whether a limit leg beside a Market order sits on an axis,
+// and the second recorded whatever direction the block happened to carry
+// rather than the one its cell draws. The leg is now a fact about the block
+// alone and the direction is a fact about the cell, and one owner states both.

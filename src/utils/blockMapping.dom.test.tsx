@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
+import { useEffect } from "react";
 
 import GridCell from "@common/grid/GridCell";
 import ReadOnlyGridCell from "@common/grid/ReadOnlyGridCell";
@@ -8,6 +9,8 @@ import { orderPriceLines } from "@widgets/orderChart/orderPriceLines";
 import { mapGridToOrders } from "@api/orderMapper";
 import { addBlocksToCell, orderConfigFromGrid } from "@utils/blockMapping";
 import { clearGrid } from "@utils/grid";
+import { StrategyAssemblyProvider } from "@widgets/strategyAssembly/StrategyAssemblyContext";
+import { useGridData } from "@widgets/strategyAssembly/contexts";
 import { MarketContext, type MarketContextValue } from "@store/MarketContext";
 import { MARKETS, findMarket } from "@data/markets";
 import { BTC_USD } from "@/test/marketFixtures";
@@ -72,6 +75,18 @@ const stopLoss: BlockData = {
   axes: ["trigger"],
 };
 
+const marketOrder: BlockData = {
+  id: "m1",
+  orderType: "market",
+  label: "Market",
+  abrv: "Mkt",
+  allowedRows: [1],
+  axis: 1,
+  yPosition: -1,
+  direction: "upside",
+  axes: [],
+};
+
 /** The Limit lands first, then the Stop Loss - through the one write path. */
 const bulkCell = (): GridData => {
   const withLimit = addBlocksToCell(
@@ -83,12 +98,12 @@ const bulkCell = (): GridData => {
   return addBlocksToCell(withLimit, { col: 0, row: 1 }, [stopLoss], "bulk");
 };
 
-const renderCell = (blocks: BlockData[]) =>
+const renderCell = (blocks: BlockData[], rowIndex: number = 1) =>
   render(
     <MarketContext.Provider value={marketValue}>
       <GridCell
         colIndex={0}
-        rowIndex={1}
+        rowIndex={rowIndex}
         blocks={blocks}
         isOver={false}
         isValidTarget={false}
@@ -120,12 +135,15 @@ const renderCell = (blocks: BlockData[]) =>
     </MarketContext.Provider>,
   );
 
-const payloadPrices = (grid: GridData) => {
-  const orders = mapGridToOrders(grid, {
+const ordersFor = (grid: GridData) =>
+  mapGridToOrders(grid, {
     market: BTC_USD,
     currentPrice: MARKET_PRICE,
     quantity: "1",
   });
+
+const payloadPrices = (grid: GridData) => {
+  const orders = ordersFor(grid);
   return {
     limit: orders.find((o) => o.order_type === "limit")?.limit_price,
     stopLoss: orders.find((o) => o.order_type === "stop-loss")?.triggers?.price,
@@ -233,5 +251,178 @@ describe("a bulk cell at $50,000 holding a Limit and a Stop Loss", () => {
 
     expect(screen.getAllByText("$37,500.0")).toHaveLength(2);
     expect(screen.queryByText("$62,500.0")).toBeNull();
+  });
+});
+
+// =============================================================================
+// THE ORDER A MARKET ORDER USED TO HIDE
+// =============================================================================
+//
+// Reported 2026-08-30 and reproduced in Chrome at BTC/USD $77,760.7: in the
+// bulk pattern, a Market order dropped into Entry row 1 and a Limit dropped
+// into the same cell left the cell's whole visible text reading "Market". No
+// price, no percentage, no market line and no axis - while the chart beside it
+// drew `Entry Lmt 58,320.5` and `mapGridToOrders` emitted
+// `limit_price: 58257.5`. `cellDrawsPriceAxis` was `every`, so one axis-less
+// block flattened the cell, and the order path never asked it at all. A
+// resting buy limit 25% below the market that the user was never shown and,
+// wired to a free drag for want of a leg, could not correct.
+//
+// The rule is `some` now: the cell keeps its ruler for the orders that are
+// placed against it and draws the ones that are not in the at-market strip.
+
+describe("a bulk cell holding a Market order beside a Limit", () => {
+  /** The Market lands first, exactly as the reproduction placed it. */
+  const mixedCell = (): GridData => {
+    const withMarket = addBlocksToCell(
+      clearGrid(2, 3),
+      { col: 0, row: 1 },
+      [marketOrder],
+      "bulk",
+    );
+    return addBlocksToCell(withMarket, { col: 0, row: 1 }, [limit], "bulk");
+  };
+
+  it("draws the price it sends, rather than hiding it behind the Market order", () => {
+    const grid = mixedCell();
+
+    renderCell(grid[0][1]);
+
+    // The price the payload carries, on screen, where the user placed it.
+    expect(screen.getByText("$37,500.0")).toBeInTheDocument();
+    expect(screen.getByText("-25.00%")).toBeInTheDocument();
+
+    expect(chartPrices(grid).limit).toBe(37_500);
+    expect(payloadPrices(grid).limit).toBe("37500.0");
+  });
+
+  it("draws the Market order off the ruler, and sends it with no price", () => {
+    const grid = mixedCell();
+
+    renderCell(grid[0][1]);
+
+    // It is in the cell, named, and said to execute at the market - it is not
+    // given a position on an axis it has no offset to be placed on.
+    expect(screen.getByText("At market")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Market order/ }),
+    ).toBeInTheDocument();
+    // A slider is a block on a price axis. The Market order is not one, so it
+    // offers no arrow keys and reports no value.
+    expect(screen.getAllByRole("slider")).toHaveLength(1);
+
+    const market = ordersFor(grid).find((o) => o.order_type === "market");
+    expect(market).toBeDefined();
+    expect(market?.limit_price).toBeUndefined();
+    expect(market?.triggers).toBeUndefined();
+  });
+
+  it("keeps the Limit on its axis when the Market order is removed", () => {
+    const grid = mixedCell();
+
+    renderCell(grid[0][1]);
+    expect(screen.getByText("At market")).toBeInTheDocument();
+    cleanup();
+
+    grid[0][1] = grid[0][1].filter((b) => b.id !== "m1");
+
+    renderCell(grid[0][1]);
+    expect(screen.queryByText("At market")).toBeNull();
+    expect(screen.getByText("$37,500.0")).toBeInTheDocument();
+    expect(payloadPrices(grid).limit).toBe("37500.0");
+  });
+
+  it("draws the same price on the read-only card", () => {
+    const grid = mixedCell();
+
+    render(
+      <MarketContext.Provider value={marketValue}>
+        <ReadOnlyGridCell
+          colIndex={0}
+          rowIndex={1}
+          blocks={grid[0][1]}
+          currentPrice={MARKET_PRICE}
+        />
+      </MarketContext.Provider>,
+    );
+
+    expect(screen.getByText("$37,500.0")).toBeInTheDocument();
+    expect(screen.getByText("At market")).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// THE SCALE A SAVED MARKET ORDER USED TO TAKE WITH IT
+// =============================================================================
+//
+// The round trip a user makes by pressing Edit on a submitted strategy: the
+// grid is projected to an `OrderConfig` and the provider rebuilds a grid from
+// it. A cell's scale belongs to the cell (decision D8) and `cellDirection`
+// reads it off `blocks[0]`, so an entry that saved no direction let
+// `gridFromConfig` guess one from `directionForNewCell` under the RELOAD's own
+// pattern - and the Market order is the block a reload pushes in first.
+//
+// Bulk, Entry row 3: the builder stamps that cell "downside" and draws and
+// sends the Limit beside it 25% BELOW the market. Saved without the direction,
+// the Market order came back "upside" and stamped the Limit with it, so the
+// same strategy was redrawn and re-sent 25% ABOVE the market. Shown still
+// equalled sent, which is why nothing refused it; both were simply wrong.
+
+describe("a bulk cell with a Market order, saved and reloaded for editing", () => {
+  /** The Market lands first, then the Limit - through the one write path. */
+  const savedCell = (): GridData => {
+    const withMarket = addBlocksToCell(
+      clearGrid(2, 3),
+      { col: 0, row: 2 },
+      [marketOrder],
+      "bulk",
+    );
+    return addBlocksToCell(withMarket, { col: 0, row: 2 }, [limit], "bulk");
+  };
+
+  /** The grid the provider rebuilds when it is mounted with a saved config. */
+  const rehydrate = (config: ReturnType<typeof orderConfigFromGrid>) => {
+    let published: GridData | undefined;
+
+    const Probe = (): null => {
+      const { grid } = useGridData();
+      useEffect(() => {
+        published = grid;
+      }, [grid]);
+      return null;
+    };
+
+    render(
+      <StrategyAssemblyProvider initialConfig={config}>
+        <Probe />
+      </StrategyAssemblyProvider>,
+    );
+
+    if (!published) throw new Error("The provider never published a grid");
+    return published;
+  };
+
+  const expectPricedBelowMarket = (grid: GridData) => {
+    renderCell(grid[0][2], 2);
+
+    expect(screen.getByText("$37,500.0")).toBeInTheDocument();
+    expect(screen.getByText("-25.00%")).toBeInTheDocument();
+    expect(screen.queryByText("$62,500.0")).toBeNull();
+    expect(screen.queryByText("+25.00%")).toBeNull();
+
+    expect(chartPrices(grid).limit).toBe(37_500);
+    expect(payloadPrices(grid).limit).toBe("37500.0");
+  };
+
+  it("draws and sends the same price before and after the round trip", () => {
+    const built = savedCell();
+
+    expectPricedBelowMarket(built);
+    cleanup();
+
+    const reloaded = rehydrate(orderConfigFromGrid(built));
+    cleanup();
+
+    expectPricedBelowMarket(reloaded);
   });
 });
