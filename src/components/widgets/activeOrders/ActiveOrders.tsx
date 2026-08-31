@@ -47,6 +47,15 @@ import {
   orderIdSelect,
 } from "./ActiveOrders.styles";
 
+/**
+ * The panel heading its `region` landmark is named by. A module constant rather
+ * than a literal in two places, and safe as a fixed id because `App.tsx` mounts
+ * this panel exactly once - one tree for both layouts, the inactive one hidden
+ * with `display: none` rather than swapped out. `src/App.test.tsx` fails if a
+ * second copy ever comes back.
+ */
+const ACTIVE_ORDERS_HEADING_ID = "active-orders-heading";
+
 // =============================================================================
 // HELPERS
 // =============================================================================
@@ -183,9 +192,15 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
   };
 
   return (
-    <div className={container}>
+    // A `region` landmark named by its own heading, so the three panels are
+    // three places a landmark user can jump between rather than one undivided
+    // `main`. `aria-labelledby` rather than a second `aria-label`: the name and
+    // the heading are one fact, and two copies is how they drift apart.
+    <section className={container} aria-labelledby={ACTIVE_ORDERS_HEADING_ID}>
       <div className={header}>
-        <h2 className={headerTextClass}>Active Orders</h2>
+        <h2 id={ACTIVE_ORDERS_HEADING_ID} className={headerTextClass}>
+          Active Orders
+        </h2>
       </div>
 
       {/* Status Bar */}
@@ -228,7 +243,11 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
             </div>
           )}
         </div>
-        <button className={refreshButton} onClick={refreshOrders}>
+        <button
+          type="button"
+          className={refreshButton}
+          onClick={refreshOrders}
+        >
           <RefreshIcon width={14} height={14} />
           Refresh
         </button>
@@ -296,6 +315,7 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
                   </div>
                   {onEditGroup && (
                     <button
+                      type="button"
                       className={strategyGroupEditButton}
                       onClick={() => onEditGroup(groupOrders)}
                       title="Edit strategy in builder"
@@ -409,6 +429,7 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
                   ))}
                 </select>
                 <button
+                  type="button"
                   className={devButton({ variant: "fill" })}
                   onClick={handleFillOrder}
                   disabled={!selectedOrderId}
@@ -417,6 +438,7 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
                   Fill Order
                 </button>
                 <button
+                  type="button"
                   className={devButton({ variant: "cancel" })}
                   onClick={handleCancelOrder}
                   disabled={!selectedOrderId}
@@ -429,6 +451,7 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
               <div className={devControlsRow}>
                 <span className={devLabel}>Bulk Actions:</span>
                 <button
+                  type="button"
                   className={devButton({ variant: "fill" })}
                   onClick={handleFillAllOrders}
                 >
@@ -436,6 +459,7 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
                   Fill All ({actionableOrders.length})
                 </button>
                 <button
+                  type="button"
                   className={devButton({ variant: "cancel" })}
                   onClick={handleCancelAllOrders}
                 >
@@ -461,7 +485,7 @@ const ActiveOrdersInner: FC<ActiveOrdersInnerProps> = ({
           Last updated: {new Date().toLocaleTimeString()}
         </span>
       </div>
-    </div>
+    </section>
   );
 };
 

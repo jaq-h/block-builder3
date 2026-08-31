@@ -214,3 +214,66 @@ describe("App layout", () => {
     );
   });
 });
+
+// =============================================================================
+// LANDMARKS AND HEADING ORDER
+// =============================================================================
+//
+// The panels are stubbed here, so what this describes is the shell's own share
+// of the page structure: the level-1 heading and the chart's landmark, both of
+// which `App` owns. Each panel's own region and heading is pinned beside that
+// panel - see `strategyAssembly.feedback.dom.test.tsx`,
+// `ActiveOrders.dom.test.tsx` and `ChartHeader.dom.test.tsx`.
+
+describe("the shell's landmarks", () => {
+  it("puts the level-1 heading inside a landmark", () => {
+    renderApp();
+
+    const heading = screen.getByRole("heading", {
+      name: "Block Builder",
+      level: 1,
+    });
+
+    // As a sibling of `main` it was content no landmark contained, which is
+    // both an axe `region` failure and a heading a landmark user cannot reach.
+    // `main` rather than a `<header>` banner because `appContainer`'s
+    // `lg:grid-rows-[1fr]` is only correct while `main` is its one in-flow
+    // child above `lg`; see the comment on the heading in `App.tsx`.
+    expect(screen.getByRole("main")).toContainElement(heading);
+  });
+
+  it("claims no layout for it", () => {
+    renderApp();
+
+    // `sr-only` is `position: absolute`, which is what keeps it out of
+    // `appContainer`'s grid - and now out of `main`'s box as well.
+    expect(
+      screen.getByRole("heading", { name: "Block Builder", level: 1 }),
+    ).toHaveClass("sr-only");
+  });
+
+  it("gives the chart panel a landmark that does not move with the market", () => {
+    renderApp();
+
+    // Named here rather than by the panel's own heading, which is the selected
+    // pair: a landmark whose name changes as the user switches markets is one
+    // they cannot navigate back to.
+    const region = screen.getByRole("region", { name: "Price chart" });
+
+    expect(region).toContainElement(screen.getByTestId("chart"));
+  });
+
+  it("keeps every landmark it owns at every width", () => {
+    renderApp();
+
+    // The tab nav is `lg:hidden`, correctly - above `lg` both panels are on
+    // screen and there is nothing to switch between. Nothing else may be:
+    // `main` and the chart's region are in the tree either way, and jsdom
+    // resolves no media query, so what this holds is that neither of them is
+    // rendered conditionally in JSX.
+    expect(screen.getByRole("main")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Price chart" }),
+    ).toBeInTheDocument();
+  });
+});

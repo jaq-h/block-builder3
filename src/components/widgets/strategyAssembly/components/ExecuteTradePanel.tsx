@@ -70,12 +70,13 @@ const ExecuteTradePanel: FC<ExecuteTradePanelProps> = ({
         </div>
         {canToggle && (
           <button
+            type="button"
             className={simulationToggle}
             onClick={onToggleSimulationMode}
             title={
               isSimulationMode
-                ? "Switch to API mode — orders will be sent to Kraken"
-                : "Switch to simulation mode — orders saved locally"
+                ? "Switch to API mode - orders will be sent to Kraken"
+                : "Switch to simulation mode - orders saved locally"
             }
           >
             {isSimulationMode ? "Switch to API Mode" : "Switch to Simulation"}

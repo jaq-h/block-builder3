@@ -57,6 +57,38 @@ const successMessage = () =>
 // TESTS
 // =============================================================================
 
+describe("the panel as a place on the page", () => {
+  it("is a region named by its own heading", () => {
+    renderPanel();
+
+    // A landmark per panel is what makes the page three places a screen-reader
+    // user can jump between rather than one undivided `main`. The name comes
+    // from the heading through `aria-labelledby` rather than a second
+    // `aria-label`, so the two cannot drift apart.
+    const region = screen.getByRole("region", { name: "Strategy Builder" });
+    const heading = screen.getByRole("heading", {
+      name: "Strategy Builder",
+      level: 2,
+    });
+
+    expect(region).toContainElement(heading);
+    expect(region.getAttribute("aria-labelledby")).toBe(heading.id);
+    expect(heading.id).not.toBe("");
+  });
+
+  it("claims no layout for that heading", () => {
+    renderPanel();
+
+    // This panel's header bar is `PatternSelector`, a group of two buttons with
+    // no title in it and a fixed `h-16` that already overflows at narrow widths
+    // (`AGENTS.md`, "Known gap"). So the heading is `sr-only`: the panel names
+    // itself to the accessibility tree and takes no room to do it.
+    expect(
+      screen.getByRole("heading", { name: "Strategy Builder", level: 2 }),
+    ).toHaveClass("sr-only");
+  });
+});
+
 describe("the feedback strip", () => {
   it("stays down while there is nothing to say", () => {
     renderPanel();

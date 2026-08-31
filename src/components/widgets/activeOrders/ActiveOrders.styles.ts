@@ -1,8 +1,7 @@
 // Active Orders widget → Tailwind + CVA
 import { cva } from "class-variance-authority";
 import type { CSSProperties } from "react";
-import { cn } from "../../../lib/utils";
-import { panelHeaderBar, panelHeaderTitle } from "../../../styles/shared";
+import { panelHeaderBar, panelHeadingTitle } from "../../../styles/shared";
 
 // =============================================================================
 // CONTAINER & LAYOUT
@@ -24,7 +23,7 @@ export const columnsWrapper = "flex flex-1 h-full gap-1.5";
 // still line up. `src/styles/shared.ts` owns why.
 export const header = panelHeaderBar;
 
-export const headerTextClass = cn("m-0", panelHeaderTitle);
+export const headerTextClass = panelHeadingTitle;
 
 // =============================================================================
 // STATUS BAR

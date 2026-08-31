@@ -115,6 +115,20 @@ export const panelHeaderBar = cn(
 /** The title a panel header bar names itself with, at one size for all of them. */
 export const panelHeaderTitle = "text-sm font-semibold text-text-primary";
 
+/**
+ * That title when the panel writes it as the heading it is - which every panel
+ * with a visible title does, so the page has a heading order a screen-reader
+ * user can navigate rather than three unmarked bars.
+ *
+ * The `m-0` is the whole difference and it is load-bearing rather than tidy:
+ * `panelTitleBarRail` is `items-center`, and a heading arrives carrying the UA
+ * stylesheet's `margin: 0.83em 0`, which grows the bar and pushes the title off
+ * the centre line the other bars sit on. It is one constant rather than a
+ * `cn("m-0", panelHeaderTitle)` at each panel, for the reason the rail itself
+ * is one: two bars that merely agreed is how they came to disagree.
+ */
+export const panelHeadingTitle = cn("m-0", panelHeaderTitle);
+
 // =============================================================================
 // BADGE
 // =============================================================================

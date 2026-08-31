@@ -11,6 +11,22 @@ import {
 import MarketSelector from "../../common/MarketSelector";
 import { container } from "./strategyAssembly.styles";
 
+/**
+ * The panel heading its `region` landmark is named by.
+ *
+ * The heading is visually hidden, and that is what this panel's own chrome
+ * decides rather than a preference: its header bar is `PatternSelector`, a
+ * group of two assembly-type buttons with no title in it, and the bar's height
+ * is a fixed `h-16` that already overflows at narrow widths (`AGENTS.md`,
+ * "Known gap"). So the panel says its name to the accessibility tree and claims
+ * no layout for it - the tab button below `lg` and the visible controls are
+ * what a sighted user reads it by.
+ *
+ * A fixed id is safe because `App.tsx` mounts this panel exactly once, in one
+ * tree for both layouts; `src/App.test.tsx` fails if a second copy returns.
+ */
+const STRATEGY_PANEL_HEADING_ID = "strategy-builder-heading";
+
 interface StrategyAssemblyProps {
   onConfigChange?: (config: OrderConfig) => void;
   initialConfig?: OrderConfig;
@@ -114,7 +130,14 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
   const showFeedback = (orderCount != null && orderCount > 0) || showSuccess;
 
   return (
-    <div className={container}>
+    // A `region` landmark named by its own heading, so the three panels are
+    // three places a landmark user can jump between rather than one undivided
+    // `main`. `aria-labelledby` rather than a second `aria-label`: the name and
+    // the heading are one fact, and two copies is how they drift apart.
+    <section className={container} aria-labelledby={STRATEGY_PANEL_HEADING_ID}>
+      <h2 id={STRATEGY_PANEL_HEADING_ID} className="sr-only">
+        Strategy Builder
+      </h2>
       {/* Placed above the pattern row rather than inside it: the pattern row is
           a `role="group"` of pattern buttons, and the panel chrome around it
           belongs to another lane. This adds a sibling and rebuilds nothing. */}
@@ -146,7 +169,7 @@ const StrategyAssemblyInner: FC<InnerProps> = ({
           onViewActiveOrders={onViewActiveOrders}
         />
       )}
-    </div>
+    </section>
   );
 };
 
