@@ -721,9 +721,9 @@ describe("useBlockCommand", () => {
     // The leg, because the cell cannot separate what shares it: a dual-axis
     // order type puts two blocks in one cell under one label, so "Removed Stop
     // Loss Limit block from Entry column, primary row" was said identically for
-    // either leg and the survivor is half an order. `legInCell` is asked of the
-    // block's own cell rather than derived here, so the sentence names the same
-    // leg the control the user pressed was named with.
+    // either leg and the survivor is half an order. `legOfBlock` is asked of
+    // the block rather than derived here, so the sentence names the same leg
+    // the control the user pressed was named with.
     it("names which leg of a dual-axis order went", () => {
       const { grid, blocks } = gridWithOrder("stop-loss-limit");
       const { result } = setup(grid);
@@ -741,10 +741,10 @@ describe("useBlockCommand", () => {
       );
     });
 
-    // A cell that draws no axis has no leg to name, and `legInCell` answers
+    // A block carrying no price has no leg to name, and `legOfBlock` answers
     // nothing for one. The sentence must not invent a leg from the block's own
     // `axes`, which is the second derivation `blockMapping` exists to prevent.
-    it("names no leg for a block in a cell that draws no axis", () => {
+    it("names no leg for a block that carries no price", () => {
       const { result } = setup(gridWithMovableBlock());
 
       act(() => result.current.removeBlock("b1"));

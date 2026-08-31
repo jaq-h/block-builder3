@@ -9,7 +9,7 @@ import {
   isDescending as isDescendingDirection,
   legOfBlock,
   priceForOffset,
-  splitCellByPrice,
+  atMarketBlocksIn,
   type PriceAxisLeg,
 } from "../../../utils";
 import { describeCell } from "../../../utils/blockCommand";
@@ -180,7 +180,7 @@ const GridCell: FC<GridCellProps> = ({
   // that split. In a cell that draws an axis they are drawn in the at-market
   // strip beneath it rather than flattening the cell, which is what used to
   // hide a priced order's chip while the payload still carried its price.
-  const { atMarket } = splitCellByPrice(blocks);
+  const atMarket = atMarketBlocksIn(blocks);
   const drawsAtMarketStrip = displayMode !== "no-axis" && atMarket.length > 0;
 
   const rowLabelType: "primary" | "conditional" =

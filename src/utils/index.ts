@@ -45,7 +45,7 @@ export {
   offsetForOrder,
   legOfBlock,
   cellDrawsPriceAxis,
-  splitCellByPrice,
+  atMarketBlocksIn,
   getCellDisplayMode,
   cellDirection,
   directionForNewCell,

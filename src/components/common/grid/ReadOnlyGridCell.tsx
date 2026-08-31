@@ -9,7 +9,7 @@ import {
   isDescending as isDescendingDirection,
   legOfBlock,
   priceForOffset,
-  splitCellByPrice,
+  atMarketBlocksIn,
   type PriceAxisLeg,
 } from "../../../utils";
 import { useMarket } from "../../../store/useMarket";
@@ -94,7 +94,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   // The same split the builder cell draws: an order with no price is drawn in
   // the at-market strip rather than taking the ruler away from the ones beside
   // it. A card and the cell it was built in must show the same prices.
-  const { atMarket } = splitCellByPrice(blocks);
+  const atMarket = atMarketBlocksIn(blocks);
   const drawsAtMarketStrip = displayMode !== "no-axis" && atMarket.length > 0;
 
   const renderPercentageScale = (isDesc: boolean) => {

@@ -511,9 +511,10 @@ describe("describeOutcome, a drag that ends without a placement", () => {
     );
   });
 
-  // A cell that draws no axis has no leg to give, and the sentence must not
-  // invent one: `legInCell` answers `null` there and the block keeps its name.
-  it("names no leg for a block whose cell draws no axis", () => {
+  // A block carrying no price has no leg to give, and the sentence must not
+  // invent one: `legOfBlock` answers `null` for it and the block keeps its
+  // plain name, wherever it sits and whatever its neighbours draw.
+  it("names no leg for a block that carries no price", () => {
     expect(say({ kind: "removed", source: placed, leg: null })).toBe(
       "Removed Market block from Entry column, primary row.",
     );

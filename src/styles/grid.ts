@@ -103,6 +103,11 @@ export const CELL_MIN_HEIGHT = CELL_CHROME + TRACK_INSET + MIN_TRACK_HEIGHT;
 /**
  * The height the at-market strip adds to a cell that draws one: a block tile,
  * the `pt-2` above it, the 1px rule it hangs under and the `mt-2` above that.
+ *
+ * It assumes exactly ONE tile row, which the strip's non-wrapping layout is
+ * what makes true; enough tiles overflow the cell instead. See the at-market
+ * overflow **Known gap** in AGENTS.md before wrapping the strip, since a wrap
+ * without reworking `cellMinHeight` understates a cell's floor by a tile row.
  */
 export const AT_MARKET_STRIP_HEIGHT = BLOCK_HEIGHT + 8 + 1 + 8;
 
@@ -631,6 +636,10 @@ export const centeredContainer = "flex-1 flex items-center justify-center";
 // axis gives up the height, and `cellMinHeight` is what stops it giving up
 // more than it has. It is drawn UNDER the axis at every direction, so its
 // position does not move with the cell's scale.
+//
+// It is ONE row and does not wrap, which is what `AT_MARKET_STRIP_HEIGHT`'s
+// exact floor rests on and what makes enough tiles overflow the cell instead.
+// See the at-market overflow **Known gap** in AGENTS.md before adding a wrap.
 
 export const atMarketStrip =
   "shrink-0 mt-2 pt-2 border-t border-border-dimmed flex items-center gap-2";

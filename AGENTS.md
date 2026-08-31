@@ -676,8 +676,8 @@ out the abbreviation renames "SMA 20" to something a voice-control user cannot s
 
 ## Layout and the CSS cascade
 
-Nineteen traps live in the layout, and each is easy to reintroduce. The one
-paragraph below led **Known gap** is not among that nineteen: it records a
+Nineteen traps live in the layout, and each is easy to reintroduce. The two
+paragraphs below led **Known gap** are not among that nineteen: each records a
 defect that is already there rather than one you could bring back.
 
 **The app's chrome wraps; it never scrolls.** A row of controls - a toolbar, a
@@ -1021,6 +1021,27 @@ chart panel's title bar, with a new panel told to take the constant. Deciding
 what this defect means for that rule is tracked outside this repository; what is
 recorded here is the measurement, so the next reader to meet it at 320 can tell
 it is known and deferred.
+
+**Known gap: enough orders carrying no price overflow their cell horizontally.**
+`atMarketStrip` and `atMarketBlocks` in `src/styles/grid.ts` are a single
+non-wrapping row, in a cell that is `overflow-visible`, and in the bulk pattern
+every cell takes every order - so a user can put several Market orders in one.
+Measured in Chrome on this branch at 390x844, with a Limit and three Market
+orders in the Entry row 1 bulk cell: the strip's tiles are 40px wide on a 4px
+gap and start at x 96, against the cell's inner right edge at 291, so four fit
+and the **fifth** Market order in one cell is the first to paint outside the
+cell; at 320 the column is narrower and the fourth is. It is not cosmetic:
+below `sm` the panel clips, so a tile past that edge is an order drawn nowhere
+while the payload still carries it - the same shown-versus-sent class as the
+defect this branch fixes, which is why it is written down here rather than left
+to be rediscovered. **A cell holding ONLY Market orders overflows identically
+today, through `centeredContainer`**, so it is one gap over both rather than a
+defect of the strip. It is deferred rather than unnoticed, and tracked outside
+this repository: `flex-wrap` would trade `AT_MARKET_STRIP_HEIGHT`'s exact
+one-row floor for an approximate one that cannot be derived at render, since
+the number of rows depends on the width - so whoever takes the lane reworks
+`cellMinHeight` with it, and adding the wrap alone would silently understate a
+cell's floor by a tile row on a short viewport.
 
 **The desktop shell only has a height above `lg`.** `body`/`#root` are
 content-sized, so `h-full` resolves to `auto` unless something above it commits to

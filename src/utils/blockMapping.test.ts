@@ -9,7 +9,7 @@ import {
   directionForNewCell,
   getCellDisplayMode,
   isDescending,
-  splitCellByPrice,
+  atMarketBlocksIn,
   legOfBlock,
   normaliseCellDirections,
   orderConfigFromGrid,
@@ -107,22 +107,20 @@ describe("cellDrawsPriceAxis", () => {
   });
 });
 
-describe("splitCellByPrice", () => {
-  it("splits a mixed cell into the blocks with a price and the ones without", () => {
+describe("atMarketBlocksIn", () => {
+  it("takes the blocks with no price out of a mixed cell and leaves the priced one", () => {
     const limit = block();
     const market = marketOrder();
-    expect(splitCellByPrice([limit, market])).toEqual({
-      priced: [limit],
-      atMarket: [market],
-    });
+    expect(atMarketBlocksIn([limit, market])).toEqual([market]);
   });
 
-  it("gives a cell of market orders no priced blocks at all", () => {
+  it("gives a cell of market orders every one of them", () => {
     const market = marketOrder();
-    expect(splitCellByPrice([market])).toEqual({
-      priced: [],
-      atMarket: [market],
-    });
+    expect(atMarketBlocksIn([market])).toEqual([market]);
+  });
+
+  it("gives a cell of priced blocks none of them", () => {
+    expect(atMarketBlocksIn([block()])).toEqual([]);
   });
 });
 

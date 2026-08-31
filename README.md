@@ -802,8 +802,9 @@ that label's blocks over its order type's legs, so only the count separates the 
 The **block-level** sentence still carries the leg ("Removed Stop Loss Limit trigger block
 from Entry column, primary row."), because the keyboard removes one leg and nothing else
 could separate two blocks that share a label *and* a cell. The leg appears only where the
-cell really draws the block on a price axis, and it comes from `legInCell` - the same owner
-the slider's name takes it from.
+**block** really carries a price - a Market order keeps its plain name wherever it sits, and
+whatever its neighbours draw - and it comes from `legOfBlock`, the same owner the slider's
+name takes it from.
 
 It removes on **`click`** and on no pointer event: a browser fires `click` at the nearest
 common ancestor of the pointer-down and pointer-up targets, so a press that begins on the
@@ -836,12 +837,14 @@ palette is where "place a new one" begins.
 indistinguishable from a broken control. Three things say so together: the announcer's
 `moveRefused` sentence, a visible note under the grid (ordinary text - never a second live
 region), and no cell drawing itself as a target while a placed block is dragged. The note and
-the sentence are worded per case, and the case is decided by `cellDrawsPriceAxis` - the same
-owner the renderer uses to decide whether to draw an axis at all, so the affordance a refusal
-names is one that render really wired. Both cases end in the same correction - remove it and
-place a new one - because both blocks have one; what differs is the extra clause, and a block
-on a price axis is additionally pointed at the **arrow keys**, which move it along that axis
-and which no other block has. The note's closing sentence names **both** removals and says
+the sentence are worded per case, and the case is decided by `legOfBlock` - the same owner
+the renderer uses to decide whether to draw **that block** on an axis, so the affordance a
+refusal names is one that render really wired. It is the block's question and not the cell's:
+a Limit sharing a bulk cell with a Market order is refused as a priced block while the Market
+order beside it is not. Both cases end in the same correction - remove it and place a new one
+- because both blocks have one; what differs is the extra clause, and a block on a price axis
+is additionally pointed at the **arrow keys**, which move it along that axis and which no
+other block has. The note's closing sentence names **both** removals and says
 what each one takes, rather than offering them as alternatives: Delete takes the one order
 the note is about, and the cell's clear control empties the cell, which in a bulk cell is
 orders the note is not about.

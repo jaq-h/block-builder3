@@ -124,20 +124,19 @@ export const getCellDisplayMode = (
 };
 
 /**
- * The blocks in a cell that carry a price, and the ones that do not, split by
- * the one owner of that question.
+ * The blocks in a cell that carry no price at all, from the one owner of that
+ * question. They are what the at-market strip draws.
  *
- * Every surface that draws a cell needs both halves - the axis lanes are the
- * first, the at-market strip is the second - and a surface splitting them with
- * its own test of `axes` is how the renderer and the order path came to
- * disagree in the first place.
+ * There is deliberately no priced half here. A surface that draws the ruler
+ * needs the finer trigger-or-limit split, which it takes from `legOfBlock`
+ * per block, so a coarse priced list would be a second answer to a question
+ * already owned - and a second answer is what let the renderer and the order
+ * path disagree in the first place. What matters is that this half comes from
+ * `legOfBlock` too, so a surface never tests `axes` for itself.
  */
-export const splitCellByPrice = <T extends { axes: readonly AxisType[] }>(
+export const atMarketBlocksIn = <T extends { axes: readonly AxisType[] }>(
   cellBlocks: readonly T[],
-): { priced: T[]; atMarket: T[] } => ({
-  priced: cellBlocks.filter((block) => legOfBlock(block) !== null),
-  atMarket: cellBlocks.filter((block) => legOfBlock(block) === null),
-});
+): T[] => cellBlocks.filter((block) => legOfBlock(block) === null);
 
 // =============================================================================
 // 2. POSITION

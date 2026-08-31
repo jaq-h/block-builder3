@@ -482,10 +482,12 @@ export const describeOutcome = (
       }`;
 
     // Both refusals now end in the same correction, because both blocks now
-    // have it: Delete removes any placed block, whichever drag hook its cell
-    // wired. Only the first clause differs, and it is the affordance the render
-    // really offers - a block on a price axis has the arrow keys as well, and a
-    // block in a cell that draws no axis has nothing else to be told about.
+    // have it: Delete removes any placed block, whichever drag hook it wired.
+    // Only the first clause differs, and it is the affordance the render really
+    // offers - a block carrying a LEG has the arrow keys as well, and a block
+    // carrying none has nothing else to be told about. It is the block's
+    // question and not the cell's: a Market order beside a Limit in one cell
+    // gets the second sentence while the Limit gets the first.
     case "moveRefused":
       return outcome.reason === "onPriceAxis"
         ? `${outcome.label} is priced on this axis and cannot be moved to another cell. Use the arrow keys to change its price, or Delete to remove it and place a new one.`
