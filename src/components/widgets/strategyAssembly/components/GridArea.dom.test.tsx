@@ -2179,12 +2179,16 @@ describe("GridArea, a carry that a drag takes over", () => {
 // titled "still reorders and re-prices the cell, while saying the block stayed",
 // and asserted that a ten-pixel nudge inside a block's own cell took the block
 // out of the cell array and pushed it back - so the Limit beside it became
-// `blocks[0]`, the cell header changed from "Market, Limit" to "Limit, Market",
-// and every
+// `blocks[0]`, the cell header changed from "Market" to "Limit", and every
 // price in the cell was redrawn on the other block's scale. It was written as a
 // fence around a mutation another lane owned. That lane is this one, and the
 // ruling is decision D8: the direction belongs to the cell, stamped when the
 // first block lands.
+//
+// Those are the values that test recorded, and they stand as recorded: the
+// header rendered `blocks[0].label` at the time. It names every order the cell
+// holds now, so the assertions below read "Market, Limit" where that one read
+// "Market".
 //
 // So the assertions are inverted rather than deleted. The gesture is the same
 // ordinary accidental nudge; what it must now do is nothing at all.

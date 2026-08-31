@@ -998,9 +998,9 @@ row would otherwise be silent the second time.
 *every* block in it without an axis as soon as one of them had none: `cellDrawsPriceAxis` was
 `every`, and one Market order decided the whole cell. Six things followed from that, and every
 one of them was the same shape - one fact derived in more than one place. They are recorded
-because the shape recurs, not because any of them is still live. The rule itself is the sixth:
-it is `some` now, so the cell keeps the ruler for the orders that are placed against it and
-draws the ones that are not - only a Market order - in an at-market strip beneath the axis.
+because the shape recurs, not because any of them is still live. The rule is `some` now, so
+the cell keeps the ruler for the orders that are placed against it and draws the ones that
+are not - only a Market order - in an at-market strip beneath the axis.
 
 - *A paired dual-axis leg could be split across cells by a mouse free drag*, because the cell
   drew that leg without an axis while `Block` worked out for itself, from `axis` and `axes`,
@@ -1026,7 +1026,6 @@ draws the ones that are not - only a Market order - in an at-market strip beneat
 - *The vertical drag resolved its track by the block's own `axis` field*, which could disagree
   with the axis column the renderer drew it in. Nothing rewrites `axis` after a block is
   built, so the two cannot disagree; the fallback that made a miss survivable is kept.
-
 - *A price the cell refused to draw was still submitted.* A Limit sharing a bulk cell with a
   Market order was flattened on screen, while `orderConfigFromGrid`, the chart's price line and
   `mapBlockToOrderParams` all went on reading the block's own `axes` - so the payload carried a

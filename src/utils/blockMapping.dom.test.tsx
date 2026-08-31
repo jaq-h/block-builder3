@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
+import { useEffect } from "react";
 
 import GridCell from "@common/grid/GridCell";
 import ReadOnlyGridCell from "@common/grid/ReadOnlyGridCell";
@@ -8,6 +9,8 @@ import { orderPriceLines } from "@widgets/orderChart/orderPriceLines";
 import { mapGridToOrders } from "@api/orderMapper";
 import { addBlocksToCell, orderConfigFromGrid } from "@utils/blockMapping";
 import { clearGrid } from "@utils/grid";
+import { StrategyAssemblyProvider } from "@widgets/strategyAssembly/StrategyAssemblyContext";
+import { useGridData } from "@widgets/strategyAssembly/contexts";
 import { MarketContext, type MarketContextValue } from "@store/MarketContext";
 import { MARKETS, findMarket } from "@data/markets";
 import { BTC_USD } from "@/test/marketFixtures";
@@ -95,12 +98,12 @@ const bulkCell = (): GridData => {
   return addBlocksToCell(withLimit, { col: 0, row: 1 }, [stopLoss], "bulk");
 };
 
-const renderCell = (blocks: BlockData[]) =>
+const renderCell = (blocks: BlockData[], rowIndex: number = 1) =>
   render(
     <MarketContext.Provider value={marketValue}>
       <GridCell
         colIndex={0}
-        rowIndex={1}
+        rowIndex={rowIndex}
         blocks={blocks}
         isOver={false}
         isValidTarget={false}
@@ -345,5 +348,81 @@ describe("a bulk cell holding a Market order beside a Limit", () => {
 
     expect(screen.getByText("$37,500.0")).toBeInTheDocument();
     expect(screen.getByText("At market")).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// THE SCALE A SAVED MARKET ORDER USED TO TAKE WITH IT
+// =============================================================================
+//
+// The round trip a user makes by pressing Edit on a submitted strategy: the
+// grid is projected to an `OrderConfig` and the provider rebuilds a grid from
+// it. A cell's scale belongs to the cell (decision D8) and `cellDirection`
+// reads it off `blocks[0]`, so an entry that saved no direction let
+// `gridFromConfig` guess one from `directionForNewCell` under the RELOAD's own
+// pattern - and the Market order is the block a reload pushes in first.
+//
+// Bulk, Entry row 3: the builder stamps that cell "downside" and draws and
+// sends the Limit beside it 25% BELOW the market. Saved without the direction,
+// the Market order came back "upside" and stamped the Limit with it, so the
+// same strategy was redrawn and re-sent 25% ABOVE the market. Shown still
+// equalled sent, which is why nothing refused it; both were simply wrong.
+
+describe("a bulk cell with a Market order, saved and reloaded for editing", () => {
+  /** The Market lands first, then the Limit - through the one write path. */
+  const savedCell = (): GridData => {
+    const withMarket = addBlocksToCell(
+      clearGrid(2, 3),
+      { col: 0, row: 2 },
+      [marketOrder],
+      "bulk",
+    );
+    return addBlocksToCell(withMarket, { col: 0, row: 2 }, [limit], "bulk");
+  };
+
+  /** The grid the provider rebuilds when it is mounted with a saved config. */
+  const rehydrate = (config: ReturnType<typeof orderConfigFromGrid>) => {
+    let published: GridData | undefined;
+
+    const Probe = (): null => {
+      const { grid } = useGridData();
+      useEffect(() => {
+        published = grid;
+      }, [grid]);
+      return null;
+    };
+
+    render(
+      <StrategyAssemblyProvider initialConfig={config}>
+        <Probe />
+      </StrategyAssemblyProvider>,
+    );
+
+    if (!published) throw new Error("The provider never published a grid");
+    return published;
+  };
+
+  const expectPricedBelowMarket = (grid: GridData) => {
+    renderCell(grid[0][2], 2);
+
+    expect(screen.getByText("$37,500.0")).toBeInTheDocument();
+    expect(screen.getByText("-25.00%")).toBeInTheDocument();
+    expect(screen.queryByText("$62,500.0")).toBeNull();
+    expect(screen.queryByText("+25.00%")).toBeNull();
+
+    expect(chartPrices(grid).limit).toBe(37_500);
+    expect(payloadPrices(grid).limit).toBe("37500.0");
+  };
+
+  it("draws and sends the same price before and after the round trip", () => {
+    const built = savedCell();
+
+    expectPricedBelowMarket(built);
+    cleanup();
+
+    const reloaded = rehydrate(orderConfigFromGrid(built));
+    cleanup();
+
+    expectPricedBelowMarket(reloaded);
   });
 });

@@ -46,6 +46,7 @@ export {
   legOfBlock,
   cellDrawsPriceAxis,
   atMarketBlocksIn,
+  cellDrawsAtMarketStrip,
   getCellDisplayMode,
   cellDirection,
   directionForNewCell,

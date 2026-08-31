@@ -3,20 +3,20 @@ import Block from "../../blocks/block";
 import type { BlockData } from "../../../types/grid";
 import {
   cellDirection,
+  cellDrawsAtMarketStrip,
   clampOffset,
   formatPrice,
   getCellDisplayMode,
   isDescending as isDescendingDirection,
   legOfBlock,
   priceForOffset,
-  atMarketBlocksIn,
   type PriceAxisLeg,
 } from "../../../utils";
+import AtMarketStrip from "./AtMarketStrip";
+import CellHeader from "./CellHeader";
 import { useMarket } from "../../../store/useMarket";
 import {
   getReadOnlyCellContainerProps,
-  cellHeader,
-  orderTypeLabel,
   getAxisLabelItemProps,
   sliderArea,
   getAxisColumnProps,
@@ -30,9 +30,6 @@ import {
   getCalculatedPriceLabelProps,
   emptyCellMessage,
   centeredContainer,
-  atMarketStrip,
-  atMarketLabel,
-  atMarketBlocks,
   getScaleLabels,
 } from "../../../styles/grid";
 
@@ -68,17 +65,6 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   // market it sits on.
   const direction = cellDirection(blocks);
   const isDescending = isDescendingDirection(direction);
-  // Every order the cell holds, named once each and in the order they landed.
-  // It used to be `blocks[0].label` alone, which named one order out of a bulk
-  // cell that can hold several - and once a cell could draw a Limit on its
-  // axis while a Market order sat in the strip below, that header was naming
-  // whichever of the two happened to be first. A dual-axis order type puts two
-  // blocks in the cell under one label, so the labels are deduped: it is one
-  // order and it is named once.
-  const orderTypeLabelText =
-    blocks.length > 0
-      ? [...new Set(blocks.map((block) => block.label))].join(", ")
-      : null;
   const isBuy = colIndex === 0;
 
   // The same owner the builder cell splits on: `legOfBlock`, never `axis`. An
@@ -91,11 +77,15 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
   const hasTriggerBlocks = triggerBlocks.length > 0;
   const hasLimitBlocks = limitBlocks.length > 0;
 
-  // The same split the builder cell draws: an order with no price is drawn in
-  // the at-market strip rather than taking the ruler away from the ones beside
-  // it. A card and the cell it was built in must show the same prices.
-  const atMarket = atMarketBlocksIn(blocks);
-  const drawsAtMarketStrip = displayMode !== "no-axis" && atMarket.length > 0;
+  // The same gate and the same strip the builder cell draws, from their one
+  // owner: an order with no price is drawn off the ruler rather than taking it
+  // away from the ones beside it. A card and the cell it was built in must show
+  // the same prices, and must reserve the same height to show them in.
+  const drawsAtMarketStrip = cellDrawsAtMarketStrip(blocks);
+
+  // The card's whole wiring for a tile: it is read-only, and every handler the
+  // builder passes is absent because there is nothing here to drive.
+  const readOnlyWiring = () => ({ isReadOnly: true });
 
   const renderPercentageScale = (isDesc: boolean) => {
     const labels = getScaleLabels(isDesc);
@@ -211,25 +201,6 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
     );
   };
 
-  const renderAtMarketStrip = () => (
-    <div className={atMarketStrip}>
-      <span className={atMarketLabel}>At market</span>
-      <div className={atMarketBlocks}>
-        {atMarket.map((block) => (
-          <Block
-            key={block.id}
-            id={block.id}
-            icon={block.icon}
-            abrv={block.abrv}
-            label={block.label}
-            leg={legOfBlock(block)}
-            isReadOnly={true}
-          />
-        ))}
-      </div>
-    </div>
-  );
-
   const renderContent = () => {
     if (displayMode === "empty") {
       return <div className={emptyCellMessage}>No active orders</div>;
@@ -238,11 +209,7 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
     if (displayMode === "no-axis") {
       return (
         <>
-          <div className={cellHeader}>
-            {orderTypeLabelText && (
-              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
-            )}
-          </div>
+          <CellHeader blocks={blocks} />
           <div className={centeredContainer}>
             {blocks.map((block) => (
               <Block
@@ -263,28 +230,22 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
     if (displayMode === "limit-only") {
       return (
         <>
-          <div className={cellHeader}>
-            {orderTypeLabelText && (
-              <div className={orderTypeLabel}>{orderTypeLabelText}</div>
-            )}
-          </div>
+          <CellHeader blocks={blocks} />
           <div className={sliderArea}>
             {renderMarketPrice()}
             {/* The blocks with a limit leg, never every block in the cell. */}
             {renderAxisContent(limitBlocks, "limit", true, "Limit", true)}
           </div>
-          {drawsAtMarketStrip && renderAtMarketStrip()}
+          {drawsAtMarketStrip && (
+            <AtMarketStrip blocks={blocks} wiring={readOnlyWiring} />
+          )}
         </>
       );
     }
 
     return (
       <>
-        <div className={cellHeader}>
-          {orderTypeLabelText && (
-            <div className={orderTypeLabel}>{orderTypeLabelText}</div>
-          )}
-        </div>
+        <CellHeader blocks={blocks} />
         <div className={sliderArea}>
           {renderMarketPrice()}
           {hasTriggerBlocks &&
@@ -304,7 +265,9 @@ const ReadOnlyGridCell: FC<ReadOnlyGridCellProps> = ({
               !hasTriggerBlocks,
             )}
         </div>
-        {drawsAtMarketStrip && renderAtMarketStrip()}
+        {drawsAtMarketStrip && (
+          <AtMarketStrip blocks={blocks} wiring={readOnlyWiring} />
+        )}
       </>
     );
   };

@@ -138,6 +138,27 @@ export const atMarketBlocksIn = <T extends { axes: readonly AxisType[] }>(
   cellBlocks: readonly T[],
 ): T[] => cellBlocks.filter((block) => legOfBlock(block) === null);
 
+/**
+ * Whether a cell draws the at-market strip beneath its axis.
+ *
+ * One owner, because the gate is not only a rendering decision: it feeds
+ * `hasAtMarketStrip` on the cell's container props, and so `cellMinHeight`,
+ * which is what stops the strip taking the price track below the two block
+ * heights `CELL_MIN_HEIGHT` exists to keep. A cell answering it for itself
+ * could draw the strip while reserving no height for it, or reserve the height
+ * and draw nothing - and it was answered twice, hand-copied between `GridCell`
+ * and `ReadOnlyGridCell`, which is the shape that let `DragOverlay` and
+ * `block.tsx` disagree about a tile.
+ *
+ * A cell with no axis at all needs no strip: every block in it already carries
+ * no price, and `centeredContainer` draws them all.
+ */
+export const cellDrawsAtMarketStrip = (
+  cellBlocks: readonly { axes: readonly AxisType[] }[],
+): boolean =>
+  getCellDisplayMode(cellBlocks) !== "no-axis" &&
+  atMarketBlocksIn(cellBlocks).length > 0;
+
 // =============================================================================
 // 2. POSITION
 // =============================================================================
@@ -440,6 +461,23 @@ export const signedOffset = (
  * direction the cell had already changed its mind about. It is a projection
  * now, so the chart, the Active Orders cards and a saved strategy all read the
  * grid through this one owner.
+ *
+ * An order that carries no price still carries the cell's DIRECTION, and the
+ * asymmetry is deliberate: a direction is the CELL's scale (decision D8) while
+ * a position belongs to the block, so the block with no leg has nothing to say
+ * about the second and everything to say about the first. It can be the block a
+ * reload pushes into the cell first, and `cellDirection` reads `blocks[0]` - so
+ * dropping the direction here let `gridFromConfig` fall back to
+ * `directionForNewCell` under the reload's own pattern and stamp the whole cell
+ * with the answer that guess gave. A Market order saved beside a Limit from a
+ * bulk Entry row 3 came back "upside", and the Limit that had been drawn and
+ * sent at 25% BELOW the market was redrawn and re-sent 25% above it.
+ *
+ * `axis` and `yPosition` stay off this branch, and that is what keeps "this
+ * order carries no price" true for every reader of the saved config:
+ * `orderPriceLines` draws no line for an entry with no `yPosition`, and
+ * `gridFromConfig` rebuilds the block from `axesForBlockAxis` on its order
+ * type, so a fabricated axis would give a Market order a leg it never had.
  */
 export const orderConfigFromGrid = (grid: GridData): OrderConfig => {
   const config: OrderConfig = {};
@@ -453,7 +491,7 @@ export const orderConfigFromGrid = (grid: GridData): OrderConfig => {
           // carries has one owner, and the saved config, the chart line, the
           // cell chip and the Kraken payload all take their answer from it.
           legOfBlock(block) === null
-            ? { col, row, type: block.orderType }
+            ? { col, row, type: block.orderType, direction }
             : {
                 col,
                 row,
